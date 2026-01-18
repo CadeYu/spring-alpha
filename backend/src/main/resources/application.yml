@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: spring-alpha-backend
+  
+  # Spring AI Configuration
+  ai:
+    vertex:
+      ai:
+        gemini:
+          # 必须指定模型名称，否则 0.8.1 版本启动报错
+          chat:
+            options:
+              model: gemini-1.5-flash-001
+          # 认证信息
+          api-key: ${GEMINI_API_KEY:placeholder_key}
+          project-id: ${GEMINI_PROJECT_ID:placeholder_project}
+          location: ${GEMINI_LOCATION:us-central1}
+
+server:
+  port: 8081
+
+logging:
+  level:
+    root: INFO
+    com.springalpha: DEBUG

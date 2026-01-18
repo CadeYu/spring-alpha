@@ -1,0 +1,78 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ----------------------< com.springalpha:backend >-----------------------
+[INFO] Building Spring Alpha Backend 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:3.2.5:run (default-cli) > test-compile @ backend >>>
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ backend ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] Copying 0 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ backend ---
+[INFO] Changes detected - recompiling the module! :input tree
+[INFO] Compiling 4 source files with javac [debug release 21] to target/classes
+[INFO] 由于在类路径中发现了一个或多个处理程序，因此启用了
+  批注处理。未来发行版的 javac 可能会禁用批注处理，
+  除非至少按名称指定了一个处理程序 (-processor)，
+  或指定了搜索路径 (--processor-path, --processor-module-path)，
+  或显式启用了批注处理 (-proc:only, -proc:full)。
+  可使用 -Xlint:-options 隐藏此消息。
+  可使用 -proc:none 禁用批注处理。
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ backend ---
+[INFO] skip non existing resourceDirectory /Users/cadeyu/Desktop/spring-alpha/backend/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.11.0:testCompile (default-testCompile) @ backend ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] <<< spring-boot:3.2.5:run (default-cli) < test-compile @ backend <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:3.2.5:run (default-cli) @ backend ---
+[INFO] Attaching agents: []
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+[32m :: Spring Boot :: [39m              [2m (v3.2.5)[0;39m
+
+[2m2026-01-18T14:37:46.203+08:00[0;39m [32m INFO[0;39m [35m57792[0;39m [2m---[0;39m [2m[spring-alpha-backend] [           main][0;39m [2m[0;39m[36mc.s.backend.SpringAlphaApplication      [0;39m [2m:[0;39m Starting SpringAlphaApplication using Java 22.0.2 with PID 57792 (/Users/cadeyu/Desktop/spring-alpha/backend/target/classes started by cadeyu in /Users/cadeyu/Desktop/spring-alpha/backend)
+[2m2026-01-18T14:37:46.203+08:00[0;39m [32mDEBUG[0;39m [35m57792[0;39m [2m---[0;39m [2m[spring-alpha-backend] [           main][0;39m [2m[0;39m[36mc.s.backend.SpringAlphaApplication      [0;39m [2m:[0;39m Running with Spring Boot v3.2.5, Spring v6.1.6
+[2m2026-01-18T14:37:46.204+08:00[0;39m [32m INFO[0;39m [35m57792[0;39m [2m---[0;39m [2m[spring-alpha-backend] [           main][0;39m [2m[0;39m[36mc.s.backend.SpringAlphaApplication      [0;39m [2m:[0;39m No active profile set, falling back to 1 default profile: "default"
+[2m2026-01-18T14:37:48.719+08:00[0;39m [33m WARN[0;39m [35m57792[0;39m [2m---[0;39m [2m[spring-alpha-backend] [           main][0;39m [2m[0;39m[36monfigReactiveWebServerApplicationContext[0;39m [2m:[0;39m Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Failed to start bean 'webServerStartStop'
+[2m2026-01-18T14:37:48.723+08:00[0;39m [32m INFO[0;39m [35m57792[0;39m [2m---[0;39m [2m[spring-alpha-backend] [           main][0;39m [2m[0;39m[36m.s.b.a.l.ConditionEvaluationReportLogger[0;39m [2m:[0;39m 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+[2m2026-01-18T14:37:48.728+08:00[0;39m [31mERROR[0;39m [35m57792[0;39m [2m---[0;39m [2m[spring-alpha-backend] [           main][0;39m [2m[0;39m[36mo.s.b.d.LoggingFailureAnalysisReporter  [0;39m [2m:[0;39m 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Web server failed to start. Port 8081 was already in use.
+
+Action:
+
+Identify and stop the process that's listening on port 8081 or configure this application to listen on another port.
+
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  4.973 s
+[INFO] Finished at: 2026-01-18T14:37:49+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.2.5:run (default-cli) on project backend: Process terminated with exit code: 1 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException
