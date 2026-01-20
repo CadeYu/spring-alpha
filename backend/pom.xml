@@ -42,7 +42,14 @@
 			<optional>true</optional>
 		</dependency>
 
-		<!-- 5. Test: 测试框架 -->
+		<!-- 5. Dotenv: 读取本地 .env 文件 -->
+		<dependency>
+			<groupId>io.github.cdimascio</groupId>
+			<artifactId>java-dotenv</artifactId>
+			<version>5.2.2</version>
+		</dependency>
+
+		<!-- 6. Test: 测试框架 -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
