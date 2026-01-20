@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Simple Test</title>
+</head>
+<body>
+    <h1>Spring Alpha Minimal Test</h1>
+    <button onclick="start()">Analyze AAPL</button>
+    <pre id="output" style="background: #000; color: #0f0; padding: 20px; min-height: 300px; white-space: pre-wrap;"></pre>
+
+    <script>
+        async function start() {
+            const output = document.getElementById('output');
+            output.textContent = "Connecting...";
+            
+            try {
+                const response = await fetch('http://localhost:8081/api/sec/analyze/AAPL');
+                if (!response.ok) throw new Error('Network error');
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                output.textContent = ""; // clear
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data:')) {
+                            output.textContent += line.substring(5);
+                        }
+                    }
+                }
+            } catch (e) {
+                output.textContent += "\nError: " + e.message;
+            }
+        }
+    </script>
+</body>
+</html>

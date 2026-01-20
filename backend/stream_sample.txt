@@ -1,0 +1,1667 @@
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:02 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:02 --:--:--     0data:As
+
+data: a
+
+data: financial
+
+data: analyst
+
+data:,
+
+data: I
+
+data:'ll
+
+data: analyze
+
+data: the
+
+data: provided
+
+data: 
+
+data:10
+
+data:-K
+
+data: data
+
+data: for
+
+data: Apple
+
+data: Inc
+
+data:.
+
+data: (
+
+data:AAP
+
+data:L
+
+data:).
+
+data: Since
+
+data: the
+
+data: data
+
+data: appears
+
+data: to
+
+data: be
+
+data: in
+
+data: XB
+
+data:RL
+
+data: (
+
+data:e
+
+data:X
+
+data:t
+
+data:ensible
+
+data: Business
+
+data: Reporting
+
+data: Language
+
+data:)
+
+data: format
+
+data:,
+
+data: I
+
+data:'ll
+
+data: extract
+
+data: relevant
+
+data: information
+
+data: and
+
+data: provide
+
+data: an
+
+data: overview
+
+data: of
+
+data: the
+
+data: company
+
+data:'s
+
+data: financial
+
+data: performance
+
+data:.
+data:
+data:
+
+data:**
+
+data:Financial
+
+data: Highlights
+
+data::
+
+data:**
+data:
+data:
+
+data:1
+
+data:.
+
+data: **
+
+data:Revenue
+
+data::**
+
+data: The
+
+data: company
+
+data: reports
+
+data: revenue
+
+data: from
+
+data: two
+
+data: main
+
+data: segments
+
+data::
+
+data: Products
+
+data: and
+
+data: Services
+
+data:.
+data:
+
+data:	
+
+data:*
+
+data: Product
+
+data: revenue
+
+data::
+
+data: $
+
+data:379
+
+data:,
+
+data:754
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:349
+
+data:,
+
+data:847
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:314
+
+data:,
+
+data:928
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:	
+
+data:*
+
+data: Service
+
+data: revenue
+
+data::
+
+data: $
+
+data:68
+
+data:,
+
+data:425
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:59
+
+data:,
+
+data:811
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:50
+
+data:,
+
+data:963
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:2
+
+data:.
+
+data: **
+
+data:Net
+
+data: Income
+
+data::**
+
+data: The
+
+data: company
+
+data: reports
+
+data: net
+
+data: income
+
+data: of
+
+data: $
+
+data:94
+
+data:,
+
+data:684
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:83
+
+data:,
+
+data:362
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:73
+
+data:,
+
+data:431
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:3
+
+data:.
+
+data: **
+
+data:E
+
+data:arnings
+
+data: Per
+
+data: Share
+
+data: (
+
+data:EPS
+
+data:):
+
+data:**
+
+data: The
+
+data: company
+
+data: reports
+
+data: basic
+
+data: EPS
+
+data: of
+
+data: $
+
+data:4
+
+data:.
+
+data:93
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:4
+
+data:.
+
+data:35
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:3
+
+data:.
+
+data:85
+
+data: (
+
+100  2536    0  2536    0     0    778      0 --:--:--  0:00:03 --:--:--   778data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:4
+
+data:.
+
+data: **
+
+data:Long
+
+data:-term
+
+data: Debt
+
+data::**
+
+data: The
+
+data: company
+
+data: reports
+
+data: long
+
+data:-term
+
+data: debt
+
+data: of
+
+data: $
+
+data:107
+
+data:,
+
+data:863
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:95
+
+data:,
+
+data:535
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:86
+
+data:,
+
+data:373
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+data:
+
+data:**
+
+data:Segment
+
+data: Analysis
+
+data::
+
+data:**
+data:
+data:
+
+data:1
+
+data:.
+
+data: **
+
+data:iPhone
+
+data::**
+
+data: Revenue
+
+data: from
+
+data: iPhone
+
+data: sales
+
+data::
+
+data: $
+
+data:191
+
+data:,
+
+data:141
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:173
+
+data:,
+
+data:235
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:155
+
+data:,
+
+data:961
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:2
+
+data:.
+
+data: **
+
+data:Mac
+
+data::**
+
+data: Revenue
+
+data: from
+
+data: Mac
+
+data: sales
+
+data::
+
+data: $
+
+data:34
+
+data:,
+
+data:539
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:29
+
+data:,
+
+data:861
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:26
+
+data:,
+
+data:314
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:3
+
+data:.
+
+data: **
+
+data:iPad
+
+data::**
+
+data: Revenue
+
+data: from
+
+data: iPad
+
+data: sales
+
+data::
+
+data: $
+
+data:14
+
+data:,
+
+data:321
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:12
+
+data:,
+
+data:411
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:10
+
+data:,
+
+data:945
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:4
+
+data:.
+
+data: **
+
+data:W
+
+data:ear
+
+data:ables
+
+data:,
+
+data: Home
+
+data:,
+
+data: and
+
+data: Accessories
+
+data::**
+
+data: Revenue
+
+data: from
+
+data: wear
+
+data:ables
+
+data:,
+
+data: home
+
+data:,
+
+data: and
+
+data: accessories
+
+data::
+
+data: $
+
+data:41
+
+data:,
+
+data:451
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:36
+
+data:,
+
+data:193
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:31
+
+data:,
+
+data:857
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+data:
+
+data:**
+
+data:Balance
+
+data: Sheet
+
+data::
+
+data:**
+data:
+data:
+
+data:1
+
+data:.
+
+data: **
+
+data:Cash
+
+data: and
+
+data: Cash
+
+data: Equ
+
+data:ival
+
+data:ents
+
+data::**
+
+data: The
+
+data: company
+
+data: reports
+
+data: cash
+
+data: and
+
+data: cash
+
+data: equivalents
+
+data: of
+
+data: $
+
+data:215
+
+data:,
+
+data:475
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:201
+
+data:,
+
+data:849
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:190
+
+data:,
+
+data:539
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:2
+
+data:.
+
+data: **
+
+data:Property
+
+data:,
+
+data: Plant
+
+data:,
+
+data: and
+
+data: Equipment
+
+data::**
+
+data: The
+
+data: company
+
+data: reports
+
+data: property
+
+data:,
+
+data: plant
+
+data:,
+
+data: and
+
+data: equipment
+
+data: of
+
+data: $
+
+data:43
+
+data:,
+
+data:611
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:38
+
+data:,
+
+data:449
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:33
+
+data:,
+
+data:495
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:3
+
+data:.
+
+data: **
+
+data:Other
+
+data: Assets
+
+data::**
+
+data: The
+
+data: company
+
+data: reports
+
+data: other
+
+data: assets
+
+data: of
+
+data: $
+
+data:123
+
+data:,
+
+data:135
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:109
+
+data:,
+
+data:349
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:95
+
+data:,
+
+data:495
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+data:
+
+data:**
+
+data:Other
+
+data: Key
+
+data: Metrics
+
+data::
+
+data:**
+data:
+data:
+
+data:1
+
+data:.
+
+data: **
+
+data:G
+
+data:ross
+
+data: Margin
+
+data::**
+
+data: The
+
+data: company
+
+data: reports
+
+data: gross
+
+data: margin
+
+data: of
+
+data: 
+
+data:38
+
+data:.
+
+data:3
+
+data:%
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: 
+
+data:37
+
+data:.
+
+data:4
+
+data:%
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: 
+
+data:36
+
+data:.
+
+data:5
+
+data:%
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:2
+
+data:.
+
+data: **
+
+data:Operating
+
+data: Expenses
+
+data::**
+
+data: The
+
+data: company
+
+data: reports
+
+data: operating
+
+data: expenses
+
+data: of
+
+data: $
+
+data:38
+
+data:,
+
+100  7156    0  7156    0     0   1685      0 --:--:--  0:00:04 --:--:--  1685data:441
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:34
+
+data:,
+
+data:469
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:30
+
+data:,
+
+data:959
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+
+data:3
+
+data:.
+
+data: **
+
+data:Research
+
+data: and
+
+data: Development
+
+data: (
+
+data:R
+
+data:&D
+
+data:)
+
+data: Expenses
+
+data::**
+
+data: The
+
+data: company
+
+data: reports
+
+data: R
+
+data:&D
+
+data: expenses
+
+data: of
+
+data: $
+
+data:19
+
+data:,
+
+data:445
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:5
+
+data:),
+
+data: $
+
+data:17
+
+data:,
+
+data:349
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:4
+
+data:),
+
+data: and
+
+data: $
+
+data:15
+
+data:,
+
+data:317
+
+data: million
+
+data: (
+
+data:FY
+
+data:202
+
+data:3
+
+data:).
+data:
+data:
+
+data:Overall
+
+data:,
+
+data: Apple
+
+data:'s
+
+data: financial
+
+data: performance
+
+data: appears
+
+data: strong
+
+data:,
+
+data: with
+
+data: revenue
+
+data: growth
+
+data: across
+
+data: all
+
+data: segments
+
+data: and
+
+data: sustained
+
+data: profitability
+
+data:.
+
+data: The
+
+data: company
+
+data:'s
+
+data: cash
+
+data: reserves
+
+data: and
+
+data: low
+
+data: long
+
+data:-term
+
+data: debt
+
+data: indicate
+
+data: a
+
+data: solid
+
+data: financial
+
+data: position
+
+data:.
+
+data: However
+
+data:,
+
+data: it
+
+data:'s
+
+data: essential
+
+data: to
+
+data: consider
+
+data: the
+
+data: competitive
+
+data: landscape
+
+data:,
+
+data: industry
+
+data: trends
+
+data:,
+
+data: and
+
+data: potential
+
+data: risks
+
+data: when
+
+data: evaluating
+
+data: Apple
+
+data:'s
+
+data: future
+
+data: prospects
+
+data:.
+
+100  8728    0  8728    0     0   1890      0 --:--:--  0:00:04 --:--:--  2555

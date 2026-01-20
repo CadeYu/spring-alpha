@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: spring-alpha-backend
+  
+  # Spring AI Configuration
+  ai:
+    # OpenAI (Groq) - 当前主力
+    openai:
+      base-url: https://api.groq.com/openai
+      # 使用环境变量注入，默认值为空 (防止 GitHub 泄露)
+      api-key: ${GROQ_API_KEY:}
+      model: llama-3.3-70b-versatile
+    
+    # Vertex AI (Gemini) - 备用，防止 GeminiStrategy 启动报错
+    vertex:
+      ai:
+        gemini:
+          api-key: ${GEMINI_API_KEY:placeholder_key}
+
+app:
+  # 切换默认策略为 OpenAI (这里实际指向 Groq)
+  ai-provider: openai
+
+server:
+  port: 8081
+
+logging:
+  level:
+    root: INFO
+    com.springalpha: DEBUG

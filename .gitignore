@@ -1,0 +1,42 @@
+# --- Java / Maven ---
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# --- IntelliJ IDEA ---
+.idea/
+*.imap
+*.ipr
+*.iws
+*.iml
+
+# --- VS Code ---
+.vscode/
+.settings/
+.classpath
+.project
+
+# --- Node.js / Frontend ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+out/
+build/
+dist/
+.DS_Store
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- App Secrets ---
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
