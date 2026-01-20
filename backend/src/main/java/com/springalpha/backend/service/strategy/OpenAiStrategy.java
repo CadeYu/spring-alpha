@@ -36,31 +36,52 @@ public class OpenAiStrategy implements AiAnalysisStrategy {
     }
 
     @Override
-    public Flux<String> analyze(String ticker, String textContent) {
+    public Flux<String> analyze(String ticker, String textContent, String lang) {
         log.info("🤖 使用策略: OpenAI Compatible (Model: {}, URL: {})", modelName, baseUrl);
 
         if (apiKey == null || apiKey.isBlank()) {
             return Flux.error(new RuntimeException("OpenAI API Key is missing"));
         }
 
-        // 动态构建 Prompt，强制中文输出
-        String userPrompt = String.format("""
-            请分析这篇关于 %s 的 SEC 10-K 财报。
+        // 动态构建 Prompt
+        boolean isChinese = "zh".equalsIgnoreCase(lang);
+        String systemPrompt = isChinese 
+            ? "你是一位精通美股的资深金融分析师。" 
+            : "You are a senior Wall Street Analyst.";
             
-            你的任务：
-            1. 使用**中文**回答。
-            2. 使用 Markdown 格式。
-            3. 重点分析：关键财务指标（营收、净利、毛利）、主要风险、未来展望。
-            4. 风格：专业、客观，多用数据说话，适当使用 Emojis 增强可读性。
-            
-            财报内容如下：
-            %s
-            """, ticker, textContent);
+        String userPrompt;
+        if (isChinese) {
+             userPrompt = String.format("""
+                请分析这篇关于 %s 的 SEC 10-K 财报。
+                
+                你的任务：
+                1. 使用**中文**回答。
+                2. 使用 Markdown 格式。
+                3. 重点分析：关键财务指标（营收、净利、毛利）、主要风险、未来展望。
+                4. 风格：专业、客观，多用数据说话，适当使用 Emojis 增强可读性。
+                
+                财报内容如下：
+                %s
+                """, ticker, textContent);
+        } else {
+             userPrompt = String.format("""
+                Please analyze this SEC 10-K report for %s.
+                
+                Task:
+                1. Answer in **English**.
+                2. Use Markdown format.
+                3. Focus on: Key Financial Metrics (Revenue, Net Income, Gross Margin), Key Risks, and Future Outlook.
+                4. Style: Professional, objective, data-driven, use Emojis.
+                
+                Report Content:
+                %s
+                """, ticker, textContent);
+        }
 
         Map<String, Object> requestBody = Map.of(
             "model", modelName,
             "messages", List.of(
-                Map.of("role", "system", "content", "你是一位精通美股的资深金融分析师。"),
+                Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", userPrompt)
             ),
             "stream", true

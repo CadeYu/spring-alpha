@@ -10,6 +10,7 @@ import { Search, Loader2, TrendingUp } from 'lucide-react';
 
 export default function Home() {
   const [ticker, setTicker] = useState('AAPL');
+  const [lang, setLang] = useState('en'); // 默认英文
   const [analysis, setAnalysis] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -18,12 +19,12 @@ export default function Home() {
     if (!ticker) return;
     
     setIsLoading(true);
-    setAnalysis(''); // 清空旧数据
+    setAnalysis('');
 
     try {
-      console.log("Starting fetch...");
-      // 使用 Next.js 代理转发，解决 CORS 和 Mixed Content 问题
-      const response = await fetch(`/api/java/sec/analyze/${ticker}`);
+      console.log(`Starting fetch for ${ticker} in ${lang}...`);
+      // 传递 lang 参数给后端
+      const response = await fetch(`/api/java/sec/analyze/${ticker}?lang=${lang}`);
       console.log("Response status:", response.status);
       
       if (!response.ok || !response.body) {
@@ -101,8 +102,19 @@ export default function Home() {
               value={ticker}
               onChange={(e) => setTicker(e.target.value.toUpperCase())}
               placeholder="Enter Ticker (e.g., AAPL, TSLA, NVDA)" 
-              className="bg-slate-950 border-slate-700 text-lg font-bold tracking-widest text-emerald-300"
+              className="bg-slate-950 border-slate-700 text-lg font-bold tracking-widest text-emerald-300 flex-1"
             />
+            
+            {/* Language Selector */}
+            <select 
+              value={lang} 
+              onChange={(e) => setLang(e.target.value)}
+              className="bg-slate-950 border border-slate-700 text-emerald-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono text-sm"
+            >
+              <option value="en">🇺🇸 EN</option>
+              <option value="zh">🇨🇳 CN</option>
+            </select>
+
             <Button 
               onClick={handleSearch} 
               disabled={isLoading}

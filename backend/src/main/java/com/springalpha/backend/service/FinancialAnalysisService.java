@@ -32,10 +32,10 @@ public class FinancialAnalysisService {
         log.info("🎯 已加载 AI 策略: {}", this.strategies.keySet());
     }
 
-    public Flux<String> analyzeStock(String ticker) {
+    public Flux<String> analyzeStock(String ticker, String lang) {
         return secService.getLatest10KContent(ticker)
                 .flatMapMany(content -> {
-                    // 1. 文本截断 (5000字符)
+                    // 1. 文本截断
                     String context = content.length() > 5000 ? content.substring(0, 5000) : content;
                     
                     // 2. 选择策略 (默认 Gemini)
@@ -48,14 +48,14 @@ public class FinancialAnalysisService {
                     
                     final AiAnalysisStrategy strategy = tempStrategy;
 
-                    log.info("🚀 启动分析，使用策略: {}", strategy.getName());
+                    log.info("🚀 启动分析，使用策略: {}, 语言: {}", strategy.getName(), lang);
 
                     // 4. 执行分析 (带自动降级)
                     // 如果 Gemini 429/404，onErrorResume 会捕获并切换到 MockStrategy
-                    return strategy.analyze(ticker, context)
+                    return strategy.analyze(ticker, context, lang)
                             .onErrorResume(e -> {
                                 log.error("❌ 策略 [{}] 执行失败: {}. 自动切换到 Mock 兜底。", strategy.getName(), e.getMessage());
-                                return strategies.get("mock").analyze(ticker, context);
+                                return strategies.get("mock").analyze(ticker, context, lang);
                             });
                 });
     }

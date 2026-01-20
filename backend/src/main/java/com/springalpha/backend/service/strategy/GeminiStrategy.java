@@ -45,13 +45,18 @@ public class GeminiStrategy implements AiAnalysisStrategy {
     }
 
     @Override
-    public Flux<String> analyze(String ticker, String textContent) {
+    public Flux<String> analyze(String ticker, String textContent, String lang) {
         log.info("🤖 使用策略: Gemini Strategy");
         
+        // 简单处理：如果是中文，拼个中文提示
+        String prompt = "zh".equalsIgnoreCase(lang) 
+            ? SYSTEM_PROMPT + "\n\n请分析股票代码 " + ticker + " 的财报内容：\n" + textContent
+            : SYSTEM_PROMPT + "\n\nPlease analyze ticker " + ticker + ":\n" + textContent;
+
         Map<String, Object> requestBody = Map.of(
             "contents", List.of(
                 Map.of("parts", List.of(
-                    Map.of("text", SYSTEM_PROMPT + "\n\n请分析股票代码 " + ticker + " 的财报内容：\n" + textContent)
+                    Map.of("text", prompt)
                 ))
             )
         );

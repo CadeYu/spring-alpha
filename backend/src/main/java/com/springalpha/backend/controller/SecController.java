@@ -3,11 +3,7 @@ package com.springalpha.backend.controller;
 import com.springalpha.backend.service.FinancialAnalysisService;
 import com.springalpha.backend.service.SecService;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -32,11 +28,11 @@ public class SecController {
 
     // 🚀 AI 分析接口 (SSE 流式输出)
     // 浏览器访问会看到文字一个个蹦出来
+    // 支持 ?lang=zh 参数
     @GetMapping(value = "/analyze/{ticker}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> analyze(@PathVariable String ticker) {
-        return analysisService.analyzeStock(ticker);
+    public Flux<String> analyze(
+            @PathVariable String ticker,
+            @RequestParam(defaultValue = "en") String lang) {
+        return analysisService.analyzeStock(ticker, lang);
     }
-
-
-
 }
