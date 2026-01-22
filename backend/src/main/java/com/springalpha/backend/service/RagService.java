@@ -19,14 +19,14 @@ public class RagService {
 
     private static final Logger log = LoggerFactory.getLogger(RagService.class);
     
-    // Chunk 大小 (字符数)
-    private static final int CHUNK_SIZE = 2000;
-    // Chunk 重叠 (防止句子被截断)
-    private static final int CHUNK_OVERLAP = 200;
+    // Chunk 大小 (字符数) - 增大以减少 chunk 数量
+    private static final int CHUNK_SIZE = 4000;
+    // Chunk 步进 (无重叠，简化逻辑)
+    private static final int CHUNK_STEP = 3800;
     // 返回的 Top K 个最相关片段
-    private static final int TOP_K = 5;
+    private static final int TOP_K = 4;
     // 最终上下文最大长度 (防止 Token 超限)
-    private static final int MAX_CONTEXT_LENGTH = 15000;
+    private static final int MAX_CONTEXT_LENGTH = 12000;
 
     /**
      * 从长文本中检索与 query 最相关的内容片段
@@ -38,25 +38,34 @@ public class RagService {
     public String retrieveRelevantContext(String fullText, String query) {
         log.info("📚 RAG 开始处理，原文长度: {} 字符", fullText.length());
         
-        // 1. 分割文本为 chunks
-        List<String> chunks = splitIntoChunks(fullText);
-        log.info("📦 分割为 {} 个 chunks (size={}, overlap={})", chunks.size(), CHUNK_SIZE, CHUNK_OVERLAP);
+        // 安全检查：如果文本太短，直接返回
+        if (fullText.length() <= MAX_CONTEXT_LENGTH) {
+            log.info("📦 文本长度小于上下文限制，直接返回全文");
+            return fullText;
+        }
         
-        // 2. 简单的关键词匹配评分
-        List<String> queryTerms = extractQueryTerms(query);
+        // 1. 分割文本为 chunks (内存优化版)
+        List<ChunkInfo> chunkInfos = splitIntoChunksOptimized(fullText);
+        log.info("📦 分割为 {} 个 chunks", chunkInfos.size());
+        
+        // 2. 提取查询关键词
+        Set<String> queryTerms = extractQueryTerms(query);
         log.info("🔑 检索关键词: {}", queryTerms);
         
-        // 3. 计算每个 chunk 的相关性得分
+        // 3. 计算每个 chunk 的相关性得分 (不存储完整文本，只存储位置)
         List<ScoredChunk> scoredChunks = new ArrayList<>();
-        for (int i = 0; i < chunks.size(); i++) {
-            String chunk = chunks.get(i);
-            double score = calculateRelevanceScore(chunk, queryTerms);
-            scoredChunks.add(new ScoredChunk(i, chunk, score));
+        for (ChunkInfo info : chunkInfos) {
+            // 提取 chunk 文本用于评分
+            String chunkText = fullText.substring(info.start, info.end);
+            double score = calculateRelevanceScore(chunkText, queryTerms);
+            scoredChunks.add(new ScoredChunk(info.index, info.start, info.end, score));
         }
         
         // 4. 按得分排序，取 Top K
         scoredChunks.sort((a, b) -> Double.compare(b.score, a.score));
-        List<ScoredChunk> topChunks = scoredChunks.subList(0, Math.min(TOP_K, scoredChunks.size()));
+        List<ScoredChunk> topChunks = new ArrayList<>(
+            scoredChunks.subList(0, Math.min(TOP_K, scoredChunks.size()))
+        );
         
         // 5. 按原始顺序排列 (保持文档结构)
         topChunks.sort(Comparator.comparingInt(c -> c.index));
@@ -64,10 +73,11 @@ public class RagService {
         // 6. 拼接结果
         StringBuilder context = new StringBuilder();
         for (ScoredChunk sc : topChunks) {
-            if (context.length() + sc.text.length() > MAX_CONTEXT_LENGTH) {
+            String chunkText = fullText.substring(sc.start, sc.end);
+            if (context.length() + chunkText.length() > MAX_CONTEXT_LENGTH) {
                 break;
             }
-            context.append(sc.text).append("\n\n---\n\n");
+            context.append(chunkText).append("\n\n---\n\n");
         }
         
         String result = context.toString().trim();
@@ -77,30 +87,18 @@ public class RagService {
     }
 
     /**
-     * 将长文本分割成重叠的 chunks
+     * 内存优化版分割 - 只存储位置信息，不存储完整文本
      */
-    private List<String> splitIntoChunks(String text) {
-        List<String> chunks = new ArrayList<>();
+    private List<ChunkInfo> splitIntoChunksOptimized(String text) {
+        List<ChunkInfo> chunks = new ArrayList<>();
+        int textLen = text.length();
+        int index = 0;
         int start = 0;
         
-        while (start < text.length()) {
-            int end = Math.min(start + CHUNK_SIZE, text.length());
-            
-            // 尝试在句号或换行处断开，避免截断句子
-            if (end < text.length()) {
-                int lastPeriod = text.lastIndexOf(". ", end);
-                int lastNewline = text.lastIndexOf("\n", end);
-                int breakPoint = Math.max(lastPeriod, lastNewline);
-                
-                if (breakPoint > start + CHUNK_SIZE / 2) {
-                    end = breakPoint + 1;
-                }
-            }
-            
-            chunks.add(text.substring(start, end).trim());
-            start = end - CHUNK_OVERLAP;
-            
-            if (start < 0) start = 0;
+        while (start < textLen) {
+            int end = Math.min(start + CHUNK_SIZE, textLen);
+            chunks.add(new ChunkInfo(index++, start, end));
+            start += CHUNK_STEP;
         }
         
         return chunks;
@@ -109,15 +107,13 @@ public class RagService {
     /**
      * 提取查询中的关键词
      */
-    private List<String> extractQueryTerms(String query) {
-        // 简单实现：按逗号和空格分割，转小写
+    private Set<String> extractQueryTerms(String query) {
         String[] terms = query.toLowerCase()
                 .replaceAll("[^a-zA-Z0-9,\\s]", "")
                 .split("[,\\s]+");
         
-        // 过滤掉常见停用词
         Set<String> stopWords = Set.of("the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with");
-        List<String> result = new ArrayList<>();
+        Set<String> result = new HashSet<>();
         for (String term : terms) {
             if (term.length() > 2 && !stopWords.contains(term)) {
                 result.add(term);
@@ -127,23 +123,20 @@ public class RagService {
     }
 
     /**
-     * 计算 chunk 与查询的相关性得分 (简单的 TF 匹配)
+     * 计算 chunk 与查询的相关性得分 (简单的关键词匹配)
      */
-    private double calculateRelevanceScore(String chunk, List<String> queryTerms) {
+    private double calculateRelevanceScore(String chunk, Set<String> queryTerms) {
         String lowerChunk = chunk.toLowerCase();
         double score = 0.0;
         
         for (String term : queryTerms) {
-            // 计算词频
-            int count = countOccurrences(lowerChunk, term);
-            if (count > 0) {
-                // 使用 log 避免某个词出现太多次主导评分
-                score += Math.log(1 + count);
+            if (lowerChunk.contains(term)) {
+                score += 1.0;
             }
         }
         
         // 对包含关键财务术语的 chunk 加分
-        String[] bonusTerms = {"revenue", "income", "profit", "loss", "risk", "guidance", "outlook", "growth"};
+        String[] bonusTerms = {"revenue", "income", "profit", "loss", "risk", "guidance", "outlook", "growth", "margin", "cash flow"};
         for (String bonus : bonusTerms) {
             if (lowerChunk.contains(bonus)) {
                 score += 0.5;
@@ -154,29 +147,33 @@ public class RagService {
     }
 
     /**
-     * 统计子串出现次数
+     * Chunk 位置信息 (内存优化)
      */
-    private int countOccurrences(String text, String sub) {
-        int count = 0;
-        int idx = 0;
-        while ((idx = text.indexOf(sub, idx)) != -1) {
-            count++;
-            idx += sub.length();
+    private static class ChunkInfo {
+        int index;
+        int start;
+        int end;
+
+        ChunkInfo(int index, int start, int end) {
+            this.index = index;
+            this.start = start;
+            this.end = end;
         }
-        return count;
     }
 
     /**
-     * 带评分的 Chunk 内部类
+     * 带评分的 Chunk (存储位置而非文本)
      */
     private static class ScoredChunk {
         int index;
-        String text;
+        int start;
+        int end;
         double score;
 
-        ScoredChunk(int index, String text, double score) {
+        ScoredChunk(int index, int start, int end, double score) {
             this.index = index;
-            this.text = text;
+            this.start = start;
+            this.end = end;
             this.score = score;
         }
     }
