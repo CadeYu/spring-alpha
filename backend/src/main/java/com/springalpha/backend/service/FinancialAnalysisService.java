@@ -17,15 +17,16 @@ public class FinancialAnalysisService {
 
     private static final Logger log = LoggerFactory.getLogger(FinancialAnalysisService.class);
     private final SecService secService;
+    private final RagService ragService;
     private final Map<String, AiAnalysisStrategy> strategies;
 
     // 默认使用 gemini，如果想用 mock 可以在 application.yml 配置 app.ai-provider=mock
     @Value("${app.ai-provider:gemini}")
     private String activeProvider;
 
-    public FinancialAnalysisService(SecService secService, List<AiAnalysisStrategy> strategyList) {
+    public FinancialAnalysisService(SecService secService, RagService ragService, List<AiAnalysisStrategy> strategyList) {
         this.secService = secService;
-        // 自动将 List 注入转换为 Map，key 是 strategy.getName()
+        this.ragService = ragService;
         this.strategies = strategyList.stream()
                 .collect(Collectors.toMap(AiAnalysisStrategy::getName, Function.identity()));
         
@@ -35,8 +36,12 @@ public class FinancialAnalysisService {
     public Flux<String> analyzeStock(String ticker, String lang) {
         return secService.getLatest10KContent(ticker)
                 .flatMapMany(content -> {
-                    // 1. 文本截断
-                    String context = content.length() > 5000 ? content.substring(0, 5000) : content;
+                    log.info("📄 获取到财报全文，长度: {}。开始 RAG 检索...", content.length());
+                    
+                    // 1. 使用 RAG 检索最相关的片段 (替代之前的 substring 截断)
+                    // 检索词涵盖：财务数据、风险、未来展望
+                    String query = "Key Financial Metrics, Revenue, Net Income, Risk Factors, Future Outlook, Guidance";
+                    String context = ragService.retrieveRelevantContext(content, query);
                     
                     // 2. 选择策略 (默认 Gemini)
                     AiAnalysisStrategy tempStrategy = strategies.getOrDefault(activeProvider, strategies.get("mock"));
