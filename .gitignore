@@ -40,3 +40,7 @@ Thumbs.db
 .env.development.local
 .env.test.local
 .env.production.local
+start_backend.sh
+backend/.env
+backend/test_run.sh
+**/application-local.yml
