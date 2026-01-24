@@ -17,8 +17,13 @@ spring:
         gemini:
           api-key: ${GEMINI_API_KEY:placeholder_key}
 
+
+
+
+
 app:
-  # 切换默认策略为 OpenAI (这里实际指向 Groq)
+  # 切换默认策略：openai (Groq) | gemini | spring-ai
+  # spring-ai: 使用 Spring AI 框架 + Function Calling
   ai-provider: openai
 
 server:

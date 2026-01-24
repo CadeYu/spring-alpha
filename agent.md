@@ -140,6 +140,9 @@ cp start_backend.example.sh start_backend.sh
 chmod +x start_backend.sh
 ./start_backend.sh
 
+# 使用命令行
+使用命令行之前必须使用 set +x命令
+
 # 方法 2: 直接设置环境变量
 export GROQ_API_KEY=your_key_here
 cd backend && ./mvnw spring-boot:run

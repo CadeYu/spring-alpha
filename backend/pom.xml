@@ -16,7 +16,7 @@
 
 	<properties>
 		<java.version>21</java.version>
-		<spring-ai.version>0.8.1</spring-ai.version>
+		<spring-ai.version>1.0.0-M4</spring-ai.version>
 	</properties>
 
 	<dependencies>
@@ -26,8 +26,12 @@
 			<artifactId>spring-boot-starter-webflux</artifactId>
 		</dependency>
 
-		<!-- 2. Spring AI BOM 依然保留，但只用于版本管理 -->
-		
+		<!-- 2. Spring AI OpenAI (支持 OpenAI, Groq, DeepSeek 等兼容接口) -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-openai-spring-boot-starter</artifactId>
+		</dependency>
+
 		<!-- 3. Jsoup: 用于爬取和清洗 SEC 财报 HTML -->
 		<dependency>
 			<groupId>org.jsoup</groupId>

@@ -42,12 +42,34 @@
 | 模块 | 技术选型 | 理由 |
 | :--- | :--- | :--- |
 | **Backend** | **Java 21**, Spring Boot 3.3 | 企业级标准，虚拟线程支持 |
-| **AI Framework** | **Spring AI** | Spring 官方 AI 接入层，标准化 Prompt 模板 |
+| **AI Framework** | **Spring AI** + 手动 WebClient | 双重实现：展示框架能力 + 底层原理 |
 | **Reactive** | Spring WebFlux (Reactor) | 高吞吐量流式处理 |
 | **Crawler** | Jsoup | 高效 HTML 解析与清洗 |
 | **Frontend** | **Next.js 14**, TypeScript | SSR 与 Server Actions 最佳实践 |
 | **UI Library** | **Shadcn/ui**, Tailwind CSS | 极简、现代、专业的金融终端风格 |
-| **Model** | **Google Gemini 1.5 Flash** | 1M Context Window，长文本分析性价比之王 |
+| **Model** | **Groq (LLaMA 3.3 70B)** + Gemini | 长文本分析性价比之王 |
+
+## 🏗️ 架构亮点
+
+本项目实现了**两套 AI 集成方案**，展示技术深度与框架能力的结合：
+
+| 实现方案 | 技术栈 | 适用场景 | 特点 |
+| :--- | :--- | :--- | :--- |
+| **手动 WebClient** | WebFlux + 手写 SSE 解析 | 生产环境主力 | 完全控制、性能最优、成本可控 |
+| **Spring AI 框架** | Spring AI ChatClient | 高级功能演示 | Function Calling、统一抽象、快速开发 |
+
+### Spring AI Function Calling 示例
+
+```java
+// AI 可以自动调用工具函数获取实时数据
+@Description("Get current stock price")
+public Function<Request, Response> getStockPrice() {
+    return request -> {
+        // 调用真实 API 获取股价
+        return new Response(ticker, price);
+    };
+}
+```
 
 ## 🗺️ Roadmap (开发路线图)
 
