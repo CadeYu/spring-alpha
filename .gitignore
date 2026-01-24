@@ -44,3 +44,18 @@ start_backend.sh
 backend/.env
 backend/test_run.sh
 **/application-local.yml
+
+# Local scripts (git-ignored, contains secrets)
+start_backend.sh
+
+# Example scripts
+start_backend.example.sh
+
+# Utility scripts
+cleanup.sh
+diagnose.sh
+start_frontend.sh
+
+# Quick references (optional, local only)
+QUICKSTART.md
+

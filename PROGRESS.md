@@ -12,9 +12,10 @@
 - [ ] **API 暴露**: `SecController` - 暴露 `/api/sec/10k/{ticker}` 端点供前端调用。
 
 ## Phase 3: AI 分析集成 (AI Integration)
-- [ ] **Prompt 模板**: 定义分析财报的 System Prompt。
-- [ ] **Spring AI 接入**: 使用 `VertexAiGeminiChatClient` 调用 Gemini API。
-- [ ] **流式输出**: 实现 `Flux<String>` 接口，支持 Server-Sent Events (SSE)。
+- [x] **策略模式**: 实现 `AiAnalysisStrategy` 接口，支持多 AI 提供商。
+- [x] **手动实现**: 使用 WebClient 手动调用 Groq/Gemini API (展示底层原理)。
+- [x] **Spring AI 集成**: 基于 Spring AI ChatClient，支持 Function Calling。
+- [x] **流式输出**: 实现 `Flux<String>` 接口，支持 Server-Sent Events (SSE)。
 
 ## Phase 4: 前端开发 (Next.js)
 - [ ] **项目初始化**: Next.js + Shadcn UI。

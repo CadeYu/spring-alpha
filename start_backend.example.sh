@@ -9,7 +9,20 @@ export GROQ_API_KEY=your_groq_api_key_here
 # Increase JVM heap memory (prevents OOM when processing large SEC filings)
 export MAVEN_OPTS="-Xms256m -Xmx1024m"
 
-echo "Starting Spring Alpha Backend..."
-echo "JVM Heap: 256MB - 1024MB"
+# Check and kill process occupying port 8081
+echo "🔍 Checking port 8081..."
+PID=$(lsof -ti:8081)
+if [ ! -z "$PID" ]; then
+  echo "⚠️  Port 8081 is occupied by PID: $PID"
+  echo "🔪 Killing process..."
+  kill -9 $PID
+  sleep 1
+  echo "✅ Port 8081 is now free"
+else
+  echo "✅ Port 8081 is available"
+fi
+
+echo "🚀 Starting Spring Alpha Backend..."
+echo "📦 JVM Heap: 256MB - 1024MB"
 cd backend
 mvn spring-boot:run
