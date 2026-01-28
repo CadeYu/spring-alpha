@@ -1,19 +1,33 @@
 package com.springalpha.backend.service.strategy;
 
+import com.springalpha.backend.financial.contract.AnalysisContract;
+import com.springalpha.backend.financial.contract.AnalysisReport;
 import reactor.core.publisher.Flux;
 
+/**
+ * AI Analysis Strategy Interface - Defines the contract for all AI
+ * implementations.
+ * 
+ * Key Design Principles:
+ * 1. LLMs only INTERPRET facts, never CREATE new numerical data
+ * 2. All financial metrics must come from AnalysisContract.financialFacts
+ * 3. Output must conform to the AnalysisReport structure
+ * 4. Different models may have different writing styles, but conclusions should
+ * be consistent
+ */
 public interface AiAnalysisStrategy {
-    /**
-     * 执行财报分析
-     * @param ticker 股票代码
-     * @param textContent 财报纯文本
-     * @param lang 语言代码 (en/zh)
-     * @return 流式分析结果
-     */
-    Flux<String> analyze(String ticker, String textContent, String lang);
 
     /**
-     * 策略名称 (用于配置选择)
+     * Get strategy name (e.g., "openai", "gemini", "mock")
      */
     String getName();
+
+    /**
+     * Analyze financial data and generate structured report.
+     * 
+     * @param contract AnalysisContract containing all input data and tasks
+     * @return Flux<AnalysisReport> streaming the analysis report
+     *         Can emit partial reports for progressive rendering
+     */
+    Flux<AnalysisReport> analyze(AnalysisContract contract);
 }
