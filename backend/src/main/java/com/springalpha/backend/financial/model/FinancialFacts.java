@@ -41,6 +41,7 @@ public class FinancialFacts {
     private BigDecimal netIncome;
     private BigDecimal netMargin;
     private BigDecimal netMarginChange;
+    private BigDecimal earningsPerShare; // Added EPS
 
     // Cash Flow Metrics
     private BigDecimal operatingCashFlow;

@@ -1,120 +1,112 @@
 package com.springalpha.backend.service.strategy;
 
-import com.springalpha.backend.financial.contract.AnalysisContract;
-import com.springalpha.backend.financial.contract.AnalysisReport;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.springalpha.backend.service.prompt.PromptTemplateService;
+import com.springalpha.backend.service.validation.AnalysisReportValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * Enhanced Mock Strategy - Returns structured AnalysisReport for testing.
- * This demonstrates the expected output format for all AI strategies.
+ * Now extends BaseAiStrategy to use the unified infrastructure.
  */
 @Service
-public class EnhancedMockStrategy implements AiAnalysisStrategy {
+public class EnhancedMockStrategy extends BaseAiStrategy {
 
-    private static final Logger log = LoggerFactory.getLogger(EnhancedMockStrategy.class);
+        private static final Logger log = LoggerFactory.getLogger(EnhancedMockStrategy.class);
 
-    @Override
-    public String getName() {
-        return "enhanced-mock";
-    }
-
-    @Override
-    public Flux<AnalysisReport> analyze(AnalysisContract contract) {
-        log.info("🎭 Enhanced Mock Strategy analyzing: {} ({})",
-                contract.getTicker(), contract.getPeriod());
-
-        // Build structured report based on financial facts
-        AnalysisReport report = buildMockReport(contract);
-
-        // Return as single emission (real LLMs would stream partial reports)
-        return Flux.just(report);
-    }
-
-    private AnalysisReport buildMockReport(AnalysisContract contract) {
-        String ticker = contract.getTicker();
-        String lang = contract.getLanguage();
-
-        // Build metric insights
-        List<AnalysisReport.MetricInsight> metrics = new ArrayList<>();
-
-        if (contract.getFinancialFacts().getRevenueYoY() != null) {
-            double yoyPercent = contract.getFinancialFacts().getRevenueYoY().doubleValue() * 100;
-            metrics.add(AnalysisReport.MetricInsight.builder()
-                    .metricName("Revenue YoY Growth")
-                    .value(String.format("%.2f%%", yoyPercent))
-                    .interpretation(yoyPercent > 5
-                            ? "Strong revenue growth indicates healthy business expansion"
-                            : "Revenue growth is below industry average")
-                    .sentiment(yoyPercent > 5 ? "positive" : "neutral")
-                    .build());
+        public EnhancedMockStrategy(
+                        PromptTemplateService promptService,
+                        AnalysisReportValidator validator,
+                        ObjectMapper objectMapper) {
+                super(promptService, validator, objectMapper);
         }
 
-        if (contract.getFinancialFacts().getGrossMargin() != null) {
-            double margin = contract.getFinancialFacts().getGrossMargin().doubleValue() * 100;
-            metrics.add(AnalysisReport.MetricInsight.builder()
-                    .metricName("Gross Margin")
-                    .value(String.format("%.2f%%", margin))
-                    .interpretation(margin > 40
-                            ? "High gross margin shows strong pricing power"
-                            : "Gross margin is under pressure")
-                    .sentiment(margin > 40 ? "positive" : "negative")
-                    .build());
+        @Override
+        public String getName() {
+                return "enhanced-mock";
         }
 
-        // Build business drivers
-        List<AnalysisReport.BusinessDriver> drivers = new ArrayList<>();
-        drivers.add(AnalysisReport.BusinessDriver.builder()
-                .title("Product Innovation")
-                .description("New product launches driving revenue growth")
-                .impact("high")
-                .build());
+        @Override
+        protected Flux<String> callLlmApi(String systemPrompt, String userPrompt, String lang) {
+                log.info("🎭 Enhanced Mock Strategy - simulating LLM response");
 
-        // Build risk factors
-        List<AnalysisReport.RiskFactor> risks = new ArrayList<>();
-        risks.add(AnalysisReport.RiskFactor.builder()
-                .category("Market Risk")
-                .description("Increasing competition in core markets")
-                .severity("medium")
-                .build());
+                // In a real strategy, we would call the actual LLM API here
+                // For mock, we'll generate a fake JSON response based on the prompt
 
-        // Build citations
-        List<AnalysisReport.Citation> citations = new ArrayList<>();
-        if (contract.getTextEvidence() != null && contract.getTextEvidence().containsKey("MD&A")) {
-            citations.add(AnalysisReport.Citation.builder()
-                    .section("MD&A")
-                    .excerpt("Revenue increased due to strong product demand...")
-                    .build());
+                // Simulate streaming by emitting the JSON string
+                String mockJsonResponse = generateMockJsonResponse(lang);
+
+                return Flux.just(mockJsonResponse);
         }
 
-        // Build metadata
-        AnalysisReport.AnalysisMetadata metadata = AnalysisReport.AnalysisMetadata.builder()
-                .modelName("enhanced-mock-v1")
-                .generatedAt(Instant.now().toString())
-                .language(lang != null ? lang : "en")
-                .build();
+        /**
+         * Generate a mock JSON response that matches AnalysisReport schema
+         */
+        private String generateMockJsonResponse(String lang) {
+                boolean isChinese = "zh".equalsIgnoreCase(lang);
 
-        return AnalysisReport.builder()
-                .executiveSummary(String.format(
-                        "%s reported solid performance in %s with revenue growth of %.2f%% YoY",
-                        ticker,
-                        contract.getPeriod(),
-                        contract.getFinancialFacts().getRevenueYoY() != null
-                                ? contract.getFinancialFacts().getRevenueYoY().doubleValue() * 100
-                                : 0.0))
-                .keyMetrics(metrics)
-                .businessDrivers(drivers)
-                .riskFactors(risks)
-                .bullCase("Strong fundamentals and market position support continued growth")
-                .bearCase("Valuation appears stretched; macro headwinds may impact near-term performance")
-                .citations(citations)
-                .metadata(metadata)
-                .build();
-    }
+                return String.format("""
+                                {
+                                  "executiveSummary": "%s",
+                                  "keyMetrics": [
+                                    {
+                                      "metricName": "%s",
+                                      "value": "6.07%%",
+                                      "interpretation": "%s",
+                                      "sentiment": "positive"
+                                    },
+                                    {
+                                      "metricName": "%s",
+                                      "value": "44.13%%",
+                                      "interpretation": "%s",
+                                      "sentiment": "positive"
+                                    }
+                                  ],
+                                  "businessDrivers": [
+                                    {
+                                      "title": "%s",
+                                      "description": "%s",
+                                      "impact": "high"
+                                    }
+                                  ],
+                                  "riskFactors": [
+                                    {
+                                      "category": "%s",
+                                      "description": "%s",
+                                      "severity": "medium"
+                                    }
+                                  ],
+                                  "bullCase": "%s",
+                                  "bearCase": "%s",
+                                  "citations": [
+                                    {
+                                      "section": "MD&A",
+                                      "excerpt": "%s"
+                                    }
+                                  ]
+                                }
+                                """,
+                                isChinese ? "公司本期业绩稳健，营收同比增长6.07%，毛利率保持在44.13%的高位"
+                                                : "Company delivered solid performance with 6.07%% YoY revenue growth and maintained strong gross margin of 44.13%%",
+                                isChinese ? "营收同比增长" : "Revenue YoY Growth",
+                                isChinese ? "稳健的营收增长显示业务扩张势头良好"
+                                                : "Solid revenue growth indicates healthy business expansion",
+                                isChinese ? "毛利率" : "Gross Margin",
+                                isChinese ? "高毛利率展现了强大的定价能力和运营效率"
+                                                : "High gross margin demonstrates strong pricing power and operational efficiency",
+                                isChinese ? "产品创新" : "Product Innovation",
+                                isChinese ? "新产品发布推动了核心业务增长" : "New product launches driving core business growth",
+                                isChinese ? "市场风险" : "Market Risk",
+                                isChinese ? "核心市场竞争加剧可能影响市场份额"
+                                                : "Increasing competition in core markets may impact market share",
+                                isChinese ? "强劲的基本面和市场地位支撑持续增长"
+                                                : "Strong fundamentals and market position support continued growth",
+                                isChinese ? "估值偏高；宏观逆风可能影响短期表现"
+                                                : "Valuation appears stretched; macro headwinds may impact near-term performance",
+                                isChinese ? "营收增长主要来自核心产品线的稳健表现"
+                                                : "Revenue growth primarily driven by strong performance in core product lines");
+        }
 }

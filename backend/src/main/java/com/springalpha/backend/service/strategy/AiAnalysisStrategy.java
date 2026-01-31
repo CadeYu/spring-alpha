@@ -26,8 +26,9 @@ public interface AiAnalysisStrategy {
      * Analyze financial data and generate structured report.
      * 
      * @param contract AnalysisContract containing all input data and tasks
+     * @param lang     Language for analysis ("en" or "zh")
      * @return Flux<AnalysisReport> streaming the analysis report
      *         Can emit partial reports for progressive rendering
      */
-    Flux<AnalysisReport> analyze(AnalysisContract contract);
+    Flux<AnalysisReport> analyze(AnalysisContract contract, String lang);
 }

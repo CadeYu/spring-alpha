@@ -1,0 +1,58 @@
+Analyze the earnings report for {{ticker}} ({{period}}).
+
+FINANCIAL FACTS:
+{{financialFacts}}
+
+TEXTUAL EVIDENCE:
+{{textEvidence}}
+
+ANALYSIS TASKS:
+{{analysisTasks}}
+
+OUTPUT REQUIREMENTS:
+You MUST include the following metrics in the "keyMetrics" array: Revenue, Gross Margin, Net Margin, and EPS.
+Return a JSON object with the following structure:
+
+{
+  "executiveSummary": "2-3 sentence overview of the most important findings",
+  "keyMetrics": [
+    {
+      "name": "Revenue",
+      "value": "actual value from financialFacts",
+      "change": "YoY/QoQ change from financialFacts",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "business interpretation of this metric"
+    },
+    {
+      "name": "EPS",
+      "value": "actual EPS value",
+      "change": "change if available",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "impact on shareholder value"
+    }
+  ],
+  "businessDrivers": [
+    {
+      "title": "driver title",
+      "impact": "positive/negative/neutral",
+      "description": "explanation with evidence citations"
+    }
+  ],
+  "riskFactors": [
+    {
+      "title": "risk title",
+      "severity": "high/medium/low",
+      "description": "explanation with evidence citations"
+    }
+  ],
+  "bullCase": "optimistic interpretation based on the data",
+  "bearCase": "pessimistic interpretation based on the data",
+  "citations": [
+    {
+      "text": "quoted evidence",
+      "source": "source identifier (e.g., MD&A, Risk Factors)"
+    }
+  ]
+}
+
+IMPORTANT: Use ONLY the numbers from the Financial Facts section. Do not create any new numerical values.

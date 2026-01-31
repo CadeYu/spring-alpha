@@ -79,6 +79,7 @@ public class MockFinancialDataService implements FinancialDataService {
 
         private FinancialFacts createAppleQ4_2024() {
                 // Q4 2024 (FY2024) - Current period
+                // AAPL Q4 2024
                 IncomeStatement currentIncome = IncomeStatement.builder()
                                 .period("Q4 2024")
                                 .revenue(new BigDecimal("94930000000")) // $94.93B
@@ -88,7 +89,11 @@ public class MockFinancialDataService implements FinancialDataService {
                                 .sellingGeneralAndAdministrative(new BigDecimal("6500000000"))
                                 .operatingIncome(new BigDecimal("28030000000"))
                                 .netIncome(new BigDecimal("22956000000")) // $22.96B
+                                .earningsPerShareDiluted(new BigDecimal("1.46")) // Added EPS
                                 .build();
+
+                // ... (previous year income skipped for brevity in replace, ensure context
+                // matches)
 
                 // Q4 2023 - Previous year for YoY comparison
                 IncomeStatement previousIncome = IncomeStatement.builder()
@@ -144,6 +149,7 @@ public class MockFinancialDataService implements FinancialDataService {
                                 .grossProfit(new BigDecimal("42710000000"))
                                 .operatingIncome(new BigDecimal("27030000000"))
                                 .netIncome(new BigDecimal("21870000000"))
+                                .earningsPerShareDiluted(new BigDecimal("2.93"))
                                 .build();
 
                 IncomeStatement previousIncome = IncomeStatement.builder()
@@ -191,6 +197,7 @@ public class MockFinancialDataService implements FinancialDataService {
                                 .grossProfit(new BigDecimal("4842000000"))
                                 .operatingIncome(new BigDecimal("1762000000"))
                                 .netIncome(new BigDecimal("2167000000"))
+                                .earningsPerShareDiluted(new BigDecimal("0.72"))
                                 .build();
 
                 IncomeStatement previousIncome = IncomeStatement.builder()

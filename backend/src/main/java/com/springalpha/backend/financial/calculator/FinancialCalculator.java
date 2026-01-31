@@ -79,7 +79,8 @@ public class FinancialCalculator {
             }
 
             builder.netIncome(currentIncome.getNetIncome())
-                    .netMargin(currentIncome.getNetMargin());
+                    .netMargin(currentIncome.getNetMargin())
+                    .earningsPerShare(currentIncome.getEarningsPerShareDiluted());
 
             if (previousIncome != null) {
                 BigDecimal prevNetMargin = previousIncome.getNetMargin();

@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonAlias;
 
 import java.util.List;
 
@@ -15,6 +17,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AnalysisReport {
 
     /**
@@ -64,7 +67,9 @@ public class AnalysisReport {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class MetricInsight {
+        @JsonAlias("name")
         private String metricName; // e.g., "Revenue YoY Growth"
         private String value; // e.g., "8.2%"
         private String interpretation; // LLM's explanation
@@ -78,6 +83,7 @@ public class AnalysisReport {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class BusinessDriver {
         private String title;
         private String description;
@@ -91,6 +97,7 @@ public class AnalysisReport {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class RiskFactor {
         private String category; // e.g., "Market Risk", "Operational Risk"
         private String description;
@@ -104,6 +111,7 @@ public class AnalysisReport {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Citation {
         private String section; // e.g., "MD&A", "Risk Factors"
         private String excerpt; // Short text snippet
@@ -116,6 +124,7 @@ public class AnalysisReport {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class AnalysisMetadata {
         private String modelName; // e.g., "gpt-4", "gemini-1.5-flash"
         private String generatedAt; // ISO timestamp

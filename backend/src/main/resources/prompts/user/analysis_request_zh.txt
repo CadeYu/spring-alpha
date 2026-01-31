@@ -1,0 +1,58 @@
+请分析 {{ticker}} 的财报（{{period}}）。
+
+财务数据：
+{{financialFacts}}
+
+文本证据：
+{{textEvidence}}
+
+分析任务：
+{{analysisTasks}}
+
+输出要求：
+你必须在 "keyMetrics" 数组中包含以下指标：营收 (Revenue)、毛利率 (Gross Margin)、净利率 (Net Margin) 和每股收益 (EPS)。
+返回符合以下格式的 JSON 对象：
+
+{
+  "executiveSummary": "2-3 句话概括最重要的发现",
+  "keyMetrics": [
+    {
+      "name": "营收",
+      "value": "来自财务数据的实际值",
+      "change": "同比/环比变化（来自财务数据）",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "对该指标的业务解读"
+    },
+    {
+      "name": "EPS",
+      "value": "实际 EPS 数值",
+      "change": "若有变化幅度",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "对股东价值的影响"
+    }
+  ],
+  "businessDrivers": [
+    {
+      "title": "驱动因素标题",
+      "impact": "positive/negative/neutral",
+      "description": "带有证据引用的解释"
+    }
+  ],
+  "riskFactors": [
+    {
+      "title": "风险因素标题",
+      "severity": "high/medium/low",
+      "description": "带有证据引用的解释"
+    }
+  ],
+  "bullCase": "基于数据的乐观解读",
+  "bearCase": "基于数据的悲观解读",
+  "citations": [
+    {
+      "text": "引用的证据文本",
+      "source": "来源标识（如：管理层讨论、风险因素）"
+    }
+  ]
+}
+
+重要提示：只能使用财务数据部分提供的数值，不要创造任何新的数值。

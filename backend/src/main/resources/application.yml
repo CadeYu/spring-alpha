@@ -22,9 +22,8 @@ spring:
 
 
 app:
-  # 切换默认策略：openai (Groq) | gemini | spring-ai
-  # spring-ai: 使用 Spring AI 框架 + Function Calling
-  ai-provider: openai
+  # 切换默认策略：groq (Groq Llama 3.3) | enhanced-mock (测试)
+  ai-provider: groq  # ← 切换到真实 LLM！
 
 server:
   port: 8081

@@ -102,13 +102,13 @@ public class FinancialAnalysisService {
                             log.info("🚀 Executing analysis with strategy: {}", strategy.getName());
 
                             // Step 6: Execute analysis
-                            return strategy.analyze(contract)
+                            return strategy.analyze(contract, lang)
                                     .onErrorResume(e -> {
                                         log.error("❌ Strategy [{}] failed: {}. Falling back to enhanced-mock",
                                                 strategy.getName(), e.getMessage());
                                         AiAnalysisStrategy fallback = strategies.get("enhanced-mock");
                                         return fallback != null
-                                                ? fallback.analyze(contract)
+                                                ? fallback.analyze(contract, lang)
                                                 : Flux.error(e);
                                     });
                         }));
