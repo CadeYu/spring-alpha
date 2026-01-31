@@ -236,4 +236,31 @@ public class MockFinancialDataService implements FinancialDataService {
                                 previousIncome,
                                 previousCashFlow);
         }
+
+        /**
+         * Get historical data (Mock implementation)
+         */
+        @Override
+        public java.util.List<com.springalpha.backend.financial.model.HistoricalDataPoint> getHistoricalData(
+                        String ticker) {
+                if (!"AAPL".equalsIgnoreCase(ticker)) {
+                        return java.util.Collections.emptyList();
+                }
+
+                // Mock 5 quarters of margin data for AAPL
+                java.util.List<com.springalpha.backend.financial.model.HistoricalDataPoint> history = new java.util.ArrayList<>();
+
+                history.add(new com.springalpha.backend.financial.model.HistoricalDataPoint("Q4 2023",
+                                new BigDecimal("0.452"), new BigDecimal("0.301"), new BigDecimal("0.253")));
+                history.add(new com.springalpha.backend.financial.model.HistoricalDataPoint("Q1 2024",
+                                new BigDecimal("0.459"), new BigDecimal("0.307"), new BigDecimal("0.261")));
+                history.add(new com.springalpha.backend.financial.model.HistoricalDataPoint("Q2 2024",
+                                new BigDecimal("0.466"), new BigDecimal("0.312"), new BigDecimal("0.265")));
+                history.add(new com.springalpha.backend.financial.model.HistoricalDataPoint("Q3 2024",
+                                new BigDecimal("0.463"), new BigDecimal("0.298"), new BigDecimal("0.248"))); // Dip
+                history.add(new com.springalpha.backend.financial.model.HistoricalDataPoint("Q4 2024",
+                                new BigDecimal("0.449"), new BigDecimal("0.295"), new BigDecimal("0.242"))); // Current
+
+                return history;
+        }
 }

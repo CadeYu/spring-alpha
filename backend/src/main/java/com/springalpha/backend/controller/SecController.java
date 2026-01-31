@@ -45,4 +45,10 @@ public class SecController {
                     }
                 });
     }
+
+    // Historical Data endpoint for charts
+    @GetMapping("/history/{ticker}")
+    public Flux<com.springalpha.backend.financial.model.HistoricalDataPoint> getHistory(@PathVariable String ticker) {
+        return Flux.fromIterable(secService.getFinancialDataService().getHistoricalData(ticker));
+    }
 }

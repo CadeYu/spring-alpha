@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { MetricInsight } from "@/types/AnalysisReport";
 import { RevenueChart } from "./RevenueChart";
+import { MarginAnalysisChart } from "./MarginAnalysisChart";
 import { formatFinancialValue } from "@/lib/utils";
 
 interface KeyMetricsProps {
@@ -40,8 +41,11 @@ export function KeyMetrics({ metrics, ticker }: KeyMetricsProps) {
                 </div>
             </div>
 
-            {/* Revenue Trend Chart */}
-            <RevenueChart ticker={ticker} />
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 gap-6">
+                <RevenueChart ticker={ticker} />
+                <MarginAnalysisChart ticker={ticker || ""} />
+            </div>
         </div>
     );
 }

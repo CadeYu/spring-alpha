@@ -14,8 +14,17 @@ public class SecService {
 
     private static final String USER_AGENT = "SpringAlpha/1.0 (test@springalpha.com)"; // SEC 要求必须带 User-Agent
     private static final String SEC_BASE_URL = "https://www.sec.gov";
+    private final com.springalpha.backend.financial.service.FinancialDataService financialDataService;
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SecService.class);
+
+    public SecService(com.springalpha.backend.financial.service.FinancialDataService financialDataService) {
+        this.financialDataService = financialDataService;
+    }
+
+    public com.springalpha.backend.financial.service.FinancialDataService getFinancialDataService() {
+        return financialDataService;
+    }
 
     /**
      * 核心业务方法：获取某股票最新的 10-K 纯文本内容
@@ -26,17 +35,17 @@ public class SecService {
             // 1. 找到索引页 URL
             String indexUrl = findLatest10KIndexUrl(ticker);
             log.info("✅ [1/3] 找到索引页: {}", indexUrl);
-            
+
             log.info("🔍 [2/3] 开始解析主文档链接...");
             // 2. 在索引页中找到主文档 URL
             String docUrl = findPrimaryDocumentUrl(indexUrl);
             log.info("✅ [2/3] 找到主文档链接: {}", docUrl);
-            
+
             log.info("📥 [3/3] 开始下载并清洗 HTML (可能需要较长时间)...");
             // 3. 下载并清洗 HTML
             String content = fetchAndCleanHtml(docUrl);
             log.info("✅ [3/3] 清洗完成！文本长度: {} 字符", content.length());
-            
+
             return content;
         });
     }
@@ -44,9 +53,8 @@ public class SecService {
     private String findLatest10KIndexUrl(String ticker) {
         // SEC 官方搜索接口 (这里使用 EDGAR Full Text Search 的 API 或者旧版 browse 接口)
         String searchUrl = String.format(
-            "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=%s&type=10-K&dateb=&owner=exclude&count=10",
-            ticker
-        );
+                "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=%s&type=10-K&dateb=&owner=exclude&count=10",
+                ticker);
 
         try {
             Document doc = Jsoup.connect(searchUrl)
@@ -55,7 +63,7 @@ public class SecService {
                     .get();
 
             Elements rows = doc.select("table.tableFile2 tr");
-            
+
             for (Element row : rows) {
                 String docType = row.select("td").first() != null ? row.select("td").first().text() : "";
                 if ("10-K".equals(docType)) {
@@ -111,7 +119,7 @@ public class SecService {
         if (docUrl.contains("/ix?doc=")) {
             docUrl = docUrl.replace("/ix?doc=", "");
         }
-        
+
         log.info("🌍 最终下载 URL: {}", docUrl);
 
         // 为了防止 10-K 太大导致内存溢出，我们限制 maxBodySize
@@ -119,32 +127,32 @@ public class SecService {
         Document doc = Jsoup.connect(docUrl)
                 .userAgent(USER_AGENT)
                 .timeout(30000) // 下载大文件多给点时间
-                .maxBodySize(0) 
+                .maxBodySize(0)
                 .get();
 
         // --- ETL 清洗逻辑 ---
-        
+
         // 1. 移除无关标签
         doc.select("script, style, img, svg, iframe, noscript").remove();
 
-        // 2. 尝试提取 MD&A (Item 7) 
+        // 2. 尝试提取 MD&A (Item 7)
         // 这是一个难点，因为 SEC 格式不统一。
         // MVP 策略：直接获取全文本，依靠 LLM 的长窗口去提取。
         // 优化策略：至少把 HTML 的表格结构转换成文本，或者移除表格只看文字。
-        
+
         String text = doc.body().text(); // Jsoup 的 text() 会智能去除 HTML 标签并保留空格
-        
+
         // 3. 简单的预处理：去除多余空格
         text = text.replaceAll("\\s+", " ").trim();
 
         // 4. 移除硬编码截断，让 RAG 处理全文
         // 我们保留 MD&A 定位逻辑作为 fallback，或者给 RAG 提供更好的起点，但不再强制截断长度
         // 如果文本实在太长（比如 > 10MB），再考虑物理限制防止 OOM
-        
+
         // 查找 MD&A 主要是为了确保我们没抓错页面，但为了 RAG，我们返回更多上下文
         String keyword = "Management's Discussion and Analysis";
         int startIndex = text.lastIndexOf(keyword);
-        
+
         if (startIndex == -1) {
             startIndex = text.lastIndexOf("Item 7.");
         }
@@ -157,7 +165,7 @@ public class SecService {
         } else {
             log.warn("⚠️ 未找到核心章节关键词，返回全文。");
         }
-        
+
         // 安全截断：防止极大文件导致内存溢出 (比如限制 50万字符 ≈ 1MB)
         if (text.length() > 500000) {
             text = text.substring(0, 500000) + "... [Truncated at 500k chars]";

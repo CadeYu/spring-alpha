@@ -37,7 +37,7 @@ export function RevenueChart({ ticker = 'AAPL' }: RevenueChartProps) {
             <CardHeader className="border-b border-slate-800">
                 <CardTitle className="text-emerald-400">📊 Revenue Trend (Last 4 Quarters)</CardTitle>
             </CardHeader>
-            <CardContent className="p-6 h-[300px]">
+            <CardContent className="h-[400px] p-6">
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />

@@ -40,5 +40,10 @@ public interface FinancialDataService {
      * 
      * @return Array of supported ticker symbols
      */
+    /**
+     * Get historical margin data for trends chart.
+     */
+    java.util.List<com.springalpha.backend.financial.model.HistoricalDataPoint> getHistoricalData(String ticker);
+
     String[] getSupportedTickers();
 }
