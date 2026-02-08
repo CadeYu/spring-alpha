@@ -24,6 +24,12 @@ spring:
 app:
   # 切换默认策略：groq (Groq Llama 3.3) | enhanced-mock (测试)
   ai-provider: groq  # ← 切换到真实 LLM！
+  
+  # Financial Modeling Prep API Configuration (Updated Feb 2026)
+  # API key is loaded from environment variable (set in start_backend.sh)
+  fmp:
+    api-key: ${FMP_API_KEY:}
+    base-url: https://financialmodelingprep.com/stable
 
 server:
   port: 8081

@@ -1,7 +1,7 @@
 package com.springalpha.backend.controller;
 
 import com.springalpha.backend.financial.model.FinancialFacts;
-import com.springalpha.backend.financial.service.MockFinancialDataService;
+import com.springalpha.backend.financial.service.FinancialDataService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,9 +18,9 @@ import java.util.Map;
 @RequestMapping("/api/financial")
 public class FinancialDataController {
 
-    private final MockFinancialDataService financialDataService;
+    private final FinancialDataService financialDataService;
 
-    public FinancialDataController(MockFinancialDataService financialDataService) {
+    public FinancialDataController(FinancialDataService financialDataService) {
         this.financialDataService = financialDataService;
     }
 
