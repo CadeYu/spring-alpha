@@ -2,7 +2,7 @@
 
 > **Build Your Own Bloomberg Terminal with Java & AI.**
 >
-> 一个基于 **Spring AI** 和 **Gemini 1.5 Flash** 的美股财报智能分析 Agent。专为开发者设计的“白盒”金融分析工具，支持 BYOK (Bring Your Own Key) 模式。
+> 一个基于 **Spring AI** 与 **Groq (OpenAI 兼容)** 的美股财报智能分析 Agent。专为开发者设计的“白盒”金融分析工具，支持 BYOK (Bring Your Own Key) 模式。
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-green) ![Next.js](https://img.shields.io/badge/Next.js-14-black) ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 
@@ -10,7 +10,7 @@
 
 **Spring Alpha** 解决了散户投资者面临的核心痛点：**SEC 财报 (10-K/10-Q) 晦涩难懂且篇幅冗长**。
 
-不同于传统的“聊天机器人”，Spring Alpha 是一个**全栈 AI 应用**。它利用 Java 高并发特性实时抓取 SEC 原始数据，通过 ETL 管道清洗噪声，并利用 Gemini 1.5 的长文本能力进行深度推理，最后通过 **Generative UI** 技术在前端动态渲染可视化图表。
+不同于传统的“聊天机器人”，Spring Alpha 是一个**全栈 AI 应用**。它利用 Java 高并发特性抓取 SEC 原始数据，通过 ETL 管道清洗噪声，并利用 LLM 进行深度推理，最后通过 **Generative UI** 技术在前端动态渲染可视化图表。
 
 **核心价值**：让每位开发者都能拥有一个免费、私有、且强大的 AI 金融分析师。
 
@@ -21,17 +21,17 @@
 - 使用 **Spring WebFlux** 实现全链路异步非阻塞 IO，轻松应对高并发财报分析请求。
 
 ### 2. ⚡️ 实时流式响应 (Real-time Streaming)
-- 告别 Loading 转圈。利用 **Server-Sent Events (SSE)** 技术，AI 的分析结果以“打字机”效果实时推送到前端。
-- 首字延迟 (TTFT) 低于 **800ms**。
+- 利用 **Server-Sent Events (SSE)** 技术推送分析结果。
+- 当前前端按 JSON event 渲染，后续可升级为逐段生成式 UI。
 
 ### 3. 📊 生成式 UI (Generative UI)
 - AI 不仅仅会说话，还会画图。
-- 能够识别财报中的财务数据（营收、净利润、毛利率），并自动驱动前端渲染 **Interactive Charts (Recharts)**。
+- 基于结构化 JSON 驱动前端渲染 **Interactive Charts (Recharts)**（部分图表仍为 mock 数据，便于联调）。
 - 自动生成“红绿灯”风险评估卡片，直观展示财报雷点。
 
 ### 4. 🧹 智能 ETL 管道 (Smart ETL Pipeline)
 - 内置针对 SEC EDGAR 系统的专用爬虫。
-- 使用 **Jsoup** 进行语义级 HTML 清洗，自动剔除免责声明等噪音，只提取 MD&A 和 Risk Factors 核心章节，节省 60% Token 消耗。
+- 使用 **Jsoup** 进行语义级 HTML 清洗，自动剔除免责声明等噪音，并可定位核心章节，为 RAG 提供更高质量的证据文本。
 
 ### 5. 🔐 BYOK 模式 (隐私优先)
 - **Bring Your Own Key**：所有 API Key 仅在内存中流转，不落库。
@@ -47,16 +47,16 @@
 | **Crawler** | Jsoup | 高效 HTML 解析与清洗 |
 | **Frontend** | **Next.js 14**, TypeScript | SSR 与 Server Actions 最佳实践 |
 | **UI Library** | **Shadcn/ui**, Tailwind CSS | 极简、现代、专业的金融终端风格 |
-| **Model** | **Groq (LLaMA 3.3 70B)** + Gemini | 长文本分析性价比之王 |
+| **Model** | **Groq (LLaMA 3.3 70B)**（Gemini 规划中） | 长文本分析性价比之王 |
 
 ## 🏗️ 架构亮点
 
-本项目实现了**两套 AI 集成方案**，展示技术深度与框架能力的结合：
+本项目实现了**策略模式 + Spring AI 集成**，展示技术深度与框架能力的结合：
 
 | 实现方案 | 技术栈 | 适用场景 | 特点 |
 | :--- | :--- | :--- | :--- |
-| **手动 WebClient** | WebFlux + 手写 SSE 解析 | 生产环境主力 | 完全控制、性能最优、成本可控 |
-| **Spring AI 框架** | Spring AI ChatClient | 高级功能演示 | Function Calling、统一抽象、快速开发 |
+| **策略模式** | 自定义 Strategy + Spring AI ChatModel | 生产环境主力 | 可切换模型、统一输出 |
+| **Spring AI** | Spring AI ChatModel | 演示与扩展 | 统一抽象、快速开发 |
 
 ### Spring AI Function Calling 示例
 
@@ -73,14 +73,14 @@ public Function<Request, Response> getStockPrice() {
 
 ## 🗺️ Roadmap (开发路线图)
 
-### Phase 1: MVP (Current Focus) ✅
+### Phase 1: MVP ✅
 - [x] 项目初始化 (Spring Boot + Next.js Monorepo)
-- [ ] 接入 Spring AI & Gemini 1.5 Flash
-- [ ] 实现 SEC 10-K HTML 基础抓取与清洗
-- [ ] 实现 `/stream` 接口与前端 SSE 对接
+- [x] 接入 Spring AI（Groq / OpenAI 兼容）
+- [x] 实现 SEC 10-K HTML 基础抓取与清洗
+- [x] 实现 `/api/sec/analyze` SSE 与前端对接
 
 ### Phase 2: Core Analysis 🚧
-- [ ] 实现 **Generative UI**：后端返回 JSON，前端渲染图表
+- [x] **Generative UI**：后端返回 JSON，前端渲染图表
 - [ ] 增加“杜邦分析法” Prompt 模板
 - [ ] 引入 Redis 缓存热门股票数据
 
@@ -94,12 +94,12 @@ public Function<Request, Response> getStockPrice() {
 ### 前置要求
 - Java 21+
 - Node.js 18+
-- Google Gemini API Key
+- Groq API Key（或其它 OpenAI 兼容服务）
 
 ### 后端启动
 ```bash
 cd backend
-# 配置 application.yml 中的 spring.ai.openai.api-key
+# 配置 application.yml 中的 GROQ_API_KEY
 ./mvnw spring-boot:run
 ```
 

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Loader2, TrendingUp, AlertCircle, TrendingDown } from 'lucide-react';
+import { Search, Loader2, TrendingUp, AlertCircle, TrendingDown, Bot } from 'lucide-react';
 import { MetricCard } from '@/components/MetricCard';
 import { HealthScore } from '@/components/HealthScore';
 import { RiskAlerts } from '@/components/RiskAlerts';
@@ -16,9 +16,18 @@ import { RiskFactors } from '@/components/analysis/RiskFactors';
 import { BullBearCase } from '@/components/analysis/BullBearCase';
 import { AnalysisReport } from '@/types/AnalysisReport';
 
+// Available AI models for analysis
+const AI_MODELS = [
+  { id: 'groq', name: 'Groq Llama 3.3', icon: '⚡', description: 'Fast & Free' },
+  { id: 'openai', name: 'OpenAI GPT-4', icon: '🧠', description: 'Most Capable' },
+  { id: 'gemini', name: 'Google Gemini', icon: '💎', description: 'Balanced' },
+  { id: 'enhanced-mock', name: 'Mock (Testing)', icon: '🔧', description: 'No API' },
+];
+
 export default function Home() {
   const [ticker, setTicker] = useState('AAPL');
   const [lang, setLang] = useState('en');
+  const [model, setModel] = useState('groq');
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,8 +41,8 @@ export default function Home() {
     setError(null);
 
     try {
-      console.log(`Fetching analysis for ${ticker} in ${lang}...`);
-      const response = await fetch(`/api/java/sec/analyze/${ticker}?lang=${lang}`);
+      console.log(`Fetching analysis for ${ticker} using ${model} in ${lang}...`);
+      const response = await fetch(`/api/java/sec/analyze/${ticker}?lang=${lang}&model=${model}`);
       console.log("Response status:", response.status);
 
       if (!response.ok || !response.body) {
@@ -103,31 +112,55 @@ export default function Home() {
 
         {/* Search Bar */}
         <Card className="bg-slate-900 border-slate-800">
-          <CardContent className="p-4 flex gap-2">
-            <Input
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value.toUpperCase())}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="Enter Ticker (e.g., AAPL, MSFT, TSLA)"
-              className="bg-slate-950 border-slate-700 text-lg font-bold tracking-widest text-emerald-300 flex-1"
-            />
+          <CardContent className="p-4 space-y-3">
+            {/* Row 1: Ticker, Language, Button */}
+            <div className="flex gap-2">
+              <Input
+                value={ticker}
+                onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                placeholder="Enter Ticker (e.g., AAPL, MSFT, TSLA)"
+                className="bg-slate-950 border-slate-700 text-lg font-bold tracking-widest text-emerald-300 flex-1"
+              />
 
-            <select
-              value={lang}
-              onChange={(e) => setLang(e.target.value)}
-              className="bg-slate-950 border border-slate-700 text-emerald-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono text-sm"
-            >
-              <option value="en">🇺🇸 EN</option>
-              <option value="zh">🇨🇳 CN</option>
-            </select>
+              <select
+                value={lang}
+                onChange={(e) => setLang(e.target.value)}
+                className="bg-slate-950 border border-slate-700 text-emerald-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono text-sm"
+              >
+                <option value="en">🇺🇸 EN</option>
+                <option value="zh">🇨🇳 CN</option>
+              </select>
 
-            <Button
-              onClick={handleSearch}
-              disabled={isLoading}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[120px]"
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Search className="w-4 h-4 mr-2" /> Analyze</>}
-            </Button>
+              <Button
+                onClick={handleSearch}
+                disabled={isLoading}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[120px]"
+              >
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Search className="w-4 h-4 mr-2" /> Analyze</>}
+              </Button>
+            </div>
+
+            {/* Row 2: Model Selector */}
+            <div className="flex items-center gap-2">
+              <Bot className="w-4 h-4 text-slate-500" />
+              <span className="text-xs text-slate-500">AI Model:</span>
+              <div className="flex gap-2 flex-1">
+                {AI_MODELS.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => setModel(m.id)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${model === m.id
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                      }`}
+                    title={m.description}
+                  >
+                    {m.icon} {m.name}
+                  </button>
+                ))}
+              </div>
+            </div>
           </CardContent>
         </Card>
 

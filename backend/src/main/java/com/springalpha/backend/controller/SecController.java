@@ -8,6 +8,9 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/sec")
 @CrossOrigin(origins = "*")
@@ -28,13 +31,20 @@ public class SecController {
         return secService.getLatest10KContent(ticker);
     }
 
-    // AI Analysis endpoint (SSE streaming output)
-    // Returns structured JSON instead of raw text
+    /**
+     * AI Analysis endpoint (SSE streaming output)
+     * Returns structured JSON instead of raw text
+     * 
+     * @param ticker Stock ticker (e.g., AAPL, MSFT)
+     * @param lang   Language for analysis ("en" or "zh")
+     * @param model  LLM model to use (e.g., "groq", "openai", "enhanced-mock")
+     */
     @GetMapping(value = "/analyze/{ticker}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> analyze(
             @PathVariable String ticker,
-            @RequestParam(defaultValue = "en") String lang) {
-        return analysisService.analyzeStock(ticker, lang)
+            @RequestParam(defaultValue = "en") String lang,
+            @RequestParam(defaultValue = "") String model) {
+        return analysisService.analyzeStock(ticker, lang, model)
                 .flatMap(report -> {
                     try {
                         // Serialize AnalysisReport to JSON
@@ -44,6 +54,21 @@ public class SecController {
                         return Flux.error(new RuntimeException("Failed to serialize report", e));
                     }
                 });
+    }
+
+    /**
+     * Get available AI models for analysis
+     * 
+     * @return List of available model names
+     */
+    @GetMapping("/models")
+    public Map<String, Object> getAvailableModels() {
+        List<String> models = analysisService.getAvailableModels();
+        String defaultModel = analysisService.getDefaultModel();
+        return Map.of(
+                "models", models,
+                "default", defaultModel,
+                "count", models.size());
     }
 
     // Historical Data endpoint for charts

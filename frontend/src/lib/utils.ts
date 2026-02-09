@@ -5,7 +5,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatFinancialValue(value: string | number, name: string): string {
+export function formatFinancialValue(value: string | number | null | undefined, name: string): string {
+  // Handle null/undefined values gracefully
+  if (value === null || value === undefined || value === '') {
+    return 'N/A';
+  }
+
   const num = typeof value === 'string' ? parseFloat(value) : value;
 
   // Return original if not a number

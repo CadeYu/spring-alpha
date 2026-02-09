@@ -43,13 +43,30 @@ public class FinancialAnalysisService {
     }
 
     /**
-     * Analyze stock using the new Analysis Contract system.
-     * This method bridges the old API (ticker + lang) with the new contract-based
-     * approach.
+     * Get list of available AI models
      */
-    public Flux<AnalysisReport> analyzeStock(String ticker, String lang) {
+    public List<String> getAvailableModels() {
+        return new ArrayList<>(strategies.keySet());
+    }
+
+    /**
+     * Get the default model name from configuration
+     */
+    public String getDefaultModel() {
+        return activeProvider;
+    }
+
+    /**
+     * Analyze stock using the new Analysis Contract system with model selection.
+     * 
+     * @param ticker Stock ticker
+     * @param lang   Language for analysis
+     * @param model  Model to use (empty string means use default)
+     */
+    public Flux<AnalysisReport> analyzeStock(String ticker, String lang, String model) {
         return Mono.fromCallable(() -> {
-            log.info("📊 Starting financial analysis for: {} (lang: {})", ticker, lang);
+            log.info("📊 Starting financial analysis for: {} (lang: {}, model: {})",
+                    ticker, lang, model.isEmpty() ? activeProvider : model);
 
             // Step 1: Get financial facts
             FinancialFacts facts = financialDataService.getFinancialFacts(ticker);
@@ -96,8 +113,8 @@ public class FinancialAnalysisService {
                                     .language(lang != null ? lang : "en")
                                     .build();
 
-                            // Step 5: Select strategy
-                            AiAnalysisStrategy strategy = selectStrategy();
+                            // Step 5: Select strategy (use model param if provided)
+                            AiAnalysisStrategy strategy = selectStrategy(model);
 
                             log.info("🚀 Executing analysis with strategy: {}", strategy.getName());
 
@@ -114,11 +131,18 @@ public class FinancialAnalysisService {
                         }));
     }
 
-    private AiAnalysisStrategy selectStrategy() {
-        AiAnalysisStrategy strategy = strategies.get(activeProvider);
+    /**
+     * Select strategy based on model parameter or default config
+     */
+    private AiAnalysisStrategy selectStrategy(String model) {
+        // Use provided model if not empty, otherwise use default
+        String targetModel = (model != null && !model.isEmpty()) ? model : activeProvider;
+
+        AiAnalysisStrategy strategy = strategies.get(targetModel);
 
         if (strategy == null) {
-            log.warn("⚠️ Strategy [{}] not found, using enhanced-mock", activeProvider);
+            log.warn("⚠️ Strategy [{}] not found, available: {}. Using enhanced-mock",
+                    targetModel, strategies.keySet());
             strategy = strategies.get("enhanced-mock");
         }
 

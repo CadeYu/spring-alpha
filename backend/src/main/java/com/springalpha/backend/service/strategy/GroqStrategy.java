@@ -65,7 +65,7 @@ public class GroqStrategy extends BaseAiStrategy {
                         if (output == null)
                             return;
 
-                        var content = output.getContent();
+                        var content = output.getText();
                         if (content != null && !content.isEmpty()) {
                             sink.next(content);
                             log.debug("📨 Chunk: {} chars", content.length());
