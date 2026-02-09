@@ -130,4 +130,94 @@ public class AnalysisReport {
         private String generatedAt; // ISO timestamp
         private String language; // "en", "zh"
     }
+
+    /**
+     * DuPont Analysis decomposition
+     */
+    private DuPontAnalysis dupontAnalysis;
+
+    /**
+     * AI Insight Engine results
+     */
+    private InsightEngine insightEngine;
+
+    /**
+     * Dynamic Factor Analysis (Waterfall charts)
+     */
+    private FactorAnalysis factorAnalysis;
+
+    /**
+     * Represents DuPont Analysis components
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class DuPontAnalysis {
+        private String netProfitMargin; // NI / Revenue
+        private String assetTurnover; // Revenue / Assets
+        private String equityMultiplier; // Assets / Equity
+        private String returnOnEquity; // ROE
+        private String interpretation; // Analysis of the driver
+    }
+
+    /**
+     * Represents AI Insights (Root Cause & Accounting Policies)
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class InsightEngine {
+        private List<AccountingChange> accountingChanges;
+        private List<RootCause> rootCauseAnalysis;
+
+        @Data
+        @Builder
+        @NoArgsConstructor
+        @AllArgsConstructor
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class AccountingChange {
+            private String policyName; // e.g., "Revenue Recognition"
+            private String changeDescription;
+            private String riskAssessment; // "high", "medium", "low"
+        }
+
+        @Data
+        @Builder
+        @NoArgsConstructor
+        @AllArgsConstructor
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class RootCause {
+            private String metric; // e.g., "Gross Margin Decline"
+            private String reason; // "Raw material price hike"
+            private String evidence; // Quote
+        }
+    }
+
+    /**
+     * Represents Factor Analysis for Waterfall Charts
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class FactorAnalysis {
+        private List<Factor> revenueBridge;
+        private List<Factor> marginBridge;
+
+        @Data
+        @Builder
+        @NoArgsConstructor
+        @AllArgsConstructor
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class Factor {
+            private String name; // e.g., "Price", "Volume", "Mix"
+            private String impact; // "+5.2%", "-1.1%"
+            private String description;
+        }
+    }
 }

@@ -27,8 +27,8 @@ import java.util.Map;
 @Primary // 标记为主要 EmbeddingModel，让 PGVector 使用这个而不是 OpenAI
 public class GeminiEmbeddingModel implements EmbeddingModel {
 
-    private static final String GEMINI_EMBEDDING_MODEL = "text-embedding-004";
-    private static final int EMBEDDING_DIMENSIONS = 768;
+    private static final String GEMINI_EMBEDDING_MODEL = "gemini-embedding-001";
+    private static final int EMBEDDING_DIMENSIONS = 3072; // gemini-embedding-001 outputs 3072 dims
     private static final int MAX_TEXT_LENGTH = 8000; // Approximate token limit
 
     private final WebClient webClient;
@@ -60,12 +60,14 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
     @Override
     public float[] embed(String text) {
         String truncatedText = truncateText(text);
+        log.debug("🌐 Calling Gemini Embedding API for {} chars...", truncatedText.length());
 
         Map<String, Object> requestBody = Map.of(
                 "model", "models/" + GEMINI_EMBEDDING_MODEL,
                 "content", Map.of("parts", List.of(Map.of("text", truncatedText))));
 
         try {
+            long start = System.currentTimeMillis();
             EmbeddingApiResponse response = webClient.post()
                     .uri("/models/{model}:embedContent?key={apiKey}",
                             GEMINI_EMBEDDING_MODEL, apiKey)
@@ -73,6 +75,9 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
                     .retrieve()
                     .bodyToMono(EmbeddingApiResponse.class)
                     .block();
+
+            long elapsed = System.currentTimeMillis() - start;
+            log.debug("✅ Gemini embedding received in {} ms", elapsed);
 
             if (response != null && response.embedding != null) {
                 return response.embedding.values;
@@ -82,7 +87,7 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
             return new float[EMBEDDING_DIMENSIONS];
 
         } catch (Exception e) {
-            log.error("Failed to get embedding from Gemini API: {}", e.getMessage());
+            log.error("❌ Failed to get embedding from Gemini API: {}", e.getMessage());
             return new float[EMBEDDING_DIMENSIONS];
         }
     }

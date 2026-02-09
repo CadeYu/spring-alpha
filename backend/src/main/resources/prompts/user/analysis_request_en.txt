@@ -9,8 +9,16 @@ TEXTUAL EVIDENCE:
 ANALYSIS TASKS:
 {{analysisTasks}}
 
+IMPORTANT INSTRUCTIONS:
+1. **DuPont Analysis**: Calculate ROE and break it down into Net Profit Margin, Asset Turnover, and Equity Multiplier.
+2. **Insight Engine**:
+   - identify any *changes in accounting policies* (e.g., revenue recognition, inventory valuation).
+   - Provide *Root Cause Analysis* for major metric changes (e.g., if Gross Margin dropped, was it due to raw material costs or pricing pressure?).
+3. **Factor Analysis**:
+   - Create a *Revenue Bridge* (Volume vs Price vs FX).
+   - Create a *Margin Bridge* (Cost vs Mix vs Operating Leverage).
+
 OUTPUT REQUIREMENTS:
-You MUST include the following metrics in the "keyMetrics" array: Revenue, Gross Margin, Net Margin, and EPS.
 Return a JSON object with the following structure:
 
 {
@@ -18,19 +26,43 @@ Return a JSON object with the following structure:
   "keyMetrics": [
     {
       "name": "Revenue",
-      "value": "actual value from financialFacts",
-      "change": "YoY/QoQ change from financialFacts",
+      "value": "actual value",
+      "change": "YoY/QoQ change",
       "sentiment": "positive/negative/neutral",
-      "interpretation": "business interpretation of this metric"
-    },
-    {
-      "name": "EPS",
-      "value": "actual EPS value",
-      "change": "change if available",
-      "sentiment": "positive/negative/neutral",
-      "interpretation": "impact on shareholder value"
+      "interpretation": "business interpretation"
     }
   ],
+  "dupontAnalysis": {
+    "netProfitMargin": "value",
+    "assetTurnover": "value",
+    "equityMultiplier": "value",
+    "returnOnEquity": "value",
+    "interpretation": "Explanation of what is driving ROE"
+  },
+  "insightEngine": {
+    "accountingChanges": [
+      {
+        "policyName": "name of policy",
+        "changeDescription": "what changed",
+        "riskAssessment": "high/medium/low"
+      }
+    ],
+    "rootCauseAnalysis": [
+      {
+        "metric": "Gross Margin",
+        "reason": "specific operational reason",
+        "evidence": "quote from text"
+      }
+    ]
+  },
+  "factorAnalysis": {
+    "revenueBridge": [
+      { "name": "Volume", "impact": "+5%", "description": "..." }
+    ],
+    "marginBridge": [
+      { "name": "Input Costs", "impact": "-2%", "description": "..." }
+    ]
+  },
   "businessDrivers": [
     {
       "title": "driver title",

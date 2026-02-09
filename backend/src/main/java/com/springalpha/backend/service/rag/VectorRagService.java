@@ -20,9 +20,10 @@ import java.util.stream.Collectors;
 public class VectorRagService {
 
     private static final int TOP_K = 5;
-    private static final double SIMILARITY_THRESHOLD = 0.7;
-    private static final int CHUNK_SIZE = 1000;
-    private static final int CHUNK_OVERLAP = 200;
+    private static final double SIMILARITY_THRESHOLD = 0.4; // Lowered from 0.7 for better recall with 3072-dim model
+    private static final int CHUNK_SIZE = 3000; // Larger chunks = fewer API calls
+    private static final int CHUNK_OVERLAP = 300;
+    private static final int MAX_CHUNKS = 30; // Limit total chunks
 
     private final VectorStore vectorStore;
 
@@ -38,7 +39,7 @@ public class VectorRagService {
         log.info("📥 Storing document for ticker: {} ({} chars)", ticker, content.length());
 
         List<String> chunks = splitIntoChunks(content);
-        log.debug("Split into {} chunks", chunks.size());
+        log.info("✂️ Split into {} chunks (CHUNK_SIZE={}, MAX_CHUNKS={})", chunks.size(), CHUNK_SIZE, MAX_CHUNKS);
 
         List<Document> documents = chunks.stream()
                 .map(chunk -> new Document(chunk, Map.of(
@@ -46,8 +47,14 @@ public class VectorRagService {
                         "source", "sec-10k")))
                 .collect(Collectors.toList());
 
+        log.info("🔢 Calling vectorStore.add() with {} documents. This will generate embeddings (may take a while)...",
+                documents.size());
+        long startTime = System.currentTimeMillis();
+
         vectorStore.add(documents);
-        log.info("✅ Stored {} document chunks for {}", documents.size(), ticker);
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("✅ Stored {} document chunks for {} in {} ms", documents.size(), ticker, elapsed);
     }
 
     /**
@@ -101,7 +108,7 @@ public class VectorRagService {
         }
 
         int start = 0;
-        while (start < text.length()) {
+        while (start < text.length() && chunks.size() < MAX_CHUNKS) {
             int end = Math.min(start + CHUNK_SIZE, text.length());
 
             // Try to break at sentence boundary
@@ -112,11 +119,21 @@ public class VectorRagService {
                 }
             }
 
-            chunks.add(text.substring(start, end).trim());
-            start = end - CHUNK_OVERLAP;
+            String chunk = text.substring(start, end).trim();
+            if (!chunk.isEmpty()) {
+                chunks.add(chunk);
+            }
 
-            if (start >= text.length())
-                break;
+            // CRITICAL: Ensure start always moves forward to prevent infinite loop
+            int nextStart = end - CHUNK_OVERLAP;
+            if (nextStart <= start) {
+                nextStart = start + 1; // Force forward progress
+            }
+            start = nextStart;
+        }
+
+        if (chunks.size() >= MAX_CHUNKS) {
+            log.warn("⚠️ Document truncated to {} chunks to prevent OOM", MAX_CHUNKS);
         }
 
         return chunks;

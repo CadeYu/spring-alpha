@@ -21,7 +21,7 @@ public class FinancialAnalysisService {
 
     private static final Logger log = LoggerFactory.getLogger(FinancialAnalysisService.class);
     private final SecService secService;
-    private final RagService ragService;
+    private final com.springalpha.backend.service.rag.VectorRagService vectorRagService;
     private final FinancialDataService financialDataService;
     private final Map<String, AiAnalysisStrategy> strategies;
 
@@ -30,11 +30,11 @@ public class FinancialAnalysisService {
 
     public FinancialAnalysisService(
             SecService secService,
-            RagService ragService,
+            com.springalpha.backend.service.rag.VectorRagService vectorRagService,
             FinancialDataService financialDataService,
             List<AiAnalysisStrategy> strategyList) {
         this.secService = secService;
-        this.ragService = ragService;
+        this.vectorRagService = vectorRagService;
         this.financialDataService = financialDataService;
         this.strategies = strategyList.stream()
                 .collect(Collectors.toMap(AiAnalysisStrategy::getName, Function.identity()));
@@ -82,53 +82,67 @@ public class FinancialAnalysisService {
                 .flatMapMany(facts ->
                 // Step 2: Get SEC text content (async)
                 secService.getLatest10KContent(ticker)
-                        .flatMapMany(content -> {
-                            log.info("📄 Retrieved SEC filing, length: {}. Running RAG extraction...",
+                        .flatMapMany(content ->
+                        // Offload blocking Vector RAG operations to boundedElastic scheduler
+                        Mono.fromCallable(() -> {
+                            log.info("📄 Retrieved SEC filing, length: {}. Running Vector RAG...",
                                     content.length());
 
-                            // Step 3: Extract text evidence using RAG
-                            String mdnaQuery = "Management Discussion and Analysis, Revenue drivers, Business performance";
-                            String riskQuery = "Risk Factors, Uncertainties, Challenges";
+                            // Step 3: Store document in Vector DB if not already present
+                            if (!vectorRagService.hasDocuments(ticker)) {
+                                log.info("📥 First time processing {}, storing in vector DB...", ticker);
+                                vectorRagService.storeDocument(ticker, content);
+                            } else {
+                                log.info("✅ {} already in vector DB, skipping storage", ticker);
+                            }
 
-                            String mdna = ragService.retrieveRelevantContext(content, mdnaQuery);
-                            String risks = ragService.retrieveRelevantContext(content, riskQuery);
+                            // Step 4: Retrieve text evidence using Vector RAG (semantic search)
+                            String mdnaQuery = "Management Discussion Analysis revenue drivers business performance growth";
+                            String riskQuery = "Risk Factors uncertainties challenges regulatory competition";
+
+                            String mdna = vectorRagService.retrieveRelevantContext(ticker, mdnaQuery);
+                            String risks = vectorRagService.retrieveRelevantContext(ticker, riskQuery);
 
                             Map<String, String> textEvidence = new HashMap<>();
                             textEvidence.put("MD&A", mdna);
                             textEvidence.put("Risk Factors", risks);
+                            return textEvidence;
+                        })
+                                .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                                .flatMapMany(textEvidence -> {
 
-                            // Step 4: Build Analysis Contract
-                            List<String> analysisTasks = Arrays.asList(
-                                    "Explain the primary drivers of revenue growth",
-                                    "Analyze the sustainability of margin changes",
-                                    "Summarize the most material risk factors");
+                                    // Step 5: Build Analysis Contract
+                                    List<String> analysisTasks = Arrays.asList(
+                                            "Explain the primary drivers of revenue growth",
+                                            "Analyze the sustainability of margin changes",
+                                            "Summarize the most material risk factors");
 
-                            AnalysisContract contract = AnalysisContract.builder()
-                                    .ticker(ticker)
-                                    .companyName(facts.getCompanyName())
-                                    .period(facts.getPeriod())
-                                    .financialFacts(facts)
-                                    .textEvidence(textEvidence)
-                                    .analysisTasks(analysisTasks)
-                                    .language(lang != null ? lang : "en")
-                                    .build();
+                                    AnalysisContract contract = AnalysisContract.builder()
+                                            .ticker(ticker)
+                                            .companyName(facts.getCompanyName())
+                                            .period(facts.getPeriod())
+                                            .financialFacts(facts)
+                                            .textEvidence(textEvidence)
+                                            .analysisTasks(analysisTasks)
+                                            .language(lang != null ? lang : "en")
+                                            .build();
 
-                            // Step 5: Select strategy (use model param if provided)
-                            AiAnalysisStrategy strategy = selectStrategy(model);
+                                    // Step 6: Select strategy (use model param if provided)
+                                    AiAnalysisStrategy strategy = selectStrategy(model);
 
-                            log.info("🚀 Executing analysis with strategy: {}", strategy.getName());
+                                    log.info("🚀 Executing analysis with strategy: {}", strategy.getName());
 
-                            // Step 6: Execute analysis
-                            return strategy.analyze(contract, lang)
-                                    .onErrorResume(e -> {
-                                        log.error("❌ Strategy [{}] failed: {}. Falling back to enhanced-mock",
-                                                strategy.getName(), e.getMessage());
-                                        AiAnalysisStrategy fallback = strategies.get("enhanced-mock");
-                                        return fallback != null
-                                                ? fallback.analyze(contract, lang)
-                                                : Flux.error(e);
-                                    });
-                        }));
+                                    // Step 7: Execute analysis
+                                    return strategy.analyze(contract, lang)
+                                            .onErrorResume(e -> {
+                                                log.error("❌ Strategy [{}] failed: {}. Falling back to enhanced-mock",
+                                                        strategy.getName(), e.getMessage());
+                                                AiAnalysisStrategy fallback = strategies.get("enhanced-mock");
+                                                return fallback != null
+                                                        ? fallback.analyze(contract, lang)
+                                                        : Flux.error(e);
+                                            });
+                                })));
     }
 
     /**

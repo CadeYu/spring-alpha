@@ -9,8 +9,16 @@
 分析任务：
 {{analysisTasks}}
 
+重要指令：
+1. **杜邦分析 (DuPont Analysis)**：计算 ROE 并将其拆解为净利率 (Net Profit Margin)、资产周转率 (Asset Turnover) 和权益乘数 (Equity Multiplier)。
+2. **智能洞察引擎 (Insight Engine)**：
+   - 识别任何 **会计政策变更**（例如：营收确认、库存估值）。
+   - 提供关键指标变化的 **根因分析**（例如：毛利率下降是因为原材料成本上升还是价格竞争？）。
+3. **动态因子分析 (Factor Analysis)**：
+   - 创建 **收入桥 (Revenue Bridge)**（销量 vs 价格 vs 汇率）。
+   - 创建 **利润率桥 (Margin Bridge)**（成本 vs 产品组合 vs 经营杠杆）。
+
 输出要求：
-你必须在 "keyMetrics" 数组中包含以下指标：营收 (Revenue)、毛利率 (Gross Margin)、净利率 (Net Margin) 和每股收益 (EPS)。
 返回符合以下格式的 JSON 对象：
 
 {
@@ -18,19 +26,43 @@
   "keyMetrics": [
     {
       "name": "营收",
-      "value": "来自财务数据的实际值",
-      "change": "同比/环比变化（来自财务数据）",
+      "value": "实际值",
+      "change": "同比/环比变化",
       "sentiment": "positive/negative/neutral",
-      "interpretation": "对该指标的业务解读"
-    },
-    {
-      "name": "EPS",
-      "value": "实际 EPS 数值",
-      "change": "若有变化幅度",
-      "sentiment": "positive/negative/neutral",
-      "interpretation": "对股东价值的影响"
+      "interpretation": "业务解读"
     }
   ],
+  "dupontAnalysis": {
+    "netProfitMargin": "数值",
+    "assetTurnover": "数值",
+    "equityMultiplier": "数值",
+    "returnOnEquity": "数值",
+    "interpretation": "ROE 驱动因素分析"
+  },
+  "insightEngine": {
+    "accountingChanges": [
+      {
+        "policyName": "政策名称",
+        "changeDescription": "变更描述",
+        "riskAssessment": "high/medium/low"
+      }
+    ],
+    "rootCauseAnalysis": [
+      {
+        "metric": "毛利率",
+        "reason": "具体运营原因",
+        "evidence": "原文引用"
+      }
+    ]
+  },
+  "factorAnalysis": {
+    "revenueBridge": [
+      { "name": "销量", "impact": "+5%", "description": "..." }
+    ],
+    "marginBridge": [
+      { "name": "原材料成本", "impact": "-2%", "description": "..." }
+    ]
+  },
   "businessDrivers": [
     {
       "title": "驱动因素标题",

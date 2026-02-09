@@ -22,7 +22,9 @@ spring:
       base-url: https://api.groq.com/openai
       # 使用环境变量注入，默认值为空 (防止 GitHub 泄露)
       api-key: ${GROQ_API_KEY:}
-      model: llama-3.3-70b-versatile
+      chat:
+        options:
+          model: llama-3.3-70b-versatile
     
     # Vertex AI (Gemini) - 备用，防止 GeminiStrategy 启动报错
     vertex:
@@ -34,8 +36,8 @@ spring:
     vectorstore:
       pgvector:
         initialize-schema: true  # 自动创建 vector_store 表
-        dimensions: 768          # Gemini text-embedding-004 维度
-        index-type: HNSW
+        dimensions: 3072          # gemini-embedding-001 输出 3072 维
+        index-type: NONE          # HNSW 最大只支持 2000 维，暂时禁用索引
         distance-type: COSINE_DISTANCE
 
 
