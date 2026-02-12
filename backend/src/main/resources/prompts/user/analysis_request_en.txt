@@ -17,6 +17,7 @@ IMPORTANT INSTRUCTIONS:
 3. **Factor Analysis**:
    - Create a *Revenue Bridge* (Volume vs Price vs FX).
    - Create a *Margin Bridge* (Cost vs Mix vs Operating Leverage).
+   - *CRITICAL*: If exact numbers are not available for a factor, use "+" (positive impact), "-" (negative impact), or "flat". Do NOT return "Not available". Estimate direction based on text.
 
 OUTPUT REQUIREMENTS:
 Return a JSON object with the following structure:
@@ -57,10 +58,10 @@ Return a JSON object with the following structure:
   },
   "factorAnalysis": {
     "revenueBridge": [
-      { "name": "Volume", "impact": "+5%", "description": "..." }
+      { "name": "Volume", "impact": "+5% or just +", "description": "..." }
     ],
     "marginBridge": [
-      { "name": "Input Costs", "impact": "-2%", "description": "..." }
+      { "name": "Input Costs", "impact": "-2% or just -", "description": "..." }
     ]
   },
   "businessDrivers": [
@@ -81,10 +82,12 @@ Return a JSON object with the following structure:
   "bearCase": "pessimistic interpretation based on the data",
   "citations": [
     {
-      "text": "quoted evidence",
-      "source": "source identifier (e.g., MD&A, Risk Factors)"
+      "section": "source identifier (e.g., MD&A)",
+      "excerpt": "exact quoted text from source"
     }
   ]
 }
 
-IMPORTANT: Use ONLY the numbers from the Financial Facts section. Do not create any new numerical values.
+IMPORTANT:
+1. Use ONLY the numbers from the Financial Facts section.
+2. If you cannot find a valid citation, DO NOT include an empty citation object. The "citations" array should only contain valid, non-null entries.

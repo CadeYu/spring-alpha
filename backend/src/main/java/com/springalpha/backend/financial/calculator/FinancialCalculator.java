@@ -47,7 +47,8 @@ public class FinancialCalculator {
 
         // Revenue metrics
         if (currentIncome != null) {
-            builder.revenue(currentIncome.getRevenue());
+            builder.currency(currentIncome.getReportedCurrency()) // Set currency
+                    .revenue(currentIncome.getRevenue());
 
             if (previousIncome != null && previousIncome.getRevenue() != null) {
                 builder.revenueYoY(calculateGrowthRate(

@@ -8,6 +8,12 @@ spring:
     username: ${NEON_USERNAME:neondb_owner}
     password: ${NEON_PASSWORD:}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-timeout: 30000       # 30s 连接超时
+      idle-timeout: 600000            # 10m 空闲超时
+      max-lifetime: 1800000           # 30m 最大生命周期
+      minimum-idle: 2                 # 最小空闲连接
+      maximum-pool-size: 10           # 最大连接数
   
   jpa:
     hibernate:
@@ -36,29 +42,32 @@ spring:
     vectorstore:
       pgvector:
         initialize-schema: true  # 自动创建 vector_store 表
-        dimensions: 3072          # gemini-embedding-001 输出 3072 维
+        dimensions: 768           # gemini-embedding-001 is 768 dimensions
         index-type: NONE          # HNSW 最大只支持 2000 维，暂时禁用索引
         distance-type: COSINE_DISTANCE
 
 
 
 
-
 app:
+  # 嵌入模型提供商: local (ONNX, 免费本地) | gemini (Google API)
+  embedding-provider: gemini
+  
   # 切换默认策略：groq (Groq Llama 3.3) | openai | gemini | enhanced-mock (测试)
-  ai-provider: groq  # ← 切换到真实 LLM！
+  ai-provider: groq  # ← 切换回 Groq (Llama 3.3)
   
   # OpenAI Configuration (optional - requires OPENAI_API_KEY)
   openai:
-    enabled: ${OPENAI_ENABLED:false}
+    enabled: true
     api-key: ${OPENAI_API_KEY:}
-    model: gpt-4o-mini  # or gpt-4o, gpt-4-turbo
+    model: ${OPENAI_MODEL:gpt-4o-mini}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
   
   # Gemini Configuration (optional - requires GEMINI_API_KEY)
   gemini:
-    enabled: ${GEMINI_ENABLED:false}
+    enabled: true
     api-key: ${GEMINI_API_KEY:}
-    model: gemini-1.5-flash  # or gemini-1.5-pro
+    model: gemini-2.0-flash  # Updated to available model
   
   # Financial Modeling Prep API Configuration (Updated Feb 2026)
   # API key is loaded from environment variable (set in start_backend.sh)

@@ -3,15 +3,18 @@ import { RiskFactor } from "@/types/AnalysisReport";
 
 interface RiskFactorsProps {
     risks: RiskFactor[];
+    lang?: string;
 }
 
-export function RiskFactors({ risks }: RiskFactorsProps) {
+export function RiskFactors({ risks, lang = 'en' }: RiskFactorsProps) {
     if (!risks || risks.length === 0) return null;
+
+    const isZh = lang === 'zh';
 
     return (
         <Card className="bg-slate-900 border-slate-800">
             <CardHeader className="border-b border-slate-800">
-                <CardTitle className="text-red-400">⚠️ Risk Factors</CardTitle>
+                <CardTitle className="text-red-400">⚠️ {isZh ? '风险因素' : 'Risk Factors'}</CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
                 {risks.map((risk, idx) => (
@@ -19,10 +22,10 @@ export function RiskFactors({ risks }: RiskFactorsProps) {
                         <h4 className="font-semibold text-white">{risk.category}</h4>
                         <p className="text-sm text-slate-400 mt-1">{risk.description}</p>
                         <span className={`text-xs mt-2 inline-block px-2 py-1 rounded ${risk.severity === 'high' ? 'bg-red-900/30 text-red-400' :
-                                risk.severity === 'medium' ? 'bg-yellow-900/30 text-yellow-400' :
-                                    'bg-slate-800 text-slate-400'
+                            risk.severity === 'medium' ? 'bg-yellow-900/30 text-yellow-400' :
+                                'bg-slate-800 text-slate-400'
                             }`}>
-                            Severity: {risk.severity}
+                            {isZh ? '严重程度: ' : 'Severity: '}{isZh ? (risk.severity === 'high' ? '高' : risk.severity === 'medium' ? '中' : risk.severity === 'low' ? '低' : risk.severity) : risk.severity}
                         </span>
                     </div>
                 ))}

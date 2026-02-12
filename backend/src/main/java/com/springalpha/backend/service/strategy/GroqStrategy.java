@@ -5,7 +5,7 @@ import com.springalpha.backend.service.prompt.PromptTemplateService;
 import com.springalpha.backend.service.validation.AnalysisReportValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
+
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -41,8 +41,12 @@ public class GroqStrategy extends BaseAiStrategy {
 
         try {
             // Build full prompt with explicit JSON instruction
-            String fullPrompt = systemPrompt + "\n\n" + userPrompt +
-                    "\n\nIMPORTANT: Return ONLY valid JSON matching the schema, with no markdown formatting.";
+            // Build full prompt with explicit JSON instruction causing language consistency
+            String jsonInstruction = "zh".equalsIgnoreCase(lang)
+                    ? "\n\n重要：请仅返回符合架构的有效 JSON，不要使用 markdown 格式。**所有分析内容必须使用中文输出，引用原文(excerpt)除外。**"
+                    : "\n\nIMPORTANT: Return ONLY valid JSON matching the schema, with no markdown formatting.";
+
+            String fullPrompt = systemPrompt + "\n\n" + userPrompt + jsonInstruction;
 
             org.springframework.ai.chat.messages.UserMessage userMessage = new org.springframework.ai.chat.messages.UserMessage(
                     fullPrompt);
@@ -72,6 +76,12 @@ public class GroqStrategy extends BaseAiStrategy {
                         }
                     })
                     .cast(String.class)
+                    .retryWhen(reactor.util.retry.Retry.backoff(3, java.time.Duration.ofSeconds(2))
+                            .filter(throwable -> throwable instanceof org.springframework.web.reactive.function.client.WebClientResponseException.TooManyRequests)
+                            .doBeforeRetry(
+                                    retrySignal -> log.warn("⚠️ Groq Rate Limit (429) hit, retrying... (attempt {}/3)",
+                                            retrySignal.totalRetries() + 1))
+                            .onRetryExhaustedThrow((retryBackoffSpec, retrySignal) -> retrySignal.failure()))
                     .doOnComplete(() -> log.info("✅ Groq API stream completed"))
                     .onErrorResume(e -> {
                         log.error("❌ Groq API call failed: {}", e.getMessage(), e);

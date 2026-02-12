@@ -251,15 +251,20 @@ public class MockFinancialDataService implements FinancialDataService {
                 java.util.List<com.springalpha.backend.financial.model.HistoricalDataPoint> history = new java.util.ArrayList<>();
 
                 history.add(new com.springalpha.backend.financial.model.HistoricalDataPoint("Q4 2023",
-                                new BigDecimal("0.452"), new BigDecimal("0.301"), new BigDecimal("0.253")));
+                                new BigDecimal("0.452"), new BigDecimal("0.301"), new BigDecimal("0.253"),
+                                new BigDecimal("119580000000"), new BigDecimal("33920000000")));
                 history.add(new com.springalpha.backend.financial.model.HistoricalDataPoint("Q1 2024",
-                                new BigDecimal("0.459"), new BigDecimal("0.307"), new BigDecimal("0.261")));
+                                new BigDecimal("0.459"), new BigDecimal("0.307"), new BigDecimal("0.261"),
+                                new BigDecimal("90750000000"), new BigDecimal("23640000000")));
                 history.add(new com.springalpha.backend.financial.model.HistoricalDataPoint("Q2 2024",
-                                new BigDecimal("0.466"), new BigDecimal("0.312"), new BigDecimal("0.265")));
+                                new BigDecimal("0.466"), new BigDecimal("0.312"), new BigDecimal("0.265"),
+                                new BigDecimal("85780000000"), new BigDecimal("21450000000")));
                 history.add(new com.springalpha.backend.financial.model.HistoricalDataPoint("Q3 2024",
-                                new BigDecimal("0.463"), new BigDecimal("0.298"), new BigDecimal("0.248"))); // Dip
+                                new BigDecimal("0.463"), new BigDecimal("0.298"), new BigDecimal("0.248"),
+                                new BigDecimal("89500000000"), new BigDecimal("22960000000"))); // Dip
                 history.add(new com.springalpha.backend.financial.model.HistoricalDataPoint("Q4 2024",
-                                new BigDecimal("0.449"), new BigDecimal("0.295"), new BigDecimal("0.242"))); // Current
+                                new BigDecimal("0.449"), new BigDecimal("0.295"), new BigDecimal("0.242"),
+                                new BigDecimal("94930000000"), new BigDecimal("22960000000"))); // Current
 
                 return history;
         }

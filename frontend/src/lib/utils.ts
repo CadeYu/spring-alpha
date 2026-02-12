@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatFinancialValue(value: string | number | null | undefined, name: string): string {
+export function formatFinancialValue(value: string | number | null | undefined, name: string, currency: string = 'USD'): string {
   // Handle null/undefined values gracefully
   if (value === null || value === undefined || value === '') {
     return 'N/A';
@@ -38,6 +38,14 @@ export function formatFinancialValue(value: string | number | null | undefined, 
     return `${percentValue.toFixed(2)}%`;
   }
 
+  // Currency Symbol Logic
+  let symbol = '$';
+  if (currency === 'JPY') symbol = '¥';
+  else if (currency === 'EUR') symbol = '€';
+  else if (currency === 'CNY') symbol = '¥';
+  else if (currency === 'GBP') symbol = '£';
+  else if (currency !== 'USD' && currency.length === 3) symbol = currency + ' '; // Fallback for other currencies
+
   // Currency/Large Number Formatting
   const isCurrency =
     lowerName.includes('revenue') ||
@@ -51,13 +59,16 @@ export function formatFinancialValue(value: string | number | null | undefined, 
     lowerName.includes('sales');
 
   if (isCurrency || Math.abs(num) > 1_000_000) {
+    if (Math.abs(num) >= 1_000_000_000_000) { // Support Trillions for JPY
+      return `${symbol}${(num / 1_000_000_000_000).toFixed(2)}T`;
+    }
     if (Math.abs(num) >= 1_000_000_000) {
-      return `$${(num / 1_000_000_000).toFixed(2)}B`;
+      return `${symbol}${(num / 1_000_000_000).toFixed(2)}B`;
     }
     if (Math.abs(num) >= 1_000_000) {
-      return `$${(num / 1_000_000).toFixed(2)}M`;
+      return `${symbol}${(num / 1_000_000).toFixed(2)}M`;
     }
-    return `$${num.toLocaleString()}`;
+    return `${symbol}${num.toLocaleString()}`;
   }
 
   return num.toLocaleString();

@@ -72,6 +72,11 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
             // Add metadata
             enrichMetadata(report, lang);
 
+            // Inject currency from facts
+            if (contract.getFinancialFacts() != null) {
+                report.setCurrency(contract.getFinancialFacts().getCurrency());
+            }
+
             // Validate against financial facts
             AnalysisReportValidator.ValidationResult validationResult = validator.validate(report,
                     contract.getFinancialFacts());
@@ -84,6 +89,12 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
 
             if (!validationResult.getWarnings().isEmpty()) {
                 log.warn("⚠️ Validation warnings for {}: {}", getName(), validationResult.getWarnings());
+            }
+
+            // Validate citations against text evidence
+            if (contract.getTextEvidence() != null) {
+                String fullSourceText = String.join("\n", contract.getTextEvidence().values());
+                validator.validateCitations(report, fullSourceText);
             }
 
             return Mono.just(report);

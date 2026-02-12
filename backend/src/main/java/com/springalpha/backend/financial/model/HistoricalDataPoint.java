@@ -16,4 +16,8 @@ public class HistoricalDataPoint {
     private BigDecimal grossMargin;
     private BigDecimal operatingMargin;
     private BigDecimal netMargin;
+
+    // New fields for Revenue Chart
+    private BigDecimal revenue;
+    private BigDecimal netIncome;
 }

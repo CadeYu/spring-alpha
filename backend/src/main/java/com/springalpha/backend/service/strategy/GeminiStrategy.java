@@ -100,6 +100,12 @@ public class GeminiStrategy extends BaseAiStrategy {
                     }
                 })
                 .filter(s -> s != null && !s.isEmpty())
+                .retryWhen(reactor.util.retry.Retry.backoff(3, java.time.Duration.ofSeconds(2))
+                        .filter(throwable -> throwable instanceof org.springframework.web.reactive.function.client.WebClientResponseException.TooManyRequests)
+                        .doBeforeRetry(
+                                retrySignal -> log.warn("⚠️ Gemini Rate Limit (429) hit, retrying... (attempt {}/3)",
+                                        retrySignal.totalRetries() + 1))
+                        .onRetryExhaustedThrow((retryBackoffSpec, retrySignal) -> retrySignal.failure()))
                 .doOnComplete(() -> log.info("✅ Gemini API stream completed"))
                 .onErrorResume(e -> {
                     log.error("❌ Gemini API call failed: {}", e.getMessage());

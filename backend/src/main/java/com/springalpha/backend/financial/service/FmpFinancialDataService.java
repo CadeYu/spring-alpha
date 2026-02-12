@@ -54,21 +54,23 @@ public class FmpFinancialDataService implements FinancialDataService {
 
         try {
             // Fetch income statements (current + previous for YoY)
-            // FMP stable API uses query parameters: /income-statement?symbol=AAPL&limit=2
+            // Fetch income statements (Force period=annual for free tier compatibility)
+            // FMP Stable API uses query parameters:
+            // /income-statement?symbol=AAPL&period=annual
             List<Map<String, Object>> incomeData = fetchData(
-                    "/income-statement?symbol=" + upperTicker + "&limit=2&apikey=" + apiKey);
+                    "/income-statement?symbol=" + upperTicker + "&period=annual&limit=5&apikey=" + apiKey);
             if (incomeData == null || incomeData.isEmpty()) {
                 log.warn("⚠️ No income statement data found for {}", upperTicker);
                 return null;
             }
 
-            // Fetch balance sheet (current period)
+            // Fetch balance sheet (annual)
             List<Map<String, Object>> balanceData = fetchData(
-                    "/balance-sheet-statement?symbol=" + upperTicker + "&limit=1&apikey=" + apiKey);
+                    "/balance-sheet-statement?symbol=" + upperTicker + "&period=annual&limit=1&apikey=" + apiKey);
 
-            // Fetch cash flow (current + previous for YoY)
+            // Fetch cash flow (annual)
             List<Map<String, Object>> cashFlowData = fetchData(
-                    "/cash-flow-statement?symbol=" + upperTicker + "&limit=2&apikey=" + apiKey);
+                    "/cash-flow-statement?symbol=" + upperTicker + "&period=annual&limit=5&apikey=" + apiKey);
 
             // Parse the data
             IncomeStatement currentIncome = parseIncomeStatement(incomeData.get(0));
@@ -126,9 +128,10 @@ public class FmpFinancialDataService implements FinancialDataService {
         log.info("📈 Fetching historical margin data from FMP for: {}", upperTicker);
 
         try {
-            // Fetch last 5 quarters of income statements (quarterly data)
+            // Fetch last 5 years of income statements (Annual data is free tier friendly)
+            // FMP Stable API uses query parameters
             List<Map<String, Object>> incomeData = fetchData(
-                    "/income-statement?symbol=" + upperTicker + "&period=quarter&limit=5&apikey=" + apiKey);
+                    "/income-statement?symbol=" + upperTicker + "&period=annual&limit=5&apikey=" + apiKey);
             if (incomeData == null || incomeData.isEmpty()) {
                 return Collections.emptyList();
             }
@@ -137,7 +140,11 @@ public class FmpFinancialDataService implements FinancialDataService {
             // Reverse to get chronological order (oldest first)
             for (int i = incomeData.size() - 1; i >= 0; i--) {
                 Map<String, Object> data = incomeData.get(i);
-                String period = getStringValue(data, "period") + " " + getStringValue(data, "calendarYear");
+                String year = getStringValue(data, "calendarYear");
+                if (year.isEmpty()) {
+                    year = getStringValue(data, "fiscalYear");
+                }
+                String period = getStringValue(data, "period") + " " + year;
 
                 BigDecimal revenue = getBigDecimalValue(data, "revenue");
                 BigDecimal grossProfit = getBigDecimalValue(data, "grossProfit");
@@ -161,7 +168,8 @@ public class FmpFinancialDataService implements FinancialDataService {
                     }
                 }
 
-                history.add(new HistoricalDataPoint(period, grossMargin, operatingMargin, netMargin));
+                history.add(
+                        new HistoricalDataPoint(period, grossMargin, operatingMargin, netMargin, revenue, netIncome));
             }
 
             log.info("✅ Retrieved {} quarters of historical data for {}", history.size(), upperTicker);
@@ -201,6 +209,7 @@ public class FmpFinancialDataService implements FinancialDataService {
     private IncomeStatement parseIncomeStatement(Map<String, Object> data) {
         return IncomeStatement.builder()
                 .period(getStringValue(data, "period") + " " + getStringValue(data, "calendarYear"))
+                .reportedCurrency(getStringValue(data, "reportedCurrency"))
                 .revenue(getBigDecimalValue(data, "revenue"))
                 .costOfRevenue(getBigDecimalValue(data, "costOfRevenue"))
                 .grossProfit(getBigDecimalValue(data, "grossProfit"))

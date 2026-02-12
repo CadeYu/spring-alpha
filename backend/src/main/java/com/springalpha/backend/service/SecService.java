@@ -3,6 +3,7 @@ package com.springalpha.backend.service;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.nodes.TextNode;
 import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -31,7 +32,7 @@ public class SecService {
      */
     public Mono<String> getLatest10KContent(String ticker) {
         return Mono.fromCallable(() -> {
-            log.info("🔍 [1/3] 开始查找 {} 的最新 10-K 报告索引页...", ticker);
+            log.info("🔍 [1/3] 开始查找 {} 的最新 10-K/20-F 报告索引页...", ticker);
             // 1. 找到索引页 URL
             String indexUrl = findLatest10KIndexUrl(ticker);
             log.info("✅ [1/3] 找到索引页: {}", indexUrl);
@@ -51,32 +52,43 @@ public class SecService {
     }
 
     private String findLatest10KIndexUrl(String ticker) {
-        // SEC 官方搜索接口 (这里使用 EDGAR Full Text Search 的 API 或者旧版 browse 接口)
-        String searchUrl = String.format(
-                "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=%s&type=10-K&dateb=&owner=exclude&count=10",
-                ticker);
+        // SEC 官方搜索接口 (支持 10-K 和 20-F)
+        // Foreign issuers utilize 20-F instead of 10-K
+        String[] docTypes = { "10-K", "20-F" };
 
-        try {
-            Document doc = Jsoup.connect(searchUrl)
-                    .userAgent(USER_AGENT)
-                    .timeout(10000)
-                    .get();
+        for (String type : docTypes) {
+            try {
+                String searchUrl = String.format(
+                        "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=%s&type=%s&dateb=&owner=exclude&count=10",
+                        ticker, type);
 
-            Elements rows = doc.select("table.tableFile2 tr");
+                log.info("🔍 Searching SEC for {} (Type: {})", ticker, type);
 
-            for (Element row : rows) {
-                String docType = row.select("td").first() != null ? row.select("td").first().text() : "";
-                if ("10-K".equals(docType)) {
-                    Element link = row.select("a[href]").first();
-                    if (link != null) {
-                        return SEC_BASE_URL + link.attr("href");
+                Document doc = Jsoup.connect(searchUrl)
+                        .userAgent(USER_AGENT)
+                        .timeout(10000)
+                        .get();
+
+                Elements rows = doc.select("table.tableFile2 tr");
+
+                for (Element row : rows) {
+                    String docType = row.select("td").first() != null ? row.select("td").first().text() : "";
+                    if (type.equals(docType)) {
+                        Element link = row.select("a[href]").first();
+                        if (link != null) {
+                            String url = SEC_BASE_URL + link.attr("href");
+                            log.info("✅ Found {} index page: {}", type, url);
+                            return url; // Return immediately if found
+                        }
                     }
                 }
+            } catch (IOException e) {
+                log.warn("⚠️ Failed to search {} for {}: {}", type, ticker, e.getMessage());
+                // Continue to next type
             }
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to fetch index from SEC: " + e.getMessage(), e);
         }
-        throw new RuntimeException("No 10-K found for ticker: " + ticker);
+
+        throw new RuntimeException("No 10-K or 20-F found for ticker: " + ticker);
     }
 
     private String findPrimaryDocumentUrl(String indexUrl) throws IOException {
@@ -85,24 +97,20 @@ public class SecService {
                 .timeout(10000)
                 .get();
 
-        // 索引页通常有一个表格，列出了该次提交的所有文件。
-        // 我们要找 Description 可能是 "10-K" 或者是 Type 为 "10-K" 的第一行文件
+        // Support both 10-K and 20-F in the document table
         Elements rows = doc.select("table.tableFile tr");
         for (Element row : rows) {
             Elements cells = row.select("td");
             if (cells.size() > 3) {
-                // 通常第3列是Document Type
                 String type = cells.get(3).text();
-                if ("10-K".equals(type)) {
-                    Element link = cells.get(2).select("a").first(); // 第3列是文件名链接
+                // Check for 10-K or 20-F
+                if ("10-K".equals(type) || "20-F".equals(type)) {
+                    Element link = cells.get(2).select("a").first();
                     if (link != null) {
-                        // SEC 的链接通常是相对路径 /Archives/...
                         String href = link.attr("href");
-                        // 有时候是完整路径，有时候是相对路径，处理一下
                         if (href.startsWith("/")) {
                             return SEC_BASE_URL + href;
                         } else {
-                            // 这是一个极其简化的处理，实际 SEC 结构较复杂，通常 index url 去掉最后的文件名就是 base
                             String baseUrl = indexUrl.substring(0, indexUrl.lastIndexOf("/"));
                             return baseUrl + "/" + href;
                         }
@@ -110,7 +118,7 @@ public class SecService {
                 }
             }
         }
-        throw new RuntimeException("Primary 10-K document not found in index page: " + indexUrl);
+        throw new RuntimeException("Primary document (10-K/20-F) not found in index page: " + indexUrl);
     }
 
     private String fetchAndCleanHtml(String docUrl) throws IOException {
@@ -140,10 +148,21 @@ public class SecService {
         // MVP 策略：直接获取全文本，依靠 LLM 的长窗口去提取。
         // 优化策略：至少把 HTML 的表格结构转换成文本，或者移除表格只看文字。
 
+        // 3. 将 HTML 表格转换为 Markdown 格式，以保留结构
+        convertTablesToMarkdown(doc);
+
         String text = doc.body().text(); // Jsoup 的 text() 会智能去除 HTML 标签并保留空格
 
-        // 3. 简单的预处理：去除多余空格
-        text = text.replaceAll("\\s+", " ").trim();
+        // 4. 清理空格，但恢复 Markdown 的换行结构
+        // 先把所有空白字符(包括换行)压缩成单个空格
+        text = text.replaceAll("\\s+", " ");
+        // 恢复我们注入的特殊换行符
+        text = text.replace("{{NEWLINE}}", "\n");
+        // 恢复表格前后的换行
+        text = text.replace("{{TABLE_START}}", "\n\n");
+        text = text.replace("{{TABLE_END}}", "\n\n");
+
+        text = text.trim();
 
         // 4. 移除硬编码截断，让 RAG 处理全文
         // 我们保留 MD&A 定位逻辑作为 fallback，或者给 RAG 提供更好的起点，但不再强制截断长度
@@ -172,5 +191,73 @@ public class SecService {
         }
 
         return text;
+    }
+
+    /**
+     * 将 HTML 表格转换为 Markdown 格式文本，并替换原节点
+     * 使用 {{NEWLINE}} 作为临时换行符，防止 Jsoup.text() 移除
+     */
+    private void convertTablesToMarkdown(Document doc) {
+        Elements tables = doc.select("table");
+        int count = 0;
+
+        for (Element table : tables) {
+            // 忽略嵌套表格 (只处理最外层)
+            if (!table.parents().select("table").isEmpty()) {
+                continue;
+            }
+
+            StringBuilder md = new StringBuilder();
+            md.append("{{TABLE_START}}");
+
+            Elements rows = table.select("tr");
+            if (rows.isEmpty())
+                continue;
+
+            // 预处理：计算最大列数
+            int maxCols = 0;
+            for (Element row : rows) {
+                maxCols = Math.max(maxCols, row.select("th, td").size());
+            }
+            // 至少要有两列才转换，单列的没意义
+            if (maxCols < 1)
+                continue;
+
+            boolean headerProcessed = false;
+
+            for (Element row : rows) {
+                Elements cells = row.select("th, td");
+                if (cells.isEmpty())
+                    continue;
+
+                md.append("|");
+                for (int i = 0; i < maxCols; i++) {
+                    String cellText = "";
+                    if (i < cells.size()) {
+                        cellText = cells.get(i).text().trim().replaceAll("\\|", "/"); // 转义管道符
+                    }
+                    md.append(" ").append(cellText).append(" |");
+                }
+                md.append("{{NEWLINE}}");
+
+                // 如果这是第一行，或者包含 th，我们假设它是表头，加上分隔线
+                // 简单的启发式：第一行总是加分隔线
+                if (!headerProcessed) {
+                    md.append("|");
+                    for (int i = 0; i < maxCols; i++) {
+                        md.append("---|");
+                    }
+                    md.append("{{NEWLINE}}");
+                    headerProcessed = true;
+                }
+            }
+
+            md.append("{{TABLE_END}}");
+
+            // 替换表格节点
+            table.replaceWith(new TextNode(md.toString()));
+            count++;
+        }
+        log.info("📊 Converted {} HTML tables to Markdown format", count);
     }
 }

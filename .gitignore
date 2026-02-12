@@ -59,3 +59,10 @@ start_frontend.sh
 # Quick references (optional, local only)
 QUICKSTART.md
 
+# Temporary Test Files
+test.html
+frontend/test_parser.js
+
+# Diagnose Scripts & Generated Docs
+diagnose_fmp.sh
+docs/

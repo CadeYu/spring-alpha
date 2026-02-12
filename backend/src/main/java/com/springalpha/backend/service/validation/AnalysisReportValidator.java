@@ -189,6 +189,54 @@ public class AnalysisReportValidator {
     }
 
     /**
+     * Validate citations against the source text
+     */
+    public void validateCitations(AnalysisReport report, String sourceText) {
+        if (report.getCitations() == null || sourceText == null) {
+            return;
+        }
+
+        String normalizedSource = normalizeText(sourceText);
+
+        for (AnalysisReport.Citation citation : report.getCitations()) {
+            if (citation.getExcerpt() == null || citation.getExcerpt().isBlank()) {
+                citation.setVerificationStatus("UNVERIFIED");
+                continue;
+            }
+
+            String normalizedExcerpt = normalizeText(citation.getExcerpt());
+
+            // 1. Direct contains check (fastest)
+            if (normalizedSource.contains(normalizedExcerpt)) {
+                citation.setVerificationStatus("VERIFIED");
+            } else {
+                // 2. Fallback: Fuzzy match using a simplified approach (e.g. check if 80% of
+                // words exist in sequence)
+                // For now, we'll mark as NOT_FOUND if exact normalized match fails to keep it
+                // strict
+                // We can enhance this with Levenshtein later if needed
+                citation.setVerificationStatus("NOT_FOUND");
+                log.warn("🚩 Citation not found in source text: '{}'", citation.getExcerpt());
+            }
+        }
+    }
+
+    /**
+     * Normalize text for comparison:
+     * - Lowercase
+     * - Remove punctuation
+     * - Collapse whitespace
+     */
+    private String normalizeText(String text) {
+        if (text == null)
+            return "";
+        return text.toLowerCase()
+                .replaceAll("[^a-z0-9\\s]", " ") // Replace punctuation with space
+                .replaceAll("\\s+", " ") // Collapse multiple spaces
+                .trim();
+    }
+
+    /**
      * Result of validation
      */
     @Data

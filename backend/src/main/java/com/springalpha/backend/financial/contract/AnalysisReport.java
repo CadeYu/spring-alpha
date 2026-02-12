@@ -61,6 +61,11 @@ public class AnalysisReport {
     private AnalysisMetadata metadata;
 
     /**
+     * Currency of the financial figures (e.g., "USD", "JPY")
+     */
+    private String currency; // Added currency field
+
+    /**
      * Represents a single financial metric with interpretation
      */
     @Data
@@ -114,7 +119,10 @@ public class AnalysisReport {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Citation {
         private String section; // e.g., "MD&A", "Risk Factors"
-        private String excerpt; // Short text snippet
+        private String excerpt; // Short text snippet (keep in English for verification)
+        @JsonAlias("excerpt_zh")
+        private String excerptZh; // Localized snippet for display
+        private String verificationStatus; // "VERIFIED", "UNVERIFIED", "NOT_FOUND"
     }
 
     /**

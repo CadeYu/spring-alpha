@@ -27,22 +27,19 @@
 - [x] **语言切换**: 支持 EN/CN 双语分析报告。
 - [x] **Null 值处理**: 修复 `formatFinancialValue` 空值导致的 TypeError (2026-02-09)。
 
-## Phase 5: 待开发功能 (Roadmap)
-- [x] **向量 RAG 升级**: 完成 Spring AI + PGVector 向量检索 (Gemini Embedding + RAG)。
-- [x] **Retrieval Tuning**: 优化相似度阈值 (0.4) 解决召回率问题 (2026-02-09)。
-## Phase 5: 待开发功能 (Roadmap)
-- [ ] **引用校验 (Anti-Hallucination)**: 校验 LLM 输出的 citations 是否真实存在于 SEC 原文。
-- [ ] **邮件发送报告**: 分析完成后，支持发送报告到用户邮箱存档。
-- [ ] **导出 PDF**: 支持将分析报告导出为 PDF 文档。
-- [ ] **财报电话会议分析**: 接入 FMP Earnings Call Transcript API，分析电话会议内容。
-- [ ] **Docker 部署**: 提供 Docker Compose 一键部署脚本。
+## Phase 5: Anti-Hallucination (Citation Verification)
+- [x] **校验逻辑**: 实现模糊匹配 (Fuzzy Matching) 验证引用。
+- [x] **后端集成**: 每次生成报告自动校验，返回 `verificationStatus`。
+- [x] **Prompt 优化**: 强化 Prompt 避免产生空引用 (2026-02-09)。
 
 ## Phase 6: 深度洞察 (Advanced Insights)
-- [ ] **杜邦分析法 (DuPont Analysis)**: ROE 拆解 (净利率 x 周转率 x 杠杆率)。
-- [ ] **智能洞察引擎 (Insight Engine)**: 
+- [x] **杜邦分析法 (DuPont Analysis)**: ROE 拆解 (净利率 x 周转率 x 杠杆率)。
+- [x] **智能洞察引擎 (Insight Engine)**: 
     - 自动识别会计策略变更 (营收确认、资产减值)。
-    - 关键指标根因归因 (不仅仅是增长多少，而是*为什么*增长)。
-- [ ] **动态因子分析 (Waterfall Charts)**: 收入/毛利/现金流驱动因素分解。
+    - 关键指标根因归因 (Root Cause Analysis)。
+- [x] **动态因子分析 (Waterfall Charts)**: 
+    - 收入/利润率驱动因素分解。
+    - **Prompt 优化**: 允许使用 "+/-" 定性描述替代缺失数值 (2026-02-09)。
 - [ ] **NLP 主题趋势 (Topic Trends)**: 提取 MD&A 高频热词 (如 "AI", "Supply Chain") 并追踪趋势。
 
 

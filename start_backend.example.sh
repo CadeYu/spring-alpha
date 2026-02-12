@@ -4,6 +4,8 @@
 # start_backend.sh is gitignored and won't be committed
 
 export GROQ_API_KEY=your_groq_api_key_here
+export FMP_API_KEY=your_fmp_api_key_here
+export NEON_PASSWORD=your_neon_password_here
 # export GEMINI_API_KEY=your_gemini_api_key_here
 
 # Increase JVM heap memory (prevents OOM when processing large SEC filings)

@@ -23,6 +23,7 @@ public class FinancialFacts {
     private String companyName;
     private String period; // e.g., "Q3 2024", "FY 2023"
     private String filingDate;
+    private String currency; // e.g. USD, JPY
 
     // Revenue Metrics
     private BigDecimal revenue;

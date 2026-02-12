@@ -31,15 +31,16 @@ public class OpenAiStrategy extends BaseAiStrategy {
             AnalysisReportValidator validator,
             ObjectMapper objectMapper,
             @Value("${app.openai.api-key:}") String apiKey,
-            @Value("${app.openai.model:gpt-4o-mini}") String model) {
+            @Value("${app.openai.model:gpt-4o-mini}") String model,
+            @Value("${app.openai.base-url:https://api.openai.com/v1}") String baseUrl) {
         super(promptService, validator, objectMapper);
         this.model = model;
         this.webClient = WebClient.builder()
-                .baseUrl("https://api.openai.com/v1")
+                .baseUrl(baseUrl)
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .defaultHeader("Content-Type", "application/json")
                 .build();
-        log.info("🤖 OpenAI Strategy initialized with model: {}", model);
+        log.info("🤖 OpenAI Strategy initialized with model: {} (URL: {})", model, baseUrl);
     }
 
     @Override

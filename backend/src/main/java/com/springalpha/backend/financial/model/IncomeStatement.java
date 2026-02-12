@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 public class IncomeStatement {
 
     private String period;
+    private String reportedCurrency; // e.g. USD, JPY, CNY
 
     // Revenue
     private BigDecimal revenue;

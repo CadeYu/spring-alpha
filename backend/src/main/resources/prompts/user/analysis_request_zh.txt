@@ -17,6 +17,14 @@
 3. **动态因子分析 (Factor Analysis)**：
    - 创建 **收入桥 (Revenue Bridge)**（销量 vs 价格 vs 汇率）。
    - 创建 **利润率桥 (Margin Bridge)**（成本 vs 产品组合 vs 经营杠杆）。
+   - *关键提示*：如果找不到具体数值，请根据文本描述使用 "+"（正向影响）、"-"（负向影响）或 "持平"。**不要**返回 "无数据"。请根据语境估算方向。
+
+4. **语言要求 (Language Requirement)**：
+   - **所有分析输出内容必须使用中文。**
+   - **引用 (citations)**：
+     - `excerpt`: **必须保留原文（英文）**，用于后端验证。
+     - `excerpt_zh`: **必须提供中文翻译**，用于前端展示。
+     - `section`: 必须使用中文。
 
 输出要求：
 返回符合以下格式的 JSON 对象：
@@ -57,10 +65,10 @@
   },
   "factorAnalysis": {
     "revenueBridge": [
-      { "name": "销量", "impact": "+5%", "description": "..." }
+      { "name": "销量", "impact": "+5% 或仅 +", "description": "..." }
     ],
     "marginBridge": [
-      { "name": "原材料成本", "impact": "-2%", "description": "..." }
+      { "name": "原材料成本", "impact": "-2% 或仅 -", "description": "..." }
     ]
   },
   "businessDrivers": [
@@ -81,10 +89,13 @@
   "bearCase": "基于数据的悲观解读",
   "citations": [
     {
-      "text": "引用的证据文本",
-      "source": "来源标识（如：管理层讨论、风险因素）"
+      "section": "Management's Discussion...",
+      "excerpt": "Original English text...",
+      "excerpt_zh": "中文翻译文本..."
     }
   ]
 }
 
-重要提示：只能使用财务数据部分提供的数值，不要创造任何新的数值。
+重要提示：
+1. 只能使用财务数据部分提供的数值，不要创造任何新的数值。
+2. 如果找不到有效的引用，**不要**包含空的 citation 对象。`citations` 数组中只能包含有效的、非空的内容。

@@ -83,6 +83,12 @@
 			<groupId>org.springframework.ai</groupId>
 			<artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
 		</dependency>
+
+		<!-- 10. Local Embeddings (ONNX) - Free & Private -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-transformers</artifactId>
+		</dependency>
 	</dependencies>
 
 	<dependencyManagement>
