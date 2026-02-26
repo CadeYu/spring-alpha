@@ -16,14 +16,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * FMP Financial Data Service - Fetches real financial data from Financial
- * Modeling Prep API.
- * This replaces MockFinancialDataService when FMP_API_KEY is configured.
- * 
- * FMP API Endpoints Used:
- * - /income-statement/{ticker}?limit=5
- * - /balance-sheet-statement/{ticker}?limit=1
- * - /cash-flow-statement/{ticker}?limit=2
+ * FMP Financial Data Service - 由于 FMP 是付费数据源，这里实现了真实的财务数据获取。
+ * <p>
+ * **为什么需要这个服务？**
+ * LLM 虽然能读文本，但数学很差，而且 RAG 里的数字可能不全。
+ * FMP (Financial Modeling Prep) 提供了结构化的 JSON 财务报表，
+ * 我们用它来提供 "Ground Truth" (基准事实)。
+ * <p>
+ * **主要功能**:
+ * 1. **Snapshot**: 获取当前最新的财务快照 (用于生成分析报告)。
+ * 2. **Historical**: 获取过去 5 年的历史数据 (用于绘制前端趋势图)。
  */
 @Service
 @Primary
@@ -41,22 +43,36 @@ public class FmpFinancialDataService implements FinancialDataService {
             FinancialCalculator calculator) {
         this.apiKey = apiKey;
         this.calculator = calculator;
+
+        // Configure HttpClient with timeouts
+        reactor.netty.http.client.HttpClient httpClient = reactor.netty.http.client.HttpClient.create()
+                .option(io.netty.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
+                .responseTimeout(java.time.Duration.ofSeconds(10))
+                .followRedirect(true)
+                .doOnConnected(conn -> conn.addHandlerLast(new io.netty.handler.timeout.ReadTimeoutHandler(10))
+                        .addHandlerLast(new io.netty.handler.timeout.WriteTimeoutHandler(10)));
+
         this.webClient = WebClient.builder()
                 .baseUrl(baseUrl)
+                .clientConnector(new org.springframework.http.client.reactive.ReactorClientHttpConnector(httpClient))
                 .build();
         log.info("🚀 FmpFinancialDataService initialized with base URL: {}", baseUrl);
     }
 
+    /**
+     * 获取财务事实快照 (Snapshot)
+     * <p>
+     * 一次性拉取三大报表 (Income, Balance, Cash Flow)，并组装成 FinancialFacts 对象。
+     * 这些数据会被直接注入到 Prompt 里，告诉 AI "今年的确切数字是多少"。
+     */
     @Override
     public FinancialFacts getFinancialFacts(String ticker) {
         String upperTicker = ticker.toUpperCase();
         log.info("📊 Fetching real financial data from FMP for: {}", upperTicker);
 
         try {
-            // Fetch income statements (current + previous for YoY)
-            // Fetch income statements (Force period=annual for free tier compatibility)
-            // FMP Stable API uses query parameters:
-            // /income-statement?symbol=AAPL&period=annual
+            // 1. 获取利润表 (Income Statement)
+            // 必须强制 period=annual，否则免费版 key 可能会报错 403/402
             List<Map<String, Object>> incomeData = fetchData(
                     "/income-statement?symbol=" + upperTicker + "&period=annual&limit=5&apikey=" + apiKey);
             if (incomeData == null || incomeData.isEmpty()) {
@@ -64,15 +80,16 @@ public class FmpFinancialDataService implements FinancialDataService {
                 return null;
             }
 
-            // Fetch balance sheet (annual)
+            // 2. 获取资产负债表 (Balance Sheet)
             List<Map<String, Object>> balanceData = fetchData(
                     "/balance-sheet-statement?symbol=" + upperTicker + "&period=annual&limit=1&apikey=" + apiKey);
 
-            // Fetch cash flow (annual)
+            // 3. 获取现金流量表 (Cash Flow)
             List<Map<String, Object>> cashFlowData = fetchData(
                     "/cash-flow-statement?symbol=" + upperTicker + "&period=annual&limit=5&apikey=" + apiKey);
 
-            // Parse the data
+            // 解析 JSON 数据并映射到 Java 对象
+            // 我们取最近两年 (Index 0 和 1) 的数据来计算 YoY (同比变化)
             IncomeStatement currentIncome = parseIncomeStatement(incomeData.get(0));
             IncomeStatement previousIncome = incomeData.size() > 1 ? parseIncomeStatement(incomeData.get(1)) : null;
 
@@ -87,13 +104,14 @@ public class FmpFinancialDataService implements FinancialDataService {
                     ? parseCashFlowStatement(cashFlowData.get(1))
                     : null;
 
-            // Get company name from FMP data
+            // 获取公司名称和财报年份
             String companyName = getStringValue(incomeData.get(0), "symbol");
             String period = getStringValue(incomeData.get(0), "period") + " "
                     + getStringValue(incomeData.get(0), "calendarYear");
 
             log.info("✅ Successfully fetched FMP data for {} ({})", upperTicker, period);
 
+            // 使用计算器模块，计算各种衍生指标 (如毛利率、净利率增长率)
             return calculator.buildFinancialFacts(
                     upperTicker,
                     companyName,
@@ -112,24 +130,27 @@ public class FmpFinancialDataService implements FinancialDataService {
 
     @Override
     public boolean isSupported(String ticker) {
-        // FMP supports all US stocks; we'll do a lightweight check
         return ticker != null && ticker.matches("^[A-Za-z]{1,5}$");
     }
 
     @Override
     public String[] getSupportedTickers() {
-        // FMP supports thousands of tickers; return common ones for demo
         return new String[] { "AAPL", "MSFT", "TSLA", "GOOGL", "AMZN", "META", "NVDA" };
     }
 
+    /**
+     * 获取历史趋势数据 (for Charts)
+     * <p>
+     * 前端的 "Revenue Trend" 和 "Margin Analysis" 图表就是靠这个方法喂数据的。
+     * 它通过拉取过去 5 年的利润表，构建出一个时间序列数组。
+     */
     @Override
     public List<HistoricalDataPoint> getHistoricalData(String ticker) {
         String upperTicker = ticker.toUpperCase();
         log.info("📈 Fetching historical margin data from FMP for: {}", upperTicker);
 
         try {
-            // Fetch last 5 years of income statements (Annual data is free tier friendly)
-            // FMP Stable API uses query parameters
+            // 拉取过去 5 年的年报
             List<Map<String, Object>> incomeData = fetchData(
                     "/income-statement?symbol=" + upperTicker + "&period=annual&limit=5&apikey=" + apiKey);
             if (incomeData == null || incomeData.isEmpty()) {
@@ -137,21 +158,24 @@ public class FmpFinancialDataService implements FinancialDataService {
             }
 
             List<HistoricalDataPoint> history = new ArrayList<>();
-            // Reverse to get chronological order (oldest first)
+            // 倒序遍历 (从旧到新)，方便前端图表按时间轴绘制
             for (int i = incomeData.size() - 1; i >= 0; i--) {
                 Map<String, Object> data = incomeData.get(i);
+
+                // 优先使用 calendarYear (例如 2023)，如果没有则回退到 fiscalYear
                 String year = getStringValue(data, "calendarYear");
                 if (year.isEmpty()) {
                     year = getStringValue(data, "fiscalYear");
                 }
                 String period = getStringValue(data, "period") + " " + year;
 
+                // 提取关键指标
                 BigDecimal revenue = getBigDecimalValue(data, "revenue");
                 BigDecimal grossProfit = getBigDecimalValue(data, "grossProfit");
                 BigDecimal operatingIncome = getBigDecimalValue(data, "operatingIncome");
                 BigDecimal netIncome = getBigDecimalValue(data, "netIncome");
 
-                // Calculate margins
+                // 计算三大利润率 (Margins)
                 BigDecimal grossMargin = BigDecimal.ZERO;
                 BigDecimal operatingMargin = BigDecimal.ZERO;
                 BigDecimal netMargin = BigDecimal.ZERO;

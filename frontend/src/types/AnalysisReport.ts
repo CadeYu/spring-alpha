@@ -45,6 +45,7 @@ export interface AnalysisReport {
     dupontAnalysis?: DuPontAnalysis;
     insightEngine?: InsightEngine;
     factorAnalysis?: FactorAnalysis;
+    topicTrends?: TopicTrend[];
 }
 
 // --- Advanced Insights Types ---
@@ -83,4 +84,10 @@ export interface FactorBridgeItem {
     name: string;
     impact: string; // "+5%", "+", "-2%", "-"
     description: string;
+}
+
+export interface TopicTrend {
+    topic: string;
+    frequency: number; // 1-100
+    sentiment: 'positive' | 'negative' | 'neutral';
 }

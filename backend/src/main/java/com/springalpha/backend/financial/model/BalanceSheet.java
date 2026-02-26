@@ -6,15 +6,19 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
- * Balance Sheet data structure.
- * Represents a snapshot of assets, liabilities, and equity at a point in time.
+ * 资产负债表 (Balance Sheet) - FMP API 映射类
+ * <p>
+ * 对应 FMP API 的 `/balance-sheet-statement` 端点。
+ * 包含：Total Assets, Total Liabilities, Total Equity, Cash, Debt 等。
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class BalanceSheet {
 
     private String period;

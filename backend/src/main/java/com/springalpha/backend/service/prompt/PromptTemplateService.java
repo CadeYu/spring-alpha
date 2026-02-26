@@ -12,8 +12,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Service for loading and rendering prompt templates.
- * Handles template variable substitution and multi-language support.
+ * Prompt 模板服务
+ * <p>
+ * 负责加载和渲染 Prompt 模板 (resources/prompts/*.txt)。
+ * 核心功能是 **变量替换** (Variable Substitution) 和 **多语言支持**。
+ * <p>
+ * 所有的 Prompt 都是文本文件，与代码分离，方便非技术人员修改。
  */
 @Slf4j
 @Service
@@ -27,9 +31,10 @@ public class PromptTemplateService {
     }
 
     /**
-     * Get the system prompt that defines the AI's role
-     * 
-     * @param lang Language code ("en" or "zh")
+     * 获取 System Prompt (系统角色设定)
+     * <p>
+     * 根据 lang 参数加载对应的角色模板 (zh/en)。
+     * System Prompt 定义了 AI 是谁 (e.g. "你是高盛的高级证券分析师")。
      */
     public String getSystemPrompt(String lang) {
         String templatePath = "zh".equalsIgnoreCase(lang)
@@ -40,7 +45,13 @@ public class PromptTemplateService {
     }
 
     /**
-     * Build the user prompt by filling in template variables
+     * 构建 User Prompt (用户指令)
+     * <p>
+     * 将 AnalysisContract 中的数据填充到模板变量中：
+     * - {{ticker}}: 股票代码
+     * - {{financialFacts}}: JSON 格式的确切财务数字
+     * - {{textEvidence}}: RAG 检索到的相关财报片段
+     * - {{analysisTasks}}: 本次分析的具体任务清单
      */
     public String buildUserPrompt(AnalysisContract contract, String lang) {
         // Select template based on language

@@ -10,6 +10,16 @@ import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 
+/**
+ * SEC 服务 (ETL Service)
+ * <p>
+ * 负责从 SEC EDGAR 官网抓取、清洗和结构化 10-K/20-F 财报。
+ * 核心功能：
+ * 1. **Crawl**: 查找最新财报 URL。
+ * 2. **Clean**: 去除 HTML 杂质。
+ * 3. **Transform**: 将 HTML 表格转换为 Markdown，保留数据结构 (Table Structure
+ * Preservation)。
+ */
 @Service
 public class SecService {
 
@@ -194,32 +204,42 @@ public class SecService {
     }
 
     /**
-     * 将 HTML 表格转换为 Markdown 格式文本，并替换原节点
-     * 使用 {{NEWLINE}} 作为临时换行符，防止 Jsoup.text() 移除
+     * 将 HTML 表格转换为 Markdown 格式文本，并替换原节点。
+     * <p>
+     * **为什么要做这个？**
+     * 普通的 `Jsoup.text()` 会把表格扁平化成一串乱序文本：
+     * 原文: | Volume | +5% | -> 结果: "Volume +5%" (失去了列对齐关系)
+     * <p>
+     * **转换后**:
+     * | Volume | +5% | (保留了 Markdown 管道符)
+     * <p>
+     * 这样 LLM (Groq) 在 RAG 检索时，就能理解这是表格，从而正确提取 "Volume" 对应的 "+5%"。
+     *
+     * @param doc Jsoup Document 对象（会被原地修改）
      */
     private void convertTablesToMarkdown(Document doc) {
         Elements tables = doc.select("table");
         int count = 0;
 
         for (Element table : tables) {
-            // 忽略嵌套表格 (只处理最外层)
+            // 忽略嵌套表格 (只处理最外层)，防止重复处理
             if (!table.parents().select("table").isEmpty()) {
                 continue;
             }
 
             StringBuilder md = new StringBuilder();
-            md.append("{{TABLE_START}}");
+            md.append("{{TABLE_START}}"); // 标记表格开始，稍后替换为换行
 
             Elements rows = table.select("tr");
             if (rows.isEmpty())
                 continue;
 
-            // 预处理：计算最大列数
+            // 预处理：计算最大列数，确保每一行都能对齐
             int maxCols = 0;
             for (Element row : rows) {
                 maxCols = Math.max(maxCols, row.select("th, td").size());
             }
-            // 至少要有两列才转换，单列的没意义
+            // 至少要有两列才转换，单列的表格通常是布局用的，不是数据
             if (maxCols < 1)
                 continue;
 
@@ -234,13 +254,14 @@ public class SecService {
                 for (int i = 0; i < maxCols; i++) {
                     String cellText = "";
                     if (i < cells.size()) {
-                        cellText = cells.get(i).text().trim().replaceAll("\\|", "/"); // 转义管道符
+                        // 清理单元格文本：去除多余空格，转义内部的管道符 "|" 防止破坏 Markdown 结构
+                        cellText = cells.get(i).text().trim().replaceAll("\\|", "/");
                     }
                     md.append(" ").append(cellText).append(" |");
                 }
-                md.append("{{NEWLINE}}");
+                md.append("{{NEWLINE}}"); // 临时换行符，防止 Jsoup.text() 把它吃掉
 
-                // 如果这是第一行，或者包含 th，我们假设它是表头，加上分隔线
+                // 如果这是第一行，或者包含 th，我们假设它是表头，加上 Markdown 分隔线 |---|---|
                 // 简单的启发式：第一行总是加分隔线
                 if (!headerProcessed) {
                     md.append("|");
@@ -254,7 +275,8 @@ public class SecService {
 
             md.append("{{TABLE_END}}");
 
-            // 替换表格节点
+            // 关键：用生成的 Markdown 文本替换原始的 HTML <table> 节点
+            // 使用 TextNode 包装，这样后续 doc.body().text() 就会包含这段 Markdown
             table.replaceWith(new TextNode(md.toString()));
             count++;
         }

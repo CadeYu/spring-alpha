@@ -18,6 +18,10 @@ IMPORTANT INSTRUCTIONS:
    - Create a *Revenue Bridge* (Volume vs Price vs FX).
    - Create a *Margin Bridge* (Cost vs Mix vs Operating Leverage).
    - *CRITICAL*: If exact numbers are not available for a factor, use "+" (positive impact), "-" (negative impact), or "flat". Do NOT return "Not available". Estimate direction based on text.
+4. **NLP Topic Trends**:
+   - Extract 10-15 **high-frequency, strategic keywords** (exclude stop words like 'the', 'company').
+   - **frequency**: Estimate relative weight (1-100).
+   - **sentiment**: Determine context sentiment (positive/negative/neutral).
 
 OUTPUT REQUIREMENTS:
 Return a JSON object with the following structure:
@@ -27,10 +31,27 @@ Return a JSON object with the following structure:
   "keyMetrics": [
     {
       "name": "Revenue",
-      "value": "actual value",
-      "change": "YoY/QoQ change",
+      "value": "use exact value from Financial Facts",
       "sentiment": "positive/negative/neutral",
-      "interpretation": "business interpretation"
+      "interpretation": "business interpretation of the revenue performance"
+    },
+    {
+      "name": "Gross Margin",
+      "value": "use exact value from Financial Facts",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "business interpretation of the margin trend"
+    },
+    {
+      "name": "Net Income",
+      "value": "use exact value from Financial Facts",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "business interpretation of profitability"
+    },
+    {
+      "name": "Revenue YoY Growth",
+      "value": "use exact value from Financial Facts",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "business interpretation of growth trajectory"
     }
   ],
   "dupontAnalysis": {
@@ -64,6 +85,13 @@ Return a JSON object with the following structure:
       { "name": "Input Costs", "impact": "-2% or just -", "description": "..." }
     ]
   },
+  "topicTrends": [
+    {
+      "topic": "Keyword (e.g. AI, Supply Chain)",
+      "frequency": 85,
+      "sentiment": "positive/negative/neutral"
+    }
+  ],
   "businessDrivers": [
     {
       "title": "driver title",

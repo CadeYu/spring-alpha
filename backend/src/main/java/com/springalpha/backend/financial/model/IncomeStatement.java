@@ -4,17 +4,21 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.math.BigDecimal;
 
 /**
- * Income Statement (Profit & Loss Statement) data structure.
- * Represents a single period's income statement.
+ * 利润表 (Income Statement) - FMP API 映射类
+ * <p>
+ * 对应 FMP API 的 `/income-statement` 端点。
+ * 包含：Revenue, Cost of Revenue, Gross Profit, Operating Expenses, Net Income 等。
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class IncomeStatement {
 
     private String period;

@@ -13,8 +13,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Validates that AnalysisReport does not contain hallucinated data.
- * Ensures all numerical values can be traced back to FinancialFacts.
+ * 幻觉校验器 (Hallucination Validator)
+ * <p>
+ * **核心职能**: 防止 LLM "一本正经地胡说八道"。
+ * **工作原理**:
+ * 1. 从 LLM 生成的文本报告中提取所有数字。
+ * 2. 尝试在 "Ground Truth" (FinancialFacts) 中找到这些数字 (允许 1% 误差)。
+ * 3. 如果通过 ETL 获取的财报里没有这个数字，则标记为 "Possible Hallucination" (潜在幻觉)。
+ * <p>
+ * 这是金融 AI 应用中 **最重要** 的安全网。
  */
 @Slf4j
 @Service

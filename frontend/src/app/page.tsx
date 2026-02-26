@@ -20,6 +20,8 @@ import { AnalysisReport } from '@/types/AnalysisReport';
 import { DuPontChart } from '@/components/financial/dupont-chart';
 import { InsightCards } from '@/components/financial/insight-cards';
 import { WaterfallChart } from '@/components/financial/waterfall-chart';
+import { TopicWordCloud } from '@/components/analysis/TopicWordCloud';
+import { PdfDownloadButton } from '@/components/pdf/PdfDownloadButton';
 
 // Available AI models for analysis
 const AI_MODELS = [
@@ -209,6 +211,14 @@ export default function Home() {
         {/* Analysis Report */}
         {report && (
           <div className="space-y-6">
+            {/* Report Toolbar */}
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-emerald-400 flex items-center gap-2">
+                📊 {isZh ? `${ticker} 分析报告` : `${ticker} Analysis Report`}
+              </h2>
+              <PdfDownloadButton report={report} ticker={ticker} lang={lang} />
+            </div>
+
             <ExecutiveSummary
               summary={report.executiveSummary}
               metadata={report.metadata}
@@ -235,6 +245,11 @@ export default function Home() {
                 {/* DuPont Analysis */}
                 {report.dupontAnalysis && (
                   <DuPontChart data={report.dupontAnalysis} lang={lang} />
+                )}
+
+                {/* Topic Trends (Word Cloud) */}
+                {report.topicTrends && report.topicTrends.length > 0 && (
+                  <TopicWordCloud trends={report.topicTrends} lang={lang} />
                 )}
 
                 {/* Insight Engine (Root Cause & Accounting Changes) */}

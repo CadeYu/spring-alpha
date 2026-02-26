@@ -40,7 +40,13 @@
 - [x] **动态因子分析 (Waterfall Charts)**: 
     - 收入/利润率驱动因素分解。
     - **Prompt 优化**: 允许使用 "+/-" 定性描述替代缺失数值 (2026-02-09)。
-- [ ] **NLP 主题趋势 (Topic Trends)**: 提取 MD&A 高频热词 (如 "AI", "Supply Chain") 并追踪趋势。
+- [x] **NLP 主题趋势 (Topic Trends)**: 提取 MD&A 高频热词 (如 "AI", "Supply Chain") 并可视化的词云 (Word Cloud) (2026-02-14)。
+- [ ] **NLP 主题趋势 (Topic Trends)**: 提取 MD&A 高频热词 (如 "AI", "Supply Chain") 并追踪趋势（暂缓）。
 
+## Phase 7: Production Ready (规划中)
+- [ ] **Docker 部署**: Docker Compose 一键部署脚本（backend + frontend + env 编排）。
+- [ ] **PDF 下载**: 使用 @react-pdf/renderer 生成专业级金融分析报告 PDF（高盛研报风格）。
+- [ ] **Earnings Call 分析**: 接入 FMP Transcript API + LLM 情感分析财报电话会议。
 
-
+## 代码清理记录
+- [x] **删除死代码**: 移除未使用的 `RagService.java`（关键词匹配降级方案），项目实际使用 `VectorRagService` + PGVector 向量语义检索 (2026-02-26)。

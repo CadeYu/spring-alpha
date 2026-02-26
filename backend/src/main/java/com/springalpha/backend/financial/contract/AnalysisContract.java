@@ -10,8 +10,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Analysis Contract - The standardized input format for all AI strategies.
- * This contract ensures that LLMs only interpret facts, never create new data.
+ * 分析契约 (Analysis Contract)
+ * <p>
+ * 这是一个 DTO (Data Transfer Object)，封装了 **所有** AI 分析所需的上下文。
+ * <p>
+ * **包含内容**:
+ * 1. `financialFacts`: 真实的财务数字 (防止幻觉)。
+ * 2. `textEvidence`: RAG 检索到的文本片段 (提供定性分析依据)。
+ * 3. `analysisTasks`: 本次分析的具体任务 (e.g. "分析毛利率趋势")。
+ * <p>
+ * 它可以被序列化为 JSON，方便调试或存入数据库。
  */
 @Data
 @Builder

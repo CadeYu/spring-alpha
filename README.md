@@ -79,15 +79,22 @@ public Function<Request, Response> getStockPrice() {
 - [x] 实现 SEC 10-K HTML 基础抓取与清洗
 - [x] 实现 `/api/sec/analyze` SSE 与前端对接
 
-### Phase 2: Core Analysis 🚧
+### Phase 2: Core Analysis ✅
 - [x] **Generative UI**：后端返回 JSON，前端渲染图表
-- [ ] 增加“杜邦分析法” Prompt 模板
-- [ ] 引入 Redis 缓存热门股票数据
+- [x] 增加杜邦分析法 Prompt 模板
 
-### Phase 3: Advanced Features 🔮
-- [ ] **Competitor Compare**: 引入 RAG，实现两家公司财报横向对比
-- [ ] **Earnings Call**: 集成 Whisper 模型，分析财报电话会议录音情感
-- [ ] **Docker Deploy**: 提供 Docker Compose 一键部署脚本
+### Phase 3: Deep Analysis ✅
+- [x] **Multi-Model Support**：策略模式支持 Groq / OpenAI / Gemini / Mock 四种模型切换
+- [x] **FMP 数据接入**：真实财务数据 (Revenue, Profit, Balance Sheet, Cash Flow)
+- [x] **Vector RAG**：PGVector + Gemini Embedding 语义检索，替代关键词匹配
+- [x] **Anti-Hallucination**：模糊匹配引用校验 + 双语引用系统
+- [x] **Advanced Insights**：杜邦分析、智能洞察引擎、瀑布图、词云
+
+### Phase 4: Production Ready 🚧
+- [ ] **Docker Deploy**: Docker Compose 一键部署（backend + frontend）
+- [ ] **PDF Export**: 生成专业级金融分析报告 PDF（高盛研报风格）
+- [ ] **Earnings Call**: 接入 FMP Transcript API，LLM 情感分析财报电话会议
+
 
 ## 🚀 快速开始 (Quick Start)
 

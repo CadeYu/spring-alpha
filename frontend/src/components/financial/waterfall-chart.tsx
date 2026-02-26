@@ -11,11 +11,25 @@ interface WaterfallChartProps {
     lang?: string;
 }
 
-// ... ChartData interface ...
+interface WaterfallBarData {
+    name: string;
+    value: number;
+    barHeight: number;
+    color: string;
+    originalImpact: string;
+    description: string;
+    isQualitative: boolean;
+}
+
+interface CustomTooltipProps {
+    active?: boolean;
+    payload?: { payload: WaterfallBarData }[];
+    label?: string;
+    lang?: string;
+}
 
 export function WaterfallChart({ title, data, lang = 'en' }: WaterfallChartProps) {
     const chartData = useMemo(() => processWaterfallData(data, lang), [data, lang]);
-    const isZh = lang === 'zh';
 
     if (!data || data.length === 0) return null;
 
@@ -54,9 +68,9 @@ export function WaterfallChart({ title, data, lang = 'en' }: WaterfallChartProps
 }
 
 // Logic to process the waterfall data
-function processWaterfallData(items: FactorBridgeItem[], lang: string): any[] {
+function processWaterfallData(items: FactorBridgeItem[], lang: string): WaterfallBarData[] {
     let currentTotal = 0;
-    const processed = [];
+    const processed: WaterfallBarData[] = [];
     const isZh = lang === 'zh';
 
     // Start with a base of 0 or previous total (simplified for this bridge)
@@ -132,9 +146,9 @@ function processWaterfallData(items: FactorBridgeItem[], lang: string): any[] {
     return processed;
 }
 
-const CustomTooltip = ({ active, payload, label, lang = 'en' }: any) => {
+const CustomTooltip = ({ active, payload, label, lang = 'en' }: CustomTooltipProps) => {
     if (active && payload && payload.length) {
-        const data = payload[1].payload; // Access the main data payload (second item in stack)
+        const data = payload[1].payload as WaterfallBarData; // Access the main data payload (second item in stack)
         const isZh = lang === 'zh';
         return (
             <div className="bg-slate-900/95 border border-slate-700 p-3 rounded-lg shadow-xl text-slate-200 backdrop-blur-md">

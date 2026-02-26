@@ -19,7 +19,12 @@
    - 创建 **利润率桥 (Margin Bridge)**（成本 vs 产品组合 vs 经营杠杆）。
    - *关键提示*：如果找不到具体数值，请根据文本描述使用 "+"（正向影响）、"-"（负向影响）或 "持平"。**不要**返回 "无数据"。请根据语境估算方向。
 
-4. **语言要求 (Language Requirement)**：
+4. **NLP 主题趋势 (Topic Trends)**：
+   - 提取 10-15 个 **高频、具有战略意义** 的关键词 (排除 'the', 'company' 等停用词)。
+   - **frequency**: 估算其相对权重 (1-100)。
+   - **sentiment**: 判断上下文情感 (positive/negative/neutral)。
+
+5. **语言要求 (Language Requirement)**：
    - **所有分析输出内容必须使用中文。**
    - **引用 (citations)**：
      - `excerpt`: **必须保留原文（英文）**，用于后端验证。
@@ -34,10 +39,27 @@
   "keyMetrics": [
     {
       "name": "营收",
-      "value": "实际值",
-      "change": "同比/环比变化",
+      "value": "使用财务数据中的精确数值",
       "sentiment": "positive/negative/neutral",
-      "interpretation": "业务解读"
+      "interpretation": "对营收表现的业务解读"
+    },
+    {
+      "name": "毛利率",
+      "value": "使用财务数据中的精确数值",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "对毛利率变化趋势的业务解读"
+    },
+    {
+      "name": "净利润",
+      "value": "使用财务数据中的精确数值",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "对盈利能力的业务解读"
+    },
+    {
+      "name": "营收同比增长",
+      "value": "使用财务数据中的精确数值",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "对增长趋势的业务解读"
     }
   ],
   "dupontAnalysis": {
@@ -71,6 +93,13 @@
       { "name": "原材料成本", "impact": "-2% 或仅 -", "description": "..." }
     ]
   },
+  "topicTrends": [
+    {
+      "topic": "关键词 (如 AI, 供应链)",
+      "frequency": 85,
+      "sentiment": "positive/negative/neutral"
+    }
+  ],
   "businessDrivers": [
     {
       "title": "驱动因素标题",

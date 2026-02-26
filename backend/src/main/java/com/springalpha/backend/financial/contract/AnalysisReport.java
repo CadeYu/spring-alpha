@@ -10,8 +10,16 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import java.util.List;
 
 /**
- * Analysis Report - The standardized output structure for all AI strategies.
- * This ensures consistent, structured reporting across different models.
+ * 分析报告 (The Output)
+ * <p>
+ * 这是系统最终生成的结构化报告。
+ * 所有的 AI 策略 (OpenAI, Gemini, Groq) **必须** 返回这个结构的 JSON。
+ * <p>
+ * **核心部分**:
+ * - `executiveSummary`: 高管摘要 (一句话总结)。
+ * - `keyMetrics`: 关键指标分析 (含数值、解释、情感向)。
+ * - `businessDrivers`: 业务驱动因素 (SWOT 分析)。
+ * - `citations`: 引用来源 (RAG 溯源，增强可信度)。
  */
 @Data
 @Builder
@@ -206,7 +214,7 @@ public class AnalysisReport {
     }
 
     /**
-     * Represents Factor Analysis for Waterfall Charts
+     * 表示因子分析 (Factor Analysis) for Waterfall Charts
      */
     @Data
     @Builder
@@ -227,5 +235,39 @@ public class AnalysisReport {
             private String impact; // "+5.2%", "-1.1%"
             private String description;
         }
+    }
+
+    /**
+     * NLP 主题趋势 (Topic Trends)
+     * <p>
+     * 用于生成词云 (Word Cloud) 或趋势图。
+     * LLM 会从 MD&A 中提取高频战略关键词。
+     */
+    private List<TopicTrend> topicTrends;
+
+    /**
+     * 主题趋势数据结构
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class TopicTrend {
+        /**
+         * 关键词 (e.g. "AI", "Supply Chain")
+         */
+        private String topic;
+
+        /**
+         * 提及频次 (估算值 或 相对权重 1-100)
+         */
+        private int frequency;
+
+        /**
+         * 情感倾向 (positive/negative/neutral)
+         * 用于词云渲染颜色 (绿/红/灰)
+         */
+        private String sentiment;
     }
 }

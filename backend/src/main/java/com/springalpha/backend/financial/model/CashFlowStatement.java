@@ -4,18 +4,21 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.math.BigDecimal;
 
 /**
- * Cash Flow Statement data structure.
- * Represents cash movements from operating, investing, and financing
- * activities.
+ * 现金流量表 (Cash Flow Statement) - FMP API 映射类
+ * <p>
+ * 对应 FMP API 的 `/cash-flow-statement` 端点。
+ * 包含：Operating Cash Flow, Capital Expenditure (Capex), Free Cash Flow 等。
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CashFlowStatement {
 
     private String period;

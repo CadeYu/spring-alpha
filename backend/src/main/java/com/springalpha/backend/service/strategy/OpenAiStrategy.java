@@ -15,8 +15,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * OpenAI Strategy - Uses OpenAI's GPT-4 API directly
- * Requires OPENAI_API_KEY environment variable
+ * OpenAI 策略实现 (OpenAiStrategy)
+ * <p>
+ * **定位**: 对接 OpenAI GPT-4 API 的实现类。
+ * **特点**:
+ * 1. 使用官方 `gpt-4o-mini` 模型 (性价比高)。
+ * 2. 通过 WebClient 调用 REST API (而非 Spring AI 自动配置，为了更细粒度的控制)。
+ * 3. 强制 JSON 模式 (`Return ONLY valid JSON...`)。
  */
 @Slf4j
 @Service
@@ -48,6 +53,12 @@ public class OpenAiStrategy extends BaseAiStrategy {
         return "openai";
     }
 
+    /**
+     * 调用 OpenAI Chat Completions API
+     * <p>
+     * 使用 Server-Sent Events (SSE) 流式获取响应。
+     * 手动解析 `data: {...}` 格式的数据块。
+     */
     @Override
     protected Flux<String> callLlmApi(String systemPrompt, String userPrompt, String lang) {
         log.info("🧠 OpenAI Strategy - calling {}", model);

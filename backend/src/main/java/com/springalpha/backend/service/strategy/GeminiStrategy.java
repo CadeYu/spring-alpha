@@ -15,8 +15,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Gemini Strategy - Uses Google's Gemini API
- * Requires GEMINI_API_KEY environment variable
+ * Gemini 策略实现 (GeminiStrategy)
+ * <p>
+ * **定位**: 对接 Google Gemini API (gemini-1.5-flash / pro)。
+ * **特点**:
+ * 1. **长窗口**: Gemini 拥有巨大的 Context Window，适合处理超长财报。
+ * 2. **免费层**: Google 提供 generous 的免费额度，适合开发测试。
+ * 3. **特殊协议**: 使用 `streamGenerateContent` 端点，与 OpenAI 格式不同。
  */
 @Slf4j
 @Service
@@ -48,6 +53,12 @@ public class GeminiStrategy extends BaseAiStrategy {
         return "gemini";
     }
 
+    /**
+     * 调用 Gemini API
+     * <p>
+     * 注意 Gemini 的请求结构是 `contents` -> `parts` -> `text`。
+     * 且流式响应处理逻辑也比较独特。
+     */
     @Override
     protected Flux<String> callLlmApi(String systemPrompt, String userPrompt, String lang) {
         log.info("💎 Gemini Strategy - calling {}", model);
