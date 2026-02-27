@@ -85,24 +85,25 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
             // Add metadata
             enrichMetadata(report, lang);
 
-            // Inject currency and fixed key metrics from FMP data
-            if (contract.getFinancialFacts() != null) {
-                report.setCurrency(contract.getFinancialFacts().getCurrency());
-                injectFixedKeyMetrics(report, contract.getFinancialFacts(), lang);
-            }
-
-            // Validate against financial facts
+            // Validate against financial facts FIRST (before FMP injection)
+            // This way the validator checks AI-generated values which should match raw FMP
+            // numbers
             AnalysisReportValidator.ValidationResult validationResult = validator.validate(report,
                     contract.getFinancialFacts());
 
             if (!validationResult.isValid()) {
                 log.error("❌ Validation failed for {}: {}", getName(), validationResult.getErrors());
-                // In production, you might want to retry or fallback
-                // For now, we'll still return the report but log the errors
             }
 
             if (!validationResult.getWarnings().isEmpty()) {
                 log.warn("⚠️ Validation warnings for {}: {}", getName(), validationResult.getWarnings());
+            }
+
+            // THEN inject currency and fixed key metrics from FMP data
+            // This overwrites AI-generated keyMetrics with formatted FMP hard data
+            if (contract.getFinancialFacts() != null) {
+                report.setCurrency(contract.getFinancialFacts().getCurrency());
+                injectFixedKeyMetrics(report, contract.getFinancialFacts(), lang);
             }
 
             // Validate citations against text evidence

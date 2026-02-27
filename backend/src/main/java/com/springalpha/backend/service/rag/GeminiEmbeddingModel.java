@@ -135,7 +135,8 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
                 .bodyValue(requestBody)
                 .retrieve()
                 .bodyToMono(EmbeddingApiResponse.class)
-                .block();
+                .timeout(java.time.Duration.ofSeconds(30))
+                .block(java.time.Duration.ofSeconds(35)); // Hard timeout safety net
 
         if (response != null && response.embedding != null) {
             return response.embedding.values;

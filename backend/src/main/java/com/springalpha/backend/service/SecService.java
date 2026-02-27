@@ -67,34 +67,44 @@ public class SecService {
         String[] docTypes = { "10-K", "20-F" };
 
         for (String type : docTypes) {
-            try {
-                String searchUrl = String.format(
-                        "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=%s&type=%s&dateb=&owner=exclude&count=10",
-                        ticker, type);
+            // Retry each doc type up to 2 times (SEC can be slow from overseas)
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    String searchUrl = String.format(
+                            "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=%s&type=%s&dateb=&owner=exclude&count=10",
+                            ticker, type);
 
-                log.info("🔍 Searching SEC for {} (Type: {})", ticker, type);
+                    log.info("🔍 Searching SEC for {} (Type: {}, attempt {}/2)", ticker, type, attempt);
 
-                Document doc = Jsoup.connect(searchUrl)
-                        .userAgent(USER_AGENT)
-                        .timeout(10000)
-                        .get();
+                    Document doc = Jsoup.connect(searchUrl)
+                            .userAgent(USER_AGENT)
+                            .timeout(20000) // 20s — SEC can be slow from overseas
+                            .get();
 
-                Elements rows = doc.select("table.tableFile2 tr");
+                    Elements rows = doc.select("table.tableFile2 tr");
 
-                for (Element row : rows) {
-                    String docType = row.select("td").first() != null ? row.select("td").first().text() : "";
-                    if (type.equals(docType)) {
-                        Element link = row.select("a[href]").first();
-                        if (link != null) {
-                            String url = SEC_BASE_URL + link.attr("href");
-                            log.info("✅ Found {} index page: {}", type, url);
-                            return url; // Return immediately if found
+                    for (Element row : rows) {
+                        String docType = row.select("td").first() != null ? row.select("td").first().text() : "";
+                        if (type.equals(docType)) {
+                            Element link = row.select("a[href]").first();
+                            if (link != null) {
+                                String url = SEC_BASE_URL + link.attr("href");
+                                log.info("✅ Found {} index page: {}", type, url);
+                                return url; // Return immediately if found
+                            }
+                        }
+                    }
+                    break; // Parsed OK but no matching row — no need to retry, try next type
+                } catch (IOException e) {
+                    log.warn("⚠️ Failed to search {} for {} (attempt {}/2): {}", type, ticker, attempt, e.getMessage());
+                    if (attempt < 2) {
+                        try {
+                            Thread.sleep(2000);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
                         }
                     }
                 }
-            } catch (IOException e) {
-                log.warn("⚠️ Failed to search {} for {}: {}", type, ticker, e.getMessage());
-                // Continue to next type
             }
         }
 
@@ -104,7 +114,7 @@ public class SecService {
     private String findPrimaryDocumentUrl(String indexUrl) throws IOException {
         Document doc = Jsoup.connect(indexUrl)
                 .userAgent(USER_AGENT)
-                .timeout(10000)
+                .timeout(20000) // 20s — SEC can be slow from overseas
                 .get();
 
         // Support both 10-K and 20-F in the document table

@@ -91,9 +91,8 @@ public Function<Request, Response> getStockPrice() {
 - [x] **Advanced Insights**：杜邦分析、智能洞察引擎、瀑布图、词云
 
 ### Phase 4: Production Ready 🚧
+- [x] **PDF Export**: 生成专业级金融分析报告 PDF（高盛研报风格）
 - [ ] **Docker Deploy**: Docker Compose 一键部署（backend + frontend）
-- [ ] **PDF Export**: 生成专业级金融分析报告 PDF（高盛研报风格）
-- [ ] **Earnings Call**: 接入 FMP Transcript API，LLM 情感分析财报电话会议
 
 
 ## 🚀 快速开始 (Quick Start)

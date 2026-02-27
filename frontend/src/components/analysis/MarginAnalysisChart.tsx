@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useMemo } from "react"
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -16,40 +16,26 @@ export interface HistoricalDataPoint {
 interface MarginAnalysisProps {
     ticker: string;
     lang?: string;
-    data?: any[]; // Passed from parent
+    data?: any[];
     loading?: boolean;
 }
 
 export function MarginAnalysisChart({ ticker, lang = 'en', data: rawData = [], loading = false }: MarginAnalysisProps) {
-    // Transform raw data if needed, or use formatted data from parent
-    // The parent (page.tsx) fetches raw data. We need to format it here or in parent.
-    // Let's assume parent passes raw data and we format it here, OR we can memoize it.
-
-    // Fix: Process raw data to match chart format
-    // Raw data keys: revenue, grossMargin, operatingMargin, netMargin (decimals)
-    const [formattedData, setFormattedData] = useState<HistoricalDataPoint[]>([]);
-
-    useEffect(() => {
-        if (rawData.length > 0) {
-            const formatted = rawData.map((item: any) => ({
-                period: item.period,
-                grossMargin: (item.grossMargin * 100).toFixed(1),
-                operatingMargin: (item.operatingMargin * 100).toFixed(1),
-                netMargin: (item.netMargin * 100).toFixed(1)
-            }));
-            setFormattedData(formatted);
-        } else {
-            setFormattedData([]);
-        }
+    // useMemo: 数据转换同步完成，避免 useEffect 的额外渲染周期导致图表闪烁/消失
+    const data = useMemo(() => {
+        if (rawData.length === 0) return [];
+        return rawData.map((item: any) => ({
+            period: item.period,
+            grossMargin: (Number(item.grossMargin) * 100).toFixed(1),
+            operatingMargin: (Number(item.operatingMargin) * 100).toFixed(1),
+            netMargin: (Number(item.netMargin) * 100).toFixed(1)
+        }));
     }, [rawData]);
-
-    const data = formattedData; // Use local formatted data
-    // const loading matches prop
 
     const isZh = lang === 'zh';
 
     if (loading || data.length === 0) {
-        return null // Don't render empty chart if no data (e.g. for non-AAPL mock)
+        return null
     }
 
     return (

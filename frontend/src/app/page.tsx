@@ -43,30 +43,36 @@ export default function Home() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isZh = lang === 'zh';
 
-  // Fetch History Data
-  useEffect(() => {
-    if (!ticker) return;
+  // Fetch History Data with retry logic
+  const fetchHistory = async (tickerToFetch: string) => {
+    setHistoryLoading(true);
+    const maxRetries = 2;
 
-    const fetchHistory = async () => {
-      setHistoryLoading(true);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const res = await fetch(`/api/java/sec/history/${ticker}`);
+        const res = await fetch(`/api/java/sec/history/${tickerToFetch}`);
         if (res.ok) {
           const data = await res.json();
           setHistoryData(data);
-        } else {
-          setHistoryData([]);
+          setHistoryLoading(false);
+          return; // Success — exit
         }
+        console.warn(`History fetch attempt ${attempt} returned ${res.status}`);
       } catch (e) {
-        console.error("Failed to fetch history:", e);
-        setHistoryData([]);
-      } finally {
-        setHistoryLoading(false);
+        console.warn(`History fetch attempt ${attempt} failed:`, e);
       }
-    };
 
-    fetchHistory();
-  }, [ticker]);
+      // Wait 1s before retrying
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    // All retries failed
+    console.error(`Failed to fetch history for ${tickerToFetch} after ${maxRetries} attempts`);
+    setHistoryData([]);
+    setHistoryLoading(false);
+  };
 
   const handleSearch = async () => {
     if (!ticker) return;
@@ -74,6 +80,10 @@ export default function Home() {
     setIsLoading(true);
     setReport(null);
     setError(null);
+    setHistoryData([]);
+
+    // Fetch history data in parallel with analysis (doesn't depend on AI)
+    fetchHistory(ticker);
 
     try {
       console.log(`Fetching analysis for ${ticker} using ${model} in ${lang}...`);

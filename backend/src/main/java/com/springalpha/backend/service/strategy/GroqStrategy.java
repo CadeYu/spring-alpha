@@ -87,10 +87,12 @@ public class GroqStrategy extends BaseAiStrategy {
                         var content = output.getText();
                         if (content != null && !content.isEmpty()) {
                             sink.next(content); // 将这一小块文本推送到流中
-                            log.debug("📨 Chunk: {} chars", content.length());
+                            log.trace("📨 Chunk: {} chars", content.length());
                         }
                     })
                     .cast(String.class)
+                    // 超时保护：60 秒内没有新数据则视为超时，避免无限挂起
+                    .timeout(java.time.Duration.ofSeconds(60))
                     // 容错机制：Groq 免费版限制较严，容易报 429 Too Many Requests
                     // 这里实现了指数退避重试 (Exponential Backoff): 等 2s, 4s, 8s 再试
                     .retryWhen(reactor.util.retry.Retry.backoff(3, java.time.Duration.ofSeconds(2))

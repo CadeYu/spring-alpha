@@ -91,81 +91,77 @@ public class FinancialAnalysisService {
 
             return facts;
         })
-                .flatMapMany(facts ->
-                // Step 2: 获取 SEC 10-K 文本内容 (Async)
-                // 来源：SEC EDGAR (HTML -> Markdown)
-                secService.getLatest10KContent(ticker)
-                        .flatMapMany(content ->
-                        // 将阻塞的 Vector RAG 操作放入 boundedElastic 线程池，避免阻塞 Netty IO 线程
-                        Mono.fromCallable(() -> {
-                            log.info("📄 Retrieved SEC filing, length: {}. Running Vector RAG...",
-                                    content.length());
+                .flatMapMany(facts -> {
+                    // Step 2: 获取 SEC 10-K + RAG 文本 (可降级)
+                    // 如果 SEC/Gemini Embedding 失败，不阻塞分析，降级为仅 FMP 数据模式
+                    Mono<Map<String, String>> textEvidenceMono = secService.getLatest10KContent(ticker)
+                            .flatMap(content -> Mono.fromCallable(() -> {
+                                log.info("📄 Retrieved SEC filing, length: {}. Running Vector RAG...",
+                                        content.length());
 
-                            // Step 3: 向量化存储 (Vector Storage)
-                            // 如果这是第一次查该股票，将其切片 (Chunking) 并存入 PGVector 数据库。
-                            if (!vectorRagService.hasDocuments(ticker)) {
-                                log.info("📥 First time processing {}, storing in vector DB...", ticker);
-                                vectorRagService.storeDocument(ticker, content);
-                            } else {
-                                log.info("✅ {} already in vector DB, skipping storage", ticker);
-                            }
+                                // Step 3: 向量化存储 (Vector Storage)
+                                if (!vectorRagService.hasDocuments(ticker)) {
+                                    log.info("📥 First time processing {}, storing in vector DB...", ticker);
+                                    vectorRagService.storeDocument(ticker, content);
+                                } else {
+                                    log.info("✅ {} already in vector DB, skipping storage", ticker);
+                                }
 
-                            // Step 4: 语义检索 (Semantic Search / RAG)
-                            // 这里体现了 "Agent" 的隐式意图 (Implicit Intent)。
-                            // 用户没问 "为什么营收增长"，但系统自动生成了这些 Query 去向量库里找答案。
+                                // Step 4: 语义检索 (Semantic Search / RAG)
+                                String mdnaQuery = "Management Discussion Analysis revenue drivers business performance growth";
+                                String riskQuery = "Risk Factors uncertainties challenges regulatory competition";
 
-                            // Query 1: 关注管理层讨论 (MD&A)、营收驱动因素、业务表现
-                            String mdnaQuery = "Management Discussion Analysis revenue drivers business performance growth";
-                            // Query 2: 关注风险因素、不确定性、监管挑战
-                            String riskQuery = "Risk Factors uncertainties challenges regulatory competition";
+                                String mdna = vectorRagService.retrieveRelevantContext(ticker, mdnaQuery);
+                                String risks = vectorRagService.retrieveRelevantContext(ticker, riskQuery);
 
-                            // 检索 Top-K 最相关的文本片段 (Markdown 格式)
-                            String mdna = vectorRagService.retrieveRelevantContext(ticker, mdnaQuery);
-                            String risks = vectorRagService.retrieveRelevantContext(ticker, riskQuery);
+                                Map<String, String> textEvidence = new HashMap<>();
+                                textEvidence.put("MD&A", mdna);
+                                textEvidence.put("Risk Factors", risks);
+                                return textEvidence;
+                            }).subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic()))
+                            // 整个 SEC+RAG 链路 90 秒超时
+                            .timeout(java.time.Duration.ofSeconds(90))
+                            // 降级：SEC 或 RAG 失败时，使用空 textEvidence 继续分析
+                            .onErrorResume(e -> {
+                                log.warn("⚠️ SEC/RAG pipeline failed, degrading to FMP-only mode: {}", e.getMessage());
+                                return Mono.just(new HashMap<>());
+                            });
 
-                            Map<String, String> textEvidence = new HashMap<>();
-                            textEvidence.put("MD&A", mdna);
-                            textEvidence.put("Risk Factors", risks);
-                            return textEvidence;
-                        })
-                                .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-                                .flatMapMany(textEvidence -> {
+                    return textEvidenceMono.flatMapMany(textEvidence -> {
+                        // Step 5: 构建分析契约 (Analysis Contract)
+                        List<String> analysisTasks = Arrays.asList(
+                                "Explain the primary drivers of revenue growth",
+                                "Analyze the sustainability of margin changes",
+                                "Summarize the most material risk factors");
 
-                                    // Step 5: 构建分析契约 (Analysis Contract)
-                                    // 这里定义了 AI 的"任务清单"。不管用户说什么，我们都强制 AI 完成这三项核心分析。
-                                    List<String> analysisTasks = Arrays.asList(
-                                            "Explain the primary drivers of revenue growth", // 解释营收增长的主因
-                                            "Analyze the sustainability of margin changes", // 分析利润率变化的持续性
-                                            "Summarize the most material risk factors"); // 总结最核心的风险
+                        AnalysisContract contract = AnalysisContract.builder()
+                                .ticker(ticker)
+                                .companyName(facts.getCompanyName())
+                                .period(facts.getPeriod())
+                                .financialFacts(facts)
+                                .textEvidence(textEvidence)
+                                .analysisTasks(analysisTasks)
+                                .language(lang != null ? lang : "en")
+                                .build();
 
-                                    AnalysisContract contract = AnalysisContract.builder()
-                                            .ticker(ticker)
-                                            .companyName(facts.getCompanyName())
-                                            .period(facts.getPeriod())
-                                            .financialFacts(facts) // 注入 JSON 数据 (骨架)
-                                            .textEvidence(textEvidence) // 注入 RAG 文本 (血肉)
-                                            .analysisTasks(analysisTasks)
-                                            .language(lang != null ? lang : "en")
-                                            .build();
+                        // Step 6: 选择策略 (Strategy Selection)
+                        AiAnalysisStrategy strategy = selectStrategy(model);
 
-                                    // Step 6: 选择策略 (Strategy Selection)
-                                    // 决定用哪个模型 (Groq, OpenAI, Gemini...)
-                                    AiAnalysisStrategy strategy = selectStrategy(model);
+                        log.info("🚀 Executing analysis with strategy: {} (RAG: {})",
+                                strategy.getName(), textEvidence.isEmpty() ? "DISABLED" : "ENABLED");
 
-                                    log.info("🚀 Executing analysis with strategy: {}", strategy.getName());
-
-                                    // Step 7: 执行分析 (Execution)
-                                    // 发送最终 Prompt 给 LLM，并流式返回结果
-                                    return strategy.analyze(contract, lang)
-                                            .onErrorResume(e -> {
-                                                log.error("❌ Strategy [{}] failed: {}. Falling back to enhanced-mock",
-                                                        strategy.getName(), e.getMessage());
-                                                AiAnalysisStrategy fallback = strategies.get("enhanced-mock");
-                                                return fallback != null
-                                                        ? fallback.analyze(contract, lang)
-                                                        : Flux.error(e);
-                                            });
-                                })));
+                        // Step 7: 执行分析 (Execution)
+                        return strategy.analyze(contract, lang)
+                                .onErrorResume(e -> {
+                                    log.error("❌ Strategy [{}] failed: {}. Falling back to enhanced-mock",
+                                            strategy.getName(), e.getMessage());
+                                    AiAnalysisStrategy fallback = strategies.get("enhanced-mock");
+                                    return fallback != null
+                                            ? fallback.analyze(contract, lang)
+                                            : Flux.error(e);
+                                });
+                    });
+                });
     }
 
     /**

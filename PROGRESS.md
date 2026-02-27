@@ -43,10 +43,14 @@
 - [x] **NLP 主题趋势 (Topic Trends)**: 提取 MD&A 高频热词 (如 "AI", "Supply Chain") 并可视化的词云 (Word Cloud) (2026-02-14)。
 - [ ] **NLP 主题趋势 (Topic Trends)**: 提取 MD&A 高频热词 (如 "AI", "Supply Chain") 并追踪趋势（暂缓）。
 
-## Phase 7: Production Ready (规划中)
+## Phase 7: Production Ready
+- [x] **PDF 下载**: 使用 @react-pdf/renderer 生成专业级金融分析报告 PDF（高盛研报风格）(2026-02-26)。
+- [x] **Key Metrics 固定**: 4 个固定指标使用 FMP 硬数据，不依赖 AI 生成 (2026-02-26)。
+- [x] **Bug 修复 & 稳定性**: Groq 60s 超时保护、Validator 误报修复、日志降噪、Next.js 代理超时 120s (2026-02-27)。
+- [x] **图表数据可靠性**: History 请求重试 + 触发时序修正 (2026-02-27)。
+- [x] **鲁棒性改进**: SEC+RAG 优雅降级（失败时切换 FMP-only 模式）、Gemini Embedding 30s 超时保护、SEC 搜索重试 + 20s 超时 (2026-02-27)。
+- [x] **Margin 折线图修复**: `useEffect`+`useState` → `useMemo` + 修复 `historyLoading` 成功路径未重置 bug (2026-02-27)。
 - [ ] **Docker 部署**: Docker Compose 一键部署脚本（backend + frontend + env 编排）。
-- [ ] **PDF 下载**: 使用 @react-pdf/renderer 生成专业级金融分析报告 PDF（高盛研报风格）。
-- [ ] **Earnings Call 分析**: 接入 FMP Transcript API + LLM 情感分析财报电话会议。
 
 ## 代码清理记录
 - [x] **删除死代码**: 移除未使用的 `RagService.java`（关键词匹配降级方案），项目实际使用 `VectorRagService` + PGVector 向量语义检索 (2026-02-26)。
