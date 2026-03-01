@@ -10,8 +10,9 @@ RUN npm ci
 # Copy source
 COPY . .
 
-# Build with standalone output
+# Build with standalone output (for Docker only)
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV STANDALONE=true
 RUN npm run build
 
 ## ---- Stage 2: Runtime ----

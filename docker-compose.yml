@@ -20,6 +20,7 @@ services:
       context: ./frontend
       args:
         - BACKEND_URL=http://backend:8081
+        - STANDALONE=true
     container_name: spring-alpha-frontend
     ports:
       - "3000:3000"
