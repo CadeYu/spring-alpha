@@ -1,12 +1,14 @@
 import type { NextConfig } from "next";
 
+const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8081';
+
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: 'standalone',
   async rewrites() {
     return [
       {
         source: '/api/java/:path*',
-        destination: 'http://127.0.0.1:8081/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
       },
     ];
   },

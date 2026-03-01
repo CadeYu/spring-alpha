@@ -15,7 +15,8 @@ export async function GET(
     const lang = request.nextUrl.searchParams.get('lang') || 'en';
     const model = request.nextUrl.searchParams.get('model') || '';
 
-    const backendUrl = `http://127.0.0.1:8081/api/sec/analyze/${ticker}?lang=${lang}&model=${model}`;
+    const baseUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8081';
+    const backendUrl = `${baseUrl}/api/sec/analyze/${ticker}?lang=${lang}&model=${model}`;
 
     try {
         const controller = new AbortController();

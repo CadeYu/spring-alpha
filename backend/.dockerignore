@@ -1,0 +1,5 @@
+# Skip build artifacts (Maven builds inside Docker)
+target/
+.idea/
+*.iml
+.env

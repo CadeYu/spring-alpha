@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: ./backend
+    container_name: spring-alpha-backend
+    ports:
+      - "8081:8081"
+    env_file: .env
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://ep-super-night-a1grbtke-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/api/sec/models" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - BACKEND_URL=http://backend:8081
+    container_name: spring-alpha-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - BACKEND_URL=http://backend:8081
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
