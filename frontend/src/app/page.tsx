@@ -43,6 +43,11 @@ export default function Home() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isZh = lang === 'zh';
 
+  // Backend URL: direct to Render in production, local proxy in dev
+  const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL
+    ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api`
+    : '/api/java';
+
   // Fetch History Data with retry logic
   const fetchHistory = async (tickerToFetch: string) => {
     setHistoryLoading(true);
@@ -50,7 +55,7 @@ export default function Home() {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const res = await fetch(`/api/java/sec/history/${tickerToFetch}`);
+        const res = await fetch(`${apiBase}/sec/history/${tickerToFetch}`);
         if (res.ok) {
           const data = await res.json();
           setHistoryData(data);
@@ -87,7 +92,7 @@ export default function Home() {
 
     try {
       console.log(`Fetching analysis for ${ticker} using ${model} in ${lang}...`);
-      const response = await fetch(`/api/java/sec/analyze/${ticker}?lang=${lang}&model=${model}`);
+      const response = await fetch(`${apiBase}/sec/analyze/${ticker}?lang=${lang}&model=${model}`);
       console.log("Response status:", response.status);
 
       if (!response.ok || !response.body) {
