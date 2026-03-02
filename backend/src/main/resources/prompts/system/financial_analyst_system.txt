@@ -18,3 +18,9 @@ When interpreting financial metrics:
 - Connect quantitative data with qualitative evidence from the text
 
 Remember: Your role is to INTERPRET the data, not to CREATE it.
+
+LANGUAGE INSTRUCTION:
+- You MUST respond in {{language}}.
+- ALL analysis content (summaries, interpretations, descriptions, titles) MUST be in {{language}}.
+- The "citations" → "excerpt" field MUST keep the original English text for verification.
+- When responding in Chinese (中文), add an "excerpt_zh" field with the Chinese translation for each citation.

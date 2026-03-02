@@ -111,10 +111,15 @@ Return a JSON object with the following structure:
   "citations": [
     {
       "section": "source identifier (e.g., MD&A)",
-      "excerpt": "exact quoted text from source"
+      "excerpt": "exact quoted text from source (ALWAYS in English)"
     }
   ]
 }
+
+LANGUAGE: {{language}}
+- ALL text content (executiveSummary, interpretations, descriptions, titles, bullCase, bearCase) MUST be written in {{language}}.
+- The "citations" → "excerpt" field MUST always be the original English text for verification.
+- When the language is Chinese (中文), add an "excerpt_zh" field with the Chinese translation for each citation.
 
 IMPORTANT:
 1. Use ONLY the numbers from the Financial Facts section.

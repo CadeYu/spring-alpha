@@ -33,15 +33,13 @@ public class PromptTemplateService {
     /**
      * 获取 System Prompt (系统角色设定)
      * <p>
-     * 根据 lang 参数加载对应的角色模板 (zh/en)。
-     * System Prompt 定义了 AI 是谁 (e.g. "你是高盛的高级证券分析师")。
+     * 使用统一模板，通过 {{language}} 变量控制输出语言。
+     * 确保中英文分析内容结构完全一致。
      */
     public String getSystemPrompt(String lang) {
-        String templatePath = "zh".equalsIgnoreCase(lang)
-                ? "prompts/system/financial_analyst_system_zh.txt"
-                : "prompts/system/financial_analyst_system.txt";
-
-        return loadTemplate(templatePath);
+        String template = loadTemplate("prompts/system/financial_analyst_system.txt");
+        String language = resolveLanguageName(lang);
+        return template.replace("{{language}}", language);
     }
 
     /**
@@ -54,12 +52,8 @@ public class PromptTemplateService {
      * - {{analysisTasks}}: 本次分析的具体任务清单
      */
     public String buildUserPrompt(AnalysisContract contract, String lang) {
-        // Select template based on language
-        String templatePath = "zh".equalsIgnoreCase(lang)
-                ? "prompts/user/analysis_request_zh.txt"
-                : "prompts/user/analysis_request_en.txt";
-
-        String template = loadTemplate(templatePath);
+        // Use unified template for all languages
+        String template = loadTemplate("prompts/user/analysis_request.txt");
 
         // Prepare template variables
         Map<String, String> variables = new HashMap<>();
@@ -68,6 +62,7 @@ public class PromptTemplateService {
         variables.put("financialFacts", formatFinancialFacts(contract));
         variables.put("textEvidence", formatTextEvidence(contract));
         variables.put("analysisTasks", formatAnalysisTasks(contract));
+        variables.put("language", resolveLanguageName(lang));
 
         // Render template
         return renderTemplate(template, variables);
@@ -144,5 +139,12 @@ public class PromptTemplateService {
             sb.append("- ").append(task).append("\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * Resolve lang code to full language name for prompt clarity
+     */
+    private String resolveLanguageName(String lang) {
+        return "zh".equalsIgnoreCase(lang) ? "Chinese (中文)" : "English";
     }
 }
