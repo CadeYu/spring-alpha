@@ -1,0 +1,86 @@
+Analyze the earnings report for {{ticker}} ({{period}}).
+
+FINANCIAL FACTS:
+{{financialFacts}}
+
+TEXTUAL EVIDENCE:
+{{textEvidence}}
+
+EVIDENCE AVAILABILITY:
+{{evidenceAvailability}}
+{{evidenceStatusMessage}}
+
+TASK:
+Generate a high-density Core Thesis, Key Metrics interpretation, and Bull/Bear Case.
+
+OUTPUT REQUIREMENTS:
+Return a JSON object with the following structure exactly:
+
+{
+  "coreThesis": {
+    "verdict": "positive/mixed/negative",
+    "headline": "One sharp thesis headline with investment tone",
+    "summary": "One dense paragraph that explains the main thesis, what changed, why it matters, and the strategic implication",
+    "keyPoints": [
+      "3-5 concise bullets covering the most material operating or financial takeaways",
+      "Each bullet should contain a fact and an implication"
+    ],
+    "supportingEvidence": [
+      {
+        "label": "Revenue / Profitability / Capital Return / User Growth / etc.",
+        "detail": "A concrete fact pattern using exact values from financialFacts and, when available, textual evidence"
+      },
+      {
+        "label": "Another proof point",
+        "detail": "Another evidence-backed detail"
+      }
+    ],
+    "watchItems": [
+      "2-3 forward-looking points the investor should monitor next quarter or next year"
+    ]
+  },
+  "executiveSummary": "One-sentence legacy fallback summary derived from the core thesis",
+  "keyMetrics": [
+    {
+      "name": "Revenue",
+      "value": "use exact value from Financial Facts",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "business interpretation of the revenue performance"
+    },
+    {
+      "name": "Gross Margin",
+      "value": "use exact value from Financial Facts",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "business interpretation of the margin trend"
+    },
+    {
+      "name": "Net Income",
+      "value": "use exact value from Financial Facts",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "business interpretation of profitability"
+    },
+    {
+      "name": "Revenue YoY Growth",
+      "value": "use exact value from Financial Facts",
+      "sentiment": "positive/negative/neutral",
+      "interpretation": "business interpretation of growth trajectory"
+    }
+  ],
+  "bullCase": "optimistic interpretation based on the data",
+  "bearCase": "pessimistic interpretation based on the data",
+  "citations": [
+    {
+      "section": "source identifier (e.g., MD&A)",
+      "excerpt": "exact quoted text from source (ALWAYS in English)"
+    }
+  ]
+}
+
+LANGUAGE: {{language}}
+- ALL text content (coreThesis fields, executiveSummary, interpretations, titles, bullCase, bearCase) MUST be written in {{language}}.
+- The "citations" -> "excerpt" field MUST always be the original English text for verification.
+- When the language is Chinese (中文), add an "excerpt_zh" field with the Chinese translation for each citation.
+- If EVIDENCE AVAILABILITY is UNAVAILABLE, return "citations": [] and do not invent, paraphrase, or translate placeholder source text.
+
+IMPORTANT: Use ONLY the numbers from the Financial Facts section.
+IMPORTANT: The summary must read like a concise research note, not a generic recap. Lead with the thesis, then support it with evidence and business implications.

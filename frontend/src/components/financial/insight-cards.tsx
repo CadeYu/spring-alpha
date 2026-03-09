@@ -1,7 +1,6 @@
 import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { InsightEngine } from '@/types/AnalysisReport';
 import { AlertTriangle, Lightbulb } from 'lucide-react';
 
@@ -11,10 +10,25 @@ interface InsightCardsProps {
 }
 
 export function InsightCards({ data, lang = 'en' }: InsightCardsProps) {
-    if (!data) return null;
+    const isZh = lang === 'zh';
+
+    if (!data || (!data.accountingChanges?.length && !data.rootCauseAnalysis?.length)) {
+        return (
+            <div className="space-y-6">
+                <div>
+                    <h3 className="text-lg font-semibold flex items-center gap-2 mb-4 text-emerald-400/50">
+                        <Lightbulb className="h-5 w-5 text-yellow-500/50" />
+                        {isZh ? '根因分析 (驱动因素)' : 'Root Cause Analysis (Drivers)'}
+                    </h3>
+                    <Card className="bg-slate-900/50 backdrop-blur-sm border-slate-800 border-dashed min-h-[120px] flex items-center justify-center text-slate-500 text-sm">
+                        {isZh ? '数据生成中或未提供...' : 'Generating data or not available...'}
+                    </Card>
+                </div>
+            </div>
+        );
+    }
 
     const { accountingChanges, rootCauseAnalysis } = data;
-    const isZh = lang === 'zh';
 
     return (
         <div className="space-y-6">
@@ -60,7 +74,7 @@ export function InsightCards({ data, lang = 'en' }: InsightCardsProps) {
                                 {item.reason}
                             </div>
                             <div className="text-xs text-slate-500 italic px-3 py-2 bg-slate-950/50 rounded border-l-2 border-emerald-500/20">
-                                "{item.evidence}"
+                                &ldquo;{item.evidence}&rdquo;
                             </div>
                         </div>
                     ))}

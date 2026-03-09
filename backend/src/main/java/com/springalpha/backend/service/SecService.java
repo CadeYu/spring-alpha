@@ -81,18 +81,10 @@ public class SecService {
                             .timeout(20000) // 20s — SEC can be slow from overseas
                             .get();
 
-                    Elements rows = doc.select("table.tableFile2 tr");
-
-                    for (Element row : rows) {
-                        String docType = row.select("td").first() != null ? row.select("td").first().text() : "";
-                        if (type.equals(docType)) {
-                            Element link = row.select("a[href]").first();
-                            if (link != null) {
-                                String url = SEC_BASE_URL + link.attr("href");
-                                log.info("✅ Found {} index page: {}", type, url);
-                                return url; // Return immediately if found
-                            }
-                        }
+                    String parsedUrl = extractLatestIndexUrl(doc, type);
+                    if (parsedUrl != null) {
+                        log.info("✅ Found {} index page: {}", type, parsedUrl);
+                        return parsedUrl; // Return immediately if found
                     }
                     break; // Parsed OK but no matching row — no need to retry, try next type
                 } catch (IOException e) {
@@ -111,11 +103,32 @@ public class SecService {
         throw new RuntimeException("No 10-K or 20-F found for ticker: " + ticker);
     }
 
+    String extractLatestIndexUrl(Document doc, String targetType) {
+        Elements rows = doc.select("table.tableFile2 tr");
+
+        for (Element row : rows) {
+            String docType = row.select("td").first() != null ? row.select("td").first().text() : "";
+            if (targetType.equals(docType)) {
+                Element link = row.select("a[href]").first();
+                if (link != null) {
+                    return SEC_BASE_URL + link.attr("href");
+                }
+            }
+        }
+
+        return null;
+    }
+
     private String findPrimaryDocumentUrl(String indexUrl) throws IOException {
         Document doc = Jsoup.connect(indexUrl)
                 .userAgent(USER_AGENT)
                 .timeout(20000) // 20s — SEC can be slow from overseas
                 .get();
+
+        return extractPrimaryDocumentUrl(doc, indexUrl);
+    }
+
+    String extractPrimaryDocumentUrl(Document doc, String indexUrl) {
 
         // Support both 10-K and 20-F in the document table
         Elements rows = doc.select("table.tableFile tr");
@@ -141,12 +154,17 @@ public class SecService {
         throw new RuntimeException("Primary document (10-K/20-F) not found in index page: " + indexUrl);
     }
 
+    String normalizeDocumentUrl(String docUrl) {
+        if (docUrl.contains("/ix?doc=")) {
+            return docUrl.replace("/ix?doc=", "");
+        }
+        return docUrl;
+    }
+
     private String fetchAndCleanHtml(String docUrl) throws IOException {
         // 修复 SEC iXBRL Viewer 链接问题
         // 如果链接包含 /ix?doc=，说明是 JS 查看器页面，需要还原为原始 HTML 链接
-        if (docUrl.contains("/ix?doc=")) {
-            docUrl = docUrl.replace("/ix?doc=", "");
-        }
+        docUrl = normalizeDocumentUrl(docUrl);
 
         log.info("🌍 最终下载 URL: {}", docUrl);
 
@@ -189,12 +207,7 @@ public class SecService {
         // 如果文本实在太长（比如 > 10MB），再考虑物理限制防止 OOM
 
         // 查找 MD&A 主要是为了确保我们没抓错页面，但为了 RAG，我们返回更多上下文
-        String keyword = "Management's Discussion and Analysis";
-        int startIndex = text.lastIndexOf(keyword);
-
-        if (startIndex == -1) {
-            startIndex = text.lastIndexOf("Item 7.");
-        }
+        int startIndex = locateCoreSectionStart(text);
 
         // 如果找到了 MD&A，我们可以去掉前面的目录废话，但保留后面的所有内容
         if (startIndex != -1) {
@@ -213,6 +226,17 @@ public class SecService {
         return text;
     }
 
+    int locateCoreSectionStart(String text) {
+        String keyword = "Management's Discussion and Analysis";
+        int startIndex = text.lastIndexOf(keyword);
+
+        if (startIndex == -1) {
+            startIndex = text.lastIndexOf("Item 7.");
+        }
+
+        return startIndex;
+    }
+
     /**
      * 将 HTML 表格转换为 Markdown 格式文本，并替换原节点。
      * <p>
@@ -227,13 +251,13 @@ public class SecService {
      *
      * @param doc Jsoup Document 对象（会被原地修改）
      */
-    private void convertTablesToMarkdown(Document doc) {
+    void convertTablesToMarkdown(Document doc) {
         Elements tables = doc.select("table");
         int count = 0;
 
         for (Element table : tables) {
             // 忽略嵌套表格 (只处理最外层)，防止重复处理
-            if (!table.parents().select("table").isEmpty()) {
+            if (table.parent() != null && "table".equalsIgnoreCase(table.parent().tagName())) {
                 continue;
             }
 

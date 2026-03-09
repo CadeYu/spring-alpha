@@ -43,28 +43,49 @@ public class PromptTemplateService {
     }
 
     /**
-     * 构建 User Prompt (用户指令)
-     * <p>
-     * 将 AnalysisContract 中的数据填充到模板变量中：
-     * - {{ticker}}: 股票代码
-     * - {{financialFacts}}: JSON 格式的确切财务数字
-     * - {{textEvidence}}: RAG 检索到的相关财报片段
-     * - {{analysisTasks}}: 本次分析的具体任务清单
+     * 构建 Task 1 Prompt: Executive Summary, Key Metrics, Bull/Bear Case
      */
-    public String buildUserPrompt(AnalysisContract contract, String lang) {
-        // Use unified template for all languages
-        String template = loadTemplate("prompts/user/analysis_request.txt");
+    public String buildSummaryPrompt(AnalysisContract contract, String lang) {
+        return buildPromptFromTemplate("prompts/user/task_summary.txt", contract, lang);
+    }
 
-        // Prepare template variables
+    /**
+     * 构建 Task 2 Prompt: DuPont Analysis, Insight Engine
+     */
+    public String buildInsightsPrompt(AnalysisContract contract, String lang) {
+        return buildPromptFromTemplate("prompts/user/task_insights.txt", contract, lang);
+    }
+
+    /**
+     * 构建 Task 3 Prompt: Factor Analysis (Bridges), Topic Trends
+     */
+    public String buildFactorsPrompt(AnalysisContract contract, String lang) {
+        return buildPromptFromTemplate("prompts/user/task_factors.txt", contract, lang);
+    }
+
+    /**
+     * 构建 Task 4 Prompt: Business Drivers, Risk Factors
+     */
+    public String buildDriversPrompt(AnalysisContract contract, String lang) {
+        return buildPromptFromTemplate("prompts/user/task_drivers.txt", contract, lang);
+    }
+
+    /**
+     * 内部通用模板填充逻辑
+     */
+    private String buildPromptFromTemplate(String templatePath, AnalysisContract contract, String lang) {
+        String template = loadTemplate(templatePath);
+
         Map<String, String> variables = new HashMap<>();
         variables.put("ticker", contract.getTicker());
         variables.put("period", contract.getPeriod());
         variables.put("financialFacts", formatFinancialFacts(contract));
         variables.put("textEvidence", formatTextEvidence(contract));
-        variables.put("analysisTasks", formatAnalysisTasks(contract));
+        variables.put("evidenceAvailability", contract.isEvidenceAvailable() ? "AVAILABLE" : "UNAVAILABLE");
+        variables.put("evidenceStatusMessage",
+                contract.getEvidenceStatusMessage() == null ? "" : contract.getEvidenceStatusMessage());
         variables.put("language", resolveLanguageName(lang));
 
-        // Render template
         return renderTemplate(template, variables);
     }
 
@@ -113,7 +134,7 @@ public class PromptTemplateService {
      */
     private String formatTextEvidence(AnalysisContract contract) {
         if (contract.getTextEvidence() == null || contract.getTextEvidence().isEmpty()) {
-            return "No textual evidence available.";
+            return "";
         }
 
         StringBuilder sb = new StringBuilder();
@@ -124,22 +145,8 @@ public class PromptTemplateService {
         return sb.toString();
     }
 
-    /**
-     * Format analysis tasks as bullet list
-     */
-    private String formatAnalysisTasks(AnalysisContract contract) {
-        if (contract.getAnalysisTasks() == null || contract.getAnalysisTasks().isEmpty()) {
-            return "- Analyze key financial metrics and their business implications\n" +
-                    "- Identify major business drivers and risks\n" +
-                    "- Provide balanced bull/bear perspectives";
-        }
-
-        StringBuilder sb = new StringBuilder();
-        for (String task : contract.getAnalysisTasks()) {
-            sb.append("- ").append(task).append("\n");
-        }
-        return sb.toString();
-    }
+    // Output requirement task list removed since it is now baked into the
+    // individual prompt templates
 
     /**
      * Resolve lang code to full language name for prompt clarity

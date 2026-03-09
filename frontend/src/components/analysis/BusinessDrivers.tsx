@@ -7,9 +7,20 @@ interface BusinessDriversProps {
 }
 
 export function BusinessDrivers({ drivers, lang = 'en' }: BusinessDriversProps) {
-    if (!drivers || drivers.length === 0) return null;
-
     const isZh = lang === 'zh';
+
+    if (!drivers || drivers.length === 0) {
+        return (
+            <Card className="bg-slate-900/80 border-slate-800 border-dashed">
+                <CardHeader className="border-b border-slate-800/50">
+                    <CardTitle className="text-emerald-400/50">🚀 {isZh ? '业务驱动因素' : 'Business Drivers'}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-6 flex items-center justify-center min-h-[120px] text-slate-500 text-sm">
+                    {isZh ? '数据生成中或未提供...' : 'Generating data or not available...'}
+                </CardContent>
+            </Card>
+        );
+    }
 
     return (
         <Card className="bg-slate-900 border-slate-800">

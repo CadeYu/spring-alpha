@@ -1,0 +1,57 @@
+Analyze the earnings report for {{ticker}} ({{period}}).
+
+FINANCIAL FACTS:
+{{financialFacts}}
+
+TEXTUAL EVIDENCE:
+{{textEvidence}}
+
+EVIDENCE AVAILABILITY:
+{{evidenceAvailability}}
+{{evidenceStatusMessage}}
+
+TASK:
+Extract factor bridges for revenue and margins, and perform NLP Topic Trend extraction.
+
+OUTPUT REQUIREMENTS:
+Return a JSON object with the following structure exactly:
+
+{
+  "factorAnalysis": {
+    "revenueBridge": [
+      { "name": "Volume", "impact": "+5% or just +", "description": "evidence based reason" },
+      { "name": "Price", "impact": "+2% or just +", "description": "evidence based reason" },
+      { "name": "FX", "impact": "-1% or just -", "description": "evidence based reason" }
+    ],
+    "marginBridge": [
+      { "name": "Input Costs", "impact": "-2% or just -", "description": "evidence based reason" },
+      { "name": "Product Mix", "impact": "+1% or just +", "description": "evidence based reason" }
+    ]
+  },
+  "topicTrends": [
+    {
+      "topic": "Keyword (e.g. AI, Supply Chain)",
+      "frequency": 85,
+      "sentiment": "positive/negative/neutral"
+    },
+    {
+      "topic": "Another Keyword",
+      "frequency": 60,
+      "sentiment": "positive/negative/neutral"
+    }
+  ],
+  "citations": [
+    {
+      "section": "source identifier (e.g., MD&A)",
+      "excerpt": "exact quoted text from source (ALWAYS in English)"
+    }
+  ]
+}
+
+LANGUAGE: {{language}}
+- ALL text content (descriptions, names, topics) MUST be written in {{language}}.
+- The "citations" -> "excerpt" field MUST always be the original English text for verification.
+- When the language is Chinese (中文), add an "excerpt_zh" field with the Chinese translation for each citation.
+- If EVIDENCE AVAILABILITY is UNAVAILABLE, return "citations": [] and rely only on Financial Facts plus clearly-grounded reasoning.
+
+IMPORTANT: If exact percentage numbers are not available for bridge impacts, use "+" (positive impact), "-" (negative impact), or "flat". Do NOT return "Not available". Estimate direction based on text.

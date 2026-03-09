@@ -7,16 +7,19 @@ import lombok.NoArgsConstructor;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonAlias;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 
 /**
  * 分析报告 (The Output)
  * <p>
  * 这是系统最终生成的结构化报告。
- * 所有的 AI 策略 (OpenAI, Gemini, Groq) **必须** 返回这个结构的 JSON。
+ * 所有的 AI 策略 (OpenAI, Groq, ChatAnywhere) **必须** 返回这个结构的 JSON。
  * <p>
  * **核心部分**:
- * - `executiveSummary`: 高管摘要 (一句话总结)。
+ * - `coreThesis`: 结构化核心分析 (研究观点、证据、跟踪点)。
+ * - `executiveSummary`: 兼容旧版摘要字符串。
  * - `keyMetrics`: 关键指标分析 (含数值、解释、情感向)。
  * - `businessDrivers`: 业务驱动因素 (SWOT 分析)。
  * - `citations`: 引用来源 (RAG 溯源，增强可信度)。
@@ -26,12 +29,18 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class AnalysisReport {
 
     /**
-     * High-level executive summary (2-3 sentences)
+     * Backward-compatible freeform executive summary.
      */
     private String executiveSummary;
+
+    /**
+     * Structured first-screen research thesis.
+     */
+    private CoreThesis coreThesis;
 
     /**
      * Key financial metric insights with interpretations
@@ -69,9 +78,29 @@ public class AnalysisReport {
     private AnalysisMetadata metadata;
 
     /**
+     * Source grounding status for citation UI and degraded-mode messaging.
+     */
+    private SourceContext sourceContext;
+
+    /**
      * Currency of the financial figures (e.g., "USD", "JPY")
      */
     private String currency; // Added currency field
+
+    /**
+     * Company display name from financial facts.
+     */
+    private String companyName;
+
+    /**
+     * Reporting period for the analyzed filing/facts.
+     */
+    private String period;
+
+    /**
+     * Filing/report date in ISO-like yyyy-MM-dd form when available.
+     */
+    private String filingDate;
 
     /**
      * Represents a single financial metric with interpretation
@@ -142,9 +171,46 @@ public class AnalysisReport {
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class AnalysisMetadata {
-        private String modelName; // e.g., "gpt-4", "gemini-1.5-flash"
+        private String modelName; // e.g., "gpt-4o-mini", "llama-3.3-70b"
         private String generatedAt; // ISO timestamp
         private String language; // "en", "zh"
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SourceContext {
+        private String status; // "GROUNDED", "DEGRADED", "UNAVAILABLE"
+        private String message;
+    }
+
+    /**
+     * Structured thesis block for the first-screen insight card.
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class CoreThesis {
+        private String verdict; // "positive", "mixed", "negative"
+        private String headline;
+        private String summary;
+        private List<String> keyPoints;
+        private List<SupportingEvidence> supportingEvidence;
+        private List<String> watchItems;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SupportingEvidence {
+        private String label;
+        private String detail;
     }
 
     /**

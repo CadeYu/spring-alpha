@@ -1,0 +1,6 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Sun Mar 08 21:02:09 CST 2026
+@default-nexus-aliyun-https\://maven.aliyun.com/repository/public/.lastUpdated=1772974929335
+@default-spring-milestones-https\://repo.spring.io/milestone/.lastUpdated=1772974929327
+https\://maven.aliyun.com/repository/public/.error=Could not transfer artifact org.springframework.boot\:spring-boot-starter-parent\:pom\:3.2.5 from/to nexus-aliyun (https\://maven.aliyun.com/repository/public)\: maven.aliyun.com\: nodename nor servname provided, or not known
+https\://repo.spring.io/milestone/.error=Could not transfer artifact org.springframework.boot\:spring-boot-starter-parent\:pom\:3.2.5 from/to spring-milestones (https\://repo.spring.io/milestone)\: repo.spring.io\: nodename nor servname provided, or not known

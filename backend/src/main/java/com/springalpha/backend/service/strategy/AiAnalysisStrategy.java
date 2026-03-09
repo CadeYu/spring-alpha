@@ -13,14 +13,22 @@ import reactor.core.publisher.Flux;
  * 1. **Interpret Only**: LLM 只能解释事实，严禁"创造"新的数字 (避免幻觉)。
  * 2. **Fact Injection**: 所有财务指标必须来自 `AnalysisContract` 里的 `financialFacts`。
  * 3. **Structured Output**: 输出必须符合 `AnalysisReport` 的 JSON 结构。
- * 4. **Consistency**: 不同模型 (Groq, OpenAI, Gemini) 写作风格可能不同，但结论逻辑应一致。
+ * 4. **Consistency**: 不同模型 (Groq, ChatAnywhere, OpenAI) 写作风格可能不同，但结论逻辑应一致。
  */
 public interface AiAnalysisStrategy {
 
     /**
-     * Get strategy name (e.g., "openai", "gemini", "mock")
+     * Get strategy name (e.g., "openai", "groq", "chatanywhere")
      */
     String getName();
+
+    /**
+     * Get human-readable display name for UI (e.g., "GPT-4o mini", "Llama 3.3 70B")
+     * Defaults to getName() if not overridden.
+     */
+    default String getDisplayName() {
+        return getName();
+    }
 
     /**
      * Analyze financial data and generate structured report.
@@ -30,5 +38,5 @@ public interface AiAnalysisStrategy {
      * @return Flux<AnalysisReport> streaming the analysis report
      *         Can emit partial reports for progressive rendering
      */
-    Flux<AnalysisReport> analyze(AnalysisContract contract, String lang);
+    Flux<AnalysisReport> analyze(AnalysisContract contract, String lang, String apiKeyOverride);
 }

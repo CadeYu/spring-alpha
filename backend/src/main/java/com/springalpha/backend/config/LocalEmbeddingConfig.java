@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
 public class LocalEmbeddingConfig {
 
     @Bean
-    @ConditionalOnProperty(name = "app.embedding-provider", havingValue = "local", matchIfMissing = true)
+    @ConditionalOnProperty(name = "app.embedding-provider", havingValue = "local")
     public EmbeddingModel localEmbeddingModel() {
         return new TransformersEmbeddingModel();
     }

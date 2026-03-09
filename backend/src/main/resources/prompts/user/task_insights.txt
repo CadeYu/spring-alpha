@@ -1,0 +1,62 @@
+Analyze the earnings report for {{ticker}} ({{period}}).
+
+FINANCIAL FACTS:
+{{financialFacts}}
+
+TEXTUAL EVIDENCE:
+{{textEvidence}}
+
+EVIDENCE AVAILABILITY:
+{{evidenceAvailability}}
+{{evidenceStatusMessage}}
+
+TASK:
+Perform DuPont Analysis and extract deep operational insights (Accounting Changes, Root Cause Analysis).
+
+OUTPUT REQUIREMENTS:
+Return a JSON object with the following structure exactly:
+
+{
+  "dupontAnalysis": {
+    "netProfitMargin": "value",
+    "assetTurnover": "value",
+    "equityMultiplier": "value",
+    "returnOnEquity": "value",
+    "interpretation": "Explanation of what is driving ROE"
+  },
+  "insightEngine": {
+    "accountingChanges": [
+      {
+        "policyName": "name of policy",
+        "changeDescription": "what changed",
+        "riskAssessment": "high/medium/low"
+      }
+    ],
+    "rootCauseAnalysis": [
+      {
+        "metric": "Gross Margin",
+        "reason": "specific operational reason",
+        "evidence": "quote from text"
+      },
+      {
+        "metric": "Revenue",
+        "reason": "specific operational reason",
+        "evidence": "quote from text"
+      }
+    ]
+  },
+  "citations": [
+    {
+      "section": "source identifier (e.g., MD&A)",
+      "excerpt": "exact quoted text from source (ALWAYS in English)"
+    }
+  ]
+}
+
+LANGUAGE: {{language}}
+- ALL text content (interpretations, policyName, changeDescription, reason) MUST be written in {{language}}.
+- The "citations" -> "excerpt" field MUST always be the original English text for verification.
+- When the language is Chinese (中文), add an "excerpt_zh" field with the Chinese translation for each citation.
+- If EVIDENCE AVAILABILITY is UNAVAILABLE, return "citations": [] and do not output placeholder source identifiers.
+
+IMPORTANT: Use ONLY the numbers from the Financial Facts section. Calculate the DuPont metrics if not explicitly provided.

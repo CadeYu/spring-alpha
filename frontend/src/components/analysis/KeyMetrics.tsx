@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { MetricInsight } from "@/types/AnalysisReport";
 import { RevenueChart } from "./RevenueChart";
-import { MarginAnalysisChart } from "./MarginAnalysisChart";
+import { HistoricalDataPoint, MarginAnalysisChart } from "./MarginAnalysisChart";
 import { formatFinancialValue } from "@/lib/utils";
 
 interface KeyMetricsProps {
@@ -9,7 +9,7 @@ interface KeyMetricsProps {
     ticker?: string;
     lang?: string;
     currency?: string;
-    historyData?: any[];
+    historyData?: HistoricalDataPoint[];
     historyLoading?: boolean;
 }
 
@@ -55,7 +55,6 @@ export function KeyMetrics({ metrics, ticker, lang = 'en', currency, historyData
                     loading={historyLoading}
                 />
                 <MarginAnalysisChart
-                    ticker={ticker || ""}
                     lang={lang}
                     data={historyData}
                     loading={historyLoading}

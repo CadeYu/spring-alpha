@@ -66,6 +66,10 @@ public class FinancialFacts {
     private BigDecimal returnOnEquity; // ROE
     private BigDecimal returnOnAssets; // ROA
 
+    // Valuation Metrics (from FMP /ratios)
+    private BigDecimal priceToEarningsRatio; // P/E
+    private BigDecimal priceToBookRatio; // P/B
+
     // Additional computed metrics can be stored here as a flexible map
     private Map<String, BigDecimal> additionalMetrics;
 

@@ -68,4 +68,14 @@ public class AnalysisContract {
      * User's preferred language for analysis output
      */
     private String language;
+
+    /**
+     * Whether grounded SEC/RAG evidence is available for this run.
+     */
+    private boolean evidenceAvailable;
+
+    /**
+     * Human-readable reason when evidence is unavailable or degraded.
+     */
+    private String evidenceStatusMessage;
 }

@@ -52,9 +52,10 @@ public class SecController {
     public Flux<AnalysisReport> analyzeStock(
             @PathVariable String ticker,
             @RequestParam(defaultValue = "en") String lang,
-            @RequestParam(defaultValue = "") String model) {
+            @RequestParam(defaultValue = "") String model,
+            @RequestHeader(name = "X-OpenAI-API-Key", required = false) String openAiApiKey) {
         log.info("REST request to analyze stock: {}, lang: {}, model: {}", ticker, lang, model);
-        return analysisService.analyzeStock(ticker, lang, model);
+        return analysisService.analyzeStock(ticker, lang, model, openAiApiKey);
     }
 
     /**
@@ -78,7 +79,7 @@ public class SecController {
     /**
      * 获取可用的 AI 模型列表
      * <p>
-     * 返回当前系统支持的所有模型 (e.g. "groq", "openai", "gemini", "enhanced-mock")
+     * 返回当前系统支持的所有模型 (e.g. "groq", "chatanywhere", "openai")
      * 以及默认模型。
      */
     @GetMapping("/models")

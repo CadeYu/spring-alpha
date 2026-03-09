@@ -1,0 +1,58 @@
+Analyze the earnings report for {{ticker}} ({{period}}).
+
+FINANCIAL FACTS:
+{{financialFacts}}
+
+TEXTUAL EVIDENCE:
+{{textEvidence}}
+
+EVIDENCE AVAILABILITY:
+{{evidenceAvailability}}
+{{evidenceStatusMessage}}
+
+TASK:
+Identify and analyze the core Business Drivers and Risk Factors.
+
+OUTPUT REQUIREMENTS:
+Return a JSON object with the following structure exactly:
+
+{
+  "businessDrivers": [
+    {
+      "title": "driver title 1",
+      "impact": "high/medium/low",
+      "description": "explanation with evidence citations"
+    },
+    {
+      "title": "driver title 2",
+      "impact": "high/medium/low",
+      "description": "explanation with evidence citations"
+    }
+  ],
+  "riskFactors": [
+    {
+      "title": "risk title 1",
+      "severity": "high/medium/low",
+      "description": "explanation with evidence citations"
+    },
+    {
+      "title": "risk title 2",
+      "severity": "high/medium/low",
+      "description": "explanation with evidence citations"
+    }
+  ],
+  "citations": [
+    {
+      "section": "source identifier (e.g., Risk Factors)",
+      "excerpt": "exact quoted text from source (ALWAYS in English)"
+    }
+  ]
+}
+
+LANGUAGE: {{language}}
+- ALL text content (titles, descriptions, impact/severity descriptors if applicable) MUST be written in {{language}}.
+- The "citations" -> "excerpt" field MUST always be the original English text for verification.
+- When the language is Chinese (中文), add an "excerpt_zh" field with the Chinese translation for each citation.
+- If EVIDENCE AVAILABILITY is UNAVAILABLE, return "citations": [] and do not fabricate Risk Factors or MD&A quotes.
+
+IMPORTANT: Generate multiple entries for both businessDrivers and riskFactors. Focus on the most material factors affecting the business.

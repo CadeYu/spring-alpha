@@ -4,44 +4,59 @@ import { useState, useRef, useEffect } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Loader2, TrendingUp, AlertCircle, TrendingDown, Bot, Quote } from 'lucide-react';
-import { MetricCard } from '@/components/MetricCard';
-import { HealthScore } from '@/components/HealthScore';
-import { RiskAlerts } from '@/components/RiskAlerts';
+import { Search, Loader2, TrendingUp, Bot } from 'lucide-react';
 import { ExecutiveSummary } from '@/components/analysis/ExecutiveSummary';
 import { KeyMetrics } from '@/components/analysis/KeyMetrics';
 import { BusinessDrivers } from '@/components/analysis/BusinessDrivers';
 import { RiskFactors } from '@/components/analysis/RiskFactors';
 import { BullBearCase } from '@/components/analysis/BullBearCase';
-import { RevenueChart } from '@/components/analysis/RevenueChart';
-import { MarginAnalysisChart } from '@/components/analysis/MarginAnalysisChart';
 import { AnalysisReport } from '@/types/AnalysisReport';
 import { DuPontChart } from '@/components/financial/dupont-chart';
 import { InsightCards } from '@/components/financial/insight-cards';
-import { WaterfallChart } from '@/components/financial/waterfall-chart';
+import { FinancialHealthRadar } from '@/components/financial/financial-health-radar';
 import { TopicWordCloud } from '@/components/analysis/TopicWordCloud';
 import { PdfDownloadButton } from '@/components/pdf/PdfDownloadButton';
+import type { HistoricalDataPoint } from '@/components/analysis/MarginAnalysisChart';
 
 // Available AI models for analysis
 const AI_MODELS = [
+  { id: 'chatanywhere', name: 'GPT-4o Mini', icon: '🆓', description: 'Free 200/day', descZh: '免费200次/天' },
   { id: 'groq', name: 'Groq Llama 3.3', icon: '⚡', description: 'Fast & Free', descZh: '快速免费' },
-  { id: 'openai', name: 'OpenAI GPT-4', icon: '🧠', description: 'Most Capable', descZh: '最强能力' },
-  { id: 'gemini', name: 'Google Gemini', icon: '💎', description: 'Balanced', descZh: '均衡全面' },
-  { id: 'enhanced-mock', name: 'Mock (Testing)', icon: '🔧', description: 'No API', descZh: '无需API' },
+  { id: 'openai', name: 'OpenAI (BYOK)', icon: '🔑', description: 'Use your own API key', descZh: '使用你自己的 API Key' },
 ];
+
+const OPENAI_KEY_STORAGE = 'spring-alpha-openai-key';
 
 export default function Home() {
   const [ticker, setTicker] = useState('AAPL');
+  const [activeTicker, setActiveTicker] = useState('');  // only set on submit
   const [lang, setLang] = useState('en');
-  const [model, setModel] = useState('groq');
+  const [model, setModel] = useState('chatanywhere');
+  const [openAiApiKey, setOpenAiApiKey] = useState('');
+  const [openAiKeySaved, setOpenAiKeySaved] = useState(false);
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [historyData, setHistoryData] = useState<HistoricalDataPoint[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const analysisAbortRef = useRef<AbortController | null>(null);
+  const historyAbortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isZh = lang === 'zh';
+  const isOpenAiMode = model === 'openai';
+  const reportTitleTicker = activeTicker || ticker;
+  const reportCompanyName = report?.companyName?.trim();
+  const reportPeriod = report?.period?.trim();
+  const reportFilingDate = report?.filingDate?.trim();
+
+  useEffect(() => {
+    const savedKey = window.localStorage.getItem(OPENAI_KEY_STORAGE);
+    if (savedKey) {
+      setOpenAiApiKey(savedKey);
+      setOpenAiKeySaved(true);
+    }
+  }, []);
 
   // Backend URL: direct to Render in production, local proxy in dev
   const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL
@@ -49,21 +64,29 @@ export default function Home() {
     : '/api/java';
 
   // Fetch History Data with retry logic
-  const fetchHistory = async (tickerToFetch: string) => {
+  const fetchHistory = async (tickerToFetch: string, requestId: number) => {
     setHistoryLoading(true);
     const maxRetries = 2;
+    historyAbortRef.current?.abort();
+    const controller = new AbortController();
+    historyAbortRef.current = controller;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const res = await fetch(`${apiBase}/sec/history/${tickerToFetch}`);
+        const res = await fetch(`${apiBase}/sec/history/${tickerToFetch}`, { signal: controller.signal });
         if (res.ok) {
-          const data = await res.json();
-          setHistoryData(data);
+          const data = await res.json() as HistoricalDataPoint[];
+          if (requestIdRef.current === requestId) {
+            setHistoryData(data);
+          }
           setHistoryLoading(false);
           return; // Success — exit
         }
         console.warn(`History fetch attempt ${attempt} returned ${res.status}`);
       } catch (e) {
+        if (controller.signal.aborted) {
+          return;
+        }
         console.warn(`History fetch attempt ${attempt} failed:`, e);
       }
 
@@ -75,24 +98,42 @@ export default function Home() {
 
     // All retries failed
     console.error(`Failed to fetch history for ${tickerToFetch} after ${maxRetries} attempts`);
-    setHistoryData([]);
-    setHistoryLoading(false);
+    if (requestIdRef.current === requestId) {
+      setHistoryData([]);
+      setHistoryLoading(false);
+    }
   };
 
   const handleSearch = async () => {
-    if (!ticker) return;
+    if (!ticker || isLoading) return;
+    if (isOpenAiMode && !openAiApiKey.trim()) {
+      setError(isZh ? '请选择 OpenAI 模式后先输入并保存你的 API Key。' : 'OpenAI BYOK mode requires you to enter and save your API key first.');
+      return;
+    }
+
+    const requestId = Date.now();
+    requestIdRef.current = requestId;
+    analysisAbortRef.current?.abort();
+    const controller = new AbortController();
+    analysisAbortRef.current = controller;
 
     setIsLoading(true);
     setReport(null);
     setError(null);
     setHistoryData([]);
+    setActiveTicker(ticker.toUpperCase().trim());
 
     // Fetch history data in parallel with analysis (doesn't depend on AI)
-    fetchHistory(ticker);
+    fetchHistory(ticker, requestId);
 
     try {
       console.log(`Fetching analysis for ${ticker} using ${model} in ${lang}...`);
-      const response = await fetch(`${apiBase}/sec/analyze/${ticker}?lang=${lang}&model=${model}`);
+      const response = await fetch(`${apiBase}/sec/analyze/${ticker}?lang=${lang}&model=${model}`, {
+        headers: isOpenAiMode
+          ? { 'X-OpenAI-API-Key': openAiApiKey.trim() }
+          : undefined,
+        signal: controller.signal,
+      });
       console.log("Response status:", response.status);
 
       if (!response.ok || !response.body) {
@@ -118,9 +159,31 @@ export default function Home() {
           if (line.startsWith('data:')) {
             const jsonStr = line.substring(5).trim();
             try {
-              const reportData = JSON.parse(jsonStr);
-              setReport(reportData);
-              console.log("Received report:", reportData);
+              const reportData = JSON.parse(jsonStr) as Partial<AnalysisReport>;
+              if (requestIdRef.current !== requestId) {
+                continue;
+              }
+              setReport(prev => {
+                if (!prev) return reportData as AnalysisReport;
+
+                // Filter out null/undefined values from the incoming chunk
+                // to prevent overwriting already-received data from other agents
+                const filtered = Object.fromEntries(
+                  Object.entries(reportData).filter(([, value]) => value !== null && value !== undefined)
+                ) as Partial<AnalysisReport>;
+
+                // Merge citations specifically since they are arrays from multiple agents
+                const mergedCitations = [...(prev.citations || []), ...(reportData.citations || [])];
+                const sourceContext = reportData.sourceContext ?? prev.sourceContext;
+
+                return {
+                  ...prev,
+                  ...filtered,
+                  citations: mergedCitations.length > 0 ? mergedCitations : prev.citations,
+                  sourceContext
+                };
+              });
+              console.log("Received progressive report chunk");
             } catch (e) {
               console.warn("JSON parse error:", e);
             }
@@ -131,10 +194,44 @@ export default function Home() {
         buffer = lines[lines.length - 1];
       }
     } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
       console.error("Fetch Error:", error);
       setError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      if (requestIdRef.current === requestId) {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      analysisAbortRef.current?.abort();
+      historyAbortRef.current?.abort();
+    };
+  }, []);
+
+  const saveOpenAiKey = () => {
+    const trimmedKey = openAiApiKey.trim();
+    if (!trimmedKey) {
+      setOpenAiKeySaved(false);
+      setError(isZh ? '请输入有效的 OpenAI API Key。' : 'Please enter a valid OpenAI API key.');
+      return;
+    }
+    window.localStorage.setItem(OPENAI_KEY_STORAGE, trimmedKey);
+    setOpenAiApiKey(trimmedKey);
+    setOpenAiKeySaved(true);
+    setError(null);
+  };
+
+  const clearOpenAiKey = () => {
+    window.localStorage.removeItem(OPENAI_KEY_STORAGE);
+    setOpenAiApiKey('');
+    setOpenAiKeySaved(false);
+    if (isOpenAiMode) {
+      setError(isZh ? '已清除 OpenAI Key，请重新输入。' : 'OpenAI key cleared. Enter a new key to continue.');
     }
   };
 
@@ -211,6 +308,46 @@ export default function Home() {
                 ))}
               </div>
             </div>
+
+            {isOpenAiMode && (
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/10 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-300">
+                      {isZh ? 'OpenAI API Key' : 'OpenAI API Key'}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {isZh
+                        ? '仅保存在当前浏览器本地，并在请求 OpenAI 模式时透传到后端。'
+                        : 'Stored only in this browser and forwarded to the backend only for OpenAI mode.'}
+                    </p>
+                  </div>
+                  <span className={`text-xs font-medium ${openAiKeySaved ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {openAiKeySaved
+                      ? (isZh ? '已保存' : 'Saved')
+                      : (isZh ? '未保存' : 'Not saved')}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    value={openAiApiKey}
+                    onChange={(e) => {
+                      setOpenAiApiKey(e.target.value);
+                      setOpenAiKeySaved(false);
+                    }}
+                    placeholder={isZh ? '输入 sk-... 开头的 OpenAI Key' : 'Enter your OpenAI key (sk-...)'}
+                    className="bg-slate-950 border-slate-700 text-slate-200"
+                  />
+                  <Button type="button" onClick={saveOpenAiKey} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                    {isZh ? '保存' : 'Save'}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={clearOpenAiKey} className="border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-900">
+                    {isZh ? '清除' : 'Clear'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -228,13 +365,23 @@ export default function Home() {
           <div className="space-y-6">
             {/* Report Toolbar */}
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-emerald-400 flex items-center gap-2">
-                📊 {isZh ? `${ticker} 分析报告` : `${ticker} Analysis Report`}
-              </h2>
+              <div className="space-y-1">
+                <h2 className="text-lg font-bold text-emerald-400 flex items-center gap-2">
+                  📊 {isZh ? `${reportTitleTicker} 分析报告` : `${reportTitleTicker} Analysis Report`}
+                </h2>
+                {(reportCompanyName || reportPeriod) && (
+                  <p className="text-sm text-slate-400">
+                    {reportCompanyName || reportTitleTicker}
+                    {reportPeriod ? ` · ${reportPeriod}` : ''}
+                    {reportFilingDate ? ` · ${reportFilingDate}` : ''}
+                  </p>
+                )}
+              </div>
               <PdfDownloadButton report={report} ticker={ticker} lang={lang} />
             </div>
 
             <ExecutiveSummary
+              thesis={report.coreThesis}
               summary={report.executiveSummary}
               metadata={report.metadata}
               lang={lang}
@@ -250,49 +397,32 @@ export default function Home() {
             />
 
             {/* Advanced Insights Section */}
-            {(report.dupontAnalysis || report.insightEngine || report.factorAnalysis) && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-bold flex items-center gap-2 text-emerald-400 border-b border-slate-800 pb-2">
-                  <TrendingUp className="w-6 h-6" />
-                  {isZh ? '深度洞察' : 'Advanced Insights'}
-                </h2>
+            <div className="space-y-6">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-emerald-400 border-b border-slate-800 pb-2">
+                <TrendingUp className="w-6 h-6" />
+                {isZh ? '深度洞察' : 'Advanced Insights'}
+              </h2>
 
-                {/* DuPont Analysis */}
-                {report.dupontAnalysis && (
-                  <DuPontChart data={report.dupontAnalysis} lang={lang} />
-                )}
-
-                {/* Topic Trends (Word Cloud) */}
-                {report.topicTrends && report.topicTrends.length > 0 && (
-                  <TopicWordCloud trends={report.topicTrends} lang={lang} />
-                )}
-
-                {/* Insight Engine (Root Cause & Accounting Changes) */}
-                {report.insightEngine && (
-                  <InsightCards data={report.insightEngine} lang={lang} />
-                )}
-
-                {/* Factor Analysis (Waterfalls) */}
-                {report.factorAnalysis && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <WaterfallChart
-                      title={isZh ? "营收桥 (增长驱动)" : "Revenue Bridge (Drivers of Growth)"}
-                      data={report.factorAnalysis.revenueBridge}
-                      lang={lang}
-                    />
-                    <WaterfallChart
-                      title={isZh ? "利润率桥 (盈利驱动)" : "Margin Bridge (Drivers of Profitability)"}
-                      data={report.factorAnalysis.marginBridge}
-                      lang={lang}
-                    />
-                  </div>
-                )}
+              {/* DuPont Analysis */}
+              <div id="chart-dupont">
+                <DuPontChart data={report.dupontAnalysis!} lang={lang} />
               </div>
-            )}
+
+              {/* Topic Trends (Word Cloud) */}
+              <TopicWordCloud trends={report.topicTrends || []} lang={lang} />
+
+              {/* Insight Engine (Root Cause & Accounting Changes) */}
+              <InsightCards data={report.insightEngine!} lang={lang} />
+
+              {/* Financial Health Radar (replaces Factor Analysis Waterfalls) */}
+              <div id="chart-radar">
+                <FinancialHealthRadar ticker={activeTicker} lang={lang} apiBase={apiBase} />
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <BusinessDrivers drivers={report.businessDrivers} lang={lang} />
-              <RiskFactors risks={report.riskFactors} lang={lang} />
+              <BusinessDrivers drivers={report.businessDrivers || []} lang={lang} />
+              <RiskFactors risks={report.riskFactors || []} lang={lang} />
             </div>
 
             <BullBearCase
@@ -302,7 +432,7 @@ export default function Home() {
             />
 
             {/* Citations with Verification Status */}
-            {report.citations && report.citations.length > 0 && (
+            {((report.citations && report.citations.length > 0) || report.sourceContext?.status === 'DEGRADED') && (
               <Card className="bg-slate-900/50 backdrop-blur-sm border-slate-800 hover:border-emerald-500/30 transition-all duration-300">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-emerald-400 font-medium tracking-wide">
@@ -311,7 +441,7 @@ export default function Home() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {report.citations.map((citation, idx) => (
+                  {report.citations && report.citations.length > 0 ? report.citations.map((citation, idx) => (
                     <div key={idx} className="bg-slate-950/50 rounded-lg border border-slate-800 p-4 transition-all duration-300 hover:border-slate-700 hover:bg-slate-900/80 group">
                       <div className="flex gap-4 items-start">
                         <div className="mt-0.5 shrink-0 bg-slate-900 p-1.5 rounded-full border border-slate-800 shadow-sm">
@@ -339,13 +469,36 @@ export default function Home() {
                               {isZh ? '来源' : 'SOURCE'}
                             </span>
                             <p className="text-xs font-medium text-slate-500 uppercase tracking-widest">
-                              {citation.section}
+                              {isZh ? (citation.section || '')
+                                .replace(/MD&A/gi, 'SEC财报中的管理层讨论与分析')
+                                .replace(/Risk Factors/gi, '风险因素')
+                                .replace(/Financial Statements/gi, '财务报表')
+                                .replace(/Notes/gi, '附注')
+                                : citation.section}
                             </p>
                           </div>
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )) : (
+                    <div className="bg-slate-950/50 rounded-lg border border-slate-800 p-4">
+                      <div className="flex gap-4 items-start">
+                        <div className="mt-0.5 shrink-0 bg-slate-900 p-1.5 rounded-full border border-slate-800 shadow-sm">
+                          <span title={isZh ? "本次无可验证来源" : "No verifiable source for this run"} className="text-yellow-500 text-lg">⚠️</span>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm text-slate-200 leading-relaxed">
+                            {report.sourceContext?.message || (isZh
+                              ? '本次分析未能拿到可验证的 SEC 文本证据，因此不展示来源引用。'
+                              : 'This run could not obtain grounded SEC text evidence, so source citations are hidden.')}
+                          </p>
+                          <p className="text-xs uppercase tracking-widest text-slate-500">
+                            {isZh ? '当前状态：降级模式' : 'Current status: degraded mode'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}

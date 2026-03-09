@@ -75,7 +75,7 @@ public class VectorRagService {
                 documents.size());
 
         // 3. 向量化与存储 (Embedding & Upsert):
-        // 这里会调用 EmbeddingModel (Gemini/OpenAI) 把文本变成向量
+        // 这里会调用 EmbeddingModel (当前默认是本地 embedding) 把文本变成向量
         // 然后存入 Postgres 的 vector 字段
         long startTime = System.currentTimeMillis();
         vectorStore.add(documents);
@@ -132,6 +132,15 @@ public class VectorRagService {
                 .build();
 
         return !vectorStore.similaritySearch(searchRequest).isEmpty();
+    }
+
+    /**
+     * Remove existing vectors for a ticker, used to recover from embedding dimension
+     * drift after provider/model changes.
+     */
+    public void deleteDocuments(String ticker) {
+        log.warn("🧹 Deleting existing vector documents for ticker: {}", ticker);
+        vectorStore.delete("ticker == '" + ticker + "'");
     }
 
     /**

@@ -31,7 +31,21 @@ interface CustomTooltipProps {
 export function WaterfallChart({ title, data, lang = 'en' }: WaterfallChartProps) {
     const chartData = useMemo(() => processWaterfallData(data, lang), [data, lang]);
 
-    if (!data || data.length === 0) return null;
+    if (!data || data.length === 0) {
+        return (
+            <Card className="col-span-1 min-h-[400px] bg-slate-900/50 backdrop-blur-sm border-slate-800 border-dashed">
+                <CardHeader>
+                    <CardTitle className="text-emerald-400/50 font-medium tracking-wide flex items-center gap-2">
+                        <span className="w-1 h-6 bg-emerald-500/50 rounded-full inline-block mr-1"></span>
+                        {title}
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="h-[320px] w-full pt-4 flex items-center justify-center text-slate-500 text-sm">
+                    {lang === 'zh' ? '数据生成中或未提供...' : 'Generating data or not available...'}
+                </CardContent>
+            </Card>
+        );
+    }
 
     return (
         <Card className="col-span-1 min-h-[400px] bg-slate-900/50 backdrop-blur-sm border-slate-800 hover:border-emerald-500/30 transition-all duration-300">

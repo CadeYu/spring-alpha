@@ -1,5 +1,5 @@
 // 指标卡片组件 - 显示单个财务指标
-import { ArrowUp, ArrowDown, TrendingUp } from 'lucide-react';
+import { ArrowUp, ArrowDown } from 'lucide-react';
 
 interface MetricCardProps {
     title: string;

@@ -30,8 +30,31 @@ export interface AnalysisMetadata {
     language: string;
 }
 
+export interface SourceContext {
+    status?: 'GROUNDED' | 'DEGRADED' | 'UNAVAILABLE';
+    message?: string;
+}
+
+export interface SupportingEvidence {
+    label: string;
+    detail: string;
+}
+
+export interface CoreThesis {
+    verdict?: 'positive' | 'mixed' | 'negative';
+    headline?: string;
+    summary?: string;
+    keyPoints?: string[];
+    supportingEvidence?: SupportingEvidence[];
+    watchItems?: string[];
+}
+
 export interface AnalysisReport {
-    executiveSummary: string;
+    executiveSummary?: string;
+    coreThesis?: CoreThesis;
+    companyName?: string;
+    period?: string;
+    filingDate?: string;
     keyMetrics: MetricInsight[];
     businessDrivers: BusinessDriver[];
     riskFactors: RiskFactor[];
@@ -39,6 +62,7 @@ export interface AnalysisReport {
     bearCase: string;
     citations: Citation[];
     metadata: AnalysisMetadata;
+    sourceContext?: SourceContext;
     currency?: string; // Added currency field
 
     // Advanced Insights

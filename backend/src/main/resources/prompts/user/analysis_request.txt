@@ -79,10 +79,13 @@ Return a JSON object with the following structure:
   },
   "factorAnalysis": {
     "revenueBridge": [
-      { "name": "Volume", "impact": "+5% or just +", "description": "..." }
+      { "name": "Volume", "impact": "+5% or just +", "description": "..." },
+      { "name": "Price", "impact": "+2% or just +", "description": "..." },
+      { "name": "FX", "impact": "-1% or just -", "description": "..." }
     ],
     "marginBridge": [
-      { "name": "Input Costs", "impact": "-2% or just -", "description": "..." }
+      { "name": "Input Costs", "impact": "-2% or just -", "description": "..." },
+      { "name": "Product Mix", "impact": "+1% or just +", "description": "..." }
     ]
   },
   "topicTrends": [
@@ -90,18 +93,33 @@ Return a JSON object with the following structure:
       "topic": "Keyword (e.g. AI, Supply Chain)",
       "frequency": 85,
       "sentiment": "positive/negative/neutral"
+    },
+    {
+      "topic": "Another Keyword",
+      "frequency": 60,
+      "sentiment": "positive/negative/neutral"
     }
   ],
   "businessDrivers": [
     {
-      "title": "driver title",
-      "impact": "positive/negative/neutral",
+      "title": "driver title 1",
+      "impact": "high/medium/low",
+      "description": "explanation with evidence citations"
+    },
+    {
+      "title": "driver title 2",
+      "impact": "high/medium/low",
       "description": "explanation with evidence citations"
     }
   ],
   "riskFactors": [
     {
-      "title": "risk title",
+      "title": "risk title 1",
+      "severity": "high/medium/low",
+      "description": "explanation with evidence citations"
+    },
+    {
+      "title": "risk title 2",
       "severity": "high/medium/low",
       "description": "explanation with evidence citations"
     }

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * FMP Financial Data Service - 由于 FMP 是付费数据源，这里实现了真实的财务数据获取。
@@ -32,6 +33,7 @@ import java.util.Map;
 public class FmpFinancialDataService implements FinancialDataService {
 
     private static final Logger log = LoggerFactory.getLogger(FmpFinancialDataService.class);
+    private static final int FMP_REQUEST_TIMEOUT_SECONDS = 15;
 
     private final WebClient webClient;
     private final FinancialCalculator calculator;
@@ -104,15 +106,15 @@ public class FmpFinancialDataService implements FinancialDataService {
                     ? parseCashFlowStatement(cashFlowData.get(1))
                     : null;
 
-            // 获取公司名称和财报年份
-            String companyName = getStringValue(incomeData.get(0), "symbol");
-            String period = getStringValue(incomeData.get(0), "period") + " "
-                    + getStringValue(incomeData.get(0), "calendarYear");
+            // 获取公司名称、财报期和文件日期
+            String companyName = resolveCompanyName(upperTicker, incomeData.get(0));
+            String period = resolveReportingPeriod(incomeData.get(0));
+            String filingDate = resolveFilingDate(incomeData.get(0));
 
             log.info("✅ Successfully fetched FMP data for {} ({})", upperTicker, period);
 
             // 使用计算器模块，计算各种衍生指标 (如毛利率、净利率增长率)
-            return calculator.buildFinancialFacts(
+            FinancialFacts facts = calculator.buildFinancialFacts(
                     upperTicker,
                     companyName,
                     period,
@@ -121,6 +123,35 @@ public class FmpFinancialDataService implements FinancialDataService {
                     currentCashFlow,
                     previousIncome,
                     previousCashFlow);
+            facts.setFilingDate(filingDate);
+
+            // 4. Fetch valuation ratios (P/E, P/B) from FMP /stable/ratios
+            try {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> ratiosData = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return (List<Map<String, Object>>) WebClient.create("https://financialmodelingprep.com")
+                                .get()
+                                .uri("/stable/ratios?symbol=" + upperTicker + "&period=annual&limit=1&apikey=" + apiKey)
+                                .retrieve()
+                                .bodyToMono(List.class)
+                                .block();
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }).join();
+                if (ratiosData != null && !ratiosData.isEmpty()) {
+                    Map<String, Object> ratios = ratiosData.get(0);
+                    facts.setPriceToEarningsRatio(getBigDecimalValue(ratios, "priceToEarningsRatio"));
+                    facts.setPriceToBookRatio(getBigDecimalValue(ratios, "priceToBookRatio"));
+                    log.info("✅ Fetched valuation ratios for {}: P/E={}, P/B={}",
+                            upperTicker, facts.getPriceToEarningsRatio(), facts.getPriceToBookRatio());
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to fetch valuation ratios for {}: {}", upperTicker, e.getMessage());
+            }
+
+            return facts;
 
         } catch (Exception e) {
             log.error("❌ Failed to fetch FMP data for {}: {}", upperTicker, e.getMessage(), e);
@@ -210,8 +241,6 @@ public class FmpFinancialDataService implements FinancialDataService {
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> fetchData(String endpoint) {
         try {
-            // Use CompletableFuture to run blocking WebClient call on separate thread pool
-            // This avoids "block() not supported in reactor-http-nio" error
             return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                 try {
                     return (List<Map<String, Object>>) webClient.get()
@@ -223,7 +252,12 @@ public class FmpFinancialDataService implements FinancialDataService {
                     log.error("FMP HTTP call failed: {}", e.getMessage());
                     return null;
                 }
-            }).join(); // join() waits for result from ForkJoinPool, safe from reactor thread
+            }).orTimeout(FMP_REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .exceptionally(e -> {
+                        log.error("FMP API timeout/failure for {}: {}", endpoint, e.getMessage());
+                        return null;
+                    })
+                    .join();
         } catch (Exception e) {
             log.error("FMP API call failed for {}: {}", endpoint, e.getMessage());
             return null;
@@ -271,12 +305,86 @@ public class FmpFinancialDataService implements FinancialDataService {
                 .build();
     }
 
-    private String getStringValue(Map<String, Object> data, String key) {
+    String getStringValue(Map<String, Object> data, String key) {
         Object value = data.get(key);
         return value != null ? value.toString() : "";
     }
 
-    private BigDecimal getBigDecimalValue(Map<String, Object> data, String key) {
+    String resolveCompanyName(String ticker, Map<String, Object> incomeRow) {
+        String companyName = firstNonBlank(
+                getStringValue(incomeRow, "companyName"),
+                getStringValue(incomeRow, "name"));
+
+        if (!companyName.isBlank()) {
+            return companyName;
+        }
+
+        try {
+            List<Map<String, Object>> profileData = fetchData("/profile?symbol=" + ticker + "&apikey=" + apiKey);
+            if (profileData != null && !profileData.isEmpty()) {
+                return firstNonBlank(
+                        getStringValue(profileData.get(0), "companyName"),
+                        getStringValue(profileData.get(0), "name"),
+                        ticker);
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to fetch company profile for {}: {}", ticker, e.getMessage());
+        }
+
+        return ticker;
+    }
+
+    String resolveReportingPeriod(Map<String, Object> incomeRow) {
+        String rawPeriod = getStringValue(incomeRow, "period").trim();
+        String year = firstNonBlank(
+                getStringValue(incomeRow, "calendarYear"),
+                extractYear(getStringValue(incomeRow, "date")),
+                extractYear(getStringValue(incomeRow, "acceptedDate")),
+                extractYear(getStringValue(incomeRow, "fillingDate")));
+
+        if (rawPeriod.isBlank()) {
+            rawPeriod = "FY";
+        }
+
+        if (year.isBlank()) {
+            return rawPeriod;
+        }
+
+        return rawPeriod + " " + year;
+    }
+
+    String resolveFilingDate(Map<String, Object> incomeRow) {
+        String filingDate = firstNonBlank(
+                getStringValue(incomeRow, "date"),
+                getStringValue(incomeRow, "acceptedDate"),
+                getStringValue(incomeRow, "fillingDate"));
+
+        if (filingDate.contains(" ")) {
+            filingDate = filingDate.substring(0, filingDate.indexOf(' '));
+        }
+
+        return filingDate;
+    }
+
+    String extractYear(String dateValue) {
+        if (dateValue == null || dateValue.isBlank()) {
+            return "";
+        }
+
+        String trimmed = dateValue.trim();
+        return trimmed.length() >= 4 ? trimmed.substring(0, 4) : "";
+    }
+
+    String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    BigDecimal getBigDecimalValue(Map<String, Object> data, String key) {
         Object value = data.get(key);
         if (value == null) {
             return null;

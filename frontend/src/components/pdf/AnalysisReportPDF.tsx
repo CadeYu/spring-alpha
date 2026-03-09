@@ -5,10 +5,26 @@ import {
     Page,
     Text,
     View,
+    Image,
     StyleSheet,
     Font,
 } from '@react-pdf/renderer';
 import type { AnalysisReport } from '@/types/AnalysisReport';
+
+// ─── Register Chinese font (Noto Sans SC from Google Fonts) ───────────────
+Font.register({
+    family: 'NotoSansSC',
+    fonts: [
+        {
+            src: 'https://fonts.gstatic.com/s/notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYxNbPzS5HE.ttf',
+            fontWeight: 400,
+        },
+        {
+            src: 'https://fonts.gstatic.com/s/notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_EnYxNbPzS5HE.ttf',
+            fontWeight: 700,
+        },
+    ],
+});
 
 // ─── Color Palette (Professional Financial Report) ────────────────────────
 const colors = {
@@ -27,11 +43,14 @@ const colors = {
     neutral: '#6B7280',      // Gray 500
 };
 
-// ─── Styles ───────────────────────────────────────────────────────────────
+// ─── Font helpers ─────────────────────────────────────────────────────────
+function fontRegular(isZh: boolean) { return isZh ? 'NotoSansSC' : 'Helvetica'; }
+function fontBold(isZh: boolean) { return isZh ? 'NotoSansSC' : 'Helvetica-Bold'; }
+
+// ─── Styles (base — font overrides applied inline via isZh) ──────────────
 const s = StyleSheet.create({
     page: {
         padding: 40,
-        fontFamily: 'Helvetica',
         fontSize: 10,
         color: colors.text,
         backgroundColor: colors.bg,
@@ -48,13 +67,11 @@ const s = StyleSheet.create({
     },
     brandText: {
         fontSize: 22,
-        fontFamily: 'Helvetica-Bold',
         color: colors.primary,
         letterSpacing: 1,
     },
     tickerBadge: {
         fontSize: 14,
-        fontFamily: 'Helvetica-Bold',
         color: colors.accent,
         backgroundColor: '#ECFDF5',
         padding: '4 10',
@@ -71,6 +88,11 @@ const s = StyleSheet.create({
         textTransform: 'uppercase' as const,
         letterSpacing: 0.5,
     },
+    reportMetaLine: {
+        fontSize: 9,
+        color: colors.text,
+        marginTop: 4,
+    },
 
     // ── Section ──
     section: {
@@ -78,13 +100,11 @@ const s = StyleSheet.create({
     },
     sectionTitle: {
         fontSize: 13,
-        fontFamily: 'Helvetica-Bold',
         color: colors.primary,
         borderBottomWidth: 1,
         borderBottomColor: colors.border,
         paddingBottom: 4,
         marginBottom: 8,
-        textTransform: 'uppercase' as const,
         letterSpacing: 0.8,
     },
     bodyText: {
@@ -106,9 +126,7 @@ const s = StyleSheet.create({
     },
     tableHeaderCell: {
         fontSize: 8,
-        fontFamily: 'Helvetica-Bold',
         color: '#FFFFFF',
-        textTransform: 'uppercase' as const,
         letterSpacing: 0.5,
     },
     tableRow: {
@@ -154,7 +172,6 @@ const s = StyleSheet.create({
     },
     cardTitle: {
         fontSize: 9,
-        fontFamily: 'Helvetica-Bold',
         color: colors.dark,
         marginBottom: 2,
     },
@@ -165,7 +182,6 @@ const s = StyleSheet.create({
     },
     badge: {
         fontSize: 7,
-        fontFamily: 'Helvetica-Bold',
         paddingVertical: 1,
         paddingHorizontal: 4,
         borderRadius: 2,
@@ -209,7 +225,6 @@ const s = StyleSheet.create({
     },
     bullBearTitle: {
         fontSize: 10,
-        fontFamily: 'Helvetica-Bold',
         marginBottom: 4,
     },
 
@@ -258,7 +273,6 @@ const s = StyleSheet.create({
     },
     citationExcerpt: {
         fontSize: 8.5,
-        fontStyle: 'italic',
         color: colors.text,
         lineHeight: 1.5,
         marginBottom: 3,
@@ -276,7 +290,6 @@ const s = StyleSheet.create({
     },
     verifiedBadge: {
         fontSize: 7,
-        fontFamily: 'Helvetica-Bold',
         paddingVertical: 1,
         paddingHorizontal: 4,
         borderRadius: 2,
@@ -348,25 +361,49 @@ interface AnalysisReportPDFProps {
     report: AnalysisReport;
     ticker: string;
     lang: string;
+    chartImages?: Record<string, string>;  // id -> base64 data URL
 }
 
-export function AnalysisReportPDF({ report, ticker, lang }: AnalysisReportPDFProps) {
+// ─── Helper: translate citation section names for PDF ─────────────────────
+function translateSection(section: string): string {
+    return (section || '')
+        .replace(/MD&A/gi, 'SEC财报中的管理层讨论与分析')
+        .replace(/Risk Factors/gi, '风险因素')
+        .replace(/Financial Statements/gi, '财务报表')
+        .replace(/Notes/gi, '附注');
+}
+
+// ─── Helper: translate severity/impact badges ─────────────────────────────
+function badgeLabel(level: string, isZh: boolean): string {
+    if (!isZh) return level.toUpperCase();
+    switch (level) {
+        case 'high': return '高';
+        case 'medium': return '中';
+        case 'low': return '低';
+        default: return level;
+    }
+}
+
+export function AnalysisReportPDF({ report, ticker, lang, chartImages = {} }: AnalysisReportPDFProps) {
     const isZh = lang === 'zh';
+    const fr = fontRegular(isZh);
+    const fb = fontBold(isZh);
+    const reportIdentity = [report.companyName, report.period, report.filingDate].filter(Boolean).join(' · ');
     const generatedAt = report.metadata?.generatedAt
         ? new Date(report.metadata.generatedAt).toLocaleString(isZh ? 'zh-CN' : 'en-US')
         : 'N/A';
 
     return (
         <Document
-            title={`${ticker} Financial Analysis Report`}
+            title={isZh ? `${ticker} AI 金融分析报告` : `${ticker} Financial Analysis Report`}
             author="Spring Alpha"
-            subject={`AI-Powered Financial Analysis for ${ticker}`}
+            subject={isZh ? `${ticker} AI 财报分析` : `AI-Powered Financial Analysis for ${ticker}`}
         >
-            <Page size="A4" style={s.page}>
+            <Page size="A4" style={{ ...s.page, fontFamily: fr }}>
                 {/* ── Header ── */}
                 <View style={s.header}>
                     <View>
-                        <Text style={s.brandText}>SPRING ALPHA</Text>
+                        <Text style={{ ...s.brandText, fontFamily: fb }}>SPRING ALPHA</Text>
                         <View style={s.metaRow}>
                             <Text style={s.metaText}>
                                 {isZh ? 'AI 金融分析报告' : 'AI Financial Analysis Report'}
@@ -378,42 +415,63 @@ export function AnalysisReportPDF({ report, ticker, lang }: AnalysisReportPDFPro
                                 {isZh ? '模型' : 'Model'}: {report.metadata?.modelName || 'N/A'}
                             </Text>
                         </View>
+                        {reportIdentity && (
+                            <Text style={{ ...s.reportMetaLine, fontFamily: fb }}>
+                                {reportIdentity}
+                            </Text>
+                        )}
                     </View>
-                    <Text style={s.tickerBadge}>{ticker}</Text>
+                    <Text style={{ ...s.tickerBadge, fontFamily: fb }}>{ticker}</Text>
                 </View>
 
-                {/* ── Executive Summary ── */}
+                {/* ── Core Thesis ── */}
                 <View style={s.section}>
-                    <Text style={s.sectionTitle}>
-                        {isZh ? '高管摘要' : 'Executive Summary'}
+                    <Text style={{ ...s.sectionTitle, fontFamily: fb }}>
+                        {isZh ? '核心分析' : 'Core Thesis'}
                     </Text>
-                    <Text style={s.bodyText}>{report.executiveSummary}</Text>
+                    {report.coreThesis?.headline && (
+                        <Text style={{ ...s.cardTitle, fontFamily: fb, fontSize: 12, marginBottom: 6 }}>
+                            {report.coreThesis.headline}
+                        </Text>
+                    )}
+                    <Text style={s.bodyText}>
+                        {report.coreThesis?.summary || report.executiveSummary || 'N/A'}
+                    </Text>
+                    {report.coreThesis?.keyPoints && report.coreThesis.keyPoints.length > 0 && (
+                        <View style={{ marginTop: 8 }}>
+                            {report.coreThesis.keyPoints.slice(0, 4).map((point, i) => (
+                                <Text key={i} style={{ ...s.bodyText, fontSize: 9, marginBottom: 4 }}>
+                                    • {point}
+                                </Text>
+                            ))}
+                        </View>
+                    )}
                 </View>
 
                 {/* ── Key Metrics ── */}
                 {report.keyMetrics && report.keyMetrics.length > 0 && (
                     <View style={s.section}>
-                        <Text style={s.sectionTitle}>
+                        <Text style={{ ...s.sectionTitle, fontFamily: fb }}>
                             {isZh ? '核心指标' : 'Key Metrics'}
                         </Text>
                         <View style={s.table}>
                             <View style={s.tableHeaderRow}>
-                                <Text style={{ ...s.tableHeaderCell, ...s.colMetric }}>
+                                <Text style={{ ...s.tableHeaderCell, ...s.colMetric, fontFamily: fb }}>
                                     {isZh ? '指标' : 'Metric'}
                                 </Text>
-                                <Text style={{ ...s.tableHeaderCell, ...s.colValue }}>
+                                <Text style={{ ...s.tableHeaderCell, ...s.colValue, fontFamily: fb }}>
                                     {isZh ? '数值' : 'Value'}
                                 </Text>
-                                <Text style={{ ...s.tableHeaderCell, ...s.colInterpretation }}>
+                                <Text style={{ ...s.tableHeaderCell, ...s.colInterpretation, fontFamily: fb }}>
                                     {isZh ? '解读' : 'Interpretation'}
                                 </Text>
                             </View>
                             {report.keyMetrics.map((metric, i) => (
                                 <View key={i} style={i % 2 === 0 ? s.tableRow : s.tableRowAlt}>
-                                    <Text style={{ ...s.colMetric, fontFamily: 'Helvetica-Bold', fontSize: 9 }}>
+                                    <Text style={{ ...s.colMetric, fontFamily: fb, fontSize: 9 }}>
                                         {metric.metricName}
                                     </Text>
-                                    <Text style={{ ...s.colValue, color: sentimentColor(metric.sentiment), fontFamily: 'Helvetica-Bold' }}>
+                                    <Text style={{ ...s.colValue, color: sentimentColor(metric.sentiment), fontFamily: fb }}>
                                         {metric.value}
                                     </Text>
                                     <Text style={{ ...s.colInterpretation, fontSize: 8.5 }}>
@@ -430,16 +488,16 @@ export function AnalysisReportPDF({ report, ticker, lang }: AnalysisReportPDFPro
                     {/* Business Drivers */}
                     {report.businessDrivers && report.businessDrivers.length > 0 && (
                         <View style={s.col}>
-                            <Text style={s.sectionTitle}>
-                                {isZh ? '业务驱动' : 'Business Drivers'}
+                            <Text style={{ ...s.sectionTitle, fontFamily: fb }}>
+                                {isZh ? '业务驱动因素' : 'Business Drivers'}
                             </Text>
                             {report.businessDrivers.map((driver, i) => (
-                                <View key={i} style={s.card}>
-                                    <Text style={severityBadgeStyle(driver.impact)}>
-                                        {driver.impact.toUpperCase()}
+                                <View key={i} style={s.card} wrap={false}>
+                                    <Text style={{ ...severityBadgeStyle(driver.impact), fontFamily: fb }}>
+                                        {badgeLabel(driver.impact, isZh)}
                                     </Text>
-                                    <Text style={s.cardTitle}>{driver.title}</Text>
-                                    <Text style={s.cardBody}>{driver.description}</Text>
+                                    <Text style={{ ...s.cardTitle, fontFamily: fb }}>{driver.title}</Text>
+                                    <Text style={{ ...s.cardBody, fontFamily: fr }}>{driver.description}</Text>
                                 </View>
                             ))}
                         </View>
@@ -448,16 +506,16 @@ export function AnalysisReportPDF({ report, ticker, lang }: AnalysisReportPDFPro
                     {/* Risk Factors */}
                     {report.riskFactors && report.riskFactors.length > 0 && (
                         <View style={s.col}>
-                            <Text style={s.sectionTitle}>
+                            <Text style={{ ...s.sectionTitle, fontFamily: fb }}>
                                 {isZh ? '风险因素' : 'Risk Factors'}
                             </Text>
                             {report.riskFactors.map((risk, i) => (
-                                <View key={i} style={s.cardDanger}>
-                                    <Text style={severityBadgeStyle(risk.severity)}>
-                                        {risk.severity.toUpperCase()}
+                                <View key={i} style={s.cardDanger} wrap={false}>
+                                    <Text style={{ ...severityBadgeStyle(risk.severity), fontFamily: fb }}>
+                                        {badgeLabel(risk.severity, isZh)}
                                     </Text>
-                                    <Text style={s.cardTitle}>{risk.category}</Text>
-                                    <Text style={s.cardBody}>{risk.description}</Text>
+                                    <Text style={{ ...s.cardTitle, fontFamily: fb }}>{risk.category}</Text>
+                                    <Text style={{ ...s.cardBody, fontFamily: fr }}>{risk.description}</Text>
                                 </View>
                             ))}
                         </View>
@@ -467,19 +525,19 @@ export function AnalysisReportPDF({ report, ticker, lang }: AnalysisReportPDFPro
                 {/* ── Bull / Bear Case ── */}
                 {(report.bullCase || report.bearCase) && (
                     <View style={s.section}>
-                        <Text style={s.sectionTitle}>
+                        <Text style={{ ...s.sectionTitle, fontFamily: fb }}>
                             {isZh ? '多空分析' : 'Bull / Bear Case'}
                         </Text>
                         <View style={s.bullBearRow}>
                             <View style={s.bullBox}>
-                                <Text style={{ ...s.bullBearTitle, color: colors.positive }}>
-                                    {isZh ? '🐂 看涨论据' : '🐂 Bull Case'}
+                                <Text style={{ ...s.bullBearTitle, color: colors.positive, fontFamily: fb }}>
+                                    {isZh ? '看涨论据' : 'Bull Case'}
                                 </Text>
                                 <Text style={s.cardBody}>{report.bullCase}</Text>
                             </View>
                             <View style={s.bearBox}>
-                                <Text style={{ ...s.bullBearTitle, color: colors.negative }}>
-                                    {isZh ? '🐻 看跌论据' : '🐻 Bear Case'}
+                                <Text style={{ ...s.bullBearTitle, color: colors.negative, fontFamily: fb }}>
+                                    {isZh ? '看跌论据' : 'Bear Case'}
                                 </Text>
                                 <Text style={s.cardBody}>{report.bearCase}</Text>
                             </View>
@@ -490,11 +548,13 @@ export function AnalysisReportPDF({ report, ticker, lang }: AnalysisReportPDFPro
                 {/* ── DuPont Analysis ── */}
                 {report.dupontAnalysis && (
                     <View style={s.section}>
-                        <Text style={s.sectionTitle}>
+                        <Text style={{ ...s.sectionTitle, fontFamily: fb }}>
                             {isZh ? '杜邦分析' : 'DuPont Analysis'}
                         </Text>
                         <Text style={s.dupontFormula}>
-                            ROE = Net Profit Margin × Asset Turnover × Equity Multiplier
+                            {isZh
+                                ? 'ROE = 净利率 × 资产周转率 × 权益乘数'
+                                : 'ROE = Net Profit Margin × Asset Turnover × Equity Multiplier'}
                         </Text>
                         <View style={s.dupontRow}>
                             <View style={s.dupontCard}>
@@ -520,27 +580,75 @@ export function AnalysisReportPDF({ report, ticker, lang }: AnalysisReportPDFPro
                     </View>
                 )}
 
-                {/* ── Citations ── */}
-                {report.citations && report.citations.length > 0 && (
+                {/* ── Chart Screenshots (captured via html2canvas) ── */}
+                {Object.keys(chartImages).length > 0 && (
                     <View style={s.section} break>
-                        <Text style={s.sectionTitle}>
+                        <Text style={{ ...s.sectionTitle, fontFamily: fb }}>
+                            {isZh ? '数据可视化' : 'Data Visualizations'}
+                        </Text>
+                        {chartImages['chart-dupont'] && (
+                            <View style={{ marginBottom: 16 }}>
+                                <Text style={{ fontSize: 9, color: colors.textLight, marginBottom: 6, fontFamily: fb }}>
+                                    {isZh ? '杜邦分析图表' : 'DuPont Analysis Chart'}
+                                </Text>
+                                {/* react-pdf Image is not a DOM img and does not support alt */}
+                                {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                                <Image
+                                    src={chartImages['chart-dupont']}
+                                    style={{ width: '100%', borderRadius: 4 }}
+                                />
+                            </View>
+                        )}
+                        {chartImages['chart-radar'] && (
+                            <View style={{ marginBottom: 16 }}>
+                                <Text style={{ fontSize: 9, color: colors.textLight, marginBottom: 6, fontFamily: fb }}>
+                                    {isZh ? '财务健康雷达图' : 'Financial Health Radar'}
+                                </Text>
+                                {/* react-pdf Image is not a DOM img and does not support alt */}
+                                {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                                <Image
+                                    src={chartImages['chart-radar']}
+                                    style={{ width: '100%', borderRadius: 4 }}
+                                />
+                            </View>
+                        )}
+                    </View>
+                )}
+
+                {/* ── Citations ── */}
+                {((report.citations && report.citations.length > 0) || report.sourceContext?.message) && (
+                    <View style={s.section} break>
+                        <Text style={{ ...s.sectionTitle, fontFamily: fb }}>
                             {isZh ? '来源引用与验证' : 'Source Citations & Verification'}
                         </Text>
-                        {report.citations.map((citation, i) => (
-                            <View key={i} style={s.citationBox}>
-                                <Text style={s.citationExcerpt}>
-                                    &ldquo;{(isZh && citation.excerptZh) ? citation.excerptZh : citation.excerpt}&rdquo;
+                        {report.citations && report.citations.length > 0 ? (
+                            report.citations.map((citation, i) => (
+                                <View key={i} style={s.citationBox}>
+                                    <Text style={{ ...s.citationExcerpt, ...(isZh ? { fontFamily: fr } : { fontStyle: 'italic' as const }) }}>
+                                        &ldquo;{isZh ? (citation.excerptZh || citation.excerpt) : citation.excerpt}&rdquo;
+                                    </Text>
+                                    <View style={s.citationMeta}>
+                                        <Text style={s.citationSection}>
+                                            {isZh ? '来源' : 'Source'}: {isZh ? translateSection(citation.section) : citation.section}
+                                        </Text>
+                                        <Text style={verificationStyle(citation.verificationStatus)}>
+                                            {verificationLabel(citation.verificationStatus, isZh)}
+                                        </Text>
+                                    </View>
+                                </View>
+                            ))
+                        ) : (
+                            <View style={s.citationBox}>
+                                <Text style={{ ...s.citationExcerpt, fontFamily: fr }}>
+                                    {report.sourceContext?.message}
                                 </Text>
                                 <View style={s.citationMeta}>
                                     <Text style={s.citationSection}>
-                                        {isZh ? '来源' : 'Source'}: {citation.section}
-                                    </Text>
-                                    <Text style={verificationStyle(citation.verificationStatus)}>
-                                        {verificationLabel(citation.verificationStatus, isZh)}
+                                        {isZh ? '状态' : 'Status'}: {report.sourceContext?.status || 'N/A'}
                                     </Text>
                                 </View>
                             </View>
-                        ))}
+                        )}
                     </View>
                 )}
 

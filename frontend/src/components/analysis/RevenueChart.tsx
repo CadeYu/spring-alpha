@@ -2,17 +2,17 @@
 
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useEffect, useState } from "react";
+import type { HistoricalDataPoint } from "./MarginAnalysisChart";
 
 interface RevenueChartProps {
     ticker?: string;
     lang?: string;
     currency?: string;
-    data?: any[];
+    data?: HistoricalDataPoint[];
     loading?: boolean;
 }
 
-export function RevenueChart({ ticker = 'AAPL', lang = 'en', currency = 'USD', data = [], loading = false }: RevenueChartProps) {
+export function RevenueChart({ lang = 'en', currency = 'USD', data = [] }: RevenueChartProps) {
     const isZh = lang === 'zh';
 
     // Determine symbol
@@ -54,7 +54,10 @@ export function RevenueChart({ ticker = 'AAPL', lang = 'en', currency = 'USD', d
                         <Tooltip
                             contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', color: '#f8fafc' }}
                             itemStyle={{ color: '#f8fafc' }}
-                            formatter={(value: any) => [`${symbol}${(value / 1000000000).toFixed(2)}B`, '']}
+                            formatter={(value: number | string | undefined) => {
+                                const numericValue = Number(value);
+                                return [`${symbol}${(numericValue / 1000000000).toFixed(2)}B`, ''];
+                            }}
                         />
                         <Bar dataKey="revenue" name={isZh ? "营收" : "Revenue"} fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
                         <Bar dataKey="netIncome" name={isZh ? "净利润" : "Net Income"} fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />

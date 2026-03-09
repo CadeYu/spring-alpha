@@ -1,0 +1,157 @@
+{
+	"info": {
+		"_postman_id": "a1b2c3d4-e5f6-7g8h-9i0j",
+		"name": "Spring Alpha Base API Tests",
+		"description": "Comprehensive tests for the Spring Alpha backend APIs",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "System Health",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/health",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"health"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Available AI Models",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/sec/models",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"sec",
+						"models"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Extract SEC 10-K Data (ETL Testing)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/sec/10k/{{ticker}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"sec",
+						"10k",
+						"{{ticker}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Fetch FMP Historical Data (Integration Test)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/sec/history/{{ticker}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"sec",
+						"history",
+						"{{ticker}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Trigger Full AI Analysis (SSE Stream Test)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Accept",
+						"value": "text/event-stream",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{baseUrl}}/api/sec/analyze/{{ticker}}?lang=en&model=groq",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"sec",
+						"analyze",
+						"{{ticker}}"
+					],
+					"query": [
+						{
+							"key": "lang",
+							"value": "en",
+							"description": "Language: en or zh"
+						},
+						{
+							"key": "model",
+							"value": "groq",
+							"description": "Model selection: groq, openai, gemini, etc"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8081",
+			"type": "string"
+		},
+		{
+			"key": "ticker",
+			"value": "AAPL",
+			"type": "string"
+		}
+	]
+}

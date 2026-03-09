@@ -14,6 +14,7 @@ export async function GET(
     const { ticker } = await params;
     const lang = request.nextUrl.searchParams.get('lang') || 'en';
     const model = request.nextUrl.searchParams.get('model') || '';
+    const openAiApiKey = request.headers.get('x-openai-api-key');
 
     const baseUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8081';
     const backendUrl = `${baseUrl}/api/sec/analyze/${ticker}?lang=${lang}&model=${model}`;
@@ -25,6 +26,7 @@ export async function GET(
         const response = await fetch(backendUrl, {
             headers: {
                 'Accept': 'text/event-stream',
+                ...(openAiApiKey ? { 'X-OpenAI-API-Key': openAiApiKey } : {}),
             },
             signal: controller.signal,
         });

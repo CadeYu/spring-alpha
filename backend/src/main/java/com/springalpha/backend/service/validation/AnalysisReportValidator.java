@@ -29,6 +29,13 @@ public class AnalysisReportValidator {
 
     // Pattern to extract numbers from text (including percentages and currency)
     private static final Pattern NUMBER_PATTERN = Pattern.compile("-?\\d+\\.?\\d*[%]?");
+    private static final List<String> PLACEHOLDER_CITATION_PATTERNS = List.of(
+            "no textual evidence available",
+            "source identifier",
+            "exact quoted text from source",
+            "quote from text",
+            "not available",
+            "n/a");
 
     /**
      * Validate an analysis report against its source facts
@@ -38,8 +45,13 @@ public class AnalysisReportValidator {
         List<String> warnings = new ArrayList<>();
 
         // Validate required fields
-        if (report.getExecutiveSummary() == null || report.getExecutiveSummary().isBlank()) {
-            errors.add("executiveSummary is required");
+        boolean hasLegacySummary = report.getExecutiveSummary() != null && !report.getExecutiveSummary().isBlank();
+        boolean hasCoreThesis = report.getCoreThesis() != null
+                && ((report.getCoreThesis().getSummary() != null && !report.getCoreThesis().getSummary().isBlank())
+                        || (report.getCoreThesis().getHeadline() != null
+                                && !report.getCoreThesis().getHeadline().isBlank()));
+        if (!hasLegacySummary && !hasCoreThesis) {
+            errors.add("coreThesis or executiveSummary is required");
         }
 
         if (report.getKeyMetrics() == null || report.getKeyMetrics().isEmpty()) {
@@ -196,36 +208,69 @@ public class AnalysisReportValidator {
     }
 
     /**
-     * Validate citations against the source text
+     * Validate citations against the source text and deduplicate them
      */
     public void validateCitations(AnalysisReport report, String sourceText) {
-        if (report.getCitations() == null || sourceText == null) {
+        if (report.getCitations() == null) {
             return;
         }
 
         String normalizedSource = normalizeText(sourceText);
+        List<AnalysisReport.Citation> uniqueCitations = new ArrayList<>();
+        java.util.Set<String> seenNormalizedExcerpts = new java.util.HashSet<>();
 
         for (AnalysisReport.Citation citation : report.getCitations()) {
+            if (isPlaceholderCitation(citation)) {
+                log.warn("🚩 Dropping placeholder citation: section='{}', excerpt='{}'",
+                        citation.getSection(), citation.getExcerpt());
+                continue;
+            }
+
             if (citation.getExcerpt() == null || citation.getExcerpt().isBlank()) {
-                citation.setVerificationStatus("UNVERIFIED");
                 continue;
             }
 
             String normalizedExcerpt = normalizeText(citation.getExcerpt());
 
+            // Deduplicate: If we already have this exact excerpt, skip it
+            if (seenNormalizedExcerpts.contains(normalizedExcerpt)) {
+                log.debug("Found duplicate citation, skipping: {}", citation.getExcerpt());
+                continue;
+            }
+            seenNormalizedExcerpts.add(normalizedExcerpt);
+            uniqueCitations.add(citation);
+
             // 1. Direct contains check (fastest)
-            if (normalizedSource.contains(normalizedExcerpt)) {
+            if (!normalizedSource.isBlank() && normalizedSource.contains(normalizedExcerpt)) {
                 citation.setVerificationStatus("VERIFIED");
             } else {
-                // 2. Fallback: Fuzzy match using a simplified approach (e.g. check if 80% of
-                // words exist in sequence)
-                // For now, we'll mark as NOT_FOUND if exact normalized match fails to keep it
-                // strict
-                // We can enhance this with Levenshtein later if needed
-                citation.setVerificationStatus("NOT_FOUND");
-                log.warn("🚩 Citation not found in source text: '{}'", citation.getExcerpt());
+                // 2. Fallback: Fuzzy match
+                citation.setVerificationStatus(normalizedSource.isBlank() ? "UNVERIFIED" : "NOT_FOUND");
+                if (!normalizedSource.isBlank()) {
+                    log.warn("🚩 Citation not found in source text: '{}'", citation.getExcerpt());
+                }
             }
         }
+
+        // Replace with unique list
+        report.setCitations(uniqueCitations);
+    }
+
+    private boolean isPlaceholderCitation(AnalysisReport.Citation citation) {
+        String excerpt = normalizeText(citation.getExcerpt());
+        String section = normalizeText(citation.getSection());
+
+        if (excerpt.isBlank() && section.isBlank()) {
+            return true;
+        }
+
+        for (String pattern : PLACEHOLDER_CITATION_PATTERNS) {
+            if (excerpt.contains(pattern) || section.contains(pattern)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

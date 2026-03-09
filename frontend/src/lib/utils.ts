@@ -28,7 +28,10 @@ export function formatFinancialValue(value: string | number | null | undefined, 
     lowerName.includes('return') ||
     lowerName.includes('roe') ||
     lowerName.includes('roa') ||
-    lowerName.includes('yield');
+    lowerName.includes('yield') ||
+    lowerName.includes('率') || // e.g. 毛利率
+    lowerName.includes('长') || // e.g. 同比增长
+    lowerName.includes('降');   // e.g. 同比下降
 
   if (isPercentage) {
     // If value is like 0.4491, it's 44.91%

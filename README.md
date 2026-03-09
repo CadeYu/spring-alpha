@@ -33,11 +33,12 @@
 ## ✨ 核心特性 (Features)
 
 ### 🚀 企业级 AI 架构 (Production-Ready)
-*   **Model Agnostic**：基于 **Spring AI** 构建，原生支持多模型无缝切换（集成 Groq LLaMA 3.3，可极速切换 OpenAI/Gemini）。
+*   **双通道模型支持**：默认提供免费模型（Groq / ChatAnywhere），同时支持用户自带 **OpenAI API Key** 切换到官方 OpenAI 模型。
 *   **WebFlux 异步流**：全链路非阻塞 IO 处理高并发请求，结合 **SSE (Server-Sent Events)** 实现打字机级别的流式渲染体验。
 
 ### 📊 生成式金融 UI (Generative UI)
 *   **AI 不止会说话，还会画图**：抛弃枯燥的纯文本 Markdown 报告，自动将大模型的数据输出渲染为 **交互式分析图表**。
+*   **核心分析首屏**：首屏以结构化 **Core Thesis** 呈现 verdict、headline、论据支撑与后续跟踪点，而不是单段式摘要。
 *   **深度商业洞察**：内置杜邦分析法 (DuPont Analysis)、利润与营收驱动瀑布图 (Waterfall Chart) 以及财报高频词云 (Topic Word Cloud)。
 *   **PDF 一键导出**：集成 `@react-pdf/renderer`，支持秒级生成「高盛研报级」精美 PDF 报告。
 
@@ -145,9 +146,54 @@ npm run dev
 - [x] **Generative UI**：基于结构化 JSON 控制前端图表（杜邦分析、瀑布桥、词云）。
 - [x] **Vector RAG 注入**：PGVector 语义检索防幻觉。
 - [x] **生产级部署**：Docker Compose 一键编排 & 研报 PDF 导出。
-- [x] **多策略切换**：支持 Groq / OpenAI / Gemini / Mock 等策略组合。
+- [x] **多策略切换**：支持免费模型（Groq / ChatAnywhere）与用户自带 OpenAI Key 两种使用方式。
+- [x] **Core Thesis 升级**：首屏分析升级为结构化 thesis 层，突出研究结论、证据与跟踪点。
 - [wt] **Earnings Call 接入**（计划中）：分析高管 Q&A 会议音频情感分析。
 - [wt] **竞争对手分析**（计划中）：横向对比多只同赛道股票指标。
+
+### 当前边界
+
+本次升级主要增强 **首屏输出契约与展示层**，让摘要更像研究笔记，而不是泛化 recap。
+如果后续仍希望显著提升洞见质量，下一阶段应补充更丰富的上游研究输入，例如 guidance、segment KPI、资本配置信号以及管理层 commentary 结构化抽取。
+
+## ✅ 测试与发布流程
+
+当前仓库已经接入分层测试，覆盖：
+
+- 后端 deterministic tests
+- 前端 unit / component tests
+- 前端 E2E smoke
+- PDF 渲染与下载路径
+
+### 本地一键执行
+
+```bash
+./run_checks.sh
+```
+
+### 分步执行
+
+```bash
+cd backend
+mvn -Dtest=SecControllerTest,SecServiceTest,FinancialAnalysisServiceTest,BaseAiStrategyTest,AnalysisReportValidatorTest,FmpFinancialDataServiceTest test
+
+cd ../frontend
+npm run lint
+npx tsc --noEmit
+npm test
+npm run test:e2e
+```
+
+### 测试进度与发布签收
+
+- 详细测试计划与当前通过数见 [testing.md](./testing.md)
+- GitHub Actions CI 已配置在 `.github/workflows/ci.yml`
+- 发布前仍建议按 `testing.md` 中的真实 provider checklist 做一次手工签收
+
+### 向量库注意事项
+
+如果你切换过 embedding 提供商、模型，或者调整过 embedding 维度，已有的 `vector_store` 可能与当前向量维度不兼容。
+一旦日志出现类似 `different vector dimensions 3072 and 768`，需要清理并重建受影响 ticker 的向量数据，否则 RAG 会自动降级且不会提供可验证引用。
 
 ---
 

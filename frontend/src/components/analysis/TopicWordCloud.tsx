@@ -10,10 +10,31 @@ interface TopicWordCloudProps {
 }
 
 export function TopicWordCloud({ trends, lang = 'en' }: TopicWordCloudProps) {
-    if (!trends || trends.length === 0) return null;
-
     const title = lang === 'zh' ? "NLP 主题趋势" : "NLP Topic Trends";
     const subtitle = lang === 'zh' ? "MD&A 关键词热度与情感分析" : "Key Themes & Sentiment in MD&A";
+
+    if (!trends || trends.length === 0) {
+        return (
+            <Card className="bg-slate-900/50 backdrop-blur-sm border-slate-800 border-dashed">
+                <CardHeader className="flex flex-row items-center space-y-0 pb-2">
+                    <div className="flex flex-col">
+                        <CardTitle className="text-xl font-bold flex items-center gap-2 text-emerald-400/50">
+                            <Cloud className="h-5 w-5 text-emerald-500/50" />
+                            {title}
+                        </CardTitle>
+                        <p className="text-sm text-slate-400/50 mt-1">
+                            {subtitle}
+                        </p>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex flex-wrap gap-4 items-center justify-center min-h-[150px] p-6 bg-slate-950/30 rounded-xl border border-slate-800/50 text-slate-500 text-sm">
+                        {lang === 'zh' ? '数据生成中或未提供...' : 'Generating data or not available...'}
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    }
 
     // Helper to determine font size class based on frequency (1-100)
     const getSizeClass = (freq: number) => {

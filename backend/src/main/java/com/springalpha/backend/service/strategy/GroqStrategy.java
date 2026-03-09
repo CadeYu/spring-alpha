@@ -4,11 +4,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.springalpha.backend.service.prompt.PromptTemplateService;
 import com.springalpha.backend.service.validation.AnalysisReportValidator;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.model.ChatModel;
-
-import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import reactor.netty.http.client.HttpClient;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * Groq Strategy - 对接 Groq 高速推理 API (Llama 3.3 70B)
@@ -26,20 +34,39 @@ import reactor.core.publisher.Flux;
 @Service
 public class GroqStrategy extends BaseAiStrategy {
 
-    private final ChatModel chatModel;
+    private final WebClient webClient;
 
     public GroqStrategy(
             PromptTemplateService promptService,
             AnalysisReportValidator validator,
             ObjectMapper objectMapper,
-            ChatModel chatModel) {
+            @Value("${spring.ai.openai.api-key:}") String apiKey) {
         super(promptService, validator, objectMapper);
-        this.chatModel = chatModel;
+
+        try {
+            SslContext sslContext = SslContextBuilder.forClient()
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                    .build();
+            HttpClient httpClient = HttpClient.create().secure(t -> t.sslContext(sslContext));
+
+            this.webClient = WebClient.builder()
+                    .clientConnector(new ReactorClientHttpConnector(httpClient))
+                    .baseUrl("https://api.groq.com/openai/v1")
+                    .defaultHeader("Authorization", "Bearer " + apiKey)
+                    .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                    .build();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize Groq WebClient", e);
+        }
     }
 
     @Override
     public String getName() {
         return "groq";
+    }
+
+    public String getDisplayName() {
+        return "Llama 3.3 70B";
     }
 
     /**
@@ -50,7 +77,7 @@ public class GroqStrategy extends BaseAiStrategy {
      * @param lang         输出语言
      */
     @Override
-    protected Flux<String> callLlmApi(String systemPrompt, String userPrompt, String lang) {
+    protected Flux<String> callLlmApi(String systemPrompt, String userPrompt, String lang, String apiKeyOverride) {
         log.info("⚡ Groq Strategy - calling Llama 3.3 70B");
         log.debug("System Prompt ({} chars), User Prompt ({} chars)", systemPrompt.length(), userPrompt.length());
 
@@ -61,40 +88,49 @@ public class GroqStrategy extends BaseAiStrategy {
                     ? "\n\n重要：请仅返回符合架构的有效 JSON，不要使用 markdown 格式。**所有分析内容必须使用中文输出，引用原文(excerpt)除外。**"
                     : "\n\nIMPORTANT: Return ONLY valid JSON matching the schema, with no markdown formatting.";
 
-            // 最终发送给模型的内容 = 角色设定 + 数据上下文 + 格式要求
-            String fullPrompt = systemPrompt + "\n\n" + userPrompt + jsonInstruction;
+            // 解析为 OpenAI 兼容的 JSON 格式
+            var requestBody = Map.of(
+                    "model", "llama-3.3-70b-versatile",
+                    "messages", List.of(
+                            Map.of("role", "system", "content", systemPrompt),
+                            Map.of("role", "user", "content", userPrompt + jsonInstruction)),
+                    "temperature", 0.1,
+                    "stream", true);
 
-            org.springframework.ai.chat.messages.UserMessage userMessage = new org.springframework.ai.chat.messages.UserMessage(
-                    fullPrompt);
-
-            Prompt prompt = new Prompt(java.util.List.of(userMessage));
-
-            // 调用 Groq API (Stream 模式)
-            // 使用 Flux流式返回，避免前端长时间白屏
-            return chatModel.stream(prompt)
-                    .doOnSubscribe(s -> log.info("📡 Streaming from Groq API..."))
-                    .handle((chatResponse, sink) -> {
-                        // 防御性编程：处理各种可能的 Null 指针 (API 返回空包时)
-                        if (chatResponse == null)
-                            return;
-                        var result = chatResponse.getResult();
-                        if (result == null)
-                            return;
-                        var output = result.getOutput();
-                        if (output == null)
-                            return;
-
-                        var content = output.getText();
-                        if (content != null && !content.isEmpty()) {
-                            sink.next(content); // 将这一小块文本推送到流中
-                            log.trace("📨 Chunk: {} chars", content.length());
+            return webClient.post()
+                    .uri("/chat/completions")
+                    .bodyValue(requestBody)
+                    .accept(MediaType.TEXT_EVENT_STREAM)
+                    .retrieve()
+                    // Use String instead of Map to avoid JSON deserialization errors
+                    // when Groq sends non-object SSE events (arrays, [DONE], etc.)
+                    .bodyToFlux(String.class)
+                    .doOnSubscribe(s -> log.info("📡 Streaming from Groq API (WebClient)..."))
+                    .handle((String rawEvent, reactor.core.publisher.SynchronousSink<String> sink) -> {
+                        try {
+                            // Skip empty events and [DONE] markers
+                            if (rawEvent == null || rawEvent.isBlank() || rawEvent.contains("[DONE]")) {
+                                return;
+                            }
+                            // Try to parse as JSON object
+                            Map<?, ?> chunk = objectMapper.readValue(rawEvent, Map.class);
+                            List<?> choices = (List<?>) chunk.get("choices");
+                            if (choices != null && !choices.isEmpty()) {
+                                Map<?, ?> firstChoice = (Map<?, ?>) choices.get(0);
+                                Map<?, ?> delta = (Map<?, ?>) firstChoice.get("delta");
+                                if (delta != null && delta.containsKey("content")) {
+                                    String content = (String) delta.get("content");
+                                    if (content != null && !content.isEmpty()) {
+                                        sink.next(content);
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            // Silently skip non-JSON or malformed events (usage stats, arrays, etc.)
+                            log.trace("Skipping non-parseable SSE event: {}", e.getMessage());
                         }
                     })
-                    .cast(String.class)
-                    // 超时保护：60 秒内没有新数据则视为超时，避免无限挂起
                     .timeout(java.time.Duration.ofSeconds(60))
-                    // 容错机制：Groq 免费版限制较严，容易报 429 Too Many Requests
-                    // 这里实现了指数退避重试 (Exponential Backoff): 等 2s, 4s, 8s 再试
                     .retryWhen(reactor.util.retry.Retry.backoff(3, java.time.Duration.ofSeconds(2))
                             .filter(throwable -> throwable instanceof org.springframework.web.reactive.function.client.WebClientResponseException.TooManyRequests)
                             .doBeforeRetry(

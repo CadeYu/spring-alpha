@@ -28,7 +28,9 @@ import java.util.Map;
 @ConditionalOnProperty(name = "app.openai.enabled", havingValue = "true", matchIfMissing = false)
 public class OpenAiStrategy extends BaseAiStrategy {
 
-    private final WebClient webClient;
+    private final WebClient.Builder webClientBuilder;
+    private final String configuredApiKey;
+    private final String baseUrl;
     private final String model;
 
     public OpenAiStrategy(
@@ -39,12 +41,12 @@ public class OpenAiStrategy extends BaseAiStrategy {
             @Value("${app.openai.model:gpt-4o-mini}") String model,
             @Value("${app.openai.base-url:https://api.openai.com/v1}") String baseUrl) {
         super(promptService, validator, objectMapper);
+        this.configuredApiKey = apiKey;
         this.model = model;
-        this.webClient = WebClient.builder()
+        this.baseUrl = baseUrl;
+        this.webClientBuilder = WebClient.builder()
                 .baseUrl(baseUrl)
-                .defaultHeader("Authorization", "Bearer " + apiKey)
-                .defaultHeader("Content-Type", "application/json")
-                .build();
+                .defaultHeader("Content-Type", "application/json");
         log.info("🤖 OpenAI Strategy initialized with model: {} (URL: {})", model, baseUrl);
     }
 
@@ -60,8 +62,15 @@ public class OpenAiStrategy extends BaseAiStrategy {
      * 手动解析 `data: {...}` 格式的数据块。
      */
     @Override
-    protected Flux<String> callLlmApi(String systemPrompt, String userPrompt, String lang) {
+    protected Flux<String> callLlmApi(String systemPrompt, String userPrompt, String lang, String apiKeyOverride) {
         log.info("🧠 OpenAI Strategy - calling {}", model);
+
+        String effectiveApiKey = apiKeyOverride != null && !apiKeyOverride.isBlank()
+                ? apiKeyOverride.trim()
+                : configuredApiKey;
+        if (effectiveApiKey == null || effectiveApiKey.isBlank()) {
+            return Flux.error(new RuntimeException("OpenAI API key is required for BYOK mode"));
+        }
 
         Map<String, Object> requestBody = Map.of(
                 "model", model,
@@ -72,6 +81,11 @@ public class OpenAiStrategy extends BaseAiStrategy {
                 "temperature", 0.7,
                 "max_tokens", 2000,
                 "stream", true);
+
+        WebClient webClient = webClientBuilder.clone()
+                .baseUrl(baseUrl)
+                .defaultHeader("Authorization", "Bearer " + effectiveApiKey)
+                .build();
 
         return webClient.post()
                 .uri("/chat/completions")

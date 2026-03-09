@@ -9,9 +9,23 @@ interface DuPontChartProps {
 }
 
 export function DuPontChart({ data, lang = 'en' }: DuPontChartProps) {
-    if (!data) return null;
-
     const isZh = lang === 'zh';
+
+    if (!data) {
+        return (
+            <Card className="col-span-1 md:col-span-3 bg-slate-900/50 backdrop-blur-sm border-slate-800 border-dashed">
+                <CardHeader>
+                    <CardTitle className="text-emerald-400/50 flex items-center gap-2">
+                        <Activity className="w-5 h-5" />
+                        {isZh ? '杜邦分析 (ROE 拆解)' : 'DuPont Analysis (ROE Decomposition)'}
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="py-12 flex items-center justify-center text-slate-500 text-sm">
+                    {isZh ? '数据生成中或未提供...' : 'Generating data or not available...'}
+                </CardContent>
+            </Card>
+        );
+    }
 
     return (
         <Card className="col-span-1 md:col-span-3 bg-slate-900/50 backdrop-blur-sm border-slate-800 hover:border-emerald-500/30 transition-all duration-300">

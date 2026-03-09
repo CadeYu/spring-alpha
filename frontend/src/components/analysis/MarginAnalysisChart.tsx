@@ -14,17 +14,16 @@ export interface HistoricalDataPoint {
 }
 
 interface MarginAnalysisProps {
-    ticker: string;
     lang?: string;
-    data?: any[];
+    data?: HistoricalDataPoint[];
     loading?: boolean;
 }
 
-export function MarginAnalysisChart({ ticker, lang = 'en', data: rawData = [], loading = false }: MarginAnalysisProps) {
+export function MarginAnalysisChart({ lang = 'en', data: rawData = [], loading = false }: MarginAnalysisProps) {
     // useMemo: 数据转换同步完成，避免 useEffect 的额外渲染周期导致图表闪烁/消失
     const data = useMemo(() => {
         if (rawData.length === 0) return [];
-        return rawData.map((item: any) => ({
+        return rawData.map((item) => ({
             period: item.period,
             grossMargin: (Number(item.grossMargin) * 100).toFixed(1),
             operatingMargin: (Number(item.operatingMargin) * 100).toFixed(1),
@@ -70,7 +69,7 @@ export function MarginAnalysisChart({ ticker, lang = 'en', data: rawData = [], l
                             <Tooltip
                                 contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', color: '#f8fafc' }}
                                 itemStyle={{ color: '#f8fafc' }}
-                                formatter={(value: any) => [`${value}%`, '']}
+                                formatter={(value: number | string | undefined) => [`${value ?? 'N/A'}%`, '']}
                             />
                             <Legend wrapperStyle={{ paddingTop: '20px' }} />
                             <Line
@@ -107,5 +106,3 @@ export function MarginAnalysisChart({ ticker, lang = 'en', data: rawData = [], l
         </Card>
     )
 }
-
-
