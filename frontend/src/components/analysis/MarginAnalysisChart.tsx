@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -43,37 +43,42 @@ export function MarginAnalysisChart({
   strictSanityChecks = false,
   financialSectorMode = false,
 }: MarginAnalysisProps) {
-  const toPercent = (
-    value: number | string | null | undefined,
-  ): number | null => {
-    if (value === null || value === undefined || value === "") {
+  const toPercent = useCallback(
+    (value: number | string | null | undefined): number | null => {
+      if (value === null || value === undefined || value === "") {
+        return null;
+      }
+      const rawValue = typeof value === "string" ? value.trim() : value;
+      const hasPercentSuffix =
+        typeof rawValue === "string" && rawValue.endsWith("%");
+      const normalizedValue =
+        typeof rawValue === "string" && hasPercentSuffix
+          ? rawValue.slice(0, -1)
+          : rawValue;
+      const numericValue =
+        typeof normalizedValue === "string"
+          ? Number(normalizedValue)
+          : normalizedValue;
+      if (!Number.isFinite(numericValue)) {
+        return null;
+      }
+      if (
+        strictSanityChecks &&
+        !hasPercentSuffix &&
+        Math.abs(numericValue) > 1
+      ) {
+        return null;
+      }
+      if (Math.abs(numericValue) <= 1) {
+        return Number((numericValue * 100).toFixed(1));
+      }
+      if (Math.abs(numericValue) <= 100) {
+        return Number(numericValue.toFixed(1));
+      }
       return null;
-    }
-    const rawValue = typeof value === "string" ? value.trim() : value;
-    const hasPercentSuffix =
-      typeof rawValue === "string" && rawValue.endsWith("%");
-    const normalizedValue =
-      typeof rawValue === "string" && hasPercentSuffix
-        ? rawValue.slice(0, -1)
-        : rawValue;
-    const numericValue =
-      typeof normalizedValue === "string"
-        ? Number(normalizedValue)
-        : normalizedValue;
-    if (!Number.isFinite(numericValue)) {
-      return null;
-    }
-    if (strictSanityChecks && !hasPercentSuffix && Math.abs(numericValue) > 1) {
-      return null;
-    }
-    if (Math.abs(numericValue) <= 1) {
-      return Number((numericValue * 100).toFixed(1));
-    }
-    if (Math.abs(numericValue) <= 100) {
-      return Number(numericValue.toFixed(1));
-    }
-    return null;
-  };
+    },
+    [strictSanityChecks],
+  );
 
   // useMemo: 数据转换同步完成，避免 useEffect 的额外渲染周期导致图表闪烁/消失
   const data = useMemo(() => {
@@ -91,7 +96,7 @@ export function MarginAnalysisChart({
           item.operatingMargin !== null ||
           item.netMargin !== null,
       );
-  }, [rawData, strictSanityChecks]);
+  }, [rawData, toPercent]);
   const hasGrossMargin = data.some((item) => item.grossMargin !== null);
   const hasOperatingMargin = data.some((item) => item.operatingMargin !== null);
   const hasNetMargin = data.some((item) => item.netMargin !== null);

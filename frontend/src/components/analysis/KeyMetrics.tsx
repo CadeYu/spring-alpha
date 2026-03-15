@@ -54,6 +54,7 @@ export function KeyMetrics({
     }
 
     let cancelled = false;
+    const currentTicker = ticker;
     setFacts(null);
     setFactsLoading(true);
     setFactsResolvedTicker(null);
@@ -78,7 +79,7 @@ export function KeyMetrics({
       } finally {
         if (!cancelled) {
           setFactsLoading(false);
-          setFactsResolvedTicker(ticker);
+          setFactsResolvedTicker(currentTicker);
         }
       }
     }

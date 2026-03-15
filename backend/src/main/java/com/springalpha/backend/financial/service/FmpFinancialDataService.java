@@ -120,7 +120,7 @@ public class FmpFinancialDataService implements FinancialDataService {
      */
     @Override
     public FinancialFacts getFinancialFacts(String ticker) {
-        return getFinancialFacts(ticker, "quarterly");
+        return getFinancialFacts(ticker, "annual");
     }
 
     @Override
@@ -254,7 +254,7 @@ public class FmpFinancialDataService implements FinancialDataService {
      */
     @Override
     public List<HistoricalDataPoint> getHistoricalData(String ticker) {
-        return getHistoricalData(ticker, "quarterly");
+        return getHistoricalData(ticker, "annual");
     }
 
     @Override
@@ -759,11 +759,14 @@ public class FmpFinancialDataService implements FinancialDataService {
     }
 
     private String normalizeReportType(String reportType) {
-        return "quarterly";
+        if (reportType == null || reportType.isBlank()) {
+            return "quarterly";
+        }
+        return "annual".equalsIgnoreCase(reportType) ? "annual" : "quarterly";
     }
 
     private String toFmpPeriod(String reportType) {
-        return "quarter";
+        return "annual".equalsIgnoreCase(reportType) ? "annual" : "quarter";
     }
 
     private boolean isQuotaExceeded(int statusCode, String body) {
