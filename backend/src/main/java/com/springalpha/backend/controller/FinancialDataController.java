@@ -30,6 +30,7 @@ import java.util.Map;
 @RequestMapping("/api/financial")
 @CrossOrigin(origins = "*")
 public class FinancialDataController {
+    private static final String REPORT_TYPE_QUARTERLY = "quarterly";
 
     private final FinancialDataService financialDataService;
 
@@ -45,7 +46,7 @@ public class FinancialDataController {
      */
     @GetMapping("/history/{ticker}")
     public Mono<List<HistoricalDataPoint>> getHistoricalData(@PathVariable String ticker) {
-        return Mono.fromCallable(() -> financialDataService.getHistoricalData(ticker))
+        return Mono.fromCallable(() -> financialDataService.getHistoricalData(ticker, REPORT_TYPE_QUARTERLY))
                 .subscribeOn(Schedulers.boundedElastic()); // 数据库/API IO 操作，放入弹性线程池
     }
 
@@ -54,18 +55,20 @@ public class FinancialDataController {
      * Test endpoint: GET /api/financial/{ticker}
      */
     @GetMapping("/{ticker}")
-    public ResponseEntity<?> getFinancialFacts(@PathVariable String ticker) {
-        FinancialFacts facts = financialDataService.getFinancialFacts(ticker);
+    public Mono<ResponseEntity<?>> getFinancialFacts(@PathVariable String ticker) {
+        return Mono.fromCallable(() -> {
+            FinancialFacts facts = financialDataService.getFinancialFacts(ticker, REPORT_TYPE_QUARTERLY);
 
-        if (facts == null) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", "Ticker not supported");
-            error.put("ticker", ticker);
-            error.put("supportedTickers", financialDataService.getSupportedTickers());
-            return ResponseEntity.notFound().build();
-        }
+            if (facts == null) {
+                Map<String, Object> error = new HashMap<>();
+                error.put("error", "Ticker not supported");
+                error.put("ticker", ticker);
+                error.put("supportedTickers", financialDataService.getSupportedTickers());
+                return ResponseEntity.notFound().build();
+            }
 
-        return ResponseEntity.ok(facts);
+            return ResponseEntity.ok(facts);
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     /**

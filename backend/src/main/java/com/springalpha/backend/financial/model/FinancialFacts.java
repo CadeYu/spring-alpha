@@ -1,5 +1,6 @@
 package com.springalpha.backend.financial.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -30,6 +31,12 @@ public class FinancialFacts {
     private String period; // e.g., "Q3 2024", "FY 2023"
     private String filingDate;
     private String currency; // e.g. USD, JPY
+    private String marketSector;
+    private String marketIndustry;
+    private String marketSecurityType;
+    private String marketBusinessSummary;
+    private String dashboardMode;
+    private String dashboardMessage;
 
     // Revenue Metrics
     private BigDecimal revenue;
@@ -74,17 +81,10 @@ public class FinancialFacts {
     private Map<String, BigDecimal> additionalMetrics;
 
     /**
-     * Check if this is a quarterly or annual report
+     * Check if this looks like a quarterly report label.
      */
+    @JsonIgnore
     public boolean isQuarterly() {
-        return period != null && period.toUpperCase().startsWith("Q");
-    }
-
-    /**
-     * Check if this is an annual report
-     */
-    public boolean isAnnual() {
-        return period != null && (period.toUpperCase().startsWith("FY")
-                || period.toUpperCase().startsWith("YEAR"));
+        return period != null && period.toUpperCase().contains("Q");
     }
 }

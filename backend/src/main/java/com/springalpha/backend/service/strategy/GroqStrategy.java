@@ -1,6 +1,8 @@
 package com.springalpha.backend.service.strategy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.springalpha.backend.financial.contract.AnalysisContract;
+import com.springalpha.backend.financial.contract.AnalysisReport;
 import com.springalpha.backend.service.prompt.PromptTemplateService;
 import com.springalpha.backend.service.validation.AnalysisReportValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -10,13 +12,17 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import reactor.netty.http.client.HttpClient;
+import reactor.util.retry.Retry;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Groq Strategy - 对接 Groq 高速推理 API (Llama 3.3 70B)
@@ -34,7 +40,10 @@ import java.util.Map;
 @Service
 public class GroqStrategy extends BaseAiStrategy {
 
+    private static final long MIN_REQUEST_INTERVAL_MS = 6000L;
+
     private final WebClient webClient;
+    private final AtomicLong nextAvailableRequestAtMs = new AtomicLong(0);
 
     public GroqStrategy(
             PromptTemplateService promptService,
@@ -69,6 +78,30 @@ public class GroqStrategy extends BaseAiStrategy {
         return "Llama 3.3 70B";
     }
 
+    @Override
+    public Flux<AnalysisReport> analyze(AnalysisContract contract, String lang, String apiKeyOverride) {
+        log.info("🤖 Starting reduced-call Groq analysis for {} using a 2-agent execution plan",
+                contract.getTicker());
+
+        String systemPrompt = promptService.getSystemPrompt(lang);
+
+        Mono<AnalysisReport> summaryAgent = executeAgent(
+                systemPrompt,
+                promptService.buildGroqSummaryPrompt(contract, lang),
+                contract, lang, apiKeyOverride, "SummaryAgent");
+
+        Mono<AnalysisReport> insightsAgent = executeAgent(
+                systemPrompt,
+                promptService.buildGroqInsightsPrompt(contract, lang),
+                contract, lang, apiKeyOverride, "InsightsAgent");
+
+        return Flux.concat(
+                summaryAgent,
+                emitFallbackAgentReport("FactorsAgent", contract, lang),
+                emitFallbackAgentReport("DriversAgent", contract, lang),
+                insightsAgent);
+    }
+
     /**
      * 调用 LLM API 生成分析报告
      * 
@@ -97,41 +130,9 @@ public class GroqStrategy extends BaseAiStrategy {
                     "temperature", 0.1,
                     "stream", true);
 
-            return webClient.post()
-                    .uri("/chat/completions")
-                    .bodyValue(requestBody)
-                    .accept(MediaType.TEXT_EVENT_STREAM)
-                    .retrieve()
-                    // Use String instead of Map to avoid JSON deserialization errors
-                    // when Groq sends non-object SSE events (arrays, [DONE], etc.)
-                    .bodyToFlux(String.class)
-                    .doOnSubscribe(s -> log.info("📡 Streaming from Groq API (WebClient)..."))
-                    .handle((String rawEvent, reactor.core.publisher.SynchronousSink<String> sink) -> {
-                        try {
-                            // Skip empty events and [DONE] markers
-                            if (rawEvent == null || rawEvent.isBlank() || rawEvent.contains("[DONE]")) {
-                                return;
-                            }
-                            // Try to parse as JSON object
-                            Map<?, ?> chunk = objectMapper.readValue(rawEvent, Map.class);
-                            List<?> choices = (List<?>) chunk.get("choices");
-                            if (choices != null && !choices.isEmpty()) {
-                                Map<?, ?> firstChoice = (Map<?, ?>) choices.get(0);
-                                Map<?, ?> delta = (Map<?, ?>) firstChoice.get("delta");
-                                if (delta != null && delta.containsKey("content")) {
-                                    String content = (String) delta.get("content");
-                                    if (content != null && !content.isEmpty()) {
-                                        sink.next(content);
-                                    }
-                                }
-                            }
-                        } catch (Exception e) {
-                            // Silently skip non-JSON or malformed events (usage stats, arrays, etc.)
-                            log.trace("Skipping non-parseable SSE event: {}", e.getMessage());
-                        }
-                    })
-                    .timeout(java.time.Duration.ofSeconds(60))
-                    .retryWhen(reactor.util.retry.Retry.backoff(3, java.time.Duration.ofSeconds(2))
+            return Flux.defer(() -> acquireRequestSlot().thenMany(createGroqRequest(requestBody)))
+                    .timeout(Duration.ofSeconds(60))
+                    .retryWhen(Retry.backoff(3, Duration.ofSeconds(3))
                             .filter(throwable -> throwable instanceof org.springframework.web.reactive.function.client.WebClientResponseException.TooManyRequests)
                             .doBeforeRetry(
                                     retrySignal -> log.warn("⚠️ Groq Rate Limit (429) hit, retrying... (attempt {}/3)",
@@ -147,5 +148,59 @@ public class GroqStrategy extends BaseAiStrategy {
             log.error("Failed to create Groq prompt", e);
             return Flux.error(e);
         }
+    }
+
+    private Mono<Void> acquireRequestSlot() {
+        return Mono.defer(() -> {
+            long delayMs = reserveRequestSlot();
+            if (delayMs <= 0) {
+                return Mono.empty();
+            }
+            log.info("⏱️ Delaying Groq request by {} ms to stay within provider rate limits", delayMs);
+            return Mono.delay(Duration.ofMillis(delayMs)).then();
+        });
+    }
+
+    private long reserveRequestSlot() {
+        while (true) {
+            long now = System.currentTimeMillis();
+            long current = nextAvailableRequestAtMs.get();
+            long startAt = Math.max(now, current);
+            long nextAllowed = startAt + MIN_REQUEST_INTERVAL_MS;
+            if (nextAvailableRequestAtMs.compareAndSet(current, nextAllowed)) {
+                return Math.max(0, startAt - now);
+            }
+        }
+    }
+
+    private Flux<String> createGroqRequest(Map<String, Object> requestBody) {
+        return webClient.post()
+                .uri("/chat/completions")
+                .bodyValue(requestBody)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .retrieve()
+                .bodyToFlux(String.class)
+                .doOnSubscribe(s -> log.info("📡 Streaming from Groq API (WebClient)..."))
+                .handle((String rawEvent, reactor.core.publisher.SynchronousSink<String> sink) -> {
+                    try {
+                        if (rawEvent == null || rawEvent.isBlank() || rawEvent.contains("[DONE]")) {
+                            return;
+                        }
+                        Map<?, ?> chunk = objectMapper.readValue(rawEvent, Map.class);
+                        List<?> choices = (List<?>) chunk.get("choices");
+                        if (choices != null && !choices.isEmpty()) {
+                            Map<?, ?> firstChoice = (Map<?, ?>) choices.get(0);
+                            Map<?, ?> delta = (Map<?, ?>) firstChoice.get("delta");
+                            if (delta != null && delta.containsKey("content")) {
+                                String content = (String) delta.get("content");
+                                if (content != null && !content.isEmpty()) {
+                                    sink.next(content);
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.trace("Skipping non-parseable SSE event: {}", e.getMessage());
+                    }
+                });
     }
 }

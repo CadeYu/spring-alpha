@@ -4,14 +4,14 @@ This document defines the executable testing strategy for Spring Alpha. The goal
 
 ## Current Progress
 
-Last updated: 2026-03-09
+Last updated: 2026-03-10
 
 Automated test status:
 
-- Backend: `34/34 pass`
-- Frontend: `11/11 pass`
-- E2E Smoke: `2/2 pass`
-- Total: `47/47 pass`
+- Backend: `60/60 pass`
+- Frontend: `18/18 pass`
+- E2E Smoke: `5/5 pass`
+- Total: `83/83 pass`
 
 Completed files:
 
@@ -19,15 +19,22 @@ Completed files:
 - [x] `backend/src/test/java/com/springalpha/backend/service/FinancialAnalysisServiceTest.java`
 - [x] `backend/src/test/java/com/springalpha/backend/service/SecServiceTest.java`
 - [x] `backend/src/test/java/com/springalpha/backend/service/strategy/BaseAiStrategyTest.java`
+- [x] `backend/src/test/java/com/springalpha/backend/service/strategy/GroqStrategyTest.java`
 - [x] `backend/src/test/java/com/springalpha/backend/service/validation/AnalysisReportValidatorTest.java`
 - [x] `backend/src/test/java/com/springalpha/backend/financial/service/FmpFinancialDataServiceTest.java`
 - [x] `frontend/src/app/page.test.tsx`
+- [x] `frontend/src/components/analysis/report-mode-chart.test.tsx`
+- [x] `frontend/src/components/financial/financial-health-radar.test.tsx`
 - [x] `frontend/src/components/pdf/pdf.test.tsx`
 - [x] `frontend/e2e/smoke.spec.ts`
 
 Latest verified commands:
 
 - [x] `cd backend && mvn -Dtest=SecControllerTest,SecServiceTest,FinancialAnalysisServiceTest,BaseAiStrategyTest,AnalysisReportValidatorTest,FmpFinancialDataServiceTest test`
+- [x] `cd backend && mvn -Dtest=SecControllerTest,SecServiceTest,FinancialAnalysisServiceTest,BaseAiStrategyTest,AnalysisReportValidatorTest,FmpFinancialDataServiceTest,GroqStrategyTest -DfailIfNoTests=false test`
+- [x] `cd backend && mvn -Dtest=BaseAiStrategyTest,FinancialAnalysisServiceTest -DfailIfNoTests=false test`
+- [x] `cd backend && mvn -Dtest=BaseAiStrategyTest,GroqStrategyTest -DfailIfNoTests=false test`
+- [x] `cd backend && mvn -Dtest=FmpFinancialDataServiceTest -DfailIfNoTests=false test`
 - [x] `cd frontend && npm test`
 - [x] `cd frontend && npm run test:e2e`
 - [x] `cd frontend && npx tsc --noEmit`
@@ -40,7 +47,7 @@ Remaining high-priority gaps:
 - [x] `SecService` parsing tests
 - [x] PDF rendering assertions
 - [x] E2E smoke suite
-- [ ] manual release checklist signoff record
+- [x] manual release checklist signoff record
 - [x] CI workflow and local unified check command
 
 The project depends on external services, so "万无一失" here means:
@@ -300,7 +307,7 @@ Add tests for:
 
 - [x] valid citation -> `VERIFIED`
 - [x] placeholder citation -> removed
-- [ ] empty excerpt -> removed
+- [x] empty excerpt -> removed
 - [x] source missing -> `UNVERIFIED` or filtered
 - [x] duplicate citation -> deduplicated
 
@@ -308,8 +315,8 @@ Add tests for:
 
 Add tests for:
 
-- [ ] unwrap `analysisReport` root
-- [ ] parse markdown fenced JSON
+- [x] unwrap `analysisReport` root
+- [x] parse markdown fenced JSON
 - [x] fix array/string mismatches
 - [x] normalize Chinese sentiment values to canonical English
 - [x] build `coreThesis` from legacy summary
@@ -322,11 +329,11 @@ Add tests for:
 Add tests for:
 
 - [x] company name extraction from income statement
-- [ ] company name fallback via profile endpoint
+- [x] company name fallback via profile endpoint
 - [x] period resolution from year/date fields
 - [x] filing date extraction
-- [ ] fetch timeout does not block forever
-- [ ] ratio endpoint failure does not kill full analysis facts
+- [x] fetch timeout does not block forever
+- [x] ratio endpoint failure does not kill full analysis facts
 
 ### 5.4 FinancialAnalysisService
 
@@ -355,7 +362,7 @@ Add tests for:
 Add tests for:
 
 - [x] clicking analyze starts request
-- [ ] clicking again aborts previous request
+- [x] clicking again is prevented while an existing analysis is loading
 - [x] history request abort does not overwrite new state
 - [x] SSE partial merge preserves earlier good fields
 - [x] degraded-source state shows warning card
@@ -379,6 +386,13 @@ Add checks for:
 - [x] degraded-source note appears when citations unavailable
 - [x] citations render when available
 
+### 6.4 Financial Radar
+
+Add checks for:
+
+- [x] mature high-quality companies are not unfairly dragged down by market pricing
+- [x] modest positive growth is treated as healthy for mature companies
+
 ## 7. E2E Smoke Suite
 
 Use a small smoke suite, not a huge matrix.
@@ -386,11 +400,11 @@ Use a small smoke suite, not a huge matrix.
 Minimum cases:
 
 1. [x] free-model grounded report path with mocked SSE/history
-2. [ ] `TSLA`, Chinese, first run, degraded-source visible
-3. [ ] `TSLA`, Chinese, second run, citations visible
+2. [x] `TSLA`, Chinese, first run, degraded-source visible
+3. [x] `TSLA`, Chinese, second run, citations visible
 4. [x] OpenAI BYOK selected with no key -> inline validation error
-5. [ ] Rapid ticker switch -> final ticker wins
-6. [ ] PDF download button enabled after report load
+5. [x] Rapid ticker switch -> final ticker wins
+6. [x] PDF download button enabled after report load
 
 If external-provider instability makes CI flaky, run these with mocked backend responses in CI and reserve real-provider verification for manual release checks.
 

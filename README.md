@@ -187,6 +187,8 @@ npm run test:e2e
 ### 测试进度与发布签收
 
 - 详细测试计划与当前通过数见 [testing.md](./testing.md)
+- 发布前真实环境 smoke 手册见 [docs/release-smoke.md](./docs/release-smoke.md)
+- 发布签收模板见 [docs/release-signoff-template.md](./docs/release-signoff-template.md)
 - GitHub Actions CI 已配置在 `.github/workflows/ci.yml`
 - 发布前仍建议按 `testing.md` 中的真实 provider checklist 做一次手工签收
 

@@ -1,6 +1,5 @@
 package com.springalpha.backend.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.springalpha.backend.financial.contract.AnalysisReport;
 import com.springalpha.backend.financial.model.HistoricalDataPoint;
 import com.springalpha.backend.service.FinancialAnalysisService;
@@ -11,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Map;
@@ -21,12 +21,13 @@ import java.util.Map;
  * 提供与 SEC 财报相关的 API 接口。
  * 主要功能:
  * 1. 触发 AI 分析任务 (`/analyze/{ticker}`)
- * 2. 获取原始 10-K 文本 (`/10k/{ticker}`) - 用于调试 RAG 内容
+ * 2. 获取原始季度 filing 文本 (`/filing/{ticker}`) - 用于调试 RAG 内容
  */
 @RestController
 @RequestMapping("/api/sec")
 @CrossOrigin(origins = "*")
 public class SecController {
+    private static final String REPORT_TYPE_QUARTERLY = "quarterly";
 
     private static final Logger log = LoggerFactory.getLogger(SecController.class);
 
@@ -55,17 +56,20 @@ public class SecController {
             @RequestParam(defaultValue = "") String model,
             @RequestHeader(name = "X-OpenAI-API-Key", required = false) String openAiApiKey) {
         log.info("REST request to analyze stock: {}, lang: {}, model: {}", ticker, lang, model);
-        return analysisService.analyzeStock(ticker, lang, model, openAiApiKey);
+        // The analysis flow still contains blocking FMP access, so move the entire
+        // stream off the Netty event loop.
+        return Flux.defer(() -> analysisService.analyzeStock(ticker, lang, model, openAiApiKey))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /**
-     * 获取清洗后的 10-K 文本 (Debug Endpoint)
+     * 获取清洗后的季度 filing 文本 (Debug Endpoint)
      * <p>
      * 用于验证 ETL 效果，检查 Markdown 表格是否正确转换。
      */
-    @GetMapping("/10k/{ticker}")
-    public Mono<String> get10kContent(@PathVariable String ticker) {
-        log.info("REST request to get 10-K content for: {}", ticker);
+    @GetMapping({ "/filing/{ticker}", "/10k/{ticker}" })
+    public Mono<String> getFilingContent(@PathVariable String ticker) {
+        log.info("REST request to get latest quarterly filing content for: {}", ticker);
         return secService.getLatest10KContent(ticker)
                 .map(content -> {
                     // 只返回前 10000 字符用于预览，防止浏览器卡死
@@ -95,7 +99,7 @@ public class SecController {
     // Historical Data endpoint for charts
     @GetMapping("/history/{ticker}")
     public Flux<HistoricalDataPoint> getHistory(@PathVariable String ticker) {
-        return Mono.fromCallable(() -> secService.getFinancialDataService().getHistoricalData(ticker))
+        return Mono.fromCallable(() -> secService.getFinancialDataService().getHistoricalData(ticker, REPORT_TYPE_QUARTERLY))
                 .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
                 .flatMapMany(Flux::fromIterable);
     }

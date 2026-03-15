@@ -31,19 +31,51 @@ export interface AnalysisMetadata {
 }
 
 export interface SourceContext {
-    status?: 'GROUNDED' | 'DEGRADED' | 'UNAVAILABLE';
+    status?: 'GROUNDED' | 'LIMITED' | 'DEGRADED' | 'UNAVAILABLE';
     message?: string;
 }
+
+export type ReportType = 'quarterly';
 
 export interface SupportingEvidence {
     label: string;
     detail: string;
 }
 
+export interface BusinessSignalItem {
+    title?: string;
+    summary?: string;
+    evidenceSection?: string;
+    evidenceSnippet?: string;
+}
+
+export interface BusinessEvidenceRef {
+    topic?: string;
+    section?: string;
+    excerpt?: string;
+}
+
+export interface BusinessSignals {
+    ticker?: string;
+    reportType?: ReportType;
+    period?: string;
+    filingDate?: string;
+    segmentPerformance?: BusinessSignalItem[];
+    productServiceUpdates?: BusinessSignalItem[];
+    managementFocus?: BusinessSignalItem[];
+    strategicMoves?: BusinessSignalItem[];
+    capexSignals?: BusinessSignalItem[];
+    riskSignals?: BusinessSignalItem[];
+    evidenceRefs?: BusinessEvidenceRef[];
+}
+
 export interface CoreThesis {
     verdict?: 'positive' | 'mixed' | 'negative';
     headline?: string;
     summary?: string;
+    whatChanged?: string[];
+    drivers?: SupportingEvidence[];
+    strategicBets?: SupportingEvidence[];
     keyPoints?: string[];
     supportingEvidence?: SupportingEvidence[];
     watchItems?: string[];
@@ -52,6 +84,8 @@ export interface CoreThesis {
 export interface AnalysisReport {
     executiveSummary?: string;
     coreThesis?: CoreThesis;
+    businessSignals?: BusinessSignals;
+    reportType?: ReportType;
     companyName?: string;
     period?: string;
     filingDate?: string;

@@ -12,7 +12,7 @@ class SecServiceTest {
     private final SecService secService = new SecService(new NoopFinancialDataService());
 
     @Test
-    void extractPrimaryDocumentUrlPrefersRelativeTenKLink() {
+    void extractPrimaryDocumentUrlPrefersRelativeTenQLink() {
         Document doc = Jsoup.parse("""
                 <html>
                   <body>
@@ -22,9 +22,9 @@ class SecServiceTest {
                       </tr>
                       <tr>
                         <td>1</td>
-                        <td>Main report</td>
-                        <td><a href="/Archives/edgar/data/1318605/0001/tsla-20251231.htm">tsla-20251231.htm</a></td>
-                        <td>10-K</td>
+                        <td>Quarterly report</td>
+                        <td><a href="/Archives/edgar/data/1318605/0001/tsla-20260331.htm">tsla-20260331.htm</a></td>
+                        <td>10-Q</td>
                       </tr>
                     </table>
                   </body>
@@ -35,11 +35,11 @@ class SecServiceTest {
                 doc,
                 "https://www.sec.gov/Archives/edgar/data/1318605/0001/0001-index.htm");
 
-        assertEquals("https://www.sec.gov/Archives/edgar/data/1318605/0001/tsla-20251231.htm", url);
+        assertEquals("https://www.sec.gov/Archives/edgar/data/1318605/0001/tsla-20260331.htm", url);
     }
 
     @Test
-    void extractPrimaryDocumentUrlBuildsAbsoluteUrlFromSiblingPath() {
+    void extractPrimaryDocumentUrlBuildsAbsoluteUrlFromSiblingQuarterlyPath() {
         Document doc = Jsoup.parse("""
                 <html>
                   <body>
@@ -49,9 +49,9 @@ class SecServiceTest {
                       </tr>
                       <tr>
                         <td>1</td>
-                        <td>Main report</td>
-                        <td><a href="tsla-20251231.htm">tsla-20251231.htm</a></td>
-                        <td>10-K</td>
+                        <td>Quarterly report</td>
+                        <td><a href="tsla-20260331.htm">tsla-20260331.htm</a></td>
+                        <td>10-Q</td>
                       </tr>
                     </table>
                   </body>
@@ -62,7 +62,7 @@ class SecServiceTest {
                 doc,
                 "https://www.sec.gov/Archives/edgar/data/1318605/0001/0001-index.htm");
 
-        assertEquals("https://www.sec.gov/Archives/edgar/data/1318605/0001/tsla-20251231.htm", url);
+        assertEquals("https://www.sec.gov/Archives/edgar/data/1318605/0001/tsla-20260331.htm", url);
     }
 
     @Test
@@ -74,7 +74,7 @@ class SecServiceTest {
     }
 
     @Test
-    void extractLatestIndexUrlReturnsLatestMatchingTenKLink() {
+    void extractLatestIndexUrlReturnsLatestMatchingTenQLink() {
         Document doc = Jsoup.parse("""
                 <html>
                   <body>
@@ -89,19 +89,19 @@ class SecServiceTest {
                         <td>2026-01-01</td>
                       </tr>
                       <tr>
-                        <td>10-K</td>
-                        <td><a href="/Archives/edgar/data/1318605/0001/10k-index.htm">documents</a></td>
-                        <td>annual report</td>
-                        <td>2026-01-29</td>
+                        <td>10-Q</td>
+                        <td><a href="/Archives/edgar/data/1318605/0001/10q-index.htm">documents</a></td>
+                        <td>quarterly report</td>
+                        <td>2026-04-24</td>
                       </tr>
                     </table>
                   </body>
                 </html>
                 """);
 
-        String url = secService.extractLatestIndexUrl(doc, "10-K");
+        String url = secService.extractLatestIndexUrl(doc, "10-Q");
 
-        assertEquals("https://www.sec.gov/Archives/edgar/data/1318605/0001/10k-index.htm", url);
+        assertEquals("https://www.sec.gov/Archives/edgar/data/1318605/0001/10q-index.htm", url);
     }
 
     @Test
@@ -139,6 +139,39 @@ class SecServiceTest {
         assertTrue(text.contains("{{TABLE_START}}"));
         assertTrue(text.contains("| Year | Revenue |"));
         assertTrue(text.contains("| 2025 | $100 |"));
+    }
+
+    @Test
+    void extractPrimaryDocumentUrlSupportsQuarterlyTenQLink() {
+        Document doc = Jsoup.parse("""
+                <html>
+                  <body>
+                    <table class="tableFile">
+                      <tr>
+                        <th>Seq</th><th>Description</th><th>Document</th><th>Type</th>
+                      </tr>
+                      <tr>
+                        <td>1</td>
+                        <td>Quarterly report</td>
+                        <td><a href="/Archives/edgar/data/320193/0001/aapl-20260328.htm">aapl-20260328.htm</a></td>
+                        <td>10-Q</td>
+                      </tr>
+                    </table>
+                  </body>
+                </html>
+                """);
+
+        String url = secService.extractPrimaryDocumentUrl(
+                doc,
+                "https://www.sec.gov/Archives/edgar/data/320193/0001/0001-index.htm",
+                secService.filingTypesForLatestQuarter());
+
+        assertEquals("https://www.sec.gov/Archives/edgar/data/320193/0001/aapl-20260328.htm", url);
+    }
+
+    @Test
+    void latestQuarterFilingTypesOnlyIncludeQuarterlyForms() {
+        assertArrayEquals(new String[] { "10-Q", "10-Q/A" }, secService.filingTypesForLatestQuarter());
     }
 
     private static final class NoopFinancialDataService implements FinancialDataService {

@@ -69,6 +69,29 @@ class AnalysisReportValidatorTest {
     }
 
     @Test
+    void validateCitationsDropsEntriesThatAreNotVerbatimInSource() {
+        AnalysisReport report = AnalysisReport.builder()
+                .citations(List.of(
+                        AnalysisReport.Citation.builder()
+                                .section("MD&A")
+                                .excerpt("Total net sales increased during 2025 compared to 2024 primarily due to higher net sales of Services, iPhone and Mac.")
+                                .build(),
+                        AnalysisReport.Citation.builder()
+                                .section("MD&A")
+                                .excerpt("Americas net sales increased during 2025 compared to 2024 primarily due to higher net sales of iPhone and Services.")
+                                .build()))
+                .build();
+
+        validator.validateCitations(report,
+                "Americas net sales increased during 2025 compared to 2024 primarily due to higher net sales of iPhone and Services.");
+
+        assertEquals(1, report.getCitations().size());
+        assertEquals("VERIFIED", report.getCitations().get(0).getVerificationStatus());
+        assertEquals("Americas net sales increased during 2025 compared to 2024 primarily due to higher net sales of iPhone and Services.",
+                report.getCitations().get(0).getExcerpt());
+    }
+
+    @Test
     void validateCitationsDeduplicatesVerifiedEntries() {
         AnalysisReport report = AnalysisReport.builder()
                 .citations(List.of(
@@ -86,6 +109,47 @@ class AnalysisReportValidatorTest {
 
         assertEquals(1, report.getCitations().size());
         assertEquals("VERIFIED", report.getCitations().get(0).getVerificationStatus());
+    }
+
+    @Test
+    void validateCitationsRemovesEntriesWithEmptyExcerpt() {
+        AnalysisReport report = AnalysisReport.builder()
+                .citations(List.of(
+                        AnalysisReport.Citation.builder()
+                                .section("MD&A")
+                                .excerpt("   ")
+                                .build(),
+                        AnalysisReport.Citation.builder()
+                                .section("MD&A")
+                                .excerpt("Revenue increased due to stronger deliveries.")
+                                .build()))
+                .build();
+
+        validator.validateCitations(report, "Revenue increased due to stronger deliveries.");
+
+        assertEquals(1, report.getCitations().size());
+        assertEquals("Revenue increased due to stronger deliveries.", report.getCitations().get(0).getExcerpt());
+    }
+
+    @Test
+    void validateCitationsDropsLowSignalTableRows() {
+        AnalysisReport report = AnalysisReport.builder()
+                .citations(List.of(
+                        AnalysisReport.Citation.builder()
+                                .section("MD&A")
+                                .excerpt("Total revenue / / 81,273 / / 69,632 /")
+                                .build(),
+                        AnalysisReport.Citation.builder()
+                                .section("MD&A")
+                                .excerpt("Revenue increased due to stronger deliveries.")
+                                .build()))
+                .build();
+
+        validator.validateCitations(report,
+                "Revenue increased due to stronger deliveries. Total revenue revenue table values are shown elsewhere.");
+
+        assertEquals(1, report.getCitations().size());
+        assertEquals("Revenue increased due to stronger deliveries.", report.getCitations().get(0).getExcerpt());
     }
 
     private FinancialFacts baselineFacts() {

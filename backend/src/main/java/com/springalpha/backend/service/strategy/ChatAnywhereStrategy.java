@@ -1,6 +1,8 @@
 package com.springalpha.backend.service.strategy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.springalpha.backend.financial.contract.AnalysisContract;
+import com.springalpha.backend.financial.contract.AnalysisReport;
 import com.springalpha.backend.service.prompt.PromptTemplateService;
 import com.springalpha.backend.service.validation.AnalysisReportValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.io.BufferedReader;
@@ -68,6 +71,30 @@ public class ChatAnywhereStrategy extends BaseAiStrategy {
 
     public String getDisplayName() {
         return "GPT-4o mini";
+    }
+
+    @Override
+    public Flux<AnalysisReport> analyze(AnalysisContract contract, String lang, String apiKeyOverride) {
+        log.info("🤖 Starting reduced-call ChatAnywhere analysis for {} using a 2-agent execution plan",
+                contract.getTicker());
+
+        String systemPrompt = promptService.getSystemPrompt(lang);
+
+        Mono<AnalysisReport> summaryAgent = executeAgent(
+                systemPrompt,
+                promptService.buildChatAnywhereSummaryPrompt(contract, lang),
+                contract, lang, apiKeyOverride, "SummaryAgent");
+
+        Mono<AnalysisReport> insightsAgent = executeAgent(
+                systemPrompt,
+                promptService.buildChatAnywhereInsightsPrompt(contract, lang),
+                contract, lang, apiKeyOverride, "InsightsAgent");
+
+        return Flux.concat(
+                summaryAgent,
+                emitFallbackAgentReport("FactorsAgent", contract, lang),
+                emitFallbackAgentReport("DriversAgent", contract, lang),
+                insightsAgent);
     }
 
     /**

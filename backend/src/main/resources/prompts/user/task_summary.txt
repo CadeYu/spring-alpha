@@ -1,7 +1,15 @@
-Analyze the earnings report for {{ticker}} ({{period}}).
+Analyze the {{reportTypeLabel}} for {{ticker}} ({{period}}).
+
+{{reportModeGuidance}}
 
 FINANCIAL FACTS:
 {{financialFacts}}
+
+COMPANY PROFILE:
+{{companyProfile}}
+
+BUSINESS SIGNALS:
+{{businessSignals}}
 
 TEXTUAL EVIDENCE:
 {{textEvidence}}
@@ -11,7 +19,7 @@ EVIDENCE AVAILABILITY:
 {{evidenceStatusMessage}}
 
 TASK:
-Generate a high-density Core Thesis, Key Metrics interpretation, and Bull/Bear Case.
+Generate a business-first Core Thesis, Key Metrics interpretation, and Bull/Bear Case.
 
 OUTPUT REQUIREMENTS:
 Return a JSON object with the following structure exactly:
@@ -19,24 +27,30 @@ Return a JSON object with the following structure exactly:
 {
   "coreThesis": {
     "verdict": "positive/mixed/negative",
-    "headline": "One sharp thesis headline with investment tone",
-    "summary": "One dense paragraph that explains the main thesis, what changed, why it matters, and the strategic implication",
-    "keyPoints": [
-      "3-5 concise bullets covering the most material operating or financial takeaways",
-      "Each bullet should contain a fact and an implication"
+    "headline": "One sharp thesis headline with investment tone and business context",
+    "summary": "One dense paragraph that explains what changed in the business, what drove it, why it matters, and the strategic implication",
+    "whatChanged": [
+      "2-4 concise bullets answering what actually happened in the business this quarter or year",
+      "Lead with segment / product / demand / pricing / engagement / monetization language, not metric recap"
     ],
-    "supportingEvidence": [
+    "drivers": [
       {
-        "label": "Revenue / Profitability / Capital Return / User Growth / etc.",
-        "detail": "A concrete fact pattern using exact values from financialFacts and, when available, textual evidence"
+        "label": "Demand / pricing / mix / engagement / product cycle / AI workload / etc.",
+        "detail": "Explain the causal driver behind the business change using BUSINESS SIGNALS first, and cite financial facts only when truly needed"
       },
       {
-        "label": "Another proof point",
-        "detail": "Another evidence-backed detail"
+        "label": "Another operating driver",
+        "detail": "Another evidence-backed business driver"
+      }
+    ],
+    "strategicBets": [
+      {
+        "label": "New product / infrastructure / commercialization / management priority / etc.",
+        "detail": "Explain what the company is actively betting on or scaling next, and why that matters strategically"
       }
     ],
     "watchItems": [
-      "2-3 forward-looking points the investor should monitor next quarter or next year"
+      "2-3 forward-looking operating checkpoints for the next quarter or year, each tied to why it matters"
     ]
   },
   "executiveSummary": "One-sentence legacy fallback summary derived from the core thesis",
@@ -81,6 +95,30 @@ LANGUAGE: {{language}}
 - The "citations" -> "excerpt" field MUST always be the original English text for verification.
 - When the language is Chinese (中文), add an "excerpt_zh" field with the Chinese translation for each citation.
 - If EVIDENCE AVAILABILITY is UNAVAILABLE, return "citations": [] and do not invent, paraphrase, or translate placeholder source text.
+- Each citation excerpt MUST be copied verbatim from TEXTUAL EVIDENCE as one continuous sentence or clause. Do NOT paraphrase, summarize, stitch together multiple sentences, or swap region/product labels.
+- If you cannot provide a verbatim excerpt that appears exactly in TEXTUAL EVIDENCE, omit that citation entirely.
+- Treat BUSINESS SIGNALS as the primary narrative scaffold for the core thesis.
+- Treat COMPANY PROFILE as the primary reference for what the company sells, who the customers are, what the product lines are, and which KPI names matter.
+- Do NOT turn the summary into a simple restatement of revenue, margin, and net income.
+- If BUSINESS SIGNALS mention segments, products, services, management priorities, strategy, or new initiatives, surface those before metric recap.
+- If COMPANY PROFILE contains concrete products, customer types, product lines, or KPI names, use those exact terms before falling back to broad industry labels.
+- Whenever a business statement can be quantified by FINANCIAL FACTS, BUSINESS SIGNALS, or TEXTUAL EVIDENCE, include the exact figure and direction naturally in the sentence.
+- Avoid vague wording such as "strong demand", "profit improved", "cash flow remained solid", or "margin was resilient" without exact numbers when those numbers are available.
+- At least two first-screen outputs across `summary`, `whatChanged`, `drivers`, and `strategicBets` should include exact numeric anchors when the evidence supports them.
+- The first-screen thesis is the highest-value layer in the product. It must answer four questions in order:
+  1. What actually happened in the business.
+  2. What drove those changes.
+  3. What new bet / product / strategic move matters.
+  4. What investors should watch next.
+- The first sentence MUST identify what the company actually does (products, customers, or business model). Do NOT say only "core business" or "main business line" without naming the business.
+- If the company sells concrete products, chips, devices, software modules, cloud services, or financial products, name them explicitly. Avoid placeholders like "new products", "market expansion", or "business line upgrades" unless the exact product is unknown even after reviewing BUSINESS SIGNALS and TEXTUAL EVIDENCE.
+- If BUSINESS SIGNALS mention a concrete segment, product family, customer type, or go-to-market motion, surface that exact phrase in `summary`, `drivers`, or `strategicBets` instead of replacing it with a broad category.
+- If BUSINESS SIGNALS or FINANCIAL FACTS do not clearly support a phrase like "recommendation efficiency", "AI products", or "market promotion", do NOT invent those phrases.
+- When a YoY change is extremely large (for example above 500%), explain that the comparison may be distorted by a very low prior-year base instead of presenting the percentage with no context.
+- `whatChanged` MUST NOT just restate Revenue / Gross Margin / Net Income / Revenue YoY.
+- `drivers` MUST explain causality such as ad pricing, impressions, engagement, recommendation quality, demand, mix, renewals, capex, AI workload, infrastructure, or management execution when supported.
+- `strategicBets` MUST highlight the company's new product, feature, infrastructure, commercialization, or management priority when supported.
+- `watchItems` MUST be operating watchpoints, not generic valuation or price-target commentary.
 
 IMPORTANT: Use ONLY the numbers from the Financial Facts section.
-IMPORTANT: The summary must read like a concise research note, not a generic recap. Lead with the thesis, then support it with evidence and business implications.
+IMPORTANT: The summary must read like a concise research note, not a generic recap. Lead with the business thesis, then support it with evidence and implications.

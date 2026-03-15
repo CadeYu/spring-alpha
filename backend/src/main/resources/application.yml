@@ -71,11 +71,33 @@ app:
     model: ${CHATANYWHERE_MODEL:gpt-4o-mini}
     base-url: ${CHATANYWHERE_BASE_URL:https://api.chatanywhere.org/v1}
   
-  # Financial Modeling Prep API Configuration (Updated Feb 2026)
-  # API key is loaded from environment variable (set in start_backend.sh)
+  # Financial Modeling Prep API Configuration (experimental only; no longer on the main path)
   fmp:
     api-key: ${FMP_API_KEY:}
+    api-keys: ${FMP_API_KEYS:}
     base-url: https://financialmodelingprep.com/stable
+    cache:
+      facts-ttl: PT6H
+      history-ttl: PT24H
+
+  yfinance:
+    python-executable: ${PYTHON_BIN:python3}
+    cache-ttl: PT6H
+    execution-timeout: PT20S
+  
+  sec:
+    data-base-url: https://data.sec.gov
+    www-base-url: https://www.sec.gov
+    user-agent: ${SEC_USER_AGENT:SpringAlpha/1.0 (contact@springalpha.com)}
+    cache:
+      facts-ttl: PT6H
+      history-ttl: PT24H
+      ticker-map-ttl: PT24H
+
+  hybrid:
+    cache:
+      facts-ttl: PT6H
+      history-ttl: PT24H
 
 server:
   port: 8081

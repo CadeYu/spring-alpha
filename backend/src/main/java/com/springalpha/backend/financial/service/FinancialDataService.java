@@ -26,6 +26,10 @@ public interface FinancialDataService {
      */
     FinancialFacts getFinancialFacts(String ticker);
 
+    default FinancialFacts getFinancialFacts(String ticker, String reportType) {
+        return getFinancialFacts(ticker);
+    }
+
     /**
      * Check if a ticker is supported by this implementation.
      * 
@@ -44,6 +48,12 @@ public interface FinancialDataService {
      * Get historical margin data for trends chart.
      */
     java.util.List<com.springalpha.backend.financial.model.HistoricalDataPoint> getHistoricalData(String ticker);
+
+    default java.util.List<com.springalpha.backend.financial.model.HistoricalDataPoint> getHistoricalData(
+            String ticker,
+            String reportType) {
+        return getHistoricalData(ticker);
+    }
 
     String[] getSupportedTickers();
 }

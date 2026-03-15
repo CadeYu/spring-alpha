@@ -5,6 +5,8 @@ import com.springalpha.backend.financial.model.HistoricalDataPoint;
 import com.springalpha.backend.financial.service.FinancialDataService;
 import com.springalpha.backend.service.FinancialAnalysisService;
 import com.springalpha.backend.service.SecService;
+import com.springalpha.backend.service.profile.CompanyProfileSnapshotService;
+import com.springalpha.backend.service.signals.BusinessSignalSnapshotService;
 import com.springalpha.backend.service.strategy.AiAnalysisStrategy;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -17,6 +19,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 class SecControllerTest {
 
@@ -45,6 +48,7 @@ class SecControllerTest {
         assertEquals("Tesla, Inc.", reports.get(0).getCompanyName());
         assertEquals("zh", analysisService.lastLang);
         assertEquals("openai", analysisService.lastModel);
+        assertEquals("quarterly", analysisService.lastReportType);
         assertEquals("sk-test", analysisService.lastOpenAiApiKey);
     }
 
@@ -108,17 +112,20 @@ class SecControllerTest {
                 .block();
 
         assertEquals(1, history.size());
-        assertEquals("FY 2025", history.get(0).getPeriod());
+        assertEquals("Q4 2025", history.get(0).getPeriod());
     }
 
     private static final class FakeFinancialAnalysisService extends FinancialAnalysisService {
 
         private String lastLang;
         private String lastModel;
+        private String lastReportType;
         private String lastOpenAiApiKey;
 
         private FakeFinancialAnalysisService(SecService secService, FinancialDataService financialDataService) {
             super(secService, new com.springalpha.backend.service.rag.VectorRagService(null), financialDataService,
+                    mock(BusinessSignalSnapshotService.class),
+                    mock(CompanyProfileSnapshotService.class),
                     List.<AiAnalysisStrategy>of());
         }
 
@@ -126,11 +133,13 @@ class SecControllerTest {
         public Flux<AnalysisReport> analyzeStock(String ticker, String lang, String model, String openAiApiKey) {
             this.lastLang = lang;
             this.lastModel = model;
+            this.lastReportType = "quarterly";
             this.lastOpenAiApiKey = openAiApiKey;
             return Flux.just(AnalysisReport.builder()
                     .executiveSummary("stub report")
                     .companyName("Tesla, Inc.")
-                    .period("FY 2025")
+                    .reportType("quarterly")
+                    .period("Q4 2025")
                     .filingDate("2026-01-29")
                     .build());
         }
@@ -175,7 +184,7 @@ class SecControllerTest {
         @Override
         public List<HistoricalDataPoint> getHistoricalData(String ticker) {
             return List.of(HistoricalDataPoint.builder()
-                    .period("FY 2025")
+                    .period("Q4 2025")
                     .grossMargin(new BigDecimal("0.40"))
                     .operatingMargin(new BigDecimal("0.20"))
                     .netMargin(new BigDecimal("0.10"))

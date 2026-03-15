@@ -1,7 +1,12 @@
-Analyze the earnings report for {{ticker}} ({{period}}).
+Analyze the {{reportTypeLabel}} for {{ticker}} ({{period}}).
+
+{{reportModeGuidance}}
 
 FINANCIAL FACTS:
 {{financialFacts}}
+
+COMPANY PROFILE:
+{{companyProfile}}
 
 TEXTUAL EVIDENCE:
 {{textEvidence}}
@@ -53,5 +58,8 @@ LANGUAGE: {{language}}
 - The "citations" -> "excerpt" field MUST always be the original English text for verification.
 - When the language is Chinese (中文), add an "excerpt_zh" field with the Chinese translation for each citation.
 - If EVIDENCE AVAILABILITY is UNAVAILABLE, return "citations": [] and rely only on Financial Facts plus clearly-grounded reasoning.
+- Each citation excerpt MUST be copied verbatim from TEXTUAL EVIDENCE as one continuous sentence or clause. Do NOT paraphrase, summarize, or merge evidence from different sections into one quote.
+- If you cannot provide a verbatim excerpt that appears exactly in TEXTUAL EVIDENCE, omit that citation entirely.
+- Use COMPANY PROFILE to prefer company-specific product lines, customer types, and KPI names when describing factor bridges and topics.
 
 IMPORTANT: If exact percentage numbers are not available for bridge impacts, use "+" (positive impact), "-" (negative impact), or "flat". Do NOT return "Not available". Estimate direction based on text.

@@ -6,15 +6,20 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
 /**
  * Vector RAG Service - 向量增强检索服务
  * <p>
  * 这是 RAG (Retrieval-Augmented Generation) 的核心引擎。
- * 它负责连接此时此刻的 "User Query" 和浩瀚的 "SEC 10-K Document"。
+ * 它负责连接此时此刻的 "User Query" 和浩瀚的 "SEC filing document"。
  * <p>
  * **核心流程**:
  * 1. **Ingestion (入库)**: 把 10MB 的文本切成小块 (Chunking)，算成向量，存入 PGVector。
@@ -42,6 +47,8 @@ public class VectorRagService {
     private static final int MAX_CHUNKS = 30;
 
     private final VectorStore vectorStore;
+    private final ConcurrentMap<String, String> lastCompletedContentHashes = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> activeIngestionHashes = new ConcurrentHashMap<>();
 
     public VectorRagService(VectorStore vectorStore) {
         this.vectorStore = vectorStore;
@@ -54,34 +61,47 @@ public class VectorRagService {
      * 这是一个 **耗时操作** (Embedding API 调用 + DB 写入)，通常异步执行。
      * 
      * @param ticker  股票代码
-     * @param content 清洗后的 SEC 10-K 文本 (Markdown 格式)
+     * @param content 清洗后的 SEC filing 文本 (Markdown 格式)
      */
     public void storeDocument(String ticker, String content) {
-        log.info("📥 Storing document for ticker: {} ({} chars)", ticker, content.length());
+        String normalizedTicker = normalizeTicker(ticker);
+        String contentHash = contentHash(content);
+        String activeHash = activeIngestionHashes.get(normalizedTicker);
+        if (activeHash != null && !activeHash.equals(contentHash)) {
+            log.info("ℹ️ Replacing in-flight vector ingestion for {} with a newer filing fingerprint", normalizedTicker);
+        }
+        activeIngestionHashes.put(normalizedTicker, contentHash);
 
-        // 1. 切片 (Chunking): 把大象放进冰箱的第一步，把文本切碎
-        List<String> chunks = splitIntoChunks(content);
-        log.info("✂️ Split into {} chunks (CHUNK_SIZE={}, MAX_CHUNKS={})", chunks.size(), CHUNK_SIZE, MAX_CHUNKS);
+        log.info("📥 Storing document for ticker: {} ({} chars)", normalizedTicker, content.length());
 
-        // 2. 包装 (Wrapping): 把文本块包装成 Document 对象，并打上 Metadata 标签(ticker)
-        // 这样检索时可以通过 metadata filter 只搜特定公司的文档
-        List<Document> documents = chunks.stream()
-                .map(chunk -> new Document(chunk, Map.of(
-                        "ticker", ticker,
-                        "source", "sec-10k")))
-                .collect(Collectors.toList());
+        try {
+            // 1. 切片 (Chunking): 把大象放进冰箱的第一步，把文本切碎
+            List<String> chunks = splitIntoChunks(content);
+            log.info("✂️ Split into {} chunks (CHUNK_SIZE={}, MAX_CHUNKS={})", chunks.size(), CHUNK_SIZE, MAX_CHUNKS);
 
-        log.info("🔢 Calling vectorStore.add() with {} documents. This will generate embeddings (may take a while)...",
-                documents.size());
+            // 2. 包装 (Wrapping): 把文本块包装成 Document 对象，并打上 Metadata 标签(ticker)
+            // 这样检索时可以通过 metadata filter 只搜特定公司的文档
+            List<Document> documents = chunks.stream()
+                    .map(chunk -> new Document(chunk, Map.of(
+                            "ticker", normalizedTicker,
+                            "source", "sec-filing")))
+                    .collect(Collectors.toList());
 
-        // 3. 向量化与存储 (Embedding & Upsert):
-        // 这里会调用 EmbeddingModel (当前默认是本地 embedding) 把文本变成向量
-        // 然后存入 Postgres 的 vector 字段
-        long startTime = System.currentTimeMillis();
-        vectorStore.add(documents);
+            log.info("🔢 Calling vectorStore.add() with {} documents. This will generate embeddings (may take a while)...",
+                    documents.size());
 
-        long elapsed = System.currentTimeMillis() - startTime;
-        log.info("✅ Stored {} document chunks for {} in {} ms", documents.size(), ticker, elapsed);
+            // 3. 向量化与存储 (Embedding & Upsert):
+            // 这里会调用 EmbeddingModel (当前默认是本地 embedding) 把文本变成向量
+            // 然后存入 Postgres 的 vector 字段
+            long startTime = System.currentTimeMillis();
+            vectorStore.add(documents);
+
+            long elapsed = System.currentTimeMillis() - startTime;
+            lastCompletedContentHashes.put(normalizedTicker, contentHash);
+            log.info("✅ Stored {} document chunks for {} in {} ms", documents.size(), normalizedTicker, elapsed);
+        } finally {
+            activeIngestionHashes.remove(normalizedTicker, contentHash);
+        }
     }
 
     /**
@@ -141,6 +161,27 @@ public class VectorRagService {
     public void deleteDocuments(String ticker) {
         log.warn("🧹 Deleting existing vector documents for ticker: {}", ticker);
         vectorStore.delete("ticker == '" + ticker + "'");
+        lastCompletedContentHashes.remove(normalizeTicker(ticker));
+        activeIngestionHashes.remove(normalizeTicker(ticker));
+    }
+
+    public boolean shouldStartBackgroundIngestion(String ticker, String content) {
+        String normalizedTicker = normalizeTicker(ticker);
+        String contentHash = contentHash(content);
+
+        if (contentHash.equals(lastCompletedContentHashes.get(normalizedTicker))) {
+            log.info("ℹ️ Skipping background vector ingestion for {} because this filing is already cached in the current app session",
+                    normalizedTicker);
+            return false;
+        }
+
+        String previous = activeIngestionHashes.putIfAbsent(normalizedTicker, contentHash);
+        if (previous != null) {
+            log.info("ℹ️ Skipping background vector ingestion for {} because an ingestion job is already in progress",
+                    normalizedTicker);
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -185,5 +226,23 @@ public class VectorRagService {
         }
 
         return chunks;
+    }
+
+    private static String normalizeTicker(String ticker) {
+        return ticker == null ? "" : ticker.trim().toUpperCase();
+    }
+
+    private static String contentHash(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest((content == null ? "" : content).getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                builder.append(String.format("%02x", b));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
     }
 }

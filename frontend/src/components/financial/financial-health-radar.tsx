@@ -4,22 +4,12 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { Shield } from 'lucide-react';
-
-interface FinancialFacts {
-    grossMargin?: number;
-    netMargin?: number;
-    operatingMargin?: number;
-    revenueYoY?: number;
-    operatingCashFlowYoY?: number;
-    freeCashFlowYoY?: number;
-    debtToEquityRatio?: number;
-    returnOnEquity?: number;
-    returnOnAssets?: number;
-    priceToEarningsRatio?: number;
-    priceToBookRatio?: number;
-}
+import type { FinancialFactsSnapshot } from '@/types/FinancialFacts';
+import { DashboardModeNotice } from './dashboard-mode-notice';
+import { FinancialSectorSnapshot } from './financial-sector-snapshot';
 
 interface RadarDataPoint {
+    key: string;
     dimension: string;
     score: number;
     fullMark: 100;
@@ -31,84 +21,296 @@ interface FinancialHealthRadarProps {
     apiBase: string;
 }
 
+const CORE_KEYS = ['profitability', 'growth', 'cashFlow', 'leverage', 'efficiency'] as const;
+
 /** Clamp a value between 0 and 100 */
 function clamp(v: number): number {
     return Math.max(0, Math.min(100, Math.round(v)));
 }
 
-/** Scale a percentage value (e.g., 0.22 = 22%) to a 0-100 score */
-function scaleGrowth(val: number | undefined, min = -0.2, max = 0.3): number {
-    if (val === undefined || val === null) return 50;
-    // Convert if value looks like it's already a percentage (>1 or <-1)
-    const v = Math.abs(val) > 5 ? val / 100 : val;
-    return clamp(((v - min) / (max - min)) * 100);
+function normalizePercent(val: number | null | undefined): number | null {
+    if (val === undefined || val === null || Number.isNaN(val)) {
+        return null;
+    }
+    return Math.abs(val) <= 5 ? val * 100 : val;
 }
 
-/** Score profitability: weighted average of margins (0-100) */
-function scoreProfitability(facts: FinancialFacts): number {
-    const gm = facts.grossMargin ?? 0;
-    const om = facts.operatingMargin ?? 0;
-    const nm = facts.netMargin ?? 0;
-    // Convert from decimal (0.82) to percentage if needed
-    const gross = Math.abs(gm) <= 1 ? gm * 100 : gm;
-    const oper = Math.abs(om) <= 1 ? om * 100 : om;
-    const net = Math.abs(nm) <= 1 ? nm * 100 : nm;
-    return clamp(gross * 0.3 + oper * 0.35 + net * 0.35);
+function normalizeRatio(val: number | null | undefined): number | null {
+    if (val === undefined || val === null || Number.isNaN(val)) {
+        return null;
+    }
+    return Math.abs(val) > 5 ? val / 100 : val;
 }
 
-/** Score growth: revenue YoY + operating CF YoY */
-function scoreGrowth(facts: FinancialFacts): number {
-    const rev = scaleGrowth(facts.revenueYoY);
-    const ocf = scaleGrowth(facts.operatingCashFlowYoY);
-    return clamp(rev * 0.6 + ocf * 0.4);
+function scoreByBands(value: number, bands: Array<[number, number]>): number {
+    if (bands.length === 0) return 50;
+    if (value <= bands[0][0]) return bands[0][1];
+
+    for (let idx = 1; idx < bands.length; idx += 1) {
+        const [upperValue, upperScore] = bands[idx];
+        const [lowerValue, lowerScore] = bands[idx - 1];
+        if (value <= upperValue) {
+            const ratio = (value - lowerValue) / (upperValue - lowerValue);
+            return clamp(lowerScore + (upperScore - lowerScore) * ratio);
+        }
+    }
+
+    return bands[bands.length - 1][1];
+}
+
+function weightedAverage(parts: Array<{ score: number | null; weight: number }>): number | null {
+    const available = parts.filter((part) => part.score !== null);
+    if (available.length === 0) {
+        return null;
+    }
+
+    const totalWeight = available.reduce((sum, part) => sum + part.weight, 0);
+    const weightedScore = available.reduce((sum, part) => sum + (part.score ?? 0) * part.weight, 0);
+    return clamp(weightedScore / totalWeight);
+}
+
+/** Score profitability with diminishing returns for already-excellent margins. */
+export function scoreProfitability(facts: FinancialFactsSnapshot): number | null {
+    const gross = normalizePercent(facts.grossMargin);
+    const oper = normalizePercent(facts.operatingMargin);
+    const net = normalizePercent(facts.netMargin);
+
+    const grossScore = gross === null ? null : scoreByBands(gross, [
+        [10, 20],
+        [20, 45],
+        [35, 70],
+        [45, 88],
+        [55, 100],
+    ]);
+    const operScore = oper === null ? null : scoreByBands(oper, [
+        [5, 20],
+        [10, 40],
+        [20, 68],
+        [28, 88],
+        [35, 100],
+    ]);
+    const netScore = net === null ? null : scoreByBands(net, [
+        [2, 15],
+        [8, 35],
+        [15, 60],
+        [22, 82],
+        [28, 100],
+    ]);
+
+    return weightedAverage([
+        { score: grossScore, weight: 0.25 },
+        { score: operScore, weight: 0.35 },
+        { score: netScore, weight: 0.4 },
+    ]);
+}
+
+/** Score growth fairly for mature companies: modest positive growth is still healthy. */
+export function scoreGrowth(facts: FinancialFactsSnapshot): number | null {
+    const revenueGrowth = normalizePercent(facts.revenueYoY);
+    const operatingCashFlowGrowth = normalizePercent(facts.operatingCashFlowYoY);
+
+    const revenueScore = revenueGrowth === null ? null : scoreByBands(revenueGrowth, [
+        [-15, 15],
+        [-5, 35],
+        [0, 50],
+        [5, 68],
+        [10, 82],
+        [20, 100],
+    ]);
+    const ocfScore = operatingCashFlowGrowth === null ? null : scoreByBands(operatingCashFlowGrowth, [
+        [-20, 22],
+        [-5, 45],
+        [0, 58],
+        [5, 72],
+        [12, 86],
+        [25, 100],
+    ]);
+
+    return weightedAverage([
+        { score: revenueScore, weight: 0.6 },
+        { score: ocfScore, weight: 0.4 },
+    ]);
 }
 
 /** Score cash flow health */
-function scoreCashFlow(facts: FinancialFacts): number {
-    const ocf = scaleGrowth(facts.operatingCashFlowYoY, -0.3, 0.3);
-    const fcf = scaleGrowth(facts.freeCashFlowYoY, -0.3, 0.3);
-    return clamp(ocf * 0.5 + fcf * 0.5);
+export function scoreCashFlow(facts: FinancialFactsSnapshot): number | null {
+    const operatingCashFlowGrowth = normalizePercent(facts.operatingCashFlowYoY);
+    const freeCashFlowGrowth = normalizePercent(facts.freeCashFlowYoY);
+
+    const ocfScore = operatingCashFlowGrowth === null ? null : scoreByBands(operatingCashFlowGrowth, [
+        [-20, 20],
+        [-5, 42],
+        [0, 55],
+        [5, 68],
+        [15, 86],
+        [30, 100],
+    ]);
+    const fcfScore = freeCashFlowGrowth === null ? null : scoreByBands(freeCashFlowGrowth, [
+        [-25, 18],
+        [-5, 40],
+        [0, 54],
+        [8, 70],
+        [20, 88],
+        [40, 100],
+    ]);
+
+    return weightedAverage([
+        { score: ocfScore, weight: 0.5 },
+        { score: fcfScore, weight: 0.5 },
+    ]);
 }
 
-/** Score leverage: lower D/E is better */
-function scoreLeverage(facts: FinancialFacts): number {
-    const de = facts.debtToEquityRatio ?? 0.5;
-    const v = Math.abs(de) > 5 ? de / 100 : de;
-    // D/E 0 → 100, D/E ≥ 2 → 0
-    return clamp((1 - v / 2) * 100);
+/** Score capital structure: mature companies are not punished too harshly for buyback-driven leverage. */
+export function scoreLeverage(facts: FinancialFactsSnapshot): number | null {
+    const debtToEquity = normalizeRatio(facts.debtToEquityRatio);
+    if (debtToEquity === null || debtToEquity < 0) {
+        return null;
+    }
+
+    return scoreByBands(debtToEquity, [
+        [0.2, 95],
+        [0.6, 85],
+        [1.0, 72],
+        [1.5, 60],
+        [2.5, 42],
+        [4.0, 20],
+    ]);
 }
 
 /** Score efficiency: ROE + ROA */
-function scoreEfficiency(facts: FinancialFacts): number {
-    const roe = facts.returnOnEquity ?? 0;
-    const roa = facts.returnOnAssets ?? 0;
-    const roeVal = Math.abs(roe) <= 1 ? roe * 100 : roe;
-    const roaVal = Math.abs(roa) <= 1 ? roa * 100 : roa;
-    // ROE 0% → 0, 30%+ → 100; ROA 0% → 0, 15%+ → 100
-    const roeScore = clamp((roeVal / 30) * 100);
-    const roaScore = clamp((roaVal / 15) * 100);
-    return clamp(roeScore * 0.6 + roaScore * 0.4);
+export function scoreEfficiency(facts: FinancialFactsSnapshot): number | null {
+    const roe = normalizePercent(facts.returnOnEquity);
+    const roa = normalizePercent(facts.returnOnAssets);
+
+    const roeScore = roe === null ? null : scoreByBands(roe, [
+        [5, 20],
+        [10, 38],
+        [20, 65],
+        [30, 82],
+        [45, 100],
+    ]);
+    const roaScore = roa === null ? null : scoreByBands(roa, [
+        [2, 18],
+        [5, 42],
+        [10, 70],
+        [15, 90],
+        [20, 100],
+    ]);
+
+    return weightedAverage([
+        { score: roeScore, weight: 0.55 },
+        { score: roaScore, weight: 0.45 },
+    ]);
 }
 
-/** Score valuation: lower P/E and P/B is better (value investing perspective) */
-function scoreValuation(facts: FinancialFacts): number {
-    const pe = facts.priceToEarningsRatio ?? 25;
-    const pb = facts.priceToBookRatio ?? 5;
-    // P/E: 5 → 100, 50+ → 0
-    const peScore = clamp(((50 - pe) / 45) * 100);
-    // P/B: 1 → 100, 15+ → 0
-    const pbScore = clamp(((15 - pb) / 14) * 100);
-    return clamp(peScore * 0.6 + pbScore * 0.4);
+/** Market pricing is informative, but should not dominate financial-health scoring. */
+export function scoreMarketPricing(facts: FinancialFactsSnapshot): number | null {
+    const pe = facts.priceToEarningsRatio != null && facts.priceToEarningsRatio > 0
+        ? facts.priceToEarningsRatio
+        : null;
+    const pb = facts.priceToBookRatio != null && facts.priceToBookRatio > 0
+        ? facts.priceToBookRatio
+        : null;
+
+    if (pe == null && pb == null) {
+        return null;
+    }
+
+    let weightedScore = 0;
+    let totalWeight = 0;
+
+    if (pe != null) {
+        const peScore = scoreByBands(pe, [
+            [12, 90],
+            [20, 82],
+            [30, 72],
+            [45, 58],
+            [70, 40],
+            [100, 25],
+        ]);
+        weightedScore += peScore * 0.55;
+        totalWeight += 0.55;
+    }
+
+    if (pb != null) {
+        const pbScore = scoreByBands(pb, [
+            [2, 88],
+            [5, 78],
+            [10, 64],
+            [20, 45],
+            [35, 25],
+        ]);
+        weightedScore += pbScore * 0.45;
+        totalWeight += 0.45;
+    }
+
+    return totalWeight > 0 ? clamp(weightedScore / totalWeight) : null;
+}
+
+export function hasMarketPricingData(facts: FinancialFactsSnapshot): boolean {
+    return (facts.priceToEarningsRatio ?? 0) > 0 || (facts.priceToBookRatio ?? 0) > 0;
 }
 
 const LABELS: Record<string, { en: string; zh: string }> = {
-    profitability: { en: 'Profitability', zh: '盈利性' },
-    growth: { en: 'Growth', zh: '成长性' },
-    cashFlow: { en: 'Cash Flow', zh: '现金流' },
-    leverage: { en: 'Leverage', zh: '杠杆安全' },
-    efficiency: { en: 'Efficiency', zh: '运营效率' },
-    valuation: { en: 'Valuation', zh: '估值水平' },
+    profitability: { en: 'Profit Quality', zh: '盈利质量' },
+    growth: { en: 'Growth Quality', zh: '增长质量' },
+    cashFlow: { en: 'Cash Conversion', zh: '现金转化' },
+    leverage: { en: 'Balance Sheet', zh: '资产负债表' },
+    efficiency: { en: 'Capital Efficiency', zh: '资本效率' },
+    pricing: { en: 'Market Pricing', zh: '市场定价' },
 };
+
+export function buildRadarData(facts: FinancialFactsSnapshot, lang: string): RadarDataPoint[] {
+    const isZh = lang === 'zh';
+    const candidateScores = [
+        { key: 'profitability', score: scoreProfitability(facts) },
+        { key: 'growth', score: scoreGrowth(facts) },
+        { key: 'cashFlow', score: scoreCashFlow(facts) },
+        { key: 'leverage', score: scoreLeverage(facts) },
+        { key: 'efficiency', score: scoreEfficiency(facts) },
+    ];
+
+    const radarData = candidateScores
+        .filter((item) => item.score !== null)
+        .map((item) => ({
+            key: item.key,
+            dimension: LABELS[item.key][isZh ? 'zh' : 'en'],
+            score: item.score as number,
+            fullMark: 100 as const,
+        }));
+
+    const pricingScore = scoreMarketPricing(facts);
+    if (pricingScore !== null) {
+        radarData.push({
+            key: 'pricing',
+            dimension: LABELS.pricing[isZh ? 'zh' : 'en'],
+            score: pricingScore,
+            fullMark: 100,
+        });
+    }
+
+    return radarData;
+}
+
+export function computeOverallScore(radarData: RadarDataPoint[]): number {
+    const weights: Record<string, number> = {
+        profitability: 0.24,
+        growth: 0.18,
+        cashFlow: 0.20,
+        leverage: 0.14,
+        efficiency: 0.24,
+        pricing: 0,
+    };
+
+    const coreData = radarData.filter((item) => (weights[item.key] ?? 0) > 0);
+    if (coreData.length === 0) {
+        return 0;
+    }
+
+    const totalWeight = coreData.reduce((sum, item) => sum + (weights[item.key] ?? 0), 0);
+    const weighted = coreData.reduce((sum, item) => sum + item.score * (weights[item.key] ?? 0), 0);
+    return clamp(weighted / totalWeight);
+}
 
 // Custom tooltip
 function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: RadarDataPoint }> }) {
@@ -124,12 +326,16 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<
 
 export function FinancialHealthRadar({ ticker, lang = 'en', apiBase }: FinancialHealthRadarProps) {
     const isZh = lang === 'zh';
-    const [facts, setFacts] = useState<FinancialFacts | null>(null);
+    const [facts, setFacts] = useState<FinancialFactsSnapshot | null>(null);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        if (!ticker || ticker.length < 1) return;
+        if (!ticker || ticker.length < 1) {
+            setFacts(null);
+            return;
+        }
         let cancelled = false;
+        setFacts(null);
 
         async function loadFacts() {
             setLoading(true);
@@ -137,15 +343,20 @@ export function FinancialHealthRadar({ ticker, lang = 'en', apiBase }: Financial
             try {
                 const response = await fetch(`${apiBase}/financial/${ticker}`);
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                    if (!cancelled) {
+                        setFacts(null);
+                    }
+                    return;
                 }
 
-                const data = await response.json() as FinancialFacts;
+                const data = await response.json() as FinancialFactsSnapshot;
                 if (!cancelled && data) {
                     setFacts(data);
                 }
             } catch {
-                // Preserve existing facts on error.
+                if (!cancelled) {
+                    setFacts(null);
+                }
             } finally {
                 if (!cancelled) {
                     setLoading(false);
@@ -161,18 +372,11 @@ export function FinancialHealthRadar({ ticker, lang = 'en', apiBase }: Financial
     }, [ticker, apiBase]);
 
     // Compute radar data from facts
-    const radarData: RadarDataPoint[] = facts ? [
-        { dimension: LABELS.profitability[isZh ? 'zh' : 'en'], score: scoreProfitability(facts), fullMark: 100 },
-        { dimension: LABELS.growth[isZh ? 'zh' : 'en'], score: scoreGrowth(facts), fullMark: 100 },
-        { dimension: LABELS.cashFlow[isZh ? 'zh' : 'en'], score: scoreCashFlow(facts), fullMark: 100 },
-        { dimension: LABELS.leverage[isZh ? 'zh' : 'en'], score: scoreLeverage(facts), fullMark: 100 },
-        { dimension: LABELS.efficiency[isZh ? 'zh' : 'en'], score: scoreEfficiency(facts), fullMark: 100 },
-        { dimension: LABELS.valuation[isZh ? 'zh' : 'en'], score: scoreValuation(facts), fullMark: 100 },
-    ] : [];
-
-    const overallScore = radarData.length > 0
-        ? Math.round(radarData.reduce((sum, d) => sum + d.score, 0) / radarData.length)
-        : 0;
+    const radarData: RadarDataPoint[] = facts ? buildRadarData(facts, lang) : [];
+    const overallScore = radarData.length > 0 ? computeOverallScore(radarData) : 0;
+    const marketPricingAvailable = facts ? hasMarketPricingData(facts) : false;
+    const missingCoreDimensions = CORE_KEYS.length
+        - radarData.filter((item) => CORE_KEYS.includes(item.key as (typeof CORE_KEYS)[number])).length;
 
     const scoreColor = overallScore >= 70 ? 'text-emerald-400' : overallScore >= 40 ? 'text-amber-400' : 'text-red-400';
     const scoreGlow = overallScore >= 70 ? 'shadow-emerald-500/20' : overallScore >= 40 ? 'shadow-amber-500/20' : 'shadow-red-500/20';
@@ -195,6 +399,46 @@ export function FinancialHealthRadar({ ticker, lang = 'en', apiBase }: Financial
         );
     }
 
+    if (facts.dashboardMode === 'unsupported_reit') {
+        return (
+            <Card className="bg-slate-900/50 backdrop-blur-sm border-slate-800">
+                <CardHeader>
+                    <CardTitle className="text-emerald-400 flex items-center gap-2">
+                        <Shield className="w-5 h-5" />
+                        {isZh ? '📊 财务健康雷达图' : '📊 Financial Health Radar'}
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <DashboardModeNotice
+                        mode="unsupported_reit"
+                        lang={lang}
+                        message={facts.dashboardMessage}
+                    />
+                </CardContent>
+            </Card>
+        );
+    }
+
+    if (facts.dashboardMode === 'financial_sector') {
+        return <FinancialSectorSnapshot facts={facts} lang={lang} />;
+    }
+
+    if (radarData.length === 0) {
+        return (
+            <Card className="bg-slate-900/50 backdrop-blur-sm border-slate-800 border-dashed">
+                <CardHeader>
+                    <CardTitle className="text-emerald-400/50 flex items-center gap-2">
+                        <Shield className="w-5 h-5" />
+                        {isZh ? '📊 财务健康雷达图' : '📊 Financial Health Radar'}
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="py-12 flex items-center justify-center text-slate-500 text-sm">
+                    {isZh ? '当前缺少足够的可评分指标。' : 'Not enough reliable inputs are available to score this dashboard.'}
+                </CardContent>
+            </Card>
+        );
+    }
+
     return (
         <Card className="bg-slate-900/50 backdrop-blur-sm border-slate-800 hover:border-emerald-500/30 transition-all duration-300">
             <CardHeader className="flex flex-row items-center justify-between">
@@ -204,17 +448,19 @@ export function FinancialHealthRadar({ ticker, lang = 'en', apiBase }: Financial
                 </CardTitle>
                 <div className={`text-center px-4 py-2 rounded-xl bg-slate-800/80 shadow-lg ${scoreGlow}`}>
                     <div className="text-xs text-slate-400 uppercase tracking-wider">
-                        {isZh ? '综合评分' : 'Overall'}
+                        {isZh ? '基本面评分' : 'Fundamental'}
                     </div>
                     <div className={`text-2xl font-bold ${scoreColor}`}>
                         {overallScore}
                         <span className="text-xs text-slate-500 ml-1">/ 100</span>
                     </div>
+                    <div className="text-[10px] text-slate-500 mt-1">
+                        {isZh ? '不含市场定价' : 'ex-market pricing'}
+                    </div>
                 </div>
             </CardHeader>
             <CardContent>
                 <div className="flex flex-col lg:flex-row items-center gap-6">
-                    {/* Radar Chart */}
                     <div className="w-full lg:w-2/3 h-[320px]">
                         <ResponsiveContainer width="100%" height="100%">
                             <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="75%">
@@ -245,7 +491,6 @@ export function FinancialHealthRadar({ ticker, lang = 'en', apiBase }: Financial
                         </ResponsiveContainer>
                     </div>
 
-                    {/* Score Breakdown */}
                     <div className="w-full lg:w-1/3 space-y-3">
                         {radarData.map((d) => (
                             <div key={d.dimension} className="flex items-center gap-3">
@@ -272,6 +517,22 @@ export function FinancialHealthRadar({ ticker, lang = 'en', apiBase }: Financial
                                 </div>
                             </div>
                         ))}
+
+                        {missingCoreDimensions > 0 && (
+                            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/70 px-3 py-3 text-xs text-slate-400">
+                                {isZh
+                                    ? `已隐藏 ${missingCoreDimensions} 个缺失维度，避免用空值推导误导性评分。`
+                                    : `${missingCoreDimensions} core dimensions were hidden because the required inputs were unavailable or structurally invalid.`}
+                            </div>
+                        )}
+
+                        {!marketPricingAvailable && (
+                            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/70 px-3 py-3 text-xs text-slate-400">
+                                {isZh
+                                    ? '市场定价维度已隐藏：当前未获取到可用的补充市场估值数据，基本面评分仍基于 SEC 财务披露生成。'
+                                    : 'Market pricing is hidden for this ticker because supplemental valuation data is unavailable. The fundamental score still reflects SEC-backed financials.'}
+                            </div>
+                        )}
                     </div>
                 </div>
             </CardContent>

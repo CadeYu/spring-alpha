@@ -1,4 +1,6 @@
-Analyze the earnings report for {{ticker}} ({{period}}).
+Analyze the {{reportTypeLabel}} for {{ticker}} ({{period}}).
+
+{{reportModeGuidance}}
 
 FINANCIAL FACTS:
 {{financialFacts}}
@@ -58,5 +60,7 @@ LANGUAGE: {{language}}
 - The "citations" -> "excerpt" field MUST always be the original English text for verification.
 - When the language is Chinese (中文), add an "excerpt_zh" field with the Chinese translation for each citation.
 - If EVIDENCE AVAILABILITY is UNAVAILABLE, return "citations": [] and do not output placeholder source identifiers.
+- Each citation excerpt MUST be copied verbatim from TEXTUAL EVIDENCE as one continuous sentence or clause. Do NOT paraphrase, summarize, or combine multiple lines into a synthetic quote.
+- If you cannot provide a verbatim excerpt that appears exactly in TEXTUAL EVIDENCE, omit that citation entirely.
 
 IMPORTANT: Use ONLY the numbers from the Financial Facts section. Calculate the DuPont metrics if not explicitly provided.

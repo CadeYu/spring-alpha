@@ -15,6 +15,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Remote Gemini embedding provider used by PGVector RAG.
@@ -29,6 +30,11 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
     private static final String GEMINI_EMBEDDING_MODEL = "gemini-embedding-001";
     private static final int EMBEDDING_DIMENSIONS = 768;
     private static final int MAX_TEXT_LENGTH = 8_000;
+    private static final long MIN_REQUEST_INTERVAL_MS = 1_500;
+    private static final long RATE_LIMIT_COOLDOWN_MS = 60_000;
+    private static final Object REQUEST_MONITOR = new Object();
+    private static final AtomicLong NEXT_REQUEST_AT_MS = new AtomicLong(0);
+    private static final AtomicLong COOLDOWN_UNTIL_MS = new AtomicLong(0);
 
     private final WebClient webClient;
     private final String apiKey;
@@ -95,9 +101,16 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
     }
 
     private float[] embedWithRetry(String text, int maxRetries) {
+        long cooldownUntil = COOLDOWN_UNTIL_MS.get();
+        if (cooldownUntil > System.currentTimeMillis()) {
+            throw new GeminiEmbeddingRateLimitException(
+                    "Gemini embedding is cooling down after a 429 response; skipping background vector ingestion for now.");
+        }
+
         RuntimeException lastError = null;
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
+                awaitGlobalPermit();
                 return embed(text);
             } catch (RuntimeException ex) {
                 lastError = ex;
@@ -105,11 +118,34 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
                 if (!message.contains("429") && !message.contains("Too Many Requests")) {
                     throw ex;
                 }
-                log.warn("Gemini embedding rate limited, retry {}/{}", attempt, maxRetries);
-                sleepSilently((long) Math.pow(2, attempt - 1) * 1000);
+                long until = System.currentTimeMillis() + RATE_LIMIT_COOLDOWN_MS;
+                COOLDOWN_UNTIL_MS.accumulateAndGet(until, Math::max);
+                log.warn("Gemini embedding rate limited (429); entering a {} ms cooldown and skipping the current ingestion batch",
+                        RATE_LIMIT_COOLDOWN_MS);
+                throw new GeminiEmbeddingRateLimitException(
+                        "Gemini embedding hit a 429 rate limit and the current background ingestion was skipped.", ex);
             }
         }
         throw lastError == null ? new IllegalStateException("Failed to generate Gemini embedding") : lastError;
+    }
+
+    private static void awaitGlobalPermit() {
+        synchronized (REQUEST_MONITOR) {
+            long now = System.currentTimeMillis();
+            long cooldownUntil = COOLDOWN_UNTIL_MS.get();
+            if (cooldownUntil > now) {
+                throw new GeminiEmbeddingRateLimitException(
+                        "Gemini embedding is cooling down after a 429 response; skipping background vector ingestion for now.");
+            }
+
+            long nextRequestAt = NEXT_REQUEST_AT_MS.get();
+            long waitMillis = Math.max(0, nextRequestAt - now);
+            if (waitMillis > 0) {
+                sleepSilently(waitMillis);
+                now = System.currentTimeMillis();
+            }
+            NEXT_REQUEST_AT_MS.set(now + MIN_REQUEST_INTERVAL_MS);
+        }
     }
 
     private static String truncateText(String text) {

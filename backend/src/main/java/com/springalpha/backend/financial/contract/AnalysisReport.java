@@ -43,6 +43,13 @@ public class AnalysisReport {
     private CoreThesis coreThesis;
 
     /**
+     * Structured business-first signals extracted from filing evidence.
+     * This is used to render the first screen around operating narrative,
+     * not around repeated metric recap.
+     */
+    private BusinessSignals businessSignals;
+
+    /**
      * Key financial metric insights with interpretations
      */
     private List<MetricInsight> keyMetrics;
@@ -91,6 +98,11 @@ public class AnalysisReport {
      * Company display name from financial facts.
      */
     private String companyName;
+
+    /**
+     * Filing/report type metadata. The current product flow is quarterly-only.
+     */
+    private String reportType;
 
     /**
      * Reporting period for the analyzed filing/facts.
@@ -182,7 +194,7 @@ public class AnalysisReport {
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class SourceContext {
-        private String status; // "GROUNDED", "DEGRADED", "UNAVAILABLE"
+        private String status; // "GROUNDED", "LIMITED", "DEGRADED", "UNAVAILABLE"
         private String message;
     }
 
@@ -198,6 +210,9 @@ public class AnalysisReport {
         private String verdict; // "positive", "mixed", "negative"
         private String headline;
         private String summary;
+        private List<String> whatChanged;
+        private List<SupportingEvidence> drivers;
+        private List<SupportingEvidence> strategicBets;
         private List<String> keyPoints;
         private List<SupportingEvidence> supportingEvidence;
         private List<String> watchItems;

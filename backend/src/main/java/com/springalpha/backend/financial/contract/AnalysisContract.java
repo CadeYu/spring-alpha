@@ -43,6 +43,11 @@ public class AnalysisContract {
     private String period;
 
     /**
+     * Requested filing/report type. The current product flow is quarterly-only.
+     */
+    private String reportType;
+
+    /**
      * Computed financial facts - the ONLY source of numerical data.
      * LLMs must not introduce any numbers not present in this object.
      */
@@ -54,6 +59,20 @@ public class AnalysisContract {
      * Value: extracted text content
      */
     private Map<String, String> textEvidence;
+
+    /**
+     * Structured business signals extracted from filings and cached in Postgres.
+     * This is the compact business-first context used to steer the core thesis away
+     * from pure metric recap.
+     */
+    private BusinessSignals businessSignals;
+
+    /**
+     * Structured company profile extracted from company descriptions, filings, and
+     * cached business signals. This captures what the company sells, who it sells
+     * to, product lines, and company-specific KPIs.
+     */
+    private CompanyProfile companyProfile;
 
     /**
      * List of specific analysis tasks for the LLM to perform.

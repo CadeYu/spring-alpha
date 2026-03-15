@@ -1,7 +1,12 @@
-Analyze the earnings report for {{ticker}} ({{period}}).
+Analyze the {{reportTypeLabel}} for {{ticker}} ({{period}}).
+
+{{reportModeGuidance}}
 
 FINANCIAL FACTS:
 {{financialFacts}}
+
+COMPANY PROFILE:
+{{companyProfile}}
 
 TEXTUAL EVIDENCE:
 {{textEvidence}}
@@ -54,5 +59,8 @@ LANGUAGE: {{language}}
 - The "citations" -> "excerpt" field MUST always be the original English text for verification.
 - When the language is Chinese (中文), add an "excerpt_zh" field with the Chinese translation for each citation.
 - If EVIDENCE AVAILABILITY is UNAVAILABLE, return "citations": [] and do not fabricate Risk Factors or MD&A quotes.
+- Each citation excerpt MUST be copied verbatim from TEXTUAL EVIDENCE as one continuous sentence or clause. Do NOT paraphrase, summarize, or combine multiple evidence snippets into one quote.
+- If you cannot provide a verbatim excerpt that appears exactly in TEXTUAL EVIDENCE, omit that citation entirely.
+- If COMPANY PROFILE contains concrete products, customer types, product lines, or KPI names, use those exact terms in driver and risk titles/descriptions instead of broad placeholders like "new product" or "market expansion".
 
 IMPORTANT: Generate multiple entries for both businessDrivers and riskFactors. Focus on the most material factors affecting the business.

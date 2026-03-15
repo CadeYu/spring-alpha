@@ -13,7 +13,7 @@ import java.io.IOException;
 /**
  * SEC 服务 (ETL Service)
  * <p>
- * 负责从 SEC EDGAR 官网抓取、清洗和结构化 10-K/20-F 财报。
+ * 负责从 SEC EDGAR 官网抓取、清洗和结构化最新季度 filing。
  * 核心功能：
  * 1. **Crawl**: 查找最新财报 URL。
  * 2. **Clean**: 去除 HTML 杂质。
@@ -25,6 +25,7 @@ public class SecService {
 
     private static final String USER_AGENT = "SpringAlpha/1.0 (test@springalpha.com)"; // SEC 要求必须带 User-Agent
     private static final String SEC_BASE_URL = "https://www.sec.gov";
+    private static final String[] QUARTERLY_FILING_TYPES = new String[] { "10-Q", "10-Q/A" };
     private final com.springalpha.backend.financial.service.FinancialDataService financialDataService;
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SecService.class);
@@ -38,18 +39,22 @@ public class SecService {
     }
 
     /**
-     * 核心业务方法：获取某股票最新的 10-K 纯文本内容
+     * 兼容旧名称：获取某股票最新季度 filing 的纯文本内容
      */
     public Mono<String> getLatest10KContent(String ticker) {
+        return getLatestFilingContent(ticker);
+    }
+
+    public Mono<String> getLatestFilingContent(String ticker) {
         return Mono.fromCallable(() -> {
-            log.info("🔍 [1/3] 开始查找 {} 的最新 10-K/20-F 报告索引页...", ticker);
+            log.info("🔍 [1/3] 开始查找 {} 的最新季度财报索引页...", ticker);
             // 1. 找到索引页 URL
-            String indexUrl = findLatest10KIndexUrl(ticker);
+            String indexUrl = findLatestFilingIndexUrl(ticker, QUARTERLY_FILING_TYPES);
             log.info("✅ [1/3] 找到索引页: {}", indexUrl);
 
             log.info("🔍 [2/3] 开始解析主文档链接...");
             // 2. 在索引页中找到主文档 URL
-            String docUrl = findPrimaryDocumentUrl(indexUrl);
+            String docUrl = findPrimaryDocumentUrl(indexUrl, QUARTERLY_FILING_TYPES);
             log.info("✅ [2/3] 找到主文档链接: {}", docUrl);
 
             log.info("📥 [3/3] 开始下载并清洗 HTML (可能需要较长时间)...");
@@ -61,11 +66,7 @@ public class SecService {
         });
     }
 
-    private String findLatest10KIndexUrl(String ticker) {
-        // SEC 官方搜索接口 (支持 10-K 和 20-F)
-        // Foreign issuers utilize 20-F instead of 10-K
-        String[] docTypes = { "10-K", "20-F" };
-
+    private String findLatestFilingIndexUrl(String ticker, String[] docTypes) {
         for (String type : docTypes) {
             // Retry each doc type up to 2 times (SEC can be slow from overseas)
             for (int attempt = 1; attempt <= 2; attempt++) {
@@ -100,7 +101,7 @@ public class SecService {
             }
         }
 
-        throw new RuntimeException("No 10-K or 20-F found for ticker: " + ticker);
+        throw new RuntimeException("No supported SEC filing found for ticker: " + ticker);
     }
 
     String extractLatestIndexUrl(Document doc, String targetType) {
@@ -119,25 +120,30 @@ public class SecService {
         return null;
     }
 
-    private String findPrimaryDocumentUrl(String indexUrl) throws IOException {
+    private String findPrimaryDocumentUrl(String indexUrl, String[] acceptedTypes) throws IOException {
         Document doc = Jsoup.connect(indexUrl)
                 .userAgent(USER_AGENT)
                 .timeout(20000) // 20s — SEC can be slow from overseas
                 .get();
 
-        return extractPrimaryDocumentUrl(doc, indexUrl);
+        return extractPrimaryDocumentUrl(doc, indexUrl, acceptedTypes);
     }
 
     String extractPrimaryDocumentUrl(Document doc, String indexUrl) {
+        return extractPrimaryDocumentUrl(doc, indexUrl, QUARTERLY_FILING_TYPES);
+    }
 
-        // Support both 10-K and 20-F in the document table
+    String extractPrimaryDocumentUrl(Document doc, String indexUrl, String[] acceptedTypes) {
+        java.util.Set<String> allowed = java.util.Arrays.stream(acceptedTypes)
+                .map(String::trim)
+                .collect(java.util.stream.Collectors.toSet());
+
         Elements rows = doc.select("table.tableFile tr");
         for (Element row : rows) {
             Elements cells = row.select("td");
             if (cells.size() > 3) {
                 String type = cells.get(3).text();
-                // Check for 10-K or 20-F
-                if ("10-K".equals(type) || "20-F".equals(type)) {
+                if (allowed.contains(type)) {
                     Element link = cells.get(2).select("a").first();
                     if (link != null) {
                         String href = link.attr("href");
@@ -151,7 +157,7 @@ public class SecService {
                 }
             }
         }
-        throw new RuntimeException("Primary document (10-K/20-F) not found in index page: " + indexUrl);
+        throw new RuntimeException("Primary document not found in index page: " + indexUrl);
     }
 
     String normalizeDocumentUrl(String docUrl) {
@@ -168,7 +174,7 @@ public class SecService {
 
         log.info("🌍 最终下载 URL: {}", docUrl);
 
-        // 为了防止 10-K 太大导致内存溢出，我们限制 maxBodySize
+        // 为了防止季度 filing 太大导致内存溢出，我们限制 maxBodySize
         // 0 表示无限，但在生产环境建议限制，比如 10MB
         Document doc = Jsoup.connect(docUrl)
                 .userAgent(USER_AGENT)
@@ -315,5 +321,9 @@ public class SecService {
             count++;
         }
         log.info("📊 Converted {} HTML tables to Markdown format", count);
+    }
+
+    String[] filingTypesForLatestQuarter() {
+        return QUARTERLY_FILING_TYPES.clone();
     }
 }

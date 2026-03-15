@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 幻觉校验器 (Hallucination Validator)
@@ -26,6 +28,9 @@ import java.util.regex.Pattern;
 @Slf4j
 @Service
 public class AnalysisReportValidator {
+
+    private static final Pattern NUMERIC_GROUP_PATTERN = Pattern.compile("\\b\\d[\\d,\\.]*\\b");
+    private static final Pattern ALPHA_WORD_PATTERN = Pattern.compile("\\b[a-zA-Z]{3,}\\b");
 
     // Pattern to extract numbers from text (including percentages and currency)
     private static final Pattern NUMBER_PATTERN = Pattern.compile("-?\\d+\\.?\\d*[%]?");
@@ -230,6 +235,11 @@ public class AnalysisReportValidator {
                 continue;
             }
 
+            if (isLowSignalTableCitation(citation.getExcerpt())) {
+                log.warn("🚩 Dropping low-signal table citation: '{}'", citation.getExcerpt());
+                continue;
+            }
+
             String normalizedExcerpt = normalizeText(citation.getExcerpt());
 
             // Deduplicate: If we already have this exact excerpt, skip it
@@ -238,16 +248,20 @@ public class AnalysisReportValidator {
                 continue;
             }
             seenNormalizedExcerpts.add(normalizedExcerpt);
-            uniqueCitations.add(citation);
 
             // 1. Direct contains check (fastest)
             if (!normalizedSource.isBlank() && normalizedSource.contains(normalizedExcerpt)) {
                 citation.setVerificationStatus("VERIFIED");
+                uniqueCitations.add(citation);
             } else {
-                // 2. Fallback: Fuzzy match
-                citation.setVerificationStatus(normalizedSource.isBlank() ? "UNVERIFIED" : "NOT_FOUND");
-                if (!normalizedSource.isBlank()) {
-                    log.warn("🚩 Citation not found in source text: '{}'", citation.getExcerpt());
+                if (normalizedSource.isBlank()) {
+                    citation.setVerificationStatus("UNVERIFIED");
+                    uniqueCitations.add(citation);
+                } else {
+                    // Drop non-verbatim citations instead of surfacing red-cross snippets that were
+                    // paraphrased or stitched together by the model.
+                    citation.setVerificationStatus("NOT_FOUND");
+                    log.warn("🚩 Dropping citation not found in source text: '{}'", citation.getExcerpt());
                 }
             }
         }
@@ -271,6 +285,37 @@ public class AnalysisReportValidator {
         }
 
         return false;
+    }
+
+    private boolean isLowSignalTableCitation(String excerpt) {
+        if (excerpt == null) {
+            return false;
+        }
+
+        String raw = excerpt.trim();
+        if (raw.isEmpty()) {
+            return false;
+        }
+
+        if (raw.contains("|") || raw.contains("\t") || raw.contains(" / / ")) {
+            return true;
+        }
+
+        int numericGroups = countMatches(NUMERIC_GROUP_PATTERN, raw);
+        int alphaWords = countMatches(ALPHA_WORD_PATTERN, raw);
+        boolean hasSentencePunctuation = raw.contains(".") || raw.contains("!") || raw.contains("?")
+                || raw.contains(";") || raw.contains(":");
+
+        return numericGroups >= 2 && alphaWords <= 5 && !hasSentencePunctuation;
+    }
+
+    private int countMatches(Pattern pattern, String value) {
+        Matcher matcher = pattern.matcher(value);
+        int count = 0;
+        while (matcher.find()) {
+            count++;
+        }
+        return count;
     }
 
     /**

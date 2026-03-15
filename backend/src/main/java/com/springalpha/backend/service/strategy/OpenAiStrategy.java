@@ -6,13 +6,17 @@ import com.springalpha.backend.service.validation.AnalysisReportValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
 
 /**
  * OpenAI 策略实现 (OpenAiStrategy)
@@ -26,7 +30,7 @@ import java.util.Map;
 @Slf4j
 @Service
 @ConditionalOnProperty(name = "app.openai.enabled", havingValue = "true", matchIfMissing = false)
-public class OpenAiStrategy extends BaseAiStrategy {
+public class OpenAiStrategy extends BaseAiStrategy implements CredentialValidatingStrategy {
 
     private final WebClient.Builder webClientBuilder;
     private final String configuredApiKey;
@@ -65,12 +69,7 @@ public class OpenAiStrategy extends BaseAiStrategy {
     protected Flux<String> callLlmApi(String systemPrompt, String userPrompt, String lang, String apiKeyOverride) {
         log.info("🧠 OpenAI Strategy - calling {}", model);
 
-        String effectiveApiKey = apiKeyOverride != null && !apiKeyOverride.isBlank()
-                ? apiKeyOverride.trim()
-                : configuredApiKey;
-        if (effectiveApiKey == null || effectiveApiKey.isBlank()) {
-            return Flux.error(new RuntimeException("OpenAI API key is required for BYOK mode"));
-        }
+        String effectiveApiKey = resolveApiKey(apiKeyOverride);
 
         Map<String, Object> requestBody = Map.of(
                 "model", model,
@@ -123,7 +122,55 @@ public class OpenAiStrategy extends BaseAiStrategy {
                 .doOnComplete(() -> log.info("✅ OpenAI API stream completed"))
                 .onErrorResume(e -> {
                     log.error("❌ OpenAI API call failed: {}", e.getMessage());
-                    return Flux.error(new RuntimeException("OpenAI API error: " + e.getMessage()));
+                    return Flux.error(mapOpenAiException(e));
                 });
+    }
+
+    @Override
+    public Mono<Void> validateCredentials(String apiKeyOverride) {
+        String effectiveApiKey = resolveApiKey(apiKeyOverride);
+        WebClient webClient = webClientBuilder.clone()
+                .baseUrl(baseUrl)
+                .defaultHeader("Authorization", "Bearer " + effectiveApiKey)
+                .build();
+
+        return webClient.get()
+                .uri("/models")
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(Duration.ofSeconds(10))
+                .then()
+                .onErrorResume(e -> Mono.error(mapOpenAiException(e)));
+    }
+
+    private String resolveApiKey(String apiKeyOverride) {
+        String effectiveApiKey = apiKeyOverride != null && !apiKeyOverride.isBlank()
+                ? apiKeyOverride.trim()
+                : configuredApiKey;
+        if (effectiveApiKey == null || effectiveApiKey.isBlank()) {
+            throw new ProviderAuthenticationException(
+                    "OpenAI API key is required for BYOK mode",
+                    "openai",
+                    "OPENAI_API_KEY_MISSING",
+                    HttpStatus.BAD_REQUEST);
+        }
+        return effectiveApiKey;
+    }
+
+    private RuntimeException mapOpenAiException(Throwable error) {
+        if (error instanceof ProviderAuthenticationException providerAuthenticationException) {
+            return providerAuthenticationException;
+        }
+        if (error instanceof WebClientResponseException responseException) {
+            if (responseException.getStatusCode() == HttpStatus.UNAUTHORIZED
+                    || responseException.getStatusCode() == HttpStatus.FORBIDDEN) {
+                return new ProviderAuthenticationException(
+                        "OpenAI API key is invalid or unauthorized for this project",
+                        "openai",
+                        "OPENAI_API_KEY_INVALID",
+                        HttpStatus.UNAUTHORIZED);
+            }
+        }
+        return new RuntimeException("OpenAI API error: " + error.getMessage(), error);
     }
 }

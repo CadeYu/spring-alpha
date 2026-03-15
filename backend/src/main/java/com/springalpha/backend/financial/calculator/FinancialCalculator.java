@@ -144,7 +144,7 @@ public class FinancialCalculator {
      */
     private BigDecimal calculateGrowthRate(BigDecimal previous, BigDecimal current) {
         if (previous == null || current == null || previous.compareTo(BigDecimal.ZERO) == 0) {
-            return BigDecimal.ZERO;
+            return null;
         }
         return current.subtract(previous)
                 .divide(previous.abs(), PRECISION, ROUNDING);

@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * 利润表 (Income Statement) - FMP API 映射类
@@ -61,29 +62,29 @@ public class IncomeStatement {
      * Calculate gross margin
      */
     public BigDecimal getGrossMargin() {
-        if (revenue == null || revenue.compareTo(BigDecimal.ZERO) == 0) {
-            return BigDecimal.ZERO;
+        if (revenue == null || revenue.compareTo(BigDecimal.ZERO) == 0 || grossProfit == null) {
+            return null;
         }
-        return grossProfit.divide(revenue, 4, BigDecimal.ROUND_HALF_UP);
+        return grossProfit.divide(revenue, 4, RoundingMode.HALF_UP);
     }
 
     /**
      * Calculate operating margin
      */
     public BigDecimal getOperatingMargin() {
-        if (revenue == null || revenue.compareTo(BigDecimal.ZERO) == 0) {
-            return BigDecimal.ZERO;
+        if (revenue == null || revenue.compareTo(BigDecimal.ZERO) == 0 || operatingIncome == null) {
+            return null;
         }
-        return operatingIncome.divide(revenue, 4, BigDecimal.ROUND_HALF_UP);
+        return operatingIncome.divide(revenue, 4, RoundingMode.HALF_UP);
     }
 
     /**
      * Calculate net margin
      */
     public BigDecimal getNetMargin() {
-        if (revenue == null || revenue.compareTo(BigDecimal.ZERO) == 0) {
-            return BigDecimal.ZERO;
+        if (revenue == null || revenue.compareTo(BigDecimal.ZERO) == 0 || netIncome == null) {
+            return null;
         }
-        return netIncome.divide(revenue, 4, BigDecimal.ROUND_HALF_UP);
+        return netIncome.divide(revenue, 4, RoundingMode.HALF_UP);
     }
 }
