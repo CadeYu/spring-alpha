@@ -1,740 +1,477 @@
-"use client";
-
-import { useState, useRef, useEffect } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Loader2, TrendingUp, Bot } from "lucide-react";
-import { ExecutiveSummary } from "@/components/analysis/ExecutiveSummary";
-import { KeyMetrics } from "@/components/analysis/KeyMetrics";
-import { BusinessDrivers } from "@/components/analysis/BusinessDrivers";
-import { RiskFactors } from "@/components/analysis/RiskFactors";
-import { BullBearCase } from "@/components/analysis/BullBearCase";
-import { AnalysisReport } from "@/types/AnalysisReport";
-import { DuPontChart } from "@/components/financial/dupont-chart";
-import { InsightCards } from "@/components/financial/insight-cards";
-import { FinancialHealthRadar } from "@/components/financial/financial-health-radar";
-import { TopicWordCloud } from "@/components/analysis/TopicWordCloud";
-import { PdfDownloadButton } from "@/components/pdf/PdfDownloadButton";
+import Image from "next/image";
+import Link from "next/link";
 import {
-  formatPeriodForDisplay,
-  getSourceMessage,
-  getSourceStatusLabel,
-  mergeSourceContexts,
-} from "@/lib/reportPresentation";
-import type { HistoricalDataPoint } from "@/components/analysis/MarginAnalysisChart";
+  ArrowUpRight,
+  BadgeCheck,
+  BrainCircuit,
+  FileSearch,
+  Github,
+  Radar,
+  Sparkles,
+  SquareChartGantt,
+} from "lucide-react";
 
-// Available AI models for analysis
-const AI_MODELS = [
+const featureCards = [
   {
-    id: "chatanywhere",
-    name: "GPT-4o Mini",
-    icon: "🆓",
-    description: "Free 200/day",
-    descZh: "免费200次/天",
+    title: "财报读得更快",
+    body: "把 SEC filing、结构化财务指标和前端 dashboard 串成一条链，不用在 10-Q、10-K 和图表之间来回跳。",
+    icon: FileSearch,
   },
   {
-    id: "groq",
-    name: "Groq Llama 3.3",
-    icon: "⚡",
-    description: "Fast & Free",
-    descZh: "快速免费",
+    title: "先看结论，再钻细节",
+    body: "核心分析、驱动因素、风险项、Bull / Bear case 和关键图表同屏展开，适合快速形成研究框架。",
+    icon: SquareChartGantt,
   },
   {
-    id: "openai",
-    name: "OpenAI (BYOK)",
-    icon: "🔑",
-    description: "Use your own API key",
-    descZh: "使用你自己的 API Key",
+    title: "不是纯聊天，是可落地研究流",
+    body: "支持 citation / verification、行业模式切换、指标健康雷达和 PDF 导出，更像一个分析工作台。",
+    icon: BrainCircuit,
   },
 ];
 
-const OPENAI_KEY_STORAGE = "spring-alpha-openai-key";
+const proofPoints = [
+  "季度与年度财报分析",
+  "SEC / Yahoo 双源补充",
+  "关键财务指标与趋势图",
+  "多模型接入与 BYOK",
+  "风险因子与驱动拆解",
+  "PDF 报告导出",
+];
 
-export default function Home() {
-  const [ticker, setTicker] = useState("AAPL");
-  const [activeTicker, setActiveTicker] = useState(""); // only set on submit
-  const [lang, setLang] = useState("en");
-  const [model, setModel] = useState("chatanywhere");
-  const [openAiApiKey, setOpenAiApiKey] = useState("");
-  const [openAiKeySaved, setOpenAiKeySaved] = useState(false);
-  const [report, setReport] = useState<AnalysisReport | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [historyData, setHistoryData] = useState<HistoricalDataPoint[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const tickerInputRef = useRef<HTMLInputElement>(null);
-  const analysisAbortRef = useRef<AbortController | null>(null);
-  const historyAbortRef = useRef<AbortController | null>(null);
-  const requestIdRef = useRef(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const isZh = lang === "zh";
-  const isOpenAiMode = model === "openai";
-  const reportTitleTicker = activeTicker || ticker;
-  const reportCompanyName = report?.companyName?.trim();
-  const reportPeriod = report?.period?.trim();
-  const reportFilingDate = report?.filingDate?.trim();
-  const displayPeriod = formatPeriodForDisplay(reportPeriod, lang);
+const workflow = [
+  {
+    step: "01",
+    title: "输入 ticker",
+    body: "从 AAPL、NVDA 到银行、支付、半导体，我们先抓财报与行情补充数据。",
+  },
+  {
+    step: "02",
+    title: "生成结构化看板",
+    body: "把营收、利润、现金流、趋势图和健康评分整理成一套可读 dashboard。",
+  },
+  {
+    step: "03",
+    title: "给出研究视角",
+    body: "把业务主线、增长驱动、风险暴露和多空逻辑压缩成更像分析师的表达。",
+  },
+];
 
-  useEffect(() => {
-    const savedKey = window.localStorage.getItem(OPENAI_KEY_STORAGE);
-    if (savedKey) {
-      setOpenAiApiKey(savedKey);
-      setOpenAiKeySaved(true);
-    }
-  }, []);
+const heroStats = [
+  { label: "数据链路", value: "SEC + Yahoo + AI" },
+  { label: "输出形态", value: "Dashboard / PDF / Citations" },
+  { label: "适用场景", value: "研究、演示、内容生产" },
+];
 
-  // Backend URL: direct to backend in production, local rewrite proxy in dev.
-  const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL
-    ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api`
-    : "/api/java";
-  const analysisApiBase = process.env.NEXT_PUBLIC_BACKEND_URL
-    ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api`
-    : "/api";
+const heroFlowNodes = [
+  { title: "SEC Filing", detail: "10-Q / 10-K parsing" },
+  { title: "Structured Facts", detail: "Revenue / Margin / FCF" },
+  { title: "AI Thesis", detail: "Drivers / Risks / Scenarios" },
+];
 
-  const normalizeTicker = (rawTicker: string | undefined | null) =>
-    rawTicker?.toUpperCase().trim() ?? "";
-
-  // Fetch History Data with retry logic
-  const fetchHistory = async (tickerToFetch: string, requestId: number) => {
-    setHistoryLoading(true);
-    const maxRetries = 2;
-    historyAbortRef.current?.abort();
-    const controller = new AbortController();
-    historyAbortRef.current = controller;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const res = await fetch(`${apiBase}/sec/history/${tickerToFetch}`, {
-          signal: controller.signal,
-        });
-        if (res.ok) {
-          const data = (await res.json()) as HistoricalDataPoint[];
-          if (requestIdRef.current === requestId) {
-            setHistoryData(data);
-          }
-          setHistoryLoading(false);
-          return; // Success — exit
-        }
-        console.warn(`History fetch attempt ${attempt} returned ${res.status}`);
-      } catch (e) {
-        if (controller.signal.aborted) {
-          return;
-        }
-        console.warn(`History fetch attempt ${attempt} failed:`, e);
-      }
-
-      // Wait 1s before retrying
-      if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-
-    // All retries failed
-    console.error(
-      `Failed to fetch history for ${tickerToFetch} after ${maxRetries} attempts`,
-    );
-    if (requestIdRef.current === requestId) {
-      setHistoryData([]);
-      setHistoryLoading(false);
-    }
-  };
-
-  const handleSearch = async (rawTicker?: string) => {
-    const submittedTicker = normalizeTicker(
-      rawTicker ?? tickerInputRef.current?.value ?? ticker,
-    );
-    if (!submittedTicker || isLoading) return;
-    if (isOpenAiMode && !openAiApiKey.trim()) {
-      setError(
-        isZh
-          ? "请选择 OpenAI 模式后先输入并保存你的 API Key。"
-          : "OpenAI BYOK mode requires you to enter and save your API key first.",
-      );
-      return;
-    }
-
-    const requestId = Date.now();
-    requestIdRef.current = requestId;
-    analysisAbortRef.current?.abort();
-    const controller = new AbortController();
-    analysisAbortRef.current = controller;
-
-    setIsLoading(true);
-    setReport(null);
-    setError(null);
-    setHistoryData([]);
-    setTicker(submittedTicker);
-    setActiveTicker(submittedTicker);
-
-    // Fetch history data in parallel with analysis (doesn't depend on AI)
-    fetchHistory(submittedTicker, requestId);
-
-    try {
-      console.log(
-        `Fetching analysis for ${submittedTicker} using ${model} in ${lang}...`,
-      );
-      const response = await fetch(
-        `${analysisApiBase}/sec/analyze/${submittedTicker}?lang=${lang}&model=${model}`,
-        {
-          headers: isOpenAiMode
-            ? { "X-OpenAI-API-Key": openAiApiKey.trim() }
-            : undefined,
-          signal: controller.signal,
-        },
-      );
-      console.log("Response status:", response.status);
-
-      if (!response.ok || !response.body) {
-        const errorText = await response.text();
-        let message = `Network response error: ${response.statusText}`;
-        if (errorText) {
-          try {
-            const parsed = JSON.parse(errorText) as { error?: string };
-            if (parsed.error) {
-              message = parsed.error;
-            }
-          } catch {
-            message = errorText;
-          }
-        }
-        throw new Error(message);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-
-        // Parse SSE format: data:{...}
-        const lines = buffer.split("\n");
-
-        for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i].trim();
-          if (line.startsWith("data:")) {
-            const jsonStr = line.substring(5).trim();
-            try {
-              const reportData = JSON.parse(jsonStr) as Partial<AnalysisReport>;
-              if (requestIdRef.current !== requestId) {
-                continue;
-              }
-              setReport((prev) => {
-                if (!prev) return reportData as AnalysisReport;
-
-                // Filter out null/undefined values from the incoming chunk
-                // to prevent overwriting already-received data from other agents
-                const filtered = Object.fromEntries(
-                  Object.entries(reportData).filter(
-                    ([, value]) => value !== null && value !== undefined,
-                  ),
-                ) as Partial<AnalysisReport>;
-
-                // Merge citations specifically since they are arrays from multiple agents
-                const mergedCitations = [
-                  ...(prev.citations || []),
-                  ...(reportData.citations || []),
-                ];
-                const sourceContext = mergeSourceContexts(
-                  prev.sourceContext,
-                  reportData.sourceContext,
-                );
-
-                return {
-                  ...prev,
-                  ...filtered,
-                  citations:
-                    mergedCitations.length > 0
-                      ? mergedCitations
-                      : prev.citations,
-                  sourceContext,
-                };
-              });
-              console.log("Received progressive report chunk");
-            } catch (e) {
-              console.warn("JSON parse error:", e);
-            }
-          }
-        }
-
-        // Keep last incomplete line in buffer
-        buffer = lines[lines.length - 1];
-      }
-    } catch (error) {
-      if (controller.signal.aborted) {
-        return;
-      }
-      console.error("Fetch Error:", error);
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      if (requestIdRef.current === requestId) {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      analysisAbortRef.current?.abort();
-      historyAbortRef.current?.abort();
-    };
-  }, []);
-
-  const saveOpenAiKey = () => {
-    const trimmedKey = openAiApiKey.trim();
-    if (!trimmedKey) {
-      setOpenAiKeySaved(false);
-      setError(
-        isZh
-          ? "请输入有效的 OpenAI API Key。"
-          : "Please enter a valid OpenAI API key.",
-      );
-      return;
-    }
-    window.localStorage.setItem(OPENAI_KEY_STORAGE, trimmedKey);
-    setOpenAiApiKey(trimmedKey);
-    setOpenAiKeySaved(true);
-    setError(null);
-  };
-
-  const clearOpenAiKey = () => {
-    window.localStorage.removeItem(OPENAI_KEY_STORAGE);
-    setOpenAiApiKey("");
-    setOpenAiKeySaved(false);
-    if (isOpenAiMode) {
-      setError(
-        isZh
-          ? "已清除 OpenAI Key，请重新输入。"
-          : "OpenAI key cleared. Enter a new key to continue.",
-      );
-    }
-  };
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    if (scrollRef.current) {
-      const scrollElement = scrollRef.current.querySelector(
-        "[data-radix-scroll-area-viewport]",
-      );
-      if (scrollElement) {
-        scrollElement.scrollTop = scrollElement.scrollHeight;
-      }
-    }
-  }, [report]);
-
+export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 p-8 font-mono">
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold flex items-center gap-2 text-emerald-400">
-            <TrendingUp className="w-8 h-8" />
-            {isZh ? "AI 财报分析师" : "AI Earnings Analyst"}{" "}
-            <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">
-              v2.0
-            </span>
-          </h1>
-        </div>
+    <main className="min-h-screen overflow-hidden bg-[#07111f] text-white">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-[-10%] top-[-8rem] h-[28rem] w-[28rem] rounded-full bg-[radial-gradient(circle,_rgba(30,199,164,0.28),_transparent_65%)] blur-3xl" />
+        <div className="absolute right-[-8%] top-[10rem] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,_rgba(71,132,255,0.20),_transparent_70%)] blur-3xl" />
+        <div className="absolute inset-x-0 top-0 h-[32rem] bg-[linear-gradient(180deg,rgba(14,30,54,0.92),rgba(7,17,31,0.55),transparent)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(140,169,212,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(140,169,212,0.08)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:radial-gradient(circle_at_center,black,transparent_85%)]" />
+      </div>
 
-        {/* Search Bar */}
-        <Card className="bg-slate-900 border-slate-800">
-          <CardContent className="p-4 space-y-3">
-            {/* Row 1: Ticker, Language, Button */}
-            <div className="flex gap-2">
-              <Input
-                ref={tickerInputRef}
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && void handleSearch(e.currentTarget.value)
-                }
-                placeholder={
-                  isZh
-                    ? "输入股票代码 (如 AAPL, MSFT)"
-                    : "Enter Ticker (e.g., AAPL, MSFT, TSLA)"
-                }
-                className="bg-slate-950 border-slate-700 text-lg font-bold tracking-widest text-emerald-300 flex-1"
-              />
-
-              <select
-                value={lang}
-                onChange={(e) => setLang(e.target.value)}
-                className="bg-slate-950 border border-slate-700 text-emerald-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono text-sm"
-              >
-                <option value="en">🇺🇸 EN</option>
-                <option value="zh">🇨🇳 CN</option>
-              </select>
-
-              <Button
-                onClick={() => void handleSearch(tickerInputRef.current?.value)}
-                disabled={isLoading}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[120px]"
-              >
-                {isLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <Search className="w-4 h-4 mr-2" />{" "}
-                    {isZh ? "开始分析" : "Analyze"}
-                  </>
-                )}
-              </Button>
+      <div className="relative mx-auto flex w-full max-w-7xl flex-col px-6 pb-16 pt-6 sm:px-8 lg:px-10">
+        <header className="sticky top-4 z-20 mb-10">
+          <div className="mx-auto flex max-w-6xl items-center justify-between rounded-full border border-white/10 bg-slate-950/55 px-5 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.25)] backdrop-blur-xl">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-300/20">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold tracking-[0.24em] text-emerald-300 uppercase">
+                  Spring Alpha
+                </p>
+                <p className="text-xs text-slate-400">
+                  AI earnings research cockpit
+                </p>
+              </div>
             </div>
 
-            {/* Row 2: Model Selector */}
+            <nav className="hidden items-center gap-6 text-sm text-slate-300 md:flex">
+              <a href="#features" className="transition hover:text-white">
+                Features
+              </a>
+              <a href="#showcase" className="transition hover:text-white">
+                Showcase
+              </a>
+              <a href="#workflow" className="transition hover:text-white">
+                Workflow
+              </a>
+            </nav>
+
             <div className="flex items-center gap-2">
-              <Bot className="w-4 h-4 text-slate-500" />
-              <span className="text-xs text-slate-500">
-                {isZh ? "AI 模型:" : "AI Model:"}
+              <a
+                href="https://github.com/CadeYu/spring-alpha"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open GitHub repository"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-white/5 text-slate-300 transition hover:border-emerald-300/30 hover:bg-white/10 hover:text-white"
+              >
+                <Github className="h-4 w-4" />
+              </a>
+              <Link
+                href="/app"
+                className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-400/15 px-4 py-2 text-sm font-medium text-emerald-200 transition hover:bg-emerald-400/25"
+              >
+                Launch App
+                <ArrowUpRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+        </header>
+
+        <section className="relative grid items-end gap-10 pb-16 pt-4 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="max-w-3xl">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-sm text-emerald-200">
+              <BadgeCheck className="h-4 w-4" />
+              面向美股财报研究的 AI 分析工作台
+            </div>
+
+            <h1 className="max-w-4xl text-5xl font-semibold leading-[0.94] tracking-[-0.05em] text-white sm:text-6xl lg:text-7xl">
+              把
+              <span className="bg-[linear-gradient(135deg,#d8fff5,#7cebd4_35%,#8eb9ff_70%,#ffffff)] bg-clip-text text-transparent">
+                财报阅读
               </span>
-              <div className="flex gap-2 flex-1">
-                {AI_MODELS.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => setModel(m.id)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                      model === m.id
-                        ? "bg-emerald-600 text-white"
-                        : "bg-slate-800 text-slate-400 hover:bg-slate-700"
-                    }`}
-                    title={isZh ? m.descZh : m.description}
+              变成一块真正可用的研究界面
+            </h1>
+
+            <p className="mt-8 max-w-2xl text-lg leading-8 text-slate-300 sm:text-xl">
+              Spring Alpha 把 SEC 原文、结构化财务指标、趋势图、风险因子和 AI
+              解读放在一个连续体验里。先看品牌页理解它能做什么，再一键进入真正的财报
+              app。
+            </p>
+
+            <div className="mt-10 flex flex-col gap-4 sm:flex-row">
+              <Link
+                href="/app"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#34d399,#58e7c8,#76a9ff)] px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_18px_45px_rgba(42,192,160,0.35)] transition hover:scale-[1.01]"
+              >
+                Launch App
+                <ArrowUpRight className="h-4 w-4" />
+              </Link>
+              <a
+                href="#showcase"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-white/12 bg-white/5 px-6 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+              >
+                看现有界面
+                <Radar className="h-4 w-4" />
+              </a>
+            </div>
+
+            <div className="mt-8 rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,20,32,0.92),rgba(9,15,26,0.88))] p-5">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-emerald-400/12 ring-1 ring-emerald-300/15" />
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-emerald-300/80">
+                    Analysis flow
+                  </p>
+                  <p className="mt-1 text-sm text-slate-300">
+                    从披露原文到结构化指标，再到更像研究结论的表达。
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 hidden items-center gap-3 xl:flex">
+                {heroFlowNodes.map((node, index) => (
+                  <div key={node.title} className="flex items-center gap-3">
+                    <div className="min-w-[170px] rounded-[1.2rem] border border-white/8 bg-white/[0.04] px-4 py-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(110,231,183,0.8)]" />
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200/90">
+                          {node.title}
+                        </p>
+                      </div>
+                      <p className="text-xs leading-6 text-slate-300">{node.detail}</p>
+                    </div>
+                    {index < heroFlowNodes.length - 1 && (
+                      <div className="h-px w-8 bg-[linear-gradient(90deg,rgba(74,222,128,0.8),rgba(125,211,252,0.35))]" />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:hidden">
+                <div className="rounded-[1.2rem] border border-emerald-300/15 bg-white/[0.04] px-4 py-4">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                    Signal snapshot
+                  </p>
+                  <p className="mt-3 text-3xl font-semibold text-emerald-300">+15.65%</p>
+                  <p className="mt-1 text-sm text-slate-300">Revenue YoY growth</p>
+                </div>
+                <div className="rounded-[1.2rem] border border-sky-300/15 bg-white/[0.04] px-4 py-4">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                    Grounded mode
+                  </p>
+                  <p className="mt-3 text-base font-semibold text-white">
+                    Citations + charts
+                  </p>
+                  <p className="mt-2 text-xs leading-6 text-slate-300">
+                    把数字、图表和论点放进同一条阅读链路。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-12 grid gap-3 sm:grid-cols-2">
+              {proofPoints.map((item) => (
+                <div
+                  key={item}
+                  className="rounded-2xl border border-white/8 bg-white/4 px-4 py-4 text-sm text-slate-200 backdrop-blur-sm"
+                >
+                  <span className="mr-2 text-emerald-300">+</span>
+                  {item}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(14,24,39,0.96),rgba(10,16,28,0.92))] p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
+                  What you get
+                </p>
+                <p className="mt-3 text-xl font-semibold text-white">
+                  从原始披露，到能直接拿来判断的研究界面
+                </p>
+                <p className="mt-4 text-sm leading-7 text-slate-300">
+                  它不是单独一个聊天框，也不是只有几张图的静态 dashboard，而是把“看财报”和“形成观点”放在同一条阅读路径里。
+                </p>
+              </div>
+              <div className="grid gap-3">
+                {heroStats.map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-[1.3rem] border border-white/8 bg-white/[0.045] px-4 py-4"
                   >
-                    {m.icon} {m.name}
-                  </button>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                      {item.label}
+                    </p>
+                    <p className="mt-2 text-base font-semibold text-white">
+                      {item.value}
+                    </p>
+                  </div>
                 ))}
               </div>
             </div>
-
-            {isOpenAiMode && (
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/10 p-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-300">
-                      {isZh ? "OpenAI API Key" : "OpenAI API Key"}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {isZh
-                        ? "仅保存在当前浏览器本地，并在请求 OpenAI 模式时透传到后端。"
-                        : "Stored only in this browser and forwarded to the backend only for OpenAI mode."}
-                    </p>
-                  </div>
-                  <span
-                    className={`text-xs font-medium ${openAiKeySaved ? "text-emerald-400" : "text-amber-400"}`}
-                  >
-                    {openAiKeySaved
-                      ? isZh
-                        ? "已保存"
-                        : "Saved"
-                      : isZh
-                        ? "未保存"
-                        : "Not saved"}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    type="password"
-                    value={openAiApiKey}
-                    onChange={(e) => {
-                      setOpenAiApiKey(e.target.value);
-                      setOpenAiKeySaved(false);
-                    }}
-                    placeholder={
-                      isZh
-                        ? "输入 sk-... 开头的 OpenAI Key"
-                        : "Enter your OpenAI key (sk-...)"
-                    }
-                    className="bg-slate-950 border-slate-700 text-slate-200"
-                  />
-                  <Button
-                    type="button"
-                    onClick={saveOpenAiKey}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                  >
-                    {isZh ? "保存" : "Save"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={clearOpenAiKey}
-                    className="border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-900"
-                  >
-                    {isZh ? "清除" : "Clear"}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Error Display */}
-        {error && (
-          <Card className="bg-red-900/20 border-red-700">
-            <CardContent className="p-4">
-              <p className="text-red-400">❌ Error: {error}</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Analysis Report */}
-        {report && (
-          <div id="pdf-report-root" className="space-y-6">
-            {/* Report Toolbar */}
-            <div className="flex items-center justify-between">
-              <div id="pdf-report-header" className="space-y-1">
-                <h2 className="text-lg font-bold text-emerald-400 flex items-center gap-2">
-                  📊{" "}
-                  {isZh
-                    ? `${reportTitleTicker} 分析报告`
-                    : `${reportTitleTicker} Analysis Report`}
-                </h2>
-                {(reportCompanyName || reportPeriod) && (
-                  <p className="text-sm text-slate-400">
-                    {reportCompanyName || reportTitleTicker}
-                    {displayPeriod ? ` · ${displayPeriod}` : ""}
-                    {reportFilingDate ? ` · ${reportFilingDate}` : ""}
-                  </p>
-                )}
-              </div>
-              <div data-pdf-exclude="true">
-                <PdfDownloadButton
-                  report={report}
-                  ticker={reportTitleTicker}
-                  lang={lang}
-                />
-              </div>
-            </div>
-
-            <div id="pdf-section-summary">
-              <ExecutiveSummary
-                thesis={report.coreThesis}
-                businessSignals={report.businessSignals}
-                summary={report.executiveSummary}
-                metadata={report.metadata}
-                lang={lang}
-              />
-            </div>
-
-            <div id="pdf-section-metrics">
-              <KeyMetrics
-                metrics={report.keyMetrics}
-                ticker={activeTicker}
-                lang={lang}
-                currency={report.currency}
-                historyData={historyData}
-                historyLoading={historyLoading}
-                apiBase={apiBase}
-              />
-            </div>
-
-            {/* Advanced Insights Section */}
-            <div id="pdf-section-advanced" className="space-y-6">
-              <h2 className="text-xl font-bold flex items-center gap-2 text-emerald-400 border-b border-slate-800 pb-2">
-                <TrendingUp className="w-6 h-6" />
-                {isZh ? "深度洞察" : "Advanced Insights"}
-              </h2>
-
-              {/* DuPont Analysis */}
-              <div id="chart-dupont">
-                <DuPontChart data={report.dupontAnalysis!} lang={lang} />
-              </div>
-
-              {/* Topic Trends (Word Cloud) */}
-              <div id="chart-topics">
-                <TopicWordCloud trends={report.topicTrends || []} lang={lang} />
-              </div>
-
-              {/* Insight Engine (Root Cause & Accounting Changes) */}
-              <div id="chart-insights">
-                <InsightCards data={report.insightEngine!} lang={lang} />
-              </div>
-
-              {/* Financial Health Radar (replaces Factor Analysis Waterfalls) */}
-              <div id="chart-radar">
-                <FinancialHealthRadar
-                  ticker={activeTicker}
-                  lang={lang}
-                  apiBase={apiBase}
-                />
-              </div>
-            </div>
-
-            <div
-              id="pdf-section-drivers-risks"
-              className="grid grid-cols-1 md:grid-cols-2 gap-6"
-            >
-              <BusinessDrivers
-                drivers={report.businessDrivers || []}
-                lang={lang}
-              />
-              <RiskFactors risks={report.riskFactors || []} lang={lang} />
-            </div>
-
-            <div id="pdf-section-bull-bear">
-              <BullBearCase
-                bullCase={report.bullCase}
-                bearCase={report.bearCase}
-                lang={lang}
-              />
-            </div>
-
-            {/* Citations with Verification Status */}
-            {((report.citations && report.citations.length > 0) ||
-              !!report.sourceContext?.message) && (
-              <Card
-                id="pdf-section-citations"
-                className="bg-slate-900/50 backdrop-blur-sm border-slate-800 hover:border-emerald-500/30 transition-all duration-300"
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-emerald-400 font-medium tracking-wide">
-                    <span className="w-1 h-6 bg-emerald-500 rounded-full inline-block mr-1"></span>
-                    {isZh
-                      ? "来源引用与验证"
-                      : "Source Citations & Verification"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {report.citations && report.citations.length > 0 ? (
-                    report.citations.map((citation, idx) => (
-                      <div
-                        key={idx}
-                        className="bg-slate-950/50 rounded-lg border border-slate-800 p-4 transition-all duration-300 hover:border-slate-700 hover:bg-slate-900/80 group"
-                      >
-                        <div className="flex gap-4 items-start">
-                          <div className="mt-0.5 shrink-0 bg-slate-900 p-1.5 rounded-full border border-slate-800 shadow-sm">
-                            {citation.verificationStatus === "VERIFIED" ? (
-                              <span
-                                title={
-                                  isZh ? "已验证" : "Verified in source text"
-                                }
-                                className="text-emerald-500 text-lg drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]"
-                              >
-                                ✅
-                              </span>
-                            ) : citation.verificationStatus === "UNVERIFIED" ? (
-                              <span
-                                title={
-                                  isZh
-                                    ? "未验证"
-                                    : "Unverified / Low confidence"
-                                }
-                                className="text-yellow-500 text-lg"
-                              >
-                                ⚠️
-                              </span>
-                            ) : citation.verificationStatus === "NOT_FOUND" ? (
-                              <span
-                                title={
-                                  isZh
-                                    ? "未找到 (可能包含幻觉)"
-                                    : "Not found in source text (Possible Hallucination)"
-                                }
-                                className="text-red-500 text-lg"
-                              >
-                                ❌
-                              </span>
-                            ) : (
-                              <span
-                                title={
-                                  isZh ? "无验证数据" : "No verification data"
-                                }
-                                className="text-slate-500 text-lg"
-                              >
-                                ❓
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex-1 space-y-3">
-                            <div className="relative">
-                              <span className="absolute -left-2 -top-2 text-3xl text-slate-800 font-serif select-none">
-                                “
-                              </span>
-                              <p className="text-sm text-slate-300 leading-relaxed italic relative z-10 pl-2">
-                                {isZh && citation.excerptZh
-                                  ? citation.excerptZh
-                                  : citation.excerpt}
-                              </p>
-                              <span className="absolute -bottom-4 right-0 text-3xl text-slate-800 font-serif select-none rotate-180">
-                                “
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/50 mt-2">
-                              <span className="text-[10px] font-bold text-emerald-500/70 uppercase tracking-wider bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30">
-                                {isZh ? "来源" : "SOURCE"}
-                              </span>
-                              <p className="text-xs font-medium text-slate-500 uppercase tracking-widest">
-                                {isZh
-                                  ? (citation.section || "")
-                                      .replace(
-                                        /MD&A/gi,
-                                        "SEC财报中的管理层讨论与分析",
-                                      )
-                                      .replace(/Risk Factors/gi, "风险因素")
-                                      .replace(
-                                        /Financial Statements/gi,
-                                        "财务报表",
-                                      )
-                                      .replace(/Notes/gi, "附注")
-                                  : citation.section}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="bg-slate-950/50 rounded-lg border border-slate-800 p-4">
-                      <div className="flex gap-4 items-start">
-                        <div className="mt-0.5 shrink-0 bg-slate-900 p-1.5 rounded-full border border-slate-800 shadow-sm">
-                          <span
-                            title={
-                              isZh
-                                ? "本次无可验证来源"
-                                : "No verifiable source for this run"
-                            }
-                            className="text-yellow-500 text-lg"
-                          >
-                            ⚠️
-                          </span>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-sm text-slate-200 leading-relaxed">
-                            {getSourceMessage(report.sourceContext, lang)}
-                          </p>
-                          <p className="text-xs uppercase tracking-widest text-slate-500">
-                            {isZh
-                              ? `当前状态：${getSourceStatusLabel(report.sourceContext, lang)}`
-                              : `Current status: ${getSourceStatusLabel(report.sourceContext, lang)}`}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
           </div>
-        )}
 
-        {/* Empty State */}
-        {!report && !isLoading && !error && (
-          <Card className="bg-slate-900 border-slate-800 min-h-[400px] flex items-center justify-center">
-            <CardContent className="text-center">
-              <TrendingUp className="w-16 h-16 text-slate-700 mx-auto mb-4" />
-              <p className="text-slate-500 text-lg">
-                {isZh
-                  ? "输入股票代码并点击“开始分析”"
-                  : "Enter a ticker symbol and click Analyze to get started"}
+          <div className="relative">
+            <div className="absolute -inset-6 rounded-[2rem] bg-[radial-gradient(circle_at_top,rgba(52,211,153,0.20),transparent_55%),radial-gradient(circle_at_bottom_right,rgba(101,153,255,0.18),transparent_45%)] blur-2xl" />
+            <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,31,49,0.96),rgba(10,18,30,0.92))] p-5 shadow-[0_24px_90px_rgba(0,0,0,0.42)]">
+              <div className="flex items-center justify-between border-b border-white/8 pb-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.24em] text-emerald-300/80">
+                    Live product frame
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-white">
+                    用 AAPL 实际页面展示产品完成度
+                  </p>
+                </div>
+                <div className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100">
+                  Real dashboard
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/8 bg-[#09111c] p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                    Engine
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">
+                    SEC + Yahoo
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/8 bg-[#09111c] p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                    Output
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">
+                    Dashboard + PDF
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/8 bg-[#09111c] p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                    Research mode
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">
+                    Bull / Bear / Risks
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 overflow-hidden rounded-[1.4rem] border border-white/10 bg-[#040b14] p-3">
+                <Image
+                  src="/showcase/aapl-dashboard.png"
+                  alt="Spring Alpha AAPL dashboard preview"
+                  width={576}
+                  height={1536}
+                  className="h-auto w-full rounded-[1rem]"
+                  priority
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="features"
+          className="grid gap-5 border-y border-white/8 py-16 md:grid-cols-3"
+        >
+          {featureCards.map(({ title, body, icon: Icon }) => (
+            <article
+              key={title}
+              className="rounded-[1.8rem] border border-white/8 bg-white/[0.045] p-6 backdrop-blur-sm"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/12 text-emerald-300 ring-1 ring-emerald-300/15">
+                <Icon className="h-5 w-5" />
+              </div>
+              <h2 className="mt-5 text-2xl font-semibold text-white">{title}</h2>
+              <p className="mt-4 text-base leading-7 text-slate-300">{body}</p>
+            </article>
+          ))}
+        </section>
+
+        <section
+          id="showcase"
+          className="grid gap-8 py-16 lg:grid-cols-[0.9fr_1.1fr]"
+        >
+          <div>
+            <p className="text-sm uppercase tracking-[0.3em] text-emerald-300/75">
+              Showcase
+            </p>
+            <h2 className="mt-4 text-4xl font-semibold tracking-[-0.04em] text-white">
+              不是只会回答一句话，而是给你一整页研究上下文
+            </h2>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-300">
+              这个页面会把核心分析、关键指标、营收趋势、利润率趋势、杜邦拆解、健康雷达、
+              风险因子和多空逻辑排在同一条阅读流里。你不需要边看财报边自己拼 dashboard。
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(13,22,34,0.98),rgba(10,16,26,0.92))] p-5">
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                Analysis surface
               </p>
-            </CardContent>
-          </Card>
-        )}
+              <p className="mt-3 text-xl font-semibold text-white">
+                读财报最常用的模块一次展开
+              </p>
+              <p className="mt-4 text-sm leading-7 text-slate-300">
+                Executive summary、drivers、risk、citations 和图表不是拆开的多个工具，而是一页内完成的分析旅程。
+              </p>
+            </div>
+            <div className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(9,18,33,0.98),rgba(9,15,25,0.92))] p-5">
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                Research discipline
+              </p>
+              <p className="mt-3 text-xl font-semibold text-white">
+                兼顾可视化和 grounded 输出
+              </p>
+              <p className="mt-4 text-sm leading-7 text-slate-300">
+                不是只有会说故事的 LLM，也不是只有冰冷数字。它尝试把原始披露、结构化指标和表达质量放进同一个产品里。
+              </p>
+            </div>
+            <div className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(13,22,34,0.98),rgba(10,16,26,0.92))] p-5 md:col-span-2">
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                Why this matters
+              </p>
+              <p className="mt-3 text-xl font-semibold text-white">
+                为个人研究、内容创作和 demo 展示做了一层更有完成度的包装
+              </p>
+              <p className="mt-4 text-sm leading-7 text-slate-300">
+                你可以把它当成一个 AI 财报分析 app，也可以把它当成一套面向投资研究产品的交互原型。新的 landing
+                page 负责讲清楚产品定位，`Launch App` 负责把人送进真正的工作区。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="workflow"
+          className="rounded-[2rem] border border-white/8 bg-white/[0.035] p-6 sm:p-8"
+        >
+          <div className="max-w-2xl">
+            <p className="text-sm uppercase tracking-[0.28em] text-emerald-300/75">
+              Workflow
+            </p>
+            <h2 className="mt-4 text-4xl font-semibold tracking-[-0.04em] text-white">
+              从一只股票，到一页像样的研究输出
+            </h2>
+          </div>
+
+          <div className="mt-10 grid gap-4 lg:grid-cols-3">
+            {workflow.map((item) => (
+              <article
+                key={item.step}
+                className="rounded-[1.6rem] border border-white/8 bg-[#08111d] p-6"
+              >
+                <p className="text-xs font-semibold tracking-[0.28em] text-emerald-300">
+                  {item.step}
+                </p>
+                <h3 className="mt-4 text-2xl font-semibold text-white">
+                  {item.title}
+                </h3>
+                <p className="mt-4 text-sm leading-7 text-slate-300">
+                  {item.body}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="py-16">
+          <div className="overflow-hidden rounded-[2.4rem] border border-emerald-300/15 bg-[linear-gradient(135deg,rgba(13,28,45,0.96),rgba(10,18,28,0.94))] px-6 py-10 sm:px-10">
+            <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div>
+                <p className="text-sm uppercase tracking-[0.28em] text-emerald-300/80">
+                  Open source momentum
+                </p>
+                <h2 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-white">
+                  如果你喜欢这个方向，欢迎去 GitHub 点赞、提 issue，或者直接贡献代码。
+                </h2>
+                <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-300">
+                  Spring Alpha 现在不仅是一个可运行的财报分析 app，也是一套正在持续打磨的开源产品原型。你的 star、反馈、PR 和想法，都会直接影响它下一步长成什么样。
+                </p>
+              </div>
+
+              <div className="flex flex-col items-stretch gap-3 sm:flex-row lg:flex-col">
+                <a
+                  href="https://github.com/CadeYu/spring-alpha"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#34d399,#58e7c8,#76a9ff)] px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_18px_45px_rgba(42,192,160,0.35)] transition hover:scale-[1.01]"
+                >
+                  Star on GitHub
+                  <Github className="h-4 w-4" />
+                </a>
+                <a
+                  href="https://github.com/CadeYu/spring-alpha/issues"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-white/12 bg-white/5 px-6 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+                >
+                  Contribute / Open Issue
+                  <ArrowUpRight className="h-4 w-4" />
+                </a>
+                <Link
+                  href="/app"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-6 py-3 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/16"
+                >
+                  Launch App
+                  <ArrowUpRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

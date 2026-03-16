@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Home from "./page";
+import Home from "@/components/app/earnings-analyst-app";
 
 vi.mock("@/components/analysis/ExecutiveSummary", () => ({
   ExecutiveSummary: ({
