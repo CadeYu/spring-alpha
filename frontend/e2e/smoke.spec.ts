@@ -86,7 +86,7 @@ test.describe("Spring Alpha smoke", () => {
       });
     });
 
-    await page.goto("/");
+    await page.goto("/app");
     await page
       .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
       .fill("TSLA");
@@ -111,7 +111,7 @@ test.describe("Spring Alpha smoke", () => {
   });
 
   test("BYOK mode blocks submission when no key is saved", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/app");
     await page.getByRole("button", { name: /openai \(byok\)/i }).click();
     await page.getByRole("button", { name: /analyze/i }).click();
 
@@ -160,7 +160,7 @@ test.describe("Spring Alpha smoke", () => {
       });
     });
 
-    await page.goto("/");
+    await page.goto("/app");
     await page.getByRole("combobox").selectOption("zh");
     await page
       .locator('input[placeholder*="股票代码"], input[placeholder*="Ticker"]')
@@ -232,7 +232,7 @@ test.describe("Spring Alpha smoke", () => {
       });
     });
 
-    await page.goto("/");
+    await page.goto("/app");
     await page.getByRole("combobox").selectOption("zh");
     await page
       .locator('input[placeholder*="股票代码"], input[placeholder*="Ticker"]')
@@ -307,7 +307,7 @@ test.describe("Spring Alpha smoke", () => {
       });
     });
 
-    await page.goto("/");
+    await page.goto("/app");
     await page
       .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
       .fill("JPM");
@@ -386,7 +386,7 @@ test.describe("Spring Alpha smoke", () => {
       });
     });
 
-    await page.goto("/");
+    await page.goto("/app");
     await page
       .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
       .fill("PLD");
@@ -487,7 +487,7 @@ test.describe("Spring Alpha smoke", () => {
       });
     });
 
-    await page.goto("/");
+    await page.goto("/app");
     const tickerInput = page.getByPlaceholder(
       "Enter Ticker (e.g., AAPL, MSFT, TSLA)",
     );
