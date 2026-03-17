@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,21 +30,24 @@ const AI_MODELS = [
   {
     id: "chatanywhere",
     name: "GPT-4o Mini",
-    icon: "🆓",
+    iconSrc: "/brands/openai.png",
+    iconAlt: "OpenAI",
     description: "Free 200/day",
     descZh: "免费200次/天",
   },
   {
     id: "groq",
-    name: "Groq Llama 3.3",
-    icon: "⚡",
+    name: "Meta Llama 3.3",
+    iconSrc: "/brands/meta.jpeg",
+    iconAlt: "Meta",
     description: "Fast & Free",
     descZh: "快速免费",
   },
   {
     id: "openai",
     name: "OpenAI (BYOK)",
-    icon: "🔑",
+    iconSrc: "/brands/openai.png",
+    iconAlt: "OpenAI",
     description: "Use your own API key",
     descZh: "使用你自己的 API Key",
   },
@@ -397,14 +401,23 @@ export default function EarningsAnalystApp() {
                   <button
                     key={m.id}
                     onClick={() => setModel(m.id)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                       model === m.id
                         ? "bg-emerald-600 text-white"
                         : "bg-slate-800 text-slate-400 hover:bg-slate-700"
                     }`}
                     title={isZh ? m.descZh : m.description}
                   >
-                    {m.icon} {m.name}
+                    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/95 ring-1 ring-black/10">
+                      <Image
+                        src={m.iconSrc}
+                        alt={m.iconAlt}
+                        width={16}
+                        height={16}
+                        className="h-4 w-4 object-cover"
+                      />
+                    </span>
+                    <span>{m.name}</span>
                   </button>
                 ))}
               </div>

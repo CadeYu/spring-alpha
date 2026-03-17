@@ -43,9 +43,9 @@
 *   **PDF 一键导出**：集成 `@react-pdf/renderer`，支持秒级生成「高盛研报级」精美 PDF 报告。
 
 ### 🧠 智能 RAG 与防幻觉 (Anti-Hallucination)
-*   **混合事实引擎**：财报硬指标（Revenue, Net Income 等）直连 FMP API，不让 LLM 猜数字；深度解析环节从 SEC 10-K 文件实时 RAG 检索。
-*   **向量检索**：集成 **PGVector** 与本地/云端 Embedding，精准提取 *MD&A*（管理层讨论）和 *Risk Factors*（风险因素）。
-*   **双语交叉验证**：前端明确标识每条引用的验证状态（✅ Verified / ❌ Hallucination），构建 100% 可信的研报。
+*   **混合数据引擎**：以 **SEC company facts** 作为财报口径事实源，以 **Yahoo enrichment** 补充行业标签、估值与季度快照，再用 **SEC filing 原文** 提供 narrative evidence。
+*   **向量检索**：集成 **PGVector** 与 Embedding 流水线，优先检索 *MD&A*（管理层讨论）和 *Risk Factors*（风险因素）；首次未命中时自动降级到 raw filing，再后台补向量。
+*   **引用校验与降级模式**：前端明确标识 citation 状态与 source context，避免把未经验证的 LLM 输出伪装成“确定事实”。
 
 ### 🐳 一键极速部署 (One-Click Deploy)
 *   提供开箱即用的 `docker-compose.yml`，一键拉起后端 Spring Boot、前端 Next.js 及 PGVector 向量数据库。
@@ -56,26 +56,95 @@
 
 ```mermaid
 graph TD
-    User([👨‍💻 User]) -->|Input Ticker| NextJS[⚛️ Next.js SSR Frontend]
-    NextJS -->|SSE Stream| SpringBoot[🍃 Spring Boot Backend]
-    
-    subgraph Data Layer
-        SpringBoot <-->|Hard Data| FMP[📈 FMP API]
-        SpringBoot <-->|Raw HTML| SEC[🏛️ SEC EDGAR]
+    User([👨‍💻 User]) -->|Visit / or /app| NextJS[⚛️ Next.js Frontend]
+    NextJS -->|SSE Proxy / REST Proxy| ApiRoutes[🔀 Next Route Handlers]
+    ApiRoutes -->|Analyze / History| SpringBoot[🍃 Spring Boot Backend]
+
+    subgraph Financial Facts Layer
+        SpringBoot --> Hybrid[🧩 HybridFinancialDataService]
+        Hybrid --> SecFacts[🏛️ SEC Company Facts]
+        Hybrid --> Yahoo[🐍 Yahoo Python Enrichment]
     end
-    
-    subgraph RAG & Database
-        SEC --> Jsoup[🧹 HTML Cleaner]
-        Jsoup --> Embedding[🧠 PGVector Store]
+
+    subgraph Filing & RAG Layer
+        SpringBoot --> SecFiling[📄 SEC Filing HTML]
+        SecFiling --> Cleaner[🧹 Jsoup Cleaner]
+        Cleaner --> Vector[🧠 PGVector / Embedding]
     end
-    
-    subgraph AI Engine
-        SpringBoot <-->|Spring AI| Strategy[⚙️ Strategy Pattern]
-        Strategy <-->|LLaMA3/GPT4| Groq[⚡ Groq API]
+
+    subgraph AI Orchestration Layer
+        SpringBoot --> Orchestrator[🎯 FinancialAnalysisService]
+        Orchestrator --> Strategy[⚙️ AI Strategy + Validation]
+        Strategy --> Providers[🤖 OpenAI / ChatAnywhere / Groq]
     end
+
+    Providers --> SpringBoot
+    SpringBoot -->|SSE AnalysisReport| NextJS
 ```
 
 ---
+
+## 🔄 请求流与代码入口 (Request Flow)
+
+当用户在前端输入一个 ticker 并点击 `Analyze` 时，核心代码流程如下：
+
+1. **前端工作台入口**
+   * `/app` 页面渲染 `frontend/src/components/app/earnings-analyst-app.tsx`
+   * `handleSearch()` 同时发起分析 SSE 和历史图表请求
+
+2. **Next.js 代理层**
+   * `frontend/src/app/api/sec/analyze/[ticker]/route.ts` 负责把浏览器请求桥接到后端 SSE
+   * 这样前端不需要直连后端地址，也能保留 `text/event-stream` 流式能力
+
+3. **Spring Boot 控制层**
+   * `backend/src/main/java/com/springalpha/backend/controller/SecController.java`
+   * `/api/sec/analyze/{ticker}` 返回 `Flux<AnalysisReport>`，把分析结果持续流给前端
+
+4. **编排与数据融合**
+   * `backend/src/main/java/com/springalpha/backend/service/FinancialAnalysisService.java`
+   * 先拉季度财务事实，再抓最新 SEC filing，再命中 RAG 或降级原文，最后组装 `AnalysisContract`
+
+5. **混合财务数据服务**
+   * `backend/src/main/java/com/springalpha/backend/financial/service/HybridFinancialDataService.java`
+   * 以 SEC facts 作为主事实源，再用 Yahoo enrichment 补 `profile / quote / valuation / quarterly snapshots`
+
+6. **RAG 与引用**
+   * `backend/src/main/java/com/springalpha/backend/service/rag/VectorRagService.java`
+   * 有向量就做语义检索，没有向量就先降级分析并后台补 embedding
+
+7. **策略模式驱动 LLM**
+   * `backend/src/main/java/com/springalpha/backend/service/strategy/BaseAiStrategy.java`
+   * 顺序执行 `SummaryAgent / InsightsAgent / FactorsAgent / DriversAgent`
+   * 输出不是 markdown dump，而是面向 dashboard 的结构化 `AnalysisReport`
+
+8. **前端渐进式展示**
+   * SSE 到达后，摘要、指标、驱动因素、风险、图表逐步点亮
+   * 历史数据走独立接口，不阻塞 AI 首屏
+
+
+
+## 🧩 模块分层 (Module Map)
+
+### 前端
+
+*   `frontend/src/app/page.tsx`：品牌 landing page
+*   `frontend/src/app/app/page.tsx`：真实分析工作台入口
+*   `frontend/src/components/app/earnings-analyst-app.tsx`：搜索、模型切换、SSE 消费、整体 dashboard 编排
+*   `frontend/src/components/analysis/*`：摘要、关键指标、驱动因素、风险等研究模块
+*   `frontend/src/components/financial/*`：杜邦、雷达图、洞察卡片等金融可视化模块
+
+### 后端
+
+*   `controller`：HTTP / SSE 入口
+*   `financial/service`：SEC facts、Yahoo enrichment、混合事实服务
+*   `service`：编排层
+*   `service/rag`：embedding、向量检索、citation context
+*   `service/strategy`：多 provider LLM 策略与模板方法
+*   `service/signals`、`service/profile`：商业信号和公司画像快照
+*   `service/validation`：结构化输出与 citation 校验
+
+---
+
 
 ## 🛠️ 技术栈 (Tech Stack)
 
@@ -135,6 +204,11 @@ cd frontend
 npm install
 npm run dev
 ```
+
+启动后：
+
+*   `http://localhost:3000/` 是产品 landing page
+*   `http://localhost:3000/app` 是真实财报分析工作台
 
 ---
 
