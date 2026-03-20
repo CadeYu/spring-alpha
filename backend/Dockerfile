@@ -23,19 +23,22 @@ WORKDIR /app
 
 # Install runtime dependencies for:
 # - health checks (`curl`)
-# - Yahoo Finance helper (`python3`, `pip`)
+# - Yahoo Finance helper (`python3`, `pip`, `venv`)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl python3 python3-pip \
+    && apt-get install -y --no-install-recommends curl python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./requirements.txt
-RUN python3 -m pip install --no-cache-dir -r requirements.txt
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --upgrade pip \
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt
 
 COPY --from=build /app/target/*.jar app.jar
 
 EXPOSE 8081
 
 ENV JAVA_OPTS="-Xms128m -Xmx384m -XX:+UseContainerSupport -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC"
-ENV PYTHON_BIN="/usr/bin/python3"
+ENV PATH="/opt/venv/bin:${PATH}"
+ENV PYTHON_BIN="/opt/venv/bin/python"
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
