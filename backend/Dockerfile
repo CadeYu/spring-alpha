@@ -11,18 +11,31 @@ RUN mvn dependency:go-offline -B 2>/dev/null || true
 COPY src ./src
 RUN mvn package -DskipTests -q
 
-## ---- Stage 2: Runtime (JRE only) ----
-FROM eclipse-temurin:21-jre-alpine
+## ---- Stage 2: Runtime ----
+##
+## Render's Docker runtime was missing `python3`, which breaks the Yahoo
+## enrichment helper invoked by YahooFinanceMarketDataService. We intentionally
+## use the Debian-based Temurin image here instead of Alpine because Python
+## wheels (pandas/numpy/yfinance transitive deps) are much more reliable on it.
+FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
-# Install curl for healthcheck
-RUN apk add --no-cache curl
+# Install runtime dependencies for:
+# - health checks (`curl`)
+# - Yahoo Finance helper (`python3`, `pip`)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./requirements.txt
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 COPY --from=build /app/target/*.jar app.jar
 
 EXPOSE 8081
 
 ENV JAVA_OPTS="-Xms128m -Xmx384m -XX:+UseContainerSupport -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC"
+ENV PYTHON_BIN="/usr/bin/python3"
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

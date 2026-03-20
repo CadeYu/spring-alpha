@@ -561,6 +561,80 @@ class HybridFinancialDataServiceTest {
     }
 
     @Test
+    void returnsMarketBackedMinimalFactsWhenSecLookupFailsButYahooQuarterlySnapshotsExist() {
+        SecCompanyFactsFinancialDataService secService = mock(SecCompanyFactsFinancialDataService.class);
+        MarketEnrichmentService enrichmentService = mock(MarketEnrichmentService.class);
+
+        when(secService.getFinancialFacts("GOOG", "quarterly")).thenReturn(null);
+        when(enrichmentService.getSupplementalData("GOOG", "quarterly")).thenReturn(new MarketSupplementalData(
+                "yfinance",
+                true,
+                true,
+                true,
+                "Alphabet Inc.",
+                "Technology",
+                "Internet Content & Information",
+                "EQUITY",
+                new BigDecimal("182.00"),
+                new BigDecimal("2200000000000"),
+                new BigDecimal("23.1000"),
+                new BigDecimal("7.8000"),
+                List.of(
+                        new MarketSupplementalData.QuarterlyFinancialSnapshot(
+                                "2025-09-30",
+                                new BigDecimal("102346000000"),
+                                new BigDecimal("60977000000"),
+                                new BigDecimal("31222000000"),
+                                new BigDecimal("34979000000"),
+                                new BigDecimal("41330000000"),
+                                new BigDecimal("28900000000")),
+                        new MarketSupplementalData.QuarterlyFinancialSnapshot(
+                                "2024-09-30",
+                                new BigDecimal("88268000000"),
+                                new BigDecimal("52662000000"),
+                                new BigDecimal("28262000000"),
+                                new BigDecimal("26301000000"),
+                                new BigDecimal("34000000000"),
+                                new BigDecimal("24000000000"))),
+                null,
+                "Alphabet is a technology company focused on search, cloud, and digital advertising."));
+
+        HybridFinancialDataService service = new HybridFinancialDataService(
+                secService,
+                enrichmentService,
+                null,
+                Duration.ofHours(6),
+                Duration.ofHours(24));
+
+        FinancialFacts facts = service.getFinancialFacts("GOOG", "quarterly");
+
+        assertNotNull(facts);
+        assertEquals("GOOG", facts.getTicker());
+        assertEquals("Alphabet Inc.", facts.getCompanyName());
+        assertEquals("Q3 2025", facts.getPeriod());
+        assertEquals("2025-09-30", facts.getFilingDate());
+        assertEquals(new BigDecimal("102346000000"), facts.getRevenue());
+        assertEquals(new BigDecimal("60977000000"), facts.getGrossProfit());
+        assertEquals(new BigDecimal("0.5958"), facts.getGrossMargin());
+        assertEquals(new BigDecimal("31222000000"), facts.getOperatingIncome());
+        assertEquals(new BigDecimal("0.3051"), facts.getOperatingMargin());
+        assertEquals(new BigDecimal("34979000000"), facts.getNetIncome());
+        assertEquals(new BigDecimal("0.3418"), facts.getNetMargin());
+        assertEquals(new BigDecimal("41330000000"), facts.getOperatingCashFlow());
+        assertEquals(new BigDecimal("28900000000"), facts.getFreeCashFlow());
+        assertEquals(new BigDecimal("0.1595"), facts.getRevenueYoY());
+        assertEquals(new BigDecimal("0.2156"), facts.getOperatingCashFlowYoY());
+        assertEquals(new BigDecimal("0.2042"), facts.getFreeCashFlowYoY());
+        assertEquals("Technology", facts.getMarketSector());
+        assertEquals("Internet Content & Information", facts.getMarketIndustry());
+        assertEquals("EQUITY", facts.getMarketSecurityType());
+        assertEquals(new BigDecimal("23.1000"), facts.getPriceToEarningsRatio());
+        assertEquals(new BigDecimal("7.8000"), facts.getPriceToBookRatio());
+        assertEquals("standard", facts.getDashboardMode());
+        assertNull(facts.getDashboardMessage());
+    }
+
+    @Test
     void backfillsDashboardMetadataForCachedFactsFromOlderSchema() {
         SecCompanyFactsFinancialDataService secService = mock(SecCompanyFactsFinancialDataService.class);
         MarketEnrichmentService enrichmentService = mock(MarketEnrichmentService.class);

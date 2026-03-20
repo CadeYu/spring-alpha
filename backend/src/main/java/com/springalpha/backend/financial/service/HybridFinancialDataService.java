@@ -150,6 +150,12 @@ public class HybridFinancialDataService implements FinancialDataService {
             return fallbackFacts;
         }
 
+        FinancialFacts marketBackedFallback = buildMarketBackedMinimalFactsFallback(upperTicker, reportType);
+        if (marketBackedFallback != null) {
+            cacheFinancialFacts(upperTicker, reportType, marketBackedFallback);
+            return marketBackedFallback;
+        }
+
         log.warn("⚠️ SEC core financial facts unavailable for {}. Main analysis path will stop here.", upperTicker);
         return null;
     }
@@ -356,11 +362,104 @@ public class HybridFinancialDataService implements FinancialDataService {
         }
     }
 
+    private FinancialFacts buildMarketBackedMinimalFactsFallback(String ticker, String reportType) {
+        if (marketEnrichmentService == null) {
+            return null;
+        }
+
+        try {
+            MarketSupplementalData supplementalData = marketEnrichmentService.getSupplementalData(ticker, reportType);
+            MarketSupplementalData.QuarterlyFinancialSnapshot snapshot = latestQuarterlySnapshot(
+                    supplementalData == null ? null : supplementalData.quarterlyFinancials());
+            if (snapshot == null) {
+                return null;
+            }
+
+            FinancialFacts fallbackFacts = FinancialFacts.builder()
+                    .ticker(ticker)
+                    .companyName(firstNonBlank(supplementalData.companyName(), ticker))
+                    .period(deriveQuarterlyPeriodLabel(snapshot.periodEnd()))
+                    .filingDate(snapshot.periodEnd())
+                    .marketSector(supplementalData.sector())
+                    .marketIndustry(supplementalData.industry())
+                    .marketSecurityType(supplementalData.securityType())
+                    .marketBusinessSummary(supplementalData.businessSummary())
+                    .revenue(snapshot.revenue())
+                    .grossProfit(snapshot.grossProfit())
+                    .grossMargin(divide(snapshot.grossProfit(), snapshot.revenue()))
+                    .operatingIncome(snapshot.operatingIncome())
+                    .operatingMargin(divide(snapshot.operatingIncome(), snapshot.revenue()))
+                    .netIncome(snapshot.netIncome())
+                    .netMargin(divide(snapshot.netIncome(), snapshot.revenue()))
+                    .operatingCashFlow(snapshot.operatingCashFlow())
+                    .freeCashFlow(snapshot.freeCashFlow())
+                    .priceToEarningsRatio(supplementalData.priceToEarningsRatio())
+                    .priceToBookRatio(supplementalData.priceToBookRatio())
+                    .build();
+
+            applyQuarterlyGrowthFallbacks(fallbackFacts, snapshot, supplementalData.quarterlyFinancials());
+
+            if (hasMarketClassificationInputs(supplementalData)) {
+                DashboardModeClassifier.DashboardMode dashboardMode = DashboardModeClassifier.classify(fallbackFacts,
+                        supplementalData);
+                fallbackFacts.setDashboardMode(dashboardMode.mode());
+                fallbackFacts.setDashboardMessage(dashboardMode.message());
+            }
+
+            log.info(
+                    "🪂 Returning market-backed minimal facts for {} because SEC core facts were unavailable (snapshot={}, revenue={}, netIncome={})",
+                    ticker,
+                    snapshot.periodEnd(),
+                    snapshot.revenue(),
+                    snapshot.netIncome());
+            return fallbackFacts;
+        } catch (Exception e) {
+            log.warn("⚠️ Market-backed minimal facts fallback failed for {}: {}", ticker, e.getMessage());
+            return null;
+        }
+    }
+
     private String firstNonBlank(String preferred, String fallback) {
         if (preferred != null && !preferred.isBlank()) {
             return preferred;
         }
         return fallback;
+    }
+
+    private MarketSupplementalData.QuarterlyFinancialSnapshot latestQuarterlySnapshot(
+            List<MarketSupplementalData.QuarterlyFinancialSnapshot> snapshots) {
+        if (snapshots == null || snapshots.isEmpty()) {
+            return null;
+        }
+
+        MarketSupplementalData.QuarterlyFinancialSnapshot best = null;
+        LocalDate bestDate = null;
+        for (MarketSupplementalData.QuarterlyFinancialSnapshot snapshot : snapshots) {
+            if (snapshot == null) {
+                continue;
+            }
+            LocalDate current = parsePeriodEnd(snapshot.periodEnd());
+            if (current == null) {
+                if (best == null) {
+                    best = snapshot;
+                }
+                continue;
+            }
+            if (bestDate == null || current.isAfter(bestDate)) {
+                best = snapshot;
+                bestDate = current;
+            }
+        }
+        return best;
+    }
+
+    private String deriveQuarterlyPeriodLabel(String periodEnd) {
+        LocalDate date = parsePeriodEnd(periodEnd);
+        if (date == null) {
+            return null;
+        }
+        int quarter = ((date.getMonthValue() - 1) / 3) + 1;
+        return "Q" + quarter + " " + date.getYear();
     }
 
     private MarketSupplementalData.QuarterlyFinancialSnapshot matchQuarterlySnapshot(
