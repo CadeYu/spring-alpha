@@ -1383,13 +1383,11 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
         BusinessSignals signals = contract.getBusinessSignals();
         List<BusinessSignals.SignalItem> items = collectPrimarySignals(signals);
         List<String> bullets = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
 
         for (BusinessSignals.SignalItem item : items) {
             String signalBullet = buildSignalBullet(item, contract, isZh);
-            if (signalBullet != null) {
-                bullets.add(signalBullet);
-            }
-            if (bullets.size() >= 3) {
+            if (addUniqueNarrative(bullets, seen, signalBullet) && bullets.size() >= 3) {
                 return bullets;
             }
         }
@@ -1397,7 +1395,7 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
         FinancialFacts facts = contract.getFinancialFacts();
         if (facts != null) {
             if (facts.getRevenueYoY() != null) {
-                bullets.add(isZh
+                addUniqueNarrative(bullets, seen, isZh
                         ? (facts.getRevenueYoY().compareTo(BigDecimal.ZERO) >= 0
                                 ? "核心需求仍有韧性，业务主线没有失速。"
                                 : "核心需求仍在调整，业务恢复仍需更多证据。")
@@ -1406,7 +1404,7 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
                                 : "Core demand still looks unsettled, and the recovery story needs more proof."));
             }
             if (facts.getGrossMarginChange() != null) {
-                bullets.add(isZh
+                addUniqueNarrative(bullets, seen, isZh
                         ? (facts.getGrossMarginChange().compareTo(BigDecimal.ZERO) >= 0
                                 ? "盈利质量并未恶化，产品组合和执行节奏仍在支撑本期表现。"
                                 : "盈利质量开始承压，产品组合和成本结构值得继续跟踪。")
@@ -1418,21 +1416,25 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
 
         String profileWhatChanged = buildProfileWhatChanged(contract, isZh);
         if (profileWhatChanged != null) {
-            bullets.add(0, profileWhatChanged);
+            String key = normalizeNarrativeBullet(profileWhatChanged);
+            if (key != null && !seen.contains(key)) {
+                bullets.add(0, profileWhatChanged);
+                seen.add(key);
+            }
         }
-
-        return bullets.stream().distinct().limit(3).toList();
+        return bullets.stream().limit(3).toList();
     }
 
     private List<AnalysisReport.SupportingEvidence> buildDriverEvidence(AnalysisContract contract, boolean isZh) {
         List<AnalysisReport.SupportingEvidence> items = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
         for (BusinessSignals.SignalItem signal : collectDriverSignals(contract.getBusinessSignals())) {
             String label = localizedSignalTitle(signal, isZh);
-            items.add(AnalysisReport.SupportingEvidence.builder()
+            AnalysisReport.SupportingEvidence evidence = AnalysisReport.SupportingEvidence.builder()
                     .label(firstNonBlank(label, themeLabel(inferThemeDescriptor(signal), isZh)))
                     .detail(buildSignalEvidenceDetail(signal, contract, isZh, "driver"))
-                    .build());
-            if (items.size() >= 3) {
+                    .build();
+            if (addUniqueEvidence(items, seen, evidence) && items.size() >= 3) {
                 return items;
             }
         }
@@ -1441,18 +1443,18 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
         if (items.isEmpty() && facts != null) {
             String profileDriver = buildProfileDriverDetail(contract, isZh);
             if (profileDriver != null) {
-                items.add(AnalysisReport.SupportingEvidence.builder()
+                addUniqueEvidence(items, seen, AnalysisReport.SupportingEvidence.builder()
                         .label(isZh ? "产品线与客户需求" : "Product lines and customer demand")
                         .detail(profileDriver)
                         .build());
             }
-            items.add(AnalysisReport.SupportingEvidence.builder()
+            addUniqueEvidence(items, seen, AnalysisReport.SupportingEvidence.builder()
                     .label(isZh ? "需求与产品组合" : "Demand and mix")
                     .detail(isZh
                             ? "如果没有足够的叙事证据，当前最可能驱动结果的仍是需求韧性与产品组合变化。"
                             : "When narrative evidence is thin, the most plausible driver remains demand resilience and product mix.")
                     .build());
-            items.add(AnalysisReport.SupportingEvidence.builder()
+            addUniqueEvidence(items, seen, AnalysisReport.SupportingEvidence.builder()
                     .label(isZh ? "执行与效率" : "Execution and efficiency")
                     .detail(isZh
                             ? "管理层是否继续维持成本纪律和执行效率，决定了利润质量能否站稳。"
@@ -1464,13 +1466,14 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
 
     private List<AnalysisReport.SupportingEvidence> buildStrategicBetEvidence(AnalysisContract contract, boolean isZh) {
         List<AnalysisReport.SupportingEvidence> items = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
         for (BusinessSignals.SignalItem signal : collectStrategicSignals(contract.getBusinessSignals())) {
             String label = localizedSignalTitle(signal, isZh);
-            items.add(AnalysisReport.SupportingEvidence.builder()
+            AnalysisReport.SupportingEvidence evidence = AnalysisReport.SupportingEvidence.builder()
                     .label(firstNonBlank(label, themeLabel(inferThemeDescriptor(signal), isZh)))
                     .detail(buildSignalEvidenceDetail(signal, contract, isZh, "bet"))
-                    .build());
-            if (items.size() >= 2) {
+                    .build();
+            if (addUniqueEvidence(items, seen, evidence) && items.size() >= 2) {
                 return items;
             }
         }
@@ -1479,12 +1482,12 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
         if (items.isEmpty() && facts != null) {
             String profileBet = buildProfileStrategicBetDetail(contract, isZh);
             if (profileBet != null) {
-                items.add(AnalysisReport.SupportingEvidence.builder()
+                addUniqueEvidence(items, seen, AnalysisReport.SupportingEvidence.builder()
                         .label(isZh ? "核心产品押注" : "Core product bet")
                         .detail(profileBet)
                         .build());
             }
-            items.add(AnalysisReport.SupportingEvidence.builder()
+            addUniqueEvidence(items, seen, AnalysisReport.SupportingEvidence.builder()
                     .label(isZh ? "投资节奏" : "Investment pace")
                     .detail(isZh
                             ? "即便没有明确的新业务披露，市场接下来仍会观察公司是否继续为下一阶段增长保留投入空间。"
@@ -1496,12 +1499,10 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
 
     private List<String> buildWatchItems(AnalysisContract contract, boolean isZh) {
         List<String> watchItems = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
         for (BusinessSignals.SignalItem signal : collectWatchSignals(contract.getBusinessSignals())) {
             String item = buildSignalWatchItem(signal, contract, isZh);
-            if (item != null) {
-                watchItems.add(item);
-            }
-            if (watchItems.size() >= 3) {
+            if (addUniqueNarrative(watchItems, seen, item) && watchItems.size() >= 3) {
                 return watchItems;
             }
         }
@@ -1509,17 +1510,45 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
         FinancialFacts facts = contract.getFinancialFacts();
         if (watchItems.isEmpty() && facts != null) {
             String profileWatchItem = buildProfileWatchItem(contract, isZh);
-            if (profileWatchItem != null) {
-                watchItems.add(profileWatchItem);
-            }
-            watchItems.add(isZh
+            addUniqueNarrative(watchItems, seen, profileWatchItem);
+            addUniqueNarrative(watchItems, seen, isZh
                     ? "继续观察需求韧性能否支撑当前业务主线，而不是只看单季数字是否漂亮。"
                     : "Keep watching whether demand resilience still supports the core story rather than focusing only on one-quarter numbers.");
-            watchItems.add(isZh
+            addUniqueNarrative(watchItems, seen, isZh
                     ? "观察利润质量与现金转化能否继续为投入节奏提供空间。"
                     : "Watch whether profit quality and cash conversion still leave room for the current investment pace.");
         }
         return watchItems;
+    }
+
+    private boolean addUniqueNarrative(List<String> target, Set<String> seen, String value) {
+        String normalized = trimToNull(value);
+        String key = normalizeNarrativeBullet(normalized);
+        if (normalized == null || key == null || seen.contains(key)) {
+            return false;
+        }
+        seen.add(key);
+        target.add(normalized);
+        return true;
+    }
+
+    private boolean addUniqueEvidence(
+            List<AnalysisReport.SupportingEvidence> target,
+            Set<String> seen,
+            AnalysisReport.SupportingEvidence evidence) {
+        if (evidence == null) {
+            return false;
+        }
+        String key = normalizeNarrativeBullet(
+                firstNonBlank(
+                        trimToNull(evidence.getLabel()) + "::" + trimToNull(evidence.getDetail()),
+                        trimToNull(evidence.getDetail())));
+        if (key == null || seen.contains(key)) {
+            return false;
+        }
+        seen.add(key);
+        target.add(evidence);
+        return true;
     }
 
     private String buildSignalBullet(BusinessSignals.SignalItem signal, AnalysisContract contract, boolean isZh) {
@@ -1826,32 +1855,102 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
 
     private String describeCompanyBusiness(AnalysisContract contract, boolean isZh) {
         CompanyProfile profile = contract == null ? null : contract.getCompanyProfile();
-        if (profile != null) {
+        String modeDriven = describeBusinessFromAnalysisMode(profile, isZh);
+        if (modeDriven != null) {
+            return modeDriven;
+        }
+        if (profile != null && profile.hasHighConfidenceBusinessDescription()) {
             String businessModelSummary = trimToNull(profile.getBusinessModelSummary());
             if (businessModelSummary != null) {
-                return isZh ? translateBusinessModelSummary(businessModelSummary) : businessModelSummary;
-            }
-            String whatItSells = firstListItem(profile.getWhatItSells());
-            String customerType = localizeCustomerType(firstListItem(profile.getCustomerTypes()), isZh);
-            if (whatItSells != null) {
-                String localizedWhatItSells = localizeWhatItSells(whatItSells, isZh);
-                if (customerType != null) {
-                    return isZh
-                            ? localizedWhatItSells + "，面向" + customerType
-                            : localizedWhatItSells + " for " + customerType;
+                String translated = isZh ? translateBusinessModelSummary(businessModelSummary) : businessModelSummary;
+                if (translated != null) {
+                    return translated;
                 }
-                return localizedWhatItSells;
             }
         }
+        return describeIndustryLevelBusiness(contract, isZh);
+    }
 
+    private String describeBusinessFromAnalysisMode(CompanyProfile profile, boolean isZh) {
+        if (profile == null || !profile.hasHighConfidenceAnalysisMode() || profile.getAnalysisMode() == null) {
+            return null;
+        }
+        List<String> tags = profile.getBusinessTags() == null ? List.of() : profile.getBusinessTags();
+        return switch (profile.getAnalysisMode()) {
+            case CRYPTO_TREASURY -> {
+                if (tags.contains("ethereum_treasury")) {
+                    yield isZh ? "以太坊财库策略公司" : "ethereum treasury strategy company";
+                }
+                if (tags.contains("bitcoin_treasury")) {
+                    yield isZh ? "比特币财库策略公司" : "bitcoin treasury strategy company";
+                }
+                yield isZh ? "数字资产财库策略公司" : "digital asset treasury strategy company";
+            }
+            case CRYPTO_EXCHANGE -> isZh ? "加密资产交易与金融基础设施平台" : "crypto asset trading and financial infrastructure platform";
+            case PAYMENT_FINTECH -> isZh ? "支付与金融科技平台" : "payments and fintech platform";
+            case EXCHANGE_MARKET_INFRA -> isZh ? "金融市场基础设施与数据服务公司" : "financial market infrastructure and data services company";
+            case ASSET_MANAGER -> isZh ? "资产管理公司" : "asset management company";
+            case INSURANCE -> isZh ? "保险公司" : "insurance company";
+            case REIT -> isZh ? "房地产投资信托" : "real estate investment trust";
+            case SEMICONDUCTOR -> isZh ? "半导体与连接方案公司" : "semiconductor and connectivity solutions company";
+            case TELECOM_NETWORKING -> isZh ? "通信与网络设备公司" : "communications and networking equipment company";
+            case CONSUMER_PLATFORM -> isZh ? "消费互联网平台公司" : "consumer internet platform company";
+            case BIOTECH_PRE_REVENUE -> isZh ? "临床阶段生物科技公司" : "clinical-stage biotech company";
+            case COMMODITY_ENERGY -> isZh ? "资源与能源公司" : "commodity and energy company";
+            case FINANCIAL -> isZh ? "金融服务公司" : "financial services company";
+            case HOLDING -> isZh ? "控股与资本配置平台" : "holding and capital allocation platform";
+            default -> null;
+        };
+    }
+
+    private String describeIndustryLevelBusiness(AnalysisContract contract, boolean isZh) {
         FinancialFacts facts = contract == null ? null : contract.getFinancialFacts();
+        String summary = trimToNull(facts == null ? null : facts.getMarketBusinessSummary());
         String industry = trimToNull(facts == null ? null : facts.getMarketIndustry());
         String sector = trimToNull(facts == null ? null : facts.getMarketSector());
+
+        if (summary != null) {
+            String lowerSummary = summary.toLowerCase(Locale.ROOT);
+            if (containsAny(lowerSummary,
+                    "ethereum treasury", "ether treasury", "eth treasury", "ethereum holdings", "ether holdings",
+                    "digital asset treasury", "treasury strategy", "eth reserve")) {
+                return isZh ? "以太坊财库策略公司" : "ethereum treasury strategy company";
+            }
+            if (containsAny(lowerSummary,
+                    "bitcoin treasury", "btc treasury", "bitcoin holdings", "btc holdings",
+                    "digital asset treasury", "treasury strategy", "bitcoin reserve")) {
+                return isZh ? "比特币财库策略公司" : "bitcoin treasury strategy company";
+            }
+            if (containsAny(lowerSummary, "crypto", "cryptocurrency", "digital asset", "blockchain", "stablecoin", "staking", "custody")) {
+                return isZh ? "加密资产交易与金融基础设施平台" : "crypto asset trading and financial infrastructure platform";
+            }
+            if (containsAny(lowerSummary, "advertising", "ads", "advertisers", "search", "youtube")
+                    && containsAny(lowerSummary, "cloud", "google cloud")) {
+                return isZh ? "数字广告与云服务公司" : "digital advertising and cloud services company";
+            }
+            if (containsAny(lowerSummary, "advertising", "ads", "advertisers", "search", "youtube")) {
+                return isZh ? "数字广告与互联网平台公司" : "digital advertising and internet platform company";
+            }
+            if (containsAny(lowerSummary, "electric vehicle", "electric vehicles", "vehicle", "vehicles")
+                    && containsAny(lowerSummary, "energy storage", "energy generation", "solar")) {
+                return isZh ? "电动车与储能公司" : "electric vehicle and energy storage company";
+            }
+            if (containsAny(lowerSummary, "smartphone", "smartphones", "iphone", "personal computer", "ipad", "wearables")) {
+                return isZh ? "消费电子与软件服务公司" : "consumer electronics and software services company";
+            }
+            if (containsAny(lowerSummary,
+                    "serdes", "serializer/deserializer", "active electrical cable", "aec", "optical dsp", "retimer", "pcie", "ethernet")) {
+                return isZh ? "高速互连芯片与连接方案公司" : "high-speed interconnect chip and connectivity solutions company";
+            }
+            if (containsAny(lowerSummary, "brokerage", "event contracts", "index options", "futures")) {
+                return isZh ? "零售经纪与衍生品交易平台" : "retail brokerage and derivatives trading platform";
+            }
+        }
 
         if (industry != null) {
             String lower = industry.toLowerCase(Locale.ROOT);
             if (lower.contains("semiconductor")) {
-                return isZh ? "面向数据中心与连接场景的半导体公司" : "semiconductor company serving data-center and connectivity markets";
+                return isZh ? "半导体公司" : "semiconductor company";
             }
             if (lower.contains("software - infrastructure")) {
                 return isZh ? "企业基础设施软件公司" : "enterprise infrastructure software company";
@@ -1868,6 +1967,9 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
             if (lower.contains("information technology services")) {
                 return isZh ? "信息技术服务公司" : "information technology services company";
             }
+            if (lower.contains("internet content") || lower.contains("internet content & information")) {
+                return isZh ? "互联网平台公司" : "internet platform company";
+            }
             if (lower.contains("banks")) {
                 return isZh ? "银行" : "bank";
             }
@@ -1882,9 +1984,9 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
             }
             if (lower.contains("capital markets") || lower.contains("financial data") || lower.contains("financial exchanges")) {
                 return isZh ? "金融基础设施与数据服务公司" : "financial infrastructure and data services company";
+            }
+            return isZh ? industry + "领域公司" : industry + " company";
         }
-        return isZh ? industry + "领域公司" : industry + " company";
-    }
 
         if (sector != null) {
             String lower = sector.toLowerCase(Locale.ROOT);
@@ -1900,12 +2002,29 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
 
     private String describeConcreteProductBusiness(AnalysisContract contract, boolean isZh) {
         CompanyProfile profile = contract == null ? null : contract.getCompanyProfile();
-        if (profile != null && profile.getProductLines() != null && !profile.getProductLines().isEmpty()) {
+        if (profile != null && profile.hasHighConfidenceAnalysisMode()
+                && CompanyProfile.AnalysisMode.CRYPTO_TREASURY.equals(profile.getAnalysisMode())) {
+            List<String> tags = profile.getBusinessTags() == null ? List.of() : profile.getBusinessTags();
+            if (tags.contains("ethereum_treasury")) {
+                return isZh ? "以以太坊储备与资本配置为核心的公司" : "company centered on ethereum reserves and capital allocation";
+            }
+            if (tags.contains("bitcoin_treasury")) {
+                return isZh ? "以比特币储备与资本配置为核心的公司" : "company centered on bitcoin reserves and capital allocation";
+            }
+            return isZh ? "以数字资产储备与资本配置为核心的公司" : "company centered on digital asset reserves and capital allocation";
+        }
+        if (profile != null
+                && profile.hasHighConfidenceBusinessDescription()
+                && profile.getProductLines() != null
+                && !profile.getProductLines().isEmpty()) {
             List<String> displayProductLines = selectDisplayProductLines(profile.getProductLines(), isZh);
             String productPhrase = displayProductLines.isEmpty()
                     ? null
                     : String.join(isZh ? "、" : ", ", displayProductLines);
-            String customerPhrase = localizeCustomerType(firstListItem(profile.getCustomerTypes()), isZh);
+            String rawCustomer = firstListItem(profile.getCustomerTypes());
+            String customerPhrase = shouldDisplayCustomerType(rawCustomer)
+                    ? localizeCustomerType(rawCustomer, isZh)
+                    : null;
             if (productPhrase == null) {
                 return null;
             }
@@ -1978,7 +2097,8 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
                 "smartphones", "personal computers", "tablets", "wearables", "accessories",
                 "electric vehicles", "energy storage", "energy generation",
                 "serdes", "aec", "optical dsp", "retimer", "pcie", "ethernet",
-                "brokerage", "gold subscription", "event contracts", "index options", "futures")) {
+                "brokerage", "crypto asset trading", "custody", "staking", "stablecoin",
+                "gold subscription", "event contracts", "index options", "futures", "cloud services", "youtube")) {
             return 0;
         }
         if (containsAny(lower, "services")) {
@@ -2023,6 +2143,18 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
         if (lower.contains("brokerage")) {
             return "经纪业务";
         }
+        if (lower.contains("crypto asset trading")) {
+            return "加密资产交易";
+        }
+        if (lower.contains("custody")) {
+            return "托管";
+        }
+        if (lower.contains("staking")) {
+            return "质押";
+        }
+        if (lower.contains("stablecoin")) {
+            return "稳定币基础设施";
+        }
         if (lower.contains("gold subscription")) {
             return "Gold 订阅";
         }
@@ -2041,11 +2173,14 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
         if (lower.contains("advertising")) {
             return "广告";
         }
-        if (lower.contains("subscriptions")) {
-            return "订阅";
-        }
         if (lower.contains("deposit")) {
             return "存款产品";
+        }
+        if (lower.contains("cloud services")) {
+            return "云服务";
+        }
+        if (lower.contains("youtube")) {
+            return "YouTube";
         }
         return normalized;
     }
@@ -2059,14 +2194,20 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
         if (lower.contains("enterprise customers")) {
             return "企业客户";
         }
-        if (lower.contains("consumers")) {
-            return "消费者与零售用户";
-        }
         if (lower.contains("advertisers")) {
-            return "广告主与商户";
+            return "广告主";
+        }
+        if (lower.contains("merchants")) {
+            return "商户";
         }
         if (lower.contains("financial institutions")) {
             return "金融机构";
+        }
+        if (lower.contains("institutional customers")) {
+            return "机构客户";
+        }
+        if (lower.contains("retail investors")) {
+            return "零售投资者";
         }
         if (lower.contains("cloud and data-center customers")) {
             return "云和数据中心客户";
@@ -2143,24 +2284,37 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
     private String translateBusinessModelSummary(String summary) {
         String lower = summary.toLowerCase(Locale.ROOT);
         if (containsAny(lower, "smartphones", "personal computers", "tablets", "wearables", "accessories", "services")) {
-            return "提供智能手机、个人电脑、平板、可穿戴设备与服务的消费科技公司";
+            return "消费电子与软件服务公司";
         }
         if (containsAny(lower, "electric vehicles", "energy generation", "energy storage")) {
-            return "提供电动车、储能与能源解决方案的公司";
+            return "电动车与储能公司";
         }
         if (containsAny(lower, "serdes", "active electrical cable", "optical dsp", "retimer", "pcie", "ethernet")) {
-            return "提供高速互连芯片与连接方案的公司";
+            return "高速互连芯片与连接方案公司";
+        }
+        if (containsAny(lower, "crypto", "cryptocurrency", "digital asset", "blockchain", "stablecoin", "staking", "custody")) {
+            return "加密资产交易与金融基础设施平台";
         }
         if (containsAny(lower, "brokerage", "gold subscription", "event contracts", "index options", "futures")) {
-            return "提供经纪、订阅与衍生品交易产品的平台公司";
+            return "零售经纪与衍生品交易平台";
         }
-        if (containsAny(lower, "gold subscription", "event contracts", "index options", "futures", "brokerage")) {
-            return "提供经纪、订阅与金融产品的平台公司";
+        if (containsAny(lower, "advertising", "ads", "advertisers", "search", "youtube")
+                && containsAny(lower, "cloud", "google cloud")) {
+            return "数字广告与云服务公司";
         }
-        if (containsAny(lower, "cloud", "software", "platform")) {
-            return "提供软件或平台服务的公司";
+        if (containsAny(lower, "advertising", "ads", "advertisers", "search", "youtube")) {
+            return "数字广告与互联网平台公司";
         }
-        return summary;
+        return null;
+    }
+
+    private boolean shouldDisplayCustomerType(String customerType) {
+        String normalized = trimToNull(customerType);
+        if (normalized == null) {
+            return false;
+        }
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        return !containsAny(lower, "enterprise customers");
     }
 
     private String buildProfileWhatChanged(AnalysisContract contract, boolean isZh) {
@@ -3381,10 +3535,19 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
         if (items == null) {
             return null;
         }
-        return items.stream()
-                .map(this::trimToNull)
-                .filter(Objects::nonNull)
-                .toList();
+        LinkedHashMap<String, String> deduped = new LinkedHashMap<>();
+        for (String item : items) {
+            String normalized = trimToNull(item);
+            if (normalized == null) {
+                continue;
+            }
+            String key = normalizeNarrativeBullet(normalized);
+            if (key == null || deduped.containsKey(key)) {
+                continue;
+            }
+            deduped.put(key, normalized);
+        }
+        return new ArrayList<>(deduped.values());
     }
 
     private List<AnalysisReport.SupportingEvidence> cleanSupportingEvidence(
@@ -3392,23 +3555,46 @@ public abstract class BaseAiStrategy implements AiAnalysisStrategy {
         if (items == null) {
             return null;
         }
-        return items.stream()
-                .map(item -> {
-                    if (item == null) {
-                        return null;
-                    }
-                    String label = trimToNull(item.getLabel());
-                    String detail = trimToNull(item.getDetail());
-                    if (label == null && detail == null) {
-                        return null;
-                    }
-                    return AnalysisReport.SupportingEvidence.builder()
-                            .label(label != null ? label : "Evidence")
-                            .detail(detail != null ? detail : "")
-                            .build();
-                })
-                .filter(Objects::nonNull)
-                .toList();
+        LinkedHashMap<String, AnalysisReport.SupportingEvidence> deduped = new LinkedHashMap<>();
+        for (AnalysisReport.SupportingEvidence item : items) {
+            if (item == null) {
+                continue;
+            }
+            String label = trimToNull(item.getLabel());
+            String detail = trimToNull(item.getDetail());
+            if (label == null && detail == null) {
+                continue;
+            }
+            AnalysisReport.SupportingEvidence normalizedItem = AnalysisReport.SupportingEvidence.builder()
+                    .label(label != null ? label : "Evidence")
+                    .detail(detail != null ? detail : "")
+                    .build();
+            String key = normalizeNarrativeBullet(
+                    firstNonBlank(normalizedItem.getLabel(), "") + " " + firstNonBlank(normalizedItem.getDetail(), ""));
+            if (key == null || deduped.containsKey(key)) {
+                continue;
+            }
+            deduped.put(key, normalizedItem);
+        }
+        return new ArrayList<>(deduped.values());
+    }
+
+    private String normalizeNarrativeBullet(String text) {
+        String normalized = trimToNull(text);
+        if (normalized == null) {
+            return null;
+        }
+        normalized = normalized
+                .replace('“', '"')
+                .replace('”', '"')
+                .replace('’', '\'')
+                .replace('‘', '\'')
+                .replaceAll("\"[^\"]+\"", "\"quoted\"")
+                .replaceAll("\\s+", " ")
+                .replaceAll("[，,。.!?；;：:]+", "")
+                .toLowerCase(Locale.ROOT)
+                .trim();
+        return normalized.isBlank() ? null : normalized;
     }
 
     private String normalizeVerdict(String verdict) {

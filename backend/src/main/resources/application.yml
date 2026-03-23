@@ -10,9 +10,10 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       connection-timeout: 30000       # 30s 连接超时
-      idle-timeout: 600000            # 10m 空闲超时
-      max-lifetime: 1800000           # 30m 最大生命周期
-      minimum-idle: 2                 # 最小空闲连接
+      idle-timeout: 120000            # 2m 空闲超时（避免 Neon/pooler 提前收走）
+      max-lifetime: 240000            # 4m 最大生命周期，短于托管库常见连接回收窗口
+      keepalive-time: 30000           # 30s 心跳，降低 closed connection 噪音
+      minimum-idle: 1                 # 最小空闲连接
       maximum-pool-size: 10           # 最大连接数
   
   jpa:

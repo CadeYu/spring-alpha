@@ -2,6 +2,8 @@ package com.springalpha.backend.financial.service;
 
 import com.springalpha.backend.financial.model.FinancialFacts;
 
+import java.util.Optional;
+
 /**
  * Financial Data Service Interface - Defines the contract for obtaining
  * financial data.
@@ -53,6 +55,10 @@ public interface FinancialDataService {
             String ticker,
             String reportType) {
         return getHistoricalData(ticker);
+    }
+
+    default Optional<String> resolveSecSearchIdentifier(String ticker) {
+        return Optional.empty();
     }
 
     String[] getSupportedTickers();

@@ -214,6 +214,14 @@ public class SecCompanyFactsFinancialDataService implements FinancialDataService
         return directory.entries().keySet().toArray(String[]::new);
     }
 
+    @Override
+    public Optional<String> resolveSecSearchIdentifier(String ticker) {
+        if (ticker == null || ticker.isBlank()) {
+            return Optional.empty();
+        }
+        return resolveCik(ticker.toUpperCase());
+    }
+
     private FinancialFacts loadFinancialFacts(String upperTicker, String reportType) {
         Optional<String> cik = resolveCik(upperTicker);
         if (cik.isEmpty()) {

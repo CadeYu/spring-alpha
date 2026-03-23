@@ -37,9 +37,9 @@ class CompanyProfileSnapshotServiceTest {
                 .build();
         Map<String, String> textEvidence = Map.of("MD&A", "signal");
 
-        when(repository.findById("company-profile:CRDO:quarterly:2026-03-01:FY2026-Q3:v3"))
+        when(repository.findById("company-profile:CRDO:quarterly:2026-03-01:FY2026-Q3:v5"))
                 .thenReturn(Optional.of(snapshotEntry(
-                        "company-profile:CRDO:quarterly:2026-03-01:FY2026-Q3:v3",
+                        "company-profile:CRDO:quarterly:2026-03-01:FY2026-Q3:v5",
                         objectMapper.writeValueAsString(stored),
                         expectedSourceHash("CRDO", "quarterly", facts, signals, textEvidence))));
 
@@ -71,7 +71,7 @@ class CompanyProfileSnapshotServiceTest {
         assertSame(extracted, result);
         ArgumentCaptor<CompanyProfileSnapshotEntry> captor = ArgumentCaptor.forClass(CompanyProfileSnapshotEntry.class);
         verify(repository).save(captor.capture());
-        assertEquals("company-profile:CRDO:quarterly:2026-03-01:FY2026-Q3:v3", captor.getValue().getSnapshotKey());
+        assertEquals("company-profile:CRDO:quarterly:2026-03-01:FY2026-Q3:v5", captor.getValue().getSnapshotKey());
     }
 
     private FinancialFacts sampleFacts() {
@@ -98,7 +98,7 @@ class CompanyProfileSnapshotServiceTest {
                 .periodLabel("FY2026 Q3")
                 .filingDate("2026-03-01")
                 .sourceHash(sourceHash)
-                .extractorVersion("v3")
+                .extractorVersion("v5")
                 .profileJson(profileJson)
                 .createdAt(Instant.parse("2026-03-15T00:00:00Z"))
                 .updatedAt(Instant.parse("2026-03-15T00:00:00Z"))

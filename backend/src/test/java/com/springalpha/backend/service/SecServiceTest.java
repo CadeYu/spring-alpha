@@ -5,6 +5,8 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.junit.jupiter.api.Test;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class SecServiceTest {
@@ -174,7 +176,39 @@ class SecServiceTest {
         assertArrayEquals(new String[] { "10-Q", "10-Q/A" }, secService.filingTypesForLatestQuarter());
     }
 
-    private static final class NoopFinancialDataService implements FinancialDataService {
+    @Test
+    void buildBrowseEdgarSearchUrlUsesResolvedCikWhenAvailable() {
+        SecService service = new SecService(new NoopFinancialDataService() {
+            @Override
+            public Optional<String> resolveSecSearchIdentifier(String ticker) {
+                return Optional.of("0001652044");
+            }
+        });
+
+        String url = service.buildBrowseEdgarSearchUrl(
+                service.getFinancialDataService().resolveSecSearchIdentifier("GOOGL").orElse("GOOGL"),
+                "10-Q");
+
+        assertTrue(url.contains("CIK=0001652044"));
+        assertTrue(url.contains("type=10-Q"));
+    }
+
+    @Test
+    void getLatestFilingContentFailsFastWhenTickerIsNotSupportedBySecDirectory() {
+        SecService service = new SecService(new NoopFinancialDataService() {
+            @Override
+            public boolean isSupported(String ticker) {
+                return false;
+            }
+        });
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.getLatestFilingContent("XYZ").block());
+
+        assertTrue(ex.getMessage().contains("not mapped in SEC company_tickers.json"));
+    }
+
+    private static class NoopFinancialDataService implements FinancialDataService {
 
         @Override
         public com.springalpha.backend.financial.model.FinancialFacts getFinancialFacts(String ticker) {

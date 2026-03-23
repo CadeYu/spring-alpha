@@ -132,7 +132,7 @@ public class FinancialAnalysisService {
         return credentialCheck.thenMany(factsMono.flatMapMany(facts -> {
                     boolean isZh = "zh".equalsIgnoreCase(lang);
                     // Step 2: 获取最新季度 SEC filing + RAG 文本 (可降级)
-                    // 如果 SEC/向量检索链路失败，不阻塞分析，降级为仅 FMP 数据模式
+                    // 如果 SEC/向量检索链路失败，不阻塞分析，降级为仅 facts 驱动的分析模式
                     Mono<SourceEvidenceBundle> textEvidenceMono = secService.getLatestFilingContent(
                             ticker)
                             .flatMap(content -> Mono.fromCallable(() -> {
@@ -213,7 +213,7 @@ public class FinancialAnalysisService {
                             .timeout(java.time.Duration.ofSeconds(30))
                             // 降级：SEC 失败时，使用空 textEvidence 继续分析
                             .onErrorResume(e -> {
-                                log.warn("⚠️ SEC/RAG pipeline failed, degrading to FMP-only mode: {}", e.getMessage());
+                                log.warn("⚠️ SEC/RAG pipeline failed, degrading to facts-only mode: {}", e.getMessage());
                                 return Mono.just(new SourceEvidenceBundle(
                                         new HashMap<>(),
                                         false,

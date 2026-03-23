@@ -20,7 +20,7 @@ import java.util.Optional;
 @Service
 public class CompanyProfileSnapshotService {
 
-    static final String EXTRACTOR_VERSION = "v3";
+    static final String EXTRACTOR_VERSION = "v5";
     private static final Logger log = LoggerFactory.getLogger(CompanyProfileSnapshotService.class);
 
     private final CompanyProfileSnapshotRepository repository;

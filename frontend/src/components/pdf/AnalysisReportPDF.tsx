@@ -662,6 +662,33 @@ function cleanEvidence(items?: SupportingEvidence[]): SupportingEvidence[] {
   return items?.filter((item) => item?.detail?.trim()) ?? [];
 }
 
+function normalizeBulletKey(value?: string): string | null {
+  if (!value) return null;
+  const normalized = value
+    .trim()
+    .replace(/[“”‘’]/g, '"')
+    .replace(/"[^"]+"/g, '"quoted"')
+    .replace(/\s+/g, ' ')
+    .replace(/[，,。.!?；;：:]/g, '')
+    .toLowerCase();
+  return normalized || null;
+}
+
+function dedupeBullets(values: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    const key = normalizeBulletKey(trimmed);
+    if (!trimmed || !key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(trimmed);
+  }
+  return deduped;
+}
+
 function estimatePosterWeight(report: AnalysisReport): number {
   const thesis = report.coreThesis;
   const textBits = [
@@ -737,9 +764,9 @@ function compactQuestionEvidence(
 
 function buildQuestionSections(report: AnalysisReport, lang: string, density: PosterDensity): PosterQuestionSection[] {
   const isZh = lang === 'zh';
-  const whatChanged = report.coreThesis?.whatChanged?.filter(Boolean) ?? [];
-  const legacyKeyPoints = report.coreThesis?.keyPoints?.filter(Boolean) ?? [];
-  const watchItems = report.coreThesis?.watchItems?.filter(Boolean) ?? [];
+  const whatChanged = dedupeBullets(report.coreThesis?.whatChanged?.filter(Boolean) ?? []);
+  const legacyKeyPoints = dedupeBullets(report.coreThesis?.keyPoints?.filter(Boolean) ?? []);
+  const watchItems = dedupeBullets(report.coreThesis?.watchItems?.filter(Boolean) ?? []);
   const drivers = cleanEvidence(report.coreThesis?.drivers);
   const strategicBets = cleanEvidence(report.coreThesis?.strategicBets);
   const legacyEvidence = cleanEvidence(report.coreThesis?.supportingEvidence);

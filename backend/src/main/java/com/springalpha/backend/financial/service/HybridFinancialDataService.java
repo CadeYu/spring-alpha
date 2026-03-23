@@ -136,6 +136,11 @@ public class HybridFinancialDataService implements FinancialDataService {
         return secFinancialDataService.getSupportedTickers();
     }
 
+    @Override
+    public Optional<String> resolveSecSearchIdentifier(String ticker) {
+        return secFinancialDataService.resolveSecSearchIdentifier(ticker);
+    }
+
     private FinancialFacts loadFinancialFacts(String upperTicker, String reportType) {
         FinancialFacts facts = secFinancialDataService.getFinancialFacts(upperTicker, reportType);
         if (facts != null) {

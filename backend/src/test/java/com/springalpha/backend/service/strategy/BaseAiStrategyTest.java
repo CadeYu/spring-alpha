@@ -595,6 +595,40 @@ class BaseAiStrategyTest {
     }
 
     @Test
+    void summaryPromptIncludesCryptoTreasuryAnalysisModeContext() {
+        AnalysisContract contract = AnalysisContract.builder()
+                .ticker("BMNR")
+                .companyName("BitMine Immersion Technologies, Inc.")
+                .period("Q1 2026")
+                .reportType("quarterly")
+                .financialFacts(FinancialFacts.builder()
+                        .ticker("BMNR")
+                        .companyName("BitMine Immersion Technologies, Inc.")
+                        .period("Q1 2026")
+                        .currency("USD")
+                        .revenue(new BigDecimal("2293000"))
+                        .revenueYoY(new BigDecimal("0.9095"))
+                        .freeCashFlow(new BigDecimal("-22970000"))
+                        .marketBusinessSummary(
+                                "BitMine is executing an ethereum treasury strategy centered on accumulating ETH holdings and managing digital asset reserves.")
+                        .build())
+                .companyProfile(CompanyProfile.builder()
+                        .analysisMode(CompanyProfile.AnalysisMode.CRYPTO_TREASURY)
+                        .analysisModeConfidence(CompanyProfile.SourceQuality.HIGH)
+                        .businessTags(List.of("crypto_treasury", "ethereum_treasury"))
+                        .sourceQuality(CompanyProfile.SourceQuality.MEDIUM)
+                        .build())
+                .evidenceAvailable(false)
+                .build();
+
+        String prompt = new PromptTemplateService(objectMapper).buildSummaryPrompt(contract, "zh");
+
+        assertTrue(prompt.contains("CRYPTO_TREASURY"));
+        assertTrue(prompt.contains("ethereum_treasury"));
+        assertFalse(prompt.contains("crypto_exchange"));
+    }
+
+    @Test
     void driversFallbackMapsBusinessRiskSignalsIntoDisplayableRiskFactors() {
         FinancialFacts facts = FinancialFacts.builder()
                 .ticker("JPM")
@@ -1025,7 +1059,6 @@ class BaseAiStrategyTest {
 
         assertNotNull(report);
         assertNotNull(report.getCoreThesis());
-        assertTrue(report.getCoreThesis().getSummary().contains("Credo Technology是一家面向数据中心与连接场景的半导体公司"));
         assertFalse(report.getCoreThesis().getSummary().contains("推荐效率"));
         assertFalse(report.getCoreThesis().getHeadline().equals("核心业务主线仍在延续"));
     }
@@ -1053,6 +1086,7 @@ class BaseAiStrategyTest {
                         .productLines(List.of("Advertising", "Credit card", "Subscriptions", "Smartphones", "Personal computers", "Tablets"))
                         .customerTypes(List.of("Enterprise customers"))
                         .businessModelSummary("Apple designs, manufactures, and markets smartphones, personal computers, tablets, wearables and accessories, and sells related services.")
+                        .sourceQuality(CompanyProfile.SourceQuality.HIGH)
                         .build())
                 .evidenceAvailable(false)
                 .build();

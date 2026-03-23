@@ -44,6 +44,33 @@ const verdictMap = {
     },
 } as const;
 
+function normalizeBulletKey(value?: string): string | null {
+    if (!value) return null;
+    const normalized = value
+        .trim()
+        .replace(/[“”‘’]/g, '"')
+        .replace(/"[^"]+"/g, '"quoted"')
+        .replace(/\s+/g, ' ')
+        .replace(/[，,。.!?；;：:]/g, '')
+        .toLowerCase();
+    return normalized || null;
+}
+
+function dedupeBullets(values: string[]): string[] {
+    const seen = new Set<string>();
+    const deduped: string[] = [];
+    for (const value of values) {
+        const trimmed = value?.trim();
+        const key = normalizeBulletKey(trimmed);
+        if (!trimmed || !key || seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        deduped.push(trimmed);
+    }
+    return deduped;
+}
+
 function splitFallbackSummary(summary?: string): string[] {
     if (!summary) return [];
     return summary
@@ -161,11 +188,11 @@ export function ExecutiveSummary({ thesis, businessSignals, summary, metadata, l
         ? verdictMap[thesis.verdict as keyof typeof verdictMap]
         : verdictMap.mixed;
 
-    const whatChanged = thesis?.whatChanged?.filter(Boolean) ?? [];
-    const legacyKeyPoints = thesis?.keyPoints?.filter(Boolean) ?? [];
+    const whatChanged = dedupeBullets(thesis?.whatChanged?.filter(Boolean) ?? []);
+    const legacyKeyPoints = dedupeBullets(thesis?.keyPoints?.filter(Boolean) ?? []);
     const drivers = cleanEvidence(thesis?.drivers);
     const strategicBets = cleanEvidence(thesis?.strategicBets);
-    const watchItems = thesis?.watchItems?.filter(Boolean) ?? [];
+    const watchItems = dedupeBullets(thesis?.watchItems?.filter(Boolean) ?? []);
     const legacyEvidence = cleanEvidence(thesis?.supportingEvidence);
 
     const displayedWhatChanged = whatChanged.length > 0

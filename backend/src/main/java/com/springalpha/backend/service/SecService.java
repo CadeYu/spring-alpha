@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.io.IOException;
+import java.util.Optional;
 
 /**
  * SEC 服务 (ETL Service)
@@ -47,6 +48,9 @@ public class SecService {
 
     public Mono<String> getLatestFilingContent(String ticker) {
         return Mono.fromCallable(() -> {
+            if (!financialDataService.isSupported(ticker)) {
+                throw new RuntimeException("SEC filing search is unavailable because ticker is not mapped in SEC company_tickers.json: " + ticker);
+            }
             log.info("🔍 [1/3] 开始查找 {} 的最新季度财报索引页...", ticker);
             // 1. 找到索引页 URL
             String indexUrl = findLatestFilingIndexUrl(ticker, QUARTERLY_FILING_TYPES);
@@ -67,15 +71,14 @@ public class SecService {
     }
 
     private String findLatestFilingIndexUrl(String ticker, String[] docTypes) {
+        String lookupKey = resolveSearchIdentifier(ticker);
         for (String type : docTypes) {
             // Retry each doc type up to 2 times (SEC can be slow from overseas)
             for (int attempt = 1; attempt <= 2; attempt++) {
                 try {
-                    String searchUrl = String.format(
-                            "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=%s&type=%s&dateb=&owner=exclude&count=10",
-                            ticker, type);
+                    String searchUrl = buildBrowseEdgarSearchUrl(lookupKey, type);
 
-                    log.info("🔍 Searching SEC for {} (Type: {}, attempt {}/2)", ticker, type, attempt);
+                    log.info("🔍 Searching SEC for {} via {} (Type: {}, attempt {}/2)", ticker, lookupKey, type, attempt);
 
                     Document doc = Jsoup.connect(searchUrl)
                             .userAgent(USER_AGENT)
@@ -102,6 +105,18 @@ public class SecService {
         }
 
         throw new RuntimeException("No supported SEC filing found for ticker: " + ticker);
+    }
+
+    String buildBrowseEdgarSearchUrl(String lookupKey, String filingType) {
+        return String.format(
+                "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=%s&type=%s&dateb=&owner=exclude&count=10",
+                lookupKey,
+                filingType);
+    }
+
+    private String resolveSearchIdentifier(String ticker) {
+        Optional<String> resolved = financialDataService.resolveSecSearchIdentifier(ticker);
+        return resolved.filter(value -> !value.isBlank()).orElse(ticker);
     }
 
     String extractLatestIndexUrl(Document doc, String targetType) {

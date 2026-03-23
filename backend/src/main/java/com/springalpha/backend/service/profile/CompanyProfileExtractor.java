@@ -36,22 +36,38 @@ public class CompanyProfileExtractor {
         LinkedHashSet<String> customers = new LinkedHashSet<>();
         LinkedHashSet<String> productLines = new LinkedHashSet<>();
         LinkedHashSet<String> keyKpis = new LinkedHashSet<>();
+        LinkedHashSet<String> businessTags = new LinkedHashSet<>();
         List<CompanyProfile.SourceRef> sourceRefs = new ArrayList<>();
 
         inferFromBusinessSummary(businessSummary, whatItSells, customers, productLines, keyKpis, sourceRefs);
         inferFromSignals(signals, productLines, customers, keyKpis, sourceRefs);
         inferFromEvidence(textEvidence, productLines, customers, keyKpis, sourceRefs);
         addMetricFallbackKpis(facts, keyKpis);
+        inferBusinessTags(facts, businessSummary, signals, textEvidence, productLines, customers, keyKpis, businessTags);
 
         String businessModelSummary = buildBusinessModelSummary(
                 businessSummary,
                 whatItSells,
                 customers,
                 productLines);
+        CompanyProfile.SourceQuality sourceQuality = assessSourceQuality(
+                businessSummary,
+                whatItSells,
+                customers,
+                productLines,
+                businessModelSummary);
+        CompanyProfile.AnalysisMode analysisMode = inferAnalysisMode(facts, businessTags, productLines, customers, keyKpis);
+        CompanyProfile.SourceQuality analysisModeConfidence = assessAnalysisModeConfidence(
+                analysisMode,
+                facts,
+                businessTags,
+                productLines,
+                customers,
+                textEvidence);
 
         return CompanyProfile.builder()
                 .ticker(ticker == null ? null : ticker.toUpperCase(Locale.ROOT))
-                .reportType("quarterly")
+                .reportType(reportType == null ? "quarterly" : reportType)
                 .period(period)
                 .filingDate(filingDate)
                 .whatItSells(limit(whatItSells))
@@ -59,6 +75,10 @@ public class CompanyProfileExtractor {
                 .productLines(limit(productLines))
                 .keyKpis(limit(keyKpis))
                 .businessModelSummary(businessModelSummary)
+                .sourceQuality(sourceQuality)
+                .analysisMode(analysisMode)
+                .analysisModeConfidence(analysisModeConfidence)
+                .businessTags(limit(businessTags))
                 .sourceRefs(sourceRefs.stream().limit(6).toList())
                 .build();
     }
@@ -76,11 +96,13 @@ public class CompanyProfileExtractor {
 
         for (String sentence : splitSentences(businessSummary)) {
             String normalized = sentence.toLowerCase(Locale.ROOT);
-            if (containsAny(normalized, "provides", "develops", "designs", "delivers", "offers", "sells")) {
+            if (containsAny(normalized, "provides", "develops", "designs", "delivers", "offers", "sells")
+                    && hasSpecificBusinessSignal(normalized)) {
                 addItem(whatItSells, toBusinessPhrase(sentence));
                 addRef(sourceRefs, "whatItSells", "Yahoo business summary", sentence);
             }
-            if (containsAny(normalized, "customers", "customer", "clients", "enterprises", "consumers", "cloud", "hyperscale", "advertisers", "financial institutions")) {
+            if (containsAny(normalized, "customers", "customer", "clients", "enterprises", "consumers", "cloud", "hyperscale",
+                    "advertisers", "financial institutions", "institutional", "retail investors", "merchants")) {
                 addItems(customers, inferCustomerTypes(sentence));
                 addRef(sourceRefs, "customerTypes", "Yahoo business summary", sentence);
             }
@@ -179,6 +201,261 @@ public class CompanyProfileExtractor {
         }
     }
 
+    private void inferBusinessTags(
+            FinancialFacts facts,
+            String businessSummary,
+            BusinessSignals signals,
+            Map<String, String> textEvidence,
+            Set<String> productLines,
+            Set<String> customers,
+            Set<String> keyKpis,
+            Set<String> businessTags) {
+        String combined = buildCombinedContext(facts, businessSummary, signals, textEvidence);
+        if (combined == null) {
+            return;
+        }
+        String lower = combined.toLowerCase(Locale.ROOT);
+        String industry = trimToNull(facts == null ? null : facts.getMarketIndustry());
+        String sector = trimToNull(facts == null ? null : facts.getMarketSector());
+        String lowerIndustry = industry == null ? "" : industry.toLowerCase(Locale.ROOT);
+        String lowerSector = sector == null ? "" : sector.toLowerCase(Locale.ROOT);
+
+        addIf(businessTags, containsAny(lower,
+                "crypto", "cryptocurrency", "digital asset", "blockchain", "stablecoin", "staking", "custody"),
+                "crypto");
+        addIf(businessTags, containsAny(lower, "crypto exchange", "cryptocurrency exchange", "digital asset trading", "crypto asset trading"),
+                "crypto_exchange");
+        addIf(businessTags, containsAny(lower, "custody", "custodial"), "custody");
+        addIf(businessTags, containsAny(lower, "staking"), "staking");
+        addIf(businessTags, containsAny(lower, "stablecoin"), "stablecoin");
+        addIf(businessTags, containsAny(lower,
+                "digital asset treasury", "crypto treasury", "treasury strategy", "digital asset reserve",
+                "crypto reserve", "treasury reserve", "net asset value", "nav per share"),
+                "crypto_treasury");
+        addIf(businessTags, containsAny(lower,
+                "ethereum treasury", "ether treasury", "eth treasury", "ethereum holdings", "ether holdings",
+                "accumulating eth", "eth reserve", "ether reserve"),
+                "ethereum_treasury");
+        addIf(businessTags, containsAny(lower,
+                "bitcoin treasury", "btc treasury", "bitcoin holdings", "btc holdings",
+                "accumulating bitcoin", "bitcoin reserve", "btc reserve"),
+                "bitcoin_treasury");
+
+        addIf(businessTags, containsAny(lower, "advertising", "ads", "advertisers"), "digital_advertising");
+        addIf(businessTags, containsAny(lower, "cloud", "google cloud", "azure", "aws"), "cloud");
+        addIf(businessTags, containsAny(lower, "youtube"), "youtube");
+        addIf(businessTags, containsAny(lower, "search"), "search_platform");
+        addIf(businessTags, containsAny(lower, "iphone", "smartphone", "smartphones", "ipad", "mac", "wearables"), "consumer_hardware");
+        addIf(businessTags, containsAny(lower, "electric vehicle", "electric vehicles", "vehicle", "vehicles"), "electric_vehicles");
+        addIf(businessTags, containsAny(lower, "energy storage", "battery storage"), "energy_storage");
+        addIf(businessTags, containsAny(lower, "energy generation", "solar"), "energy_generation");
+        addIf(businessTags, containsAny(lower, "serdes", "serializer/deserializer", "active electrical cable", "aec", "optical dsp", "retimer", "pcie", "ethernet"),
+                "semiconductor_connectivity");
+        addIf(businessTags, isAiConnectivityContext(lower), "ai_connectivity");
+        addIf(businessTags, containsAny(lower, "brokerage"), "brokerage");
+        addIf(businessTags, containsAny(lower, "event contracts", "index options", "futures"), "derivatives");
+        addIf(businessTags, containsAny(lower, "credit card", "payment network", "merchant acquiring"), "payments");
+        addIf(businessTags, containsAny(lower, "deposit", "checking", "savings"), "deposit_products");
+        addIf(businessTags, containsAny(lower, "asset management", "assets under management", "aum"), "asset_management");
+        addIf(businessTags, containsAny(lower, "exchange", "market data", "index provider", "clearing"), "market_infrastructure");
+        addIf(businessTags, containsAny(lower, "insurance", "underwriting"), "insurance");
+        addIf(businessTags, containsAny(lower, "reit", "real estate investment trust", "rental income"), "reit");
+        addIf(businessTags, containsAny(lower, "drug candidate", "clinical trial", "phase 1", "phase 2", "phase 3"), "biotech");
+        addIf(businessTags, containsAny(lower, "oil", "gas", "copper", "gold mine", "mining", "commodity"), "commodity_energy");
+
+        addIf(businessTags, lowerIndustry.contains("capital markets") || lowerIndustry.contains("financial exchanges"), "market_infrastructure");
+        addIf(businessTags, lowerIndustry.contains("asset management"), "asset_management");
+        addIf(businessTags, lowerIndustry.contains("insurance"), "insurance");
+        addIf(businessTags, lowerIndustry.contains("reit"), "reit");
+        addIf(businessTags, lowerIndustry.contains("semiconductor"), "semiconductor");
+        addIf(businessTags, lowerIndustry.contains("communication equipment") || lowerIndustry.contains("networking"), "networking");
+        addIf(businessTags, lowerIndustry.contains("internet content"), "internet_platform");
+        addIf(businessTags, lowerSector.contains("financial"), "financial_sector");
+
+        if (productLines.contains("Crypto asset trading")) {
+            businessTags.add("crypto_exchange");
+        }
+        if (productLines.contains("Cloud services")) {
+            businessTags.add("cloud");
+        }
+        if (productLines.contains("YouTube")) {
+            businessTags.add("youtube");
+        }
+        if (productLines.contains("Smartphones")) {
+            businessTags.add("consumer_hardware");
+        }
+        if (customers.contains("Advertisers")) {
+            businessTags.add("digital_advertising");
+        }
+        if (keyKpis.contains("Assets Under Management")) {
+            businessTags.add("asset_management");
+        }
+    }
+
+    private CompanyProfile.AnalysisMode inferAnalysisMode(
+            FinancialFacts facts,
+            Set<String> businessTags,
+            Set<String> productLines,
+            Set<String> customers,
+            Set<String> keyKpis) {
+        if (businessTags.contains("reit")) {
+            return CompanyProfile.AnalysisMode.REIT;
+        }
+        if (businessTags.contains("ethereum_treasury") || businessTags.contains("bitcoin_treasury")
+                || businessTags.contains("crypto_treasury")) {
+            return CompanyProfile.AnalysisMode.CRYPTO_TREASURY;
+        }
+        if (businessTags.contains("crypto_exchange") || businessTags.contains("custody")
+                || businessTags.contains("staking") || businessTags.contains("stablecoin")) {
+            return CompanyProfile.AnalysisMode.CRYPTO_EXCHANGE;
+        }
+        if (businessTags.contains("insurance")) {
+            return CompanyProfile.AnalysisMode.INSURANCE;
+        }
+        if (businessTags.contains("asset_management")) {
+            return CompanyProfile.AnalysisMode.ASSET_MANAGER;
+        }
+        if (businessTags.contains("market_infrastructure")) {
+            return CompanyProfile.AnalysisMode.EXCHANGE_MARKET_INFRA;
+        }
+        if (businessTags.contains("payments")) {
+            return CompanyProfile.AnalysisMode.PAYMENT_FINTECH;
+        }
+        if (businessTags.contains("biotech")
+                && (facts == null || facts.getRevenue() == null || facts.getRevenue().signum() <= 0)) {
+            return CompanyProfile.AnalysisMode.BIOTECH_PRE_REVENUE;
+        }
+        if (businessTags.contains("commodity_energy")) {
+            return CompanyProfile.AnalysisMode.COMMODITY_ENERGY;
+        }
+        if (businessTags.contains("semiconductor") || businessTags.contains("semiconductor_connectivity")
+                || businessTags.contains("ai_connectivity")) {
+            return CompanyProfile.AnalysisMode.SEMICONDUCTOR;
+        }
+        if (businessTags.contains("networking")) {
+            return CompanyProfile.AnalysisMode.TELECOM_NETWORKING;
+        }
+        if (businessTags.contains("consumer_hardware") || businessTags.contains("digital_advertising")
+                || businessTags.contains("cloud") || businessTags.contains("internet_platform")
+                || businessTags.contains("electric_vehicles")) {
+            return CompanyProfile.AnalysisMode.OPERATING;
+        }
+
+        String industry = trimToNull(facts == null ? null : facts.getMarketIndustry());
+        String sector = trimToNull(facts == null ? null : facts.getMarketSector());
+        String lowerIndustry = industry == null ? "" : industry.toLowerCase(Locale.ROOT);
+        String lowerSector = sector == null ? "" : sector.toLowerCase(Locale.ROOT);
+        if (containsAny(lowerIndustry, "banks", "credit services", "financial data", "capital markets")
+                || lowerSector.contains("financial")) {
+            return CompanyProfile.AnalysisMode.FINANCIAL;
+        }
+        if (!productLines.isEmpty() || !customers.isEmpty() || !keyKpis.isEmpty()) {
+            return CompanyProfile.AnalysisMode.OPERATING;
+        }
+        return CompanyProfile.AnalysisMode.UNKNOWN;
+    }
+
+    private CompanyProfile.SourceQuality assessAnalysisModeConfidence(
+            CompanyProfile.AnalysisMode analysisMode,
+            FinancialFacts facts,
+            Set<String> businessTags,
+            Set<String> productLines,
+            Set<String> customers,
+            Map<String, String> textEvidence) {
+        if (analysisMode == null || analysisMode == CompanyProfile.AnalysisMode.UNKNOWN) {
+            return CompanyProfile.SourceQuality.LOW;
+        }
+
+        int score = 0;
+        if (analysisMode == CompanyProfile.AnalysisMode.CRYPTO_TREASURY) {
+            if (businessTags.contains("ethereum_treasury") || businessTags.contains("bitcoin_treasury")) {
+                score += 3;
+            }
+            if (businessTags.contains("crypto_treasury")) {
+                score += 2;
+            }
+            if (containsTreasuryEvidence(textEvidence)) {
+                score += 2;
+            }
+        } else {
+            if (!productLines.isEmpty()) {
+                score += 2;
+            }
+            if (!customers.isEmpty()) {
+                score += 1;
+            }
+            if (!businessTags.isEmpty()) {
+                score += 1;
+            }
+        }
+
+        String industry = trimToNull(facts == null ? null : facts.getMarketIndustry());
+        if (industry != null) {
+            score += 1;
+        }
+
+        if (score >= 5) {
+            return CompanyProfile.SourceQuality.HIGH;
+        }
+        if (score >= 3) {
+            return CompanyProfile.SourceQuality.MEDIUM;
+        }
+        return CompanyProfile.SourceQuality.LOW;
+    }
+
+    private boolean containsTreasuryEvidence(Map<String, String> textEvidence) {
+        if (textEvidence == null || textEvidence.isEmpty()) {
+            return false;
+        }
+        return textEvidence.values().stream()
+                .filter(value -> value != null)
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .anyMatch(value -> containsAny(value,
+                        "ethereum treasury", "ether treasury", "eth treasury", "bitcoin treasury",
+                        "digital asset treasury", "treasury strategy", "eth holdings", "ether holdings",
+                        "btc holdings", "bitcoin holdings", "net asset value"));
+    }
+
+    private String buildCombinedContext(
+            FinancialFacts facts,
+            String businessSummary,
+            BusinessSignals signals,
+            Map<String, String> textEvidence) {
+        StringBuilder sb = new StringBuilder();
+        appendContext(sb, businessSummary);
+        appendContext(sb, facts == null ? null : facts.getMarketIndustry());
+        appendContext(sb, facts == null ? null : facts.getMarketSector());
+        appendSignalContext(sb, signals == null ? null : signals.getProductServiceUpdates());
+        appendSignalContext(sb, signals == null ? null : signals.getSegmentPerformance());
+        appendSignalContext(sb, signals == null ? null : signals.getStrategicMoves());
+        if (textEvidence != null) {
+            textEvidence.values().forEach(value -> appendContext(sb, value));
+        }
+        String combined = trimToNull(sb.toString());
+        return combined == null ? null : combined;
+    }
+
+    private void appendSignalContext(StringBuilder sb, List<BusinessSignals.SignalItem> items) {
+        if (items == null) {
+            return;
+        }
+        for (BusinessSignals.SignalItem item : items) {
+            appendContext(sb, item == null ? null : item.getTitle());
+            appendContext(sb, item == null ? null : item.getSummary());
+        }
+    }
+
+    private void appendContext(StringBuilder sb, String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return;
+        }
+        if (!sb.isEmpty()) {
+            sb.append('\n');
+        }
+        sb.append(normalized);
+    }
+
     private String buildBusinessModelSummary(
             String businessSummary,
             Set<String> whatItSells,
@@ -186,13 +463,22 @@ public class CompanyProfileExtractor {
             Set<String> productLines) {
         if (businessSummary != null) {
             String firstSentence = splitSentences(businessSummary).stream().findFirst().orElse(null);
-            if (firstSentence != null) {
+            if (firstSentence != null && isSpecificBusinessSummary(firstSentence)) {
                 return trimToNull(firstSentence);
             }
         }
-        String sells = whatItSells.stream().findFirst().orElse(null);
-        String customer = customers.stream().findFirst().orElse(null);
-        String product = productLines.stream().findFirst().orElse(null);
+        String sells = whatItSells.stream()
+                .filter(this::isSpecificBusinessSummary)
+                .findFirst()
+                .orElse(null);
+        String customer = customers.stream()
+                .filter(this::isSpecificCustomerType)
+                .findFirst()
+                .orElse(null);
+        String product = productLines.stream()
+                .filter(this::isSpecificProductLine)
+                .findFirst()
+                .orElse(null);
         if (sells == null && product == null) {
             return null;
         }
@@ -219,11 +505,14 @@ public class CompanyProfileExtractor {
         addIf(products, containsAny(lower, "mac", "personal computer", "personal computers", "computer", "computers"), "Personal computers");
         addIf(products, containsAny(lower, "ipad", "tablet", "tablets"), "Tablets");
         addIf(products, containsAny(lower, "wearables", "watch", "airpods"), "Wearables and accessories");
-        addIf(products, containsAny(lower, "services", "service"), "Services");
         addIf(products, containsAny(lower, "electric vehicle", "electric vehicles", "vehicle", "vehicles"), "Electric vehicles");
         addIf(products, containsAny(lower, "energy storage", "battery storage"), "Energy storage systems");
         addIf(products, containsAny(lower, "energy generation", "solar"), "Energy generation systems");
         addIf(products, containsAny(lower, "brokerage"), "Brokerage");
+        addIf(products, containsAny(lower, "crypto exchange", "cryptocurrency exchange", "digital asset trading", "crypto asset trading"), "Crypto asset trading");
+        addIf(products, containsAny(lower, "custody", "custodial"), "Custody");
+        addIf(products, containsAny(lower, "staking"), "Staking");
+        addIf(products, containsAny(lower, "stablecoin"), "Stablecoin infrastructure");
         addIf(products, containsAny(lower, "serdes", "serializer/deserializer"), "SerDes");
         addIf(products, containsAny(lower, "active electrical cable", "aec"), "AEC");
         addIf(products, containsAny(lower, "optical dsp"), "Optical DSP");
@@ -238,7 +527,8 @@ public class CompanyProfileExtractor {
         addIf(products, containsAny(lower, "checking", "savings", "deposit"), "Deposit products");
         addIf(products, isAiConnectivityContext(lower), "AI data-center connectivity");
         addIf(products, containsAny(lower, "advertising", "ads"), "Advertising");
-        addIf(products, containsAny(lower, "subscription", "subscriptions"), "Subscriptions");
+        addIf(products, containsAny(lower, "google cloud", "cloud services", "cloud platform"), "Cloud services");
+        addIf(products, containsAny(lower, "youtube"), "YouTube");
         return limit(products);
     }
 
@@ -262,7 +552,7 @@ public class CompanyProfileExtractor {
                 "retimer",
                 "pcie",
                 "ethernet");
-        return hasDataCenterContext || hasSemiconductorConnectivityTerms;
+        return hasDataCenterContext && hasSemiconductorConnectivityTerms;
     }
 
     private List<String> inferCustomerTypes(String text) {
@@ -271,11 +561,87 @@ public class CompanyProfileExtractor {
         addIf(customers, containsAny(lower, "hyperscale", "hyperscaler"), "Hyperscalers");
         addIf(customers, containsAny(lower, "cloud customers", "cloud providers", "data center customers"), "Cloud and data-center customers");
         addIf(customers, containsAny(lower, "enterprise", "enterprises"), "Enterprise customers");
-        addIf(customers, containsAny(lower, "consumer", "consumers", "retail investors"), "Consumers / retail users");
-        addIf(customers, containsAny(lower, "advertisers", "merchant"), "Advertisers / merchants");
+        addIf(customers,
+                containsAny(lower, "retail investors", "retail customers", "retail users")
+                        || (lower.contains("retail") && containsAny(lower, "institutional", "crypto", "brokerage", "trading")),
+                "Retail investors");
+        addIf(customers, containsAny(lower, "advertisers"), "Advertisers");
+        addIf(customers, containsAny(lower, "merchant", "merchants"), "Merchants");
         addIf(customers, containsAny(lower, "financial institutions", "banks"), "Financial institutions");
+        addIf(customers, containsAny(lower, "institutional", "institutions"), "Institutional customers");
         addIf(customers, containsAny(lower, "network equipment", "switch", "router"), "Networking equipment customers");
         return limit(customers);
+    }
+
+    private CompanyProfile.SourceQuality assessSourceQuality(
+            String businessSummary,
+            Set<String> whatItSells,
+            Set<String> customers,
+            Set<String> productLines,
+            String businessModelSummary) {
+        int score = 0;
+        String firstSentence = businessSummary == null ? null : splitSentences(businessSummary).stream().findFirst().orElse(null);
+        if (isSpecificBusinessSummary(firstSentence)) {
+            score += 3;
+        }
+        if (productLines.stream().anyMatch(this::isSpecificProductLine)) {
+            score += 2;
+        }
+        if (customers.stream().anyMatch(this::isSpecificCustomerType)) {
+            score += 1;
+        }
+        if (whatItSells.stream().anyMatch(this::isSpecificBusinessSummary)) {
+            score += 1;
+        }
+        if (isSpecificBusinessSummary(businessModelSummary)) {
+            score += 1;
+        }
+        if (score >= 4) {
+            return CompanyProfile.SourceQuality.HIGH;
+        }
+        if (score >= 2) {
+            return CompanyProfile.SourceQuality.MEDIUM;
+        }
+        return CompanyProfile.SourceQuality.LOW;
+    }
+
+    private boolean isSpecificBusinessSummary(String text) {
+        String lower = trimToNull(text);
+        return lower != null && hasSpecificBusinessSignal(lower.toLowerCase(Locale.ROOT));
+    }
+
+    private boolean hasSpecificBusinessSignal(String lower) {
+        if (lower == null) {
+            return false;
+        }
+        if (containsAny(lower,
+                "smartphone", "smartphones", "iphone", "mac", "personal computer", "ipad", "tablet", "wearables",
+                "electric vehicle", "electric vehicles", "energy storage", "energy generation", "solar",
+                "serdes", "serializer/deserializer", "active electrical cable", "aec", "optical dsp", "retimer", "pcie", "ethernet",
+                "brokerage", "gold subscription", "event contracts", "index options", "futures",
+                "crypto exchange", "cryptocurrency exchange", "digital asset trading", "crypto asset trading", "custody", "staking", "stablecoin",
+                "google cloud", "youtube", "advertising", "ads")) {
+            return true;
+        }
+        return containsAny(lower, "search", "advertisers", "cloud") && containsAny(lower, "google", "alphabet", "youtube", "ads");
+    }
+
+    private boolean isSpecificProductLine(String productLine) {
+        String lower = trimToNull(productLine);
+        if (lower == null) {
+            return false;
+        }
+        lower = lower.toLowerCase(Locale.ROOT);
+        return !containsAny(lower, "services", "subscriptions");
+    }
+
+    private boolean isSpecificCustomerType(String customerType) {
+        String lower = trimToNull(customerType);
+        if (lower == null) {
+            return false;
+        }
+        lower = lower.toLowerCase(Locale.ROOT);
+        return !containsAny(lower, "enterprise customers");
     }
 
     private List<String> inferKpis(String text) {
