@@ -12,48 +12,41 @@
 	<artifactId>backend</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>Spring Alpha Backend</name>
-	<description>Financial AI Agent Backend with Spring AI</description>
+	<description>Financial AI Agent Backend</description>
 
 	<properties>
 		<java.version>21</java.version>
-		<spring-ai.version>1.0.0-M7</spring-ai.version>
 	</properties>
 
 	<dependencies>
-		<!-- 1. WebFlux: 用于流式响应 (SSE) -->
+		<!-- WebFlux for API and Research Service client calls -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webflux</artifactId>
 		</dependency>
 
-		<!-- 2. Spring AI OpenAI (支持 OpenAI, Groq, DeepSeek 等兼容接口) -->
-		<dependency>
-			<groupId>org.springframework.ai</groupId>
-			<artifactId>spring-ai-starter-model-openai</artifactId>
-		</dependency>
-
-		<!-- 3. Jsoup: 用于爬取和清洗 SEC 财报 HTML -->
+		<!-- SEC filing HTML fetch and cleanup -->
 		<dependency>
 			<groupId>org.jsoup</groupId>
 			<artifactId>jsoup</artifactId>
 			<version>1.17.2</version>
 		</dependency>
 
-		<!-- 4. Lombok: 减少样板代码 -->
+		<!-- Lombok -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
 		</dependency>
 
-		<!-- 5. Dotenv: 读取本地 .env 文件 -->
+		<!-- Local .env support -->
 		<dependency>
 			<groupId>io.github.cdimascio</groupId>
 			<artifactId>java-dotenv</artifactId>
 			<version>5.2.2</version>
 		</dependency>
 
-		<!-- 6. Test: 测试框架 -->
+		<!-- Tests -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
@@ -65,63 +58,19 @@
 			<scope>test</scope>
 		</dependency>
 
-		<!-- 7. PostgreSQL: 数据库驱动 (Neon PGVector) -->
+		<!-- PostgreSQL for financial data caches -->
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- 8. Spring Data JPA: ORM 框架 -->
+		<!-- Spring Data JPA for financial data caches -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-jpa</artifactId>
 		</dependency>
-
-		<!-- 9. Spring AI PGVector Store: 向量存储 -->
-		<dependency>
-			<groupId>org.springframework.ai</groupId>
-			<artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
-		</dependency>
-
-		<!-- 10. Local Embeddings (ONNX) - Free & Private -->
-		<dependency>
-			<groupId>org.springframework.ai</groupId>
-			<artifactId>spring-ai-transformers</artifactId>
-		</dependency>
 	</dependencies>
-
-	<dependencyManagement>
-		<dependencies>
-			<dependency>
-				<groupId>org.springframework.ai</groupId>
-				<artifactId>spring-ai-bom</artifactId>
-				<version>${spring-ai.version}</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
-		</dependencies>
-	</dependencyManagement>
-
-	<!-- 必须添加 Milestone 仓库，因为 Spring AI 即使是 0.8.1 也尚未同步到 Maven Central -->
-	<repositories>
-		<repository>
-			<id>spring-milestones</id>
-			<name>Spring Milestones</name>
-			<url>https://repo.spring.io/milestone</url>
-			<snapshots>
-				<enabled>false</enabled>
-			</snapshots>
-		</repository>
-		<repository>
-			<id>spring-snapshots</id>
-			<name>Spring Snapshots</name>
-			<url>https://repo.spring.io/snapshot</url>
-			<releases>
-				<enabled>false</enabled>
-			</releases>
-		</repository>
-	</repositories>
 
 	<build>
 		<plugins>

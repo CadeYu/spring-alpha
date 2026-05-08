@@ -2266,3 +2266,31 @@ Remaining limitations:
 Spring Alpha v2 is currently defined as a productized AI financial research workbench with a Python Agent analysis path and evidence-grade RAG evaluation path.
 
 The next session should avoid broad rewrites. It should choose one small implementation slice, keep Spring Boot as a thin gateway, and keep the RAG experiment path measurable from the start.
+
+### 2026-05-08: Java analysis legacy cleanup
+
+Changed files:
+
+- `backend/pom.xml`
+- `backend/src/main/java/com/springalpha/backend/SpringAlphaApplication.java`
+- `backend/src/main/resources/application.yml`
+- `backend/src/test/java/com/springalpha/backend/architecture/NoJavaAnalysisLegacyTest.java`
+- Removed Java Spring AI, PGVector, and embedding analysis classes under `backend/src/main/java/com/springalpha/backend/config` and `backend/src/main/java/com/springalpha/backend/service/rag`.
+
+What changed:
+
+- Removed the Java-side RAG, embedding, and Spring AI PGVector analysis path.
+- Removed Spring AI dependencies, Spring AI BOM management, and milestone repositories from the backend Maven build.
+- Removed stale `spring.ai.*`, Java vectorstore, and Java embedding provider configuration from `application.yml`.
+- Kept Spring Boot as the API/data gateway: provider credential validation, SEC filing fetch, financial data APIs, and the Python Research Service Agent client remain in place.
+- Added an architecture regression test that fails if Java analysis RAG/Spring AI residue is reintroduced.
+
+Verification:
+
+- Red test first: `mvn -q -Dtest=NoJavaAnalysisLegacyTest test` failed because `backend/src/main/java/com/springalpha/backend/service/rag` still existed.
+- `mvn -q -Dtest=NoJavaAnalysisLegacyTest test` passed after cleanup.
+- `mvn -q test` passed for the backend test suite.
+
+Remaining limitations:
+
+- The Spring Boot analysis request still depends on Python Research Service availability. If that service is down, analysis fails explicitly instead of falling back to Java analysis.

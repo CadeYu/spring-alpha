@@ -22,38 +22,7 @@ spring:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     show-sql: false
   
-  # Spring AI Configuration
-  ai:
-    # Used by infrastructure such as embeddings. Report generation is delegated
-    # to Python Research Service through app.research-service.
-    openai:
-      base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}
-      api-key: ${SILICONFLOW_API_KEY:}
-      chat:
-        options:
-          model: ${SILICONFLOW_MODEL:Pro/moonshotai/Kimi-K2.6}
-    
-    # Vertex AI (Gemini) - used for remote embeddings only
-    vertex:
-      ai:
-        gemini:
-          api-key: ${GEMINI_API_KEY:placeholder_key}
-
-    # PGVector 向量存储配置
-    vectorstore:
-      pgvector:
-        initialize-schema: true  # 自动创建 vector_store 表
-        dimensions: 768           # gemini remote embeddings output 768 dimensions
-        index-type: NONE          # HNSW 最大只支持 2000 维，暂时禁用索引
-        distance-type: COSINE_DISTANCE
-
-
-
-
 app:
-  # 嵌入模型提供商: gemini (remote) | local (ONNX)
-  embedding-provider: gemini
-  
   # BYOK provider: siliconflow | openai | gemini
   ai-provider: siliconflow
 
