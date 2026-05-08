@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,9 @@ class RetrievalExperimentStrategy(StrEnum):
     SECTION_AWARE_LEXICAL = "section_aware_lexical_retrieval"
     NO_SECTION_FILTER = "no_section_filter_lexical_retrieval"
     NO_QUERY_EXPANSION = "no_query_expansion_lexical_retrieval"
+
+
+PipelineFactory = Callable[[RetrievalExperimentStrategy], LlamaIndexRagPipeline]
 
 
 class RagEvalMetricFormat(StrEnum):
@@ -215,8 +219,9 @@ def run_live_pipeline_eval(
     *,
     corpus: RagEvalFilingCorpus | None = None,
     strategy: RetrievalExperimentStrategy = RetrievalExperimentStrategy.SECTION_AWARE_LEXICAL,
+    pipeline_factory: PipelineFactory | None = None,
 ) -> RagBaselineEvalArtifact:
-    pipeline = _pipeline_for_strategy(strategy)
+    pipeline = pipeline_factory(strategy) if pipeline_factory else _pipeline_for_strategy(strategy)
     eval_corpus = corpus or load_live_rag_filing_corpus(dataset)
     for filing in eval_corpus.filings:
         pipeline.ingest_filing(filing)
@@ -235,10 +240,16 @@ def run_live_pipeline_experiment_suite(
     dataset: RagEvalDataset,
     *,
     corpus: RagEvalFilingCorpus | None = None,
+    pipeline_factory: PipelineFactory | None = None,
 ) -> list[RagBaselineEvalArtifact]:
     eval_corpus = corpus or load_live_rag_filing_corpus(dataset)
     return [
-        run_live_pipeline_eval(dataset, corpus=eval_corpus, strategy=strategy)
+        run_live_pipeline_eval(
+            dataset,
+            corpus=eval_corpus,
+            strategy=strategy,
+            pipeline_factory=pipeline_factory,
+        )
         for strategy in RetrievalExperimentStrategy
     ]
 

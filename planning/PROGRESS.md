@@ -2202,6 +2202,29 @@ Remaining limitations:
 - Gemini + PGVector is proven as a gated smoke, but is still not production default.
 - Exact cosine ordering for 3072-dimensional Gemini embeddings is acceptable for smoke and small retrieval sets, but production-scale PGVector will need an index strategy such as lower-dimensional embeddings, halfvec, sparsevec, or a separate vector backend.
 
+### 2026-05-08: RAG eval runner pipeline factory
+
+Changed files:
+
+- `src/research-service/app/evals/baseline.py`
+- `src/research-service/tests/evals/test_rag_baseline_eval.py`
+- `planning/PROGRESS.md`
+
+What changed:
+
+- Added a `PipelineFactory` hook to `run_live_pipeline_eval`.
+- Threaded the same hook through `run_live_pipeline_experiment_suite`.
+- Added eval coverage proving a caller can inject a custom `LlamaIndexRagPipeline` for vector store/provider experiments.
+
+Verification:
+
+- Red test first: eval tests failed because `run_live_pipeline_eval` did not accept `pipeline_factory`.
+- `uv run pytest tests/evals/test_rag_baseline_eval.py -q` passed with 10 eval tests and 34 third-party warnings.
+
+Remaining limitations:
+
+- The hook enables PGVector/provider-backed eval runs, but there is not yet a persisted generated eval artifact for the live PGVector/Gemini path.
+
 ## Handoff Summary
 
 Spring Alpha v2 is currently defined as a productized AI financial research workbench with a Python Agent analysis path and evidence-grade RAG evaluation path.

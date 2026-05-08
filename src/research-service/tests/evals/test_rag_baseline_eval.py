@@ -14,6 +14,7 @@ from app.evals.baseline import (
     run_stage0_baseline_eval,
     write_stage1_hard_dashboard_artifact,
 )
+from app.rag.llamaindex_pipeline import LlamaIndexRagPipeline
 
 
 def test_stage0_eval_dataset_covers_mvp_tasks() -> None:
@@ -173,6 +174,26 @@ def test_live_pipeline_experiment_suite_compares_retrieval_strategies() -> None:
         if artifact.baseline_label == RetrievalExperimentStrategy.NO_SECTION_FILTER.value
         for record in artifact.records
     )
+
+
+def test_live_pipeline_eval_accepts_pipeline_factory_for_vector_store_experiments() -> None:
+    created_pipelines: list[LlamaIndexRagPipeline] = []
+
+    def pipeline_factory(strategy: RetrievalExperimentStrategy) -> LlamaIndexRagPipeline:
+        assert strategy == RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL
+        pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+        created_pipelines.append(pipeline)
+        return pipeline
+
+    artifact = run_live_pipeline_eval(
+        build_hard_live_pipeline_eval_dataset(),
+        strategy=RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL,
+        pipeline_factory=pipeline_factory,
+    )
+
+    assert created_pipelines
+    assert artifact.baseline_label == RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL.value
+    assert artifact.aggregate_metrics.empty_retrieval_rate == 0.0
 
 
 def test_stage1_hard_dashboard_artifact_is_frontend_safe() -> None:
