@@ -159,6 +159,13 @@ def test_agent_run_endpoint_can_use_llm_planner_for_first_tool_call() -> None:
         "Plan next step: LLM planner selected MD&A evidence."
     )
     assert "[planner_context" in payload["events"][0]["summary"]
+    assert payload["events"][0]["planner_context"] == {
+        "remaining_steps": 5,
+        "remaining_tool_calls": 5,
+        "coverage_status": "degraded",
+        "evidence_count": 0,
+        "citation_coverage": "missing",
+    }
     assert payload["events"][1]["tool_name"] == "search_filing_sections"
     assert payload["final_report"]["task_sections"]["task_type"] == "business_driver_deep_dive"
 

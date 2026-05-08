@@ -181,4 +181,25 @@ for (const [content, snippet] of requiredSnippets) {
 }
 NODE
 
+echo "Checking live planner production telemetry contract..."
+node - <<'NODE'
+const fs = require('fs');
+
+const agentContract = fs.readFileSync('src/research-service/app/contracts/agent.py', 'utf8');
+const workflow = fs.readFileSync('src/research-service/app/agents/deterministic_workflow.py', 'utf8');
+
+const requiredSnippets = [
+  [agentContract, 'class PlannerContext'],
+  [agentContract, 'planner_context: PlannerContext | None = None'],
+  [workflow, 'def _planner_context(state: AgentState) -> PlannerContext:'],
+  [workflow, 'planner_context=_planner_context'],
+];
+
+for (const [content, snippet] of requiredSnippets) {
+  if (!content.includes(snippet)) {
+    throw new Error(`Missing live planner telemetry snippet: ${snippet}`);
+  }
+}
+NODE
+
 echo "Project structure verification passed."

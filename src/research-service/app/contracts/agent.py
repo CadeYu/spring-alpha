@@ -101,6 +101,16 @@ class AgentRequest(BaseModel):
         return normalized or None
 
 
+class PlannerContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    remaining_steps: int = Field(ge=0)
+    remaining_tool_calls: int = Field(ge=0)
+    coverage_status: Literal["complete", "partial", "degraded"]
+    evidence_count: int = Field(ge=0)
+    citation_coverage: Literal["complete", "partial", "missing"]
+
+
 class AgentEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -112,6 +122,7 @@ class AgentEvent(BaseModel):
     tool_name: str | None = None
     latency_ms: int = Field(default=0, ge=0)
     degraded_reason: str | None = None
+    planner_context: PlannerContext | None = None
 
 
 class ToolCall(BaseModel):

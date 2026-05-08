@@ -14,6 +14,7 @@ from app.contracts.agent import (
     AgentRunStatus,
     AgentState,
     BoundedAgentResult,
+    PlannerContext,
     ToolCall,
     ToolStatus,
     default_task_policy,
@@ -112,6 +113,7 @@ def _run_live_planner_loop(
                     "Coverage is sufficient; finalizing bounded live planner loop. "
                     f"{_planner_context_suffix(current)}"
                 ),
+                planner_context=_planner_context(current),
             )
 
         if current.tool_call_count >= current.task_policy.max_tool_calls:
@@ -127,6 +129,7 @@ def _run_live_planner_loop(
                 AgentPhase.FINALIZE_REPORT,
                 ToolStatus.OK,
                 f"Planner finalized: {decision.summary} {_planner_context_suffix(current)}",
+                planner_context=_planner_context(current),
             )
 
         call = decision.tool_call
@@ -139,6 +142,7 @@ def _run_live_planner_loop(
                     f"{reason} {_planner_context_suffix(current)}"
                 ),
                 degraded_reason=reason,
+                planner_context=_planner_context(current),
             )
             call = _fallback_tool_call(current, fallback_calls)
         elif call.tool_name not in current.task_policy.allowed_tools:
@@ -150,6 +154,7 @@ def _run_live_planner_loop(
                     f"{reason} {_planner_context_suffix(current)}"
                 ),
                 degraded_reason=reason,
+                planner_context=_planner_context(current),
             )
             call = _fallback_tool_call(current, fallback_calls)
 
@@ -170,6 +175,7 @@ def _run_live_planner_loop(
                     "Coverage is sufficient; finalizing bounded live planner loop. "
                     f"{_planner_context_suffix(current)}"
                 ),
+                planner_context=_planner_context(current),
             )
         return _append_degraded_event(
             current,
@@ -210,6 +216,7 @@ def _execute_planned_call(
         ToolStatus.OK,
         f"Plan next step: {call.summary} {_planner_context_suffix(state)}",
         tool_name=call.tool_name,
+        planner_context=_planner_context(state),
     )
     current = registry.execute(current, call)
     coverage_result = check_coverage(current)
@@ -227,15 +234,24 @@ def _execute_planned_call(
 
 
 def _planner_context_suffix(state: AgentState) -> str:
-    remaining_steps = max(state.task_policy.max_steps - state.step_index, 0)
-    remaining_tool_calls = max(state.task_policy.max_tool_calls - state.tool_call_count, 0)
+    context = _planner_context(state)
     return (
         "[planner_context "
-        f"remaining_steps={remaining_steps} "
-        f"remaining_tool_calls={remaining_tool_calls} "
-        f"coverage={state.coverage.status} "
-        f"evidence={state.coverage.evidence_count} "
-        f"citation_coverage={state.coverage.citation_coverage}]"
+        f"remaining_steps={context.remaining_steps} "
+        f"remaining_tool_calls={context.remaining_tool_calls} "
+        f"coverage={context.coverage_status} "
+        f"evidence={context.evidence_count} "
+        f"citation_coverage={context.citation_coverage}]"
+    )
+
+
+def _planner_context(state: AgentState) -> PlannerContext:
+    return PlannerContext(
+        remaining_steps=max(state.task_policy.max_steps - state.step_index, 0),
+        remaining_tool_calls=max(state.task_policy.max_tool_calls - state.tool_call_count, 0),
+        coverage_status=state.coverage.status,
+        evidence_count=state.coverage.evidence_count,
+        citation_coverage=state.coverage.citation_coverage,
     )
 
 
@@ -244,6 +260,7 @@ def _append_degraded_event(
     summary: str,
     *,
     degraded_reason: str | None = None,
+    planner_context: PlannerContext | None = None,
 ) -> AgentState:
     reason = degraded_reason or summary
     event = AgentEvent(
@@ -253,6 +270,7 @@ def _append_degraded_event(
         status=ToolStatus.DEGRADED,
         summary=summary,
         degraded_reason=reason,
+        planner_context=planner_context,
     )
     return state.model_copy(
         update={
@@ -270,6 +288,7 @@ def _append_loop_event(
     summary: str,
     *,
     tool_name: str | None = None,
+    planner_context: PlannerContext | None = None,
 ) -> AgentState:
     event = AgentEvent(
         run_id=state.run_id,
@@ -278,6 +297,7 @@ def _append_loop_event(
         status=status,
         summary=summary,
         tool_name=tool_name,
+        planner_context=planner_context,
     )
     return state.model_copy(update={"tool_events": [*state.tool_events, event]})
 

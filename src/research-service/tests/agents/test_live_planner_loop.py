@@ -93,6 +93,8 @@ def test_live_planner_events_include_compact_budget_and_coverage_telemetry() -> 
 
     planning_summary = result.events[0].summary
     finalize_summary = result.events[-1].summary
+    planning_context = result.events[0].planner_context
+    finalize_context = result.events[-1].planner_context
 
     assert "remaining_steps=5" in planning_summary
     assert "remaining_tool_calls=5" in planning_summary
@@ -102,6 +104,16 @@ def test_live_planner_events_include_compact_budget_and_coverage_telemetry() -> 
     assert "remaining_tool_calls=4" in finalize_summary
     assert "coverage=complete" in finalize_summary
     assert "evidence=1" in finalize_summary
+    assert planning_context is not None
+    assert planning_context.remaining_steps == 5
+    assert planning_context.remaining_tool_calls == 5
+    assert planning_context.coverage_status == "degraded"
+    assert planning_context.evidence_count == 0
+    assert finalize_context is not None
+    assert finalize_context.remaining_steps == 4
+    assert finalize_context.remaining_tool_calls == 4
+    assert finalize_context.coverage_status == "complete"
+    assert finalize_context.evidence_count == 1
 
 
 def test_live_planner_stops_when_coverage_is_sufficient() -> None:

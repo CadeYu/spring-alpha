@@ -10,6 +10,7 @@ from app.contracts.agent import (
     AgentRequest,
     AgentRunStatus,
     BoundedAgentResult,
+    LlmProvider,
     ToolStatus,
 )
 from app.contracts.archive import ReportArchiveArtifact
@@ -62,6 +63,28 @@ def test_json_report_archive_writer_persists_stable_artifact(tmp_path: Path) -> 
     assert payload["agent_events"]
     assert payload["retrieval_records"]
     assert payload["final_report"]["run_id"] == "run_archive_002"
+
+
+def test_archive_artifact_preserves_planner_context_for_handoff(tmp_path: Path) -> None:
+    result = _live_planner_result()
+    artifact = ReportArchiveArtifact.from_agent_result(result)
+    writer = JsonReportArchiveWriter(base_dir=tmp_path)
+
+    path = writer.write(artifact)
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    planner_events = [
+        event for event in payload["agent_events"] if event.get("planner_context") is not None
+    ]
+    assert planner_events
+    assert planner_events[0]["planner_context"] == {
+        "remaining_steps": 5,
+        "remaining_tool_calls": 5,
+        "coverage_status": "degraded",
+        "evidence_count": 0,
+        "citation_coverage": "missing",
+    }
+    assert any("planner_context" in event["summary"] for event in planner_events)
 
 
 def test_archive_artifact_preserves_review_data_without_final_report() -> None:
@@ -153,4 +176,41 @@ def _agent_result_without_final_report() -> BoundedAgentResult:
         ],
         degraded_reasons=["finalize_report failed: provider unavailable"],
         final_report=None,
+    )
+
+
+def _live_planner_result() -> BoundedAgentResult:
+    from app.agents.deterministic_workflow import DeterministicAgentWorkflow
+    from app.agents.llm_gateway import LlmRequest, LlmResponse
+
+    class SequencePlannerClient:
+        provider = LlmProvider.OPENAI
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete_json(self, request: LlmRequest) -> LlmResponse:
+            self.calls += 1
+            if self.calls == 1:
+                content = {
+                    "decision": "call_tool",
+                    "summary": "Search filing evidence.",
+                    "tool_name": "search_filing_sections",
+                    "tool_input": {"sections": ["MD&A"], "query": "revenue margin"},
+                }
+            else:
+                content = {"decision": "finalize", "summary": "Evidence is enough."}
+            return LlmResponse(
+                provider=request.provider,
+                model=request.model,
+                content=content,
+            )
+
+    workflow = DeterministicAgentWorkflow(llm_client=SequencePlannerClient())
+    return workflow.run(
+        AgentRequest(
+            run_id="run_archive_live_planner",
+            ticker="AAPL",
+            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        )
     )
