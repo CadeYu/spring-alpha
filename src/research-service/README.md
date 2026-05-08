@@ -65,7 +65,7 @@ as Gemini's 3072 dimension output are stored without an HNSW index because
 pgvector HNSW has a dimension limit; exact cosine ordering is used for the gated
 smoke path.
 
-The provider-backed mini gate runs five representative hard cases through real
+The provider-backed mini gate runs 10-15 representative hard cases through real
 Gemini embeddings and PGVector. It records retrieval quality, elapsed time,
 embedding call count, and estimated cost in a JSON artifact. It is intentionally
 manual/optional so provider cost and availability do not affect default CI.

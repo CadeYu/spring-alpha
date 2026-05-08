@@ -83,10 +83,12 @@ if artifact["provider"] != "gemini":
     raise SystemExit("unexpected provider mini eval provider")
 if artifact["vectorStore"] != "pgvector":
     raise SystemExit("unexpected provider mini eval vector store")
-if artifact["caseCount"] != 5:
-    raise SystemExit("provider mini eval must run exactly 5 cases")
+if not 10 <= artifact["caseCount"] <= 15:
+    raise SystemExit("provider mini eval must run between 10 and 15 cases")
 if artifact["embeddingCalls"] <= 0:
     raise SystemExit("provider mini eval did not record embedding calls")
+if artifact["embeddingAttempts"] < artifact["embeddingCalls"]:
+    raise SystemExit("provider mini eval recorded fewer attempts than logical calls")
 if metrics.get("emptyRetrievalRate") != 0.0:
     raise SystemExit("provider mini eval produced empty retrievals")
 if metrics.get("badSectionLeakRate") != 0.0:

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep
 from uuid import uuid4
 
 from app.evals.baseline import (
@@ -26,14 +27,35 @@ GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
 DEFAULT_ESTIMATED_COST_PER_1K_CALLS = 0.0
 
 
-class CountingEmbeddingBackend:
-    def __init__(self, wrapped: EmbeddingBackend) -> None:
+class RetryingCountingEmbeddingBackend:
+    def __init__(
+        self,
+        wrapped: EmbeddingBackend,
+        *,
+        max_attempts: int = 3,
+        base_backoff_seconds: float = 1.0,
+        sleep: Callable[[float], None] = sleep,
+    ) -> None:
         self.wrapped = wrapped
+        self.max_attempts = max_attempts
+        self.base_backoff_seconds = base_backoff_seconds
+        self.sleep = sleep
         self.calls = 0
+        self.attempts = 0
+        self.retries = 0
 
     def embed(self, text: str) -> dict[str, float]:
         self.calls += 1
-        return self.wrapped.embed(text)
+        for attempt_index in range(self.max_attempts):
+            self.attempts += 1
+            try:
+                return self.wrapped.embed(text)
+            except Exception:
+                if attempt_index == self.max_attempts - 1:
+                    raise
+                self.retries += 1
+                self.sleep(self.base_backoff_seconds * (2**attempt_index))
+        raise RuntimeError("unreachable embedding retry state")
 
 
 def main() -> int:
@@ -51,7 +73,7 @@ def main() -> int:
         return 2
 
     target_path = Path(sys.argv[1])
-    embedding_backend = CountingEmbeddingBackend(
+    embedding_backend = RetryingCountingEmbeddingBackend(
         GeminiEmbeddingBackend(api_key=api_key, model=GEMINI_EMBEDDING_MODEL)
     )
 
@@ -98,6 +120,7 @@ def main() -> int:
         embedding_model=GEMINI_EMBEDDING_MODEL,
         vector_store="pgvector",
         embedding_calls=embedding_backend.calls,
+        embedding_attempts=embedding_backend.attempts,
         estimated_cost_usd=_estimated_cost_usd(embedding_backend.calls),
         elapsed_ms=elapsed_ms,
     )

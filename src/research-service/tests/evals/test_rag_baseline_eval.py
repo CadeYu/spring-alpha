@@ -10,10 +10,10 @@ from app.evals.baseline import (
     build_hard_live_pipeline_eval_dataset,
     build_live_pipeline_eval_dataset,
     build_stage0_eval_dataset,
+    build_stage1_hard_dashboard_artifact,
     build_stage1_hard_dashboard_artifact_from_suite,
     build_stage1_hard_eval_suite,
     build_stage1_hard_primary_eval_artifact,
-    build_stage1_hard_dashboard_artifact,
     build_stage1_provider_mini_eval_dataset,
     build_stage1_provider_mini_eval_summary,
     load_live_rag_filing_corpus,
@@ -148,8 +148,15 @@ def test_provider_mini_eval_dataset_selects_representative_hard_cases() -> None:
     dataset = build_stage1_provider_mini_eval_dataset()
 
     assert dataset.name == "stage1_provider_mini_rag_eval"
-    assert len(dataset.cases) == 5
-    assert {case.ticker for case in dataset.cases} == {"AAPL", "MSFT", "TSLA", "JPM", "NVDA"}
+    assert 10 <= len(dataset.cases) <= 15
+    assert {case.ticker for case in dataset.cases} == {
+        "AAPL",
+        "MSFT",
+        "TSLA",
+        "JPM",
+        "NVDA",
+        "AMZN",
+    }
     assert {case.task_type.value for case in dataset.cases} == {
         "business_driver_deep_dive",
         "cash_flow_capital_allocation",
@@ -182,12 +189,13 @@ def test_provider_mini_eval_summary_records_provider_latency_and_cost() -> None:
     assert payload["provider"] == "gemini"
     assert payload["embeddingModel"] == "gemini-embedding-001"
     assert payload["vectorStore"] == "pgvector"
-    assert payload["caseCount"] == 5
+    assert 10 <= payload["caseCount"] <= 15
     assert payload["embeddingCalls"] == 42
+    assert payload["embeddingAttempts"] == 42
     assert payload["estimatedCostUsd"] == 0.0123
     assert payload["elapsedMs"] == 1234
     assert payload["metrics"]["emptyRetrievalRate"] == 0.0
-    assert len(payload["cases"]) == 5
+    assert len(payload["cases"]) == payload["caseCount"]
 
 
 def test_live_pipeline_experiment_suite_compares_retrieval_strategies() -> None:

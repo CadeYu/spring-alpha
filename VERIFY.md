@@ -167,7 +167,7 @@ Provider-backed mini RAG eval gate，手动/optional live gate：
 GEMINI_API_KEY="$GEMINI_API_KEY" ./scripts/verify-provider-mini-rag-eval.sh
 ```
 
-该门禁会启动临时 PGVector，用 Gemini embeddings 跑 5 个 representative hard
+该门禁会启动临时 PGVector，用 Gemini embeddings 跑 10-15 个 representative hard
 cases，只验证 primary hybrid retrieval，并记录 retrieval quality、elapsed
 time、embedding call count 和 estimated cost。它不属于默认 CI gate，避免外部
 provider 成本、限流和可用性影响基础验证。

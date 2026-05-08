@@ -172,6 +172,7 @@ class RagProviderMiniEvalSummary(BaseModel):
     baseline_label: str = Field(alias="baselineLabel")
     case_count: int = Field(alias="caseCount")
     embedding_calls: int = Field(alias="embeddingCalls")
+    embedding_attempts: int = Field(alias="embeddingAttempts")
     estimated_cost_usd: float = Field(alias="estimatedCostUsd")
     elapsed_ms: int = Field(alias="elapsedMs")
     metrics: dict[str, float | int]
@@ -223,10 +224,17 @@ def build_stage1_provider_mini_eval_dataset() -> RagEvalDataset:
     hard_dataset = build_hard_live_pipeline_eval_dataset()
     selected_case_ids = {
         "hard_aapl_services_without_section_cue",
+        "hard_aapl_buyback_synonym",
         "hard_msft_capex_abbreviation",
+        "hard_msft_segment_without_azure_term",
         "hard_tsla_risk_pricing_supply",
+        "hard_tsla_energy_segment_without_section_cue",
         "hard_jpm_capital_return",
+        "hard_jpm_risk_without_exact_phrase",
         "hard_nvda_export_supply_risk",
+        "hard_nvda_capex_inventory_synonym",
+        "hard_amzn_aws_usage_driver",
+        "hard_amzn_capex_abbreviation",
     }
     selected_cases = [case for case in hard_dataset.cases if case.case_id in selected_case_ids]
     return RagEvalDataset(
@@ -392,6 +400,7 @@ def build_stage1_provider_mini_eval_summary(
     embedding_model: str,
     vector_store: str,
     embedding_calls: int,
+    embedding_attempts: int | None = None,
     estimated_cost_usd: float,
     elapsed_ms: int,
 ) -> RagProviderMiniEvalSummary:
@@ -405,6 +414,7 @@ def build_stage1_provider_mini_eval_summary(
         baselineLabel=artifact.baseline_label,
         caseCount=len(artifact.records),
         embeddingCalls=embedding_calls,
+        embeddingAttempts=embedding_attempts if embedding_attempts is not None else embedding_calls,
         estimatedCostUsd=estimated_cost_usd,
         elapsedMs=elapsed_ms,
         metrics={
