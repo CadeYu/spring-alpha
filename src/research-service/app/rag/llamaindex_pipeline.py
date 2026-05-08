@@ -1,6 +1,7 @@
 import json
 import re
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha1
@@ -87,6 +88,17 @@ class RetrieveEvidenceResult(BaseModel):
 class EmbeddingBackend(Protocol):
     def embed(self, text: str) -> dict[str, float]:
         """Return a deterministic sparse embedding for local retrieval experiments."""
+
+
+class DatabaseConnection(Protocol):
+    def execute(self, query: str, params: dict[str, object]) -> list[dict[str, object]]:
+        """Execute a database statement and return materialized mapping rows."""
+
+    def commit(self) -> None:
+        """Commit pending database changes."""
+
+    def close(self) -> None:
+        """Release the database connection."""
 
 
 class VectorStore(Protocol):
@@ -232,12 +244,39 @@ class PgVectorStore:
         *,
         config: PgVectorStoreConfig,
         embedding_backend: EmbeddingBackend,
+        connection_factory: Callable[[str], DatabaseConnection] | None = None,
     ) -> None:
         self.config = config
         self.embedding_backend = embedding_backend
+        self._connection_factory = connection_factory or PsycopgDatabaseConnection.connect
 
     def upsert(self, node: TextNode) -> None:
-        raise NotImplementedError("PGVector driver is not configured for Python RAG yet.")
+        connection = self._connection_factory(self.config.database_url)
+        try:
+            connection.execute(
+                f"""
+                INSERT INTO {self.config.table_name}
+                    (node_id, text, metadata, embedding)
+                VALUES
+                    (%(node_id)s, %(text)s, %(metadata)s, %(embedding)s::vector)
+                ON CONFLICT (node_id) DO UPDATE SET
+                    text = EXCLUDED.text,
+                    metadata = EXCLUDED.metadata,
+                    embedding = EXCLUDED.embedding
+                """,
+                {
+                    "node_id": node.node_id,
+                    "text": node.get_content(),
+                    "metadata": dict(node.metadata),
+                    "embedding": _dense_vector_literal(
+                        self.embedding_backend.embed(_node_embedding_text(node)),
+                        self.config.embedding_dimension,
+                    ),
+                },
+            )
+            connection.commit()
+        finally:
+            connection.close()
 
     def search(
         self,
@@ -246,7 +285,90 @@ class PgVectorStore:
         nodes: list[TextNode],
         top_k: int,
     ) -> list[NodeWithScore]:
-        raise NotImplementedError("PGVector driver is not configured for Python RAG yet.")
+        node_by_id = {node.node_id: node for node in nodes}
+        if not node_by_id:
+            return []
+
+        connection = self._connection_factory(self.config.database_url)
+        try:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    node_id,
+                    1 - (embedding <=> %(embedding)s::vector) AS score
+                FROM {self.config.table_name}
+                WHERE node_id = ANY(%(node_ids)s)
+                ORDER BY embedding <=> %(embedding)s::vector
+                LIMIT %(limit)s
+                """,
+                {
+                    "embedding": _dense_vector_literal(
+                        self.embedding_backend.embed(query),
+                        self.config.embedding_dimension,
+                    ),
+                    "node_ids": list(node_by_id.keys()),
+                    "limit": top_k,
+                },
+            )
+        finally:
+            connection.close()
+
+        return [
+            NodeWithScore(node=node_by_id[node_id], score=score)
+            for row in rows
+            for node_id in [str(row["node_id"])]
+            for score in [_float_from_row_value(row["score"])]
+            if node_id in node_by_id and score > 0
+        ]
+
+
+class PsycopgDatabaseConnection:
+    def __init__(self, raw_connection: Any) -> None:
+        self._raw_connection = raw_connection
+
+    @classmethod
+    def connect(cls, database_url: str) -> "PsycopgDatabaseConnection":
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as error:
+            raise RuntimeError("Install psycopg[binary] to use the PGVector RAG store.") from error
+
+        return cls(psycopg.connect(database_url, row_factory=dict_row))
+
+    def execute(self, query: str, params: dict[str, object]) -> list[dict[str, object]]:
+        with self._raw_connection.cursor() as cursor:
+            cursor.execute(query, params)
+            if cursor.description is None:
+                return []
+            return [dict(row) for row in cursor.fetchall()]
+
+    def commit(self) -> None:
+        self._raw_connection.commit()
+
+    def close(self) -> None:
+        self._raw_connection.close()
+
+
+def build_vector_store_from_env(
+    embedding_backend: EmbeddingBackend,
+) -> VectorStore:
+    provider_name = getenv("RAG_VECTOR_STORE_PROVIDER", "memory").lower()
+    if provider_name != "pgvector":
+        return InMemoryVectorStore(embedding_backend)
+
+    database_url = getenv("RAG_VECTOR_DATABASE_URL")
+    if not database_url:
+        return InMemoryVectorStore(embedding_backend)
+
+    return PgVectorStore(
+        config=PgVectorStoreConfig(
+            database_url=database_url,
+            table_name=getenv("RAG_VECTOR_TABLE_NAME", "rag_chunks"),
+            embedding_dimension=int(getenv("RAG_EMBEDDING_DIMENSION", "3072")),
+        ),
+        embedding_backend=embedding_backend,
+    )
 
 
 def build_embedding_backend_from_env() -> EmbeddingBackend:
@@ -326,7 +448,7 @@ class LlamaIndexRagPipeline:
             if enable_hybrid_retrieval
             else DeterministicFinancialEmbeddingBackend()
         )
-        self.vector_store = vector_store or InMemoryVectorStore(self.embedding_backend)
+        self.vector_store = vector_store or build_vector_store_from_env(self.embedding_backend)
         self._nodes: list[TextNode] = []
         self._node_ids: set[str] = set()
 
@@ -579,6 +701,31 @@ def _cosine_similarity(left: dict[str, float], right: dict[str, float]) -> float
     if left_norm == 0 or right_norm == 0:
         return 0.0
     return dot_product / (left_norm * right_norm)
+
+
+def _dense_vector_literal(vector: dict[str, float], dimension: int) -> str:
+    dense_values = [0.0] * dimension
+    for key, value in vector.items():
+        index = _vector_dimension_index(key, dimension)
+        dense_values[index] += value
+    norm = sqrt(sum(value * value for value in dense_values))
+    if norm > 0:
+        dense_values = [value / norm for value in dense_values]
+    return "[" + ",".join(f"{value:.10g}" for value in dense_values) + "]"
+
+
+def _float_from_row_value(value: object) -> float:
+    if not isinstance(value, int | float | str):
+        raise ValueError("PGVector score must be numeric")
+    return float(value)
+
+
+def _vector_dimension_index(key: str, dimension: int) -> int:
+    match = re.fullmatch(r"dim_(\d+)", key)
+    if match:
+        return int(match.group(1)) % dimension
+    digest = sha1(key.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], byteorder="big") % dimension
 
 
 def _merge_candidate_scores(

@@ -3,6 +3,7 @@ from pytest import MonkeyPatch
 
 from app.contracts.research_task import ResearchTaskType
 from app.rag.llamaindex_pipeline import (
+    DatabaseConnection,
     DeterministicFinancialEmbeddingBackend,
     FilingDocument,
     GeminiEmbeddingBackend,
@@ -14,6 +15,7 @@ from app.rag.llamaindex_pipeline import (
     RetrievalFallbackStatus,
     SectionAwareFilingParser,
     build_embedding_backend_from_env,
+    build_vector_store_from_env,
 )
 
 FILING_TEXT = """
@@ -384,27 +386,121 @@ def test_pgvector_store_config_normalizes_table_and_dimension() -> None:
     assert config.embedding_dimension == 3072
 
 
-def test_pgvector_store_is_explicitly_not_connected_before_driver_slice() -> None:
+def test_pgvector_store_upserts_nodes_with_normalized_embedding() -> None:
+    connection = RecordingConnection()
     store = PgVectorStore(
         config=PgVectorStoreConfig(
             database_url="postgresql://example",
             table_name="rag_chunks",
-            embedding_dimension=3072,
+            embedding_dimension=3,
         ),
-        embedding_backend=DeterministicFinancialEmbeddingBackend(),
+        embedding_backend=FixedEmbeddingBackend({"dim_0": 1.0, "dim_1": 1.0, "dim_2": 1.0}),
+        connection_factory=lambda _: connection,
     )
     node = TextNode(
         id_="node_1",
-        text="Azure and enterprise services.",
-        metadata={"section": "Segment Information"},
+        text="Azure and enterprise services drove cloud growth.",
+        metadata={
+            "ticker": "MSFT",
+            "filing_type": "10-Q",
+            "filing_date": "2026-04-30",
+            "accession_number": "0000000000-26-000026",
+            "section": "Segment Information",
+        },
     )
 
-    try:
-        store.upsert(node)
-    except NotImplementedError as error:
-        assert "PGVector driver is not configured" in str(error)
-    else:
-        raise AssertionError("PgVectorStore should fail explicitly before driver wiring")
+    store.upsert(node)
+
+    assert connection.commits == 1
+    upsert_sql, upsert_params = connection.executed[-1]
+    metadata = upsert_params["metadata"]
+    assert "INSERT INTO rag_chunks" in upsert_sql
+    assert upsert_params["node_id"] == "node_1"
+    assert upsert_params["embedding"] == "[0.5773502692,0.5773502692,0.5773502692]"
+    assert isinstance(metadata, dict)
+    assert metadata["section"] == "Segment Information"
+
+
+def test_pgvector_store_searches_candidates_by_node_id() -> None:
+    connection = RecordingConnection(
+        rows=[
+            {
+                "node_id": "node_1",
+                "score": 0.82,
+            }
+        ]
+    )
+    store = PgVectorStore(
+        config=PgVectorStoreConfig(
+            database_url="postgresql://example",
+            table_name="rag_chunks",
+            embedding_dimension=3,
+        ),
+        embedding_backend=DeterministicFinancialEmbeddingBackend(),
+        connection_factory=lambda _: connection,
+    )
+    nodes = [
+        TextNode(
+            id_="node_1",
+            text="Azure cloud growth.",
+            metadata={"section": "Segment Information"},
+        ),
+        TextNode(id_="node_2", text="Generic risk factors.", metadata={"section": "Risk Factors"}),
+    ]
+
+    results = store.search(query="platform support", nodes=nodes, top_k=1)
+
+    assert len(results) == 1
+    assert results[0].node.node_id == "node_1"
+    assert results[0].score == 0.82
+    search_sql, search_params = connection.executed[-1]
+    assert "WHERE node_id = ANY(%(node_ids)s)" in search_sql
+    assert search_params["node_ids"] == ["node_1", "node_2"]
+    assert search_params["limit"] == 1
+
+
+def test_vector_store_env_factory_builds_pgvector_store_when_configured(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RAG_VECTOR_STORE_PROVIDER", "pgvector")
+    monkeypatch.setenv("RAG_VECTOR_DATABASE_URL", "postgresql://example")
+    monkeypatch.setenv("RAG_VECTOR_TABLE_NAME", "rag_chunks")
+    monkeypatch.setenv("RAG_EMBEDDING_DIMENSION", "3")
+
+    store = build_vector_store_from_env(DeterministicFinancialEmbeddingBackend())
+
+    assert isinstance(store, PgVectorStore)
+    assert store.config.table_name == "rag_chunks"
+    assert store.config.embedding_dimension == 3
+
+
+class RecordingConnection:
+    def __init__(self, rows: list[dict[str, object]] | None = None) -> None:
+        self.rows = rows or []
+        self.executed: list[tuple[str, dict[str, object]]] = []
+        self.commits = 0
+
+    def execute(self, query: str, params: dict[str, object]) -> list[dict[str, object]]:
+        self.executed.append((query, params))
+        return self.rows
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def close(self) -> None:
+        pass
+
+
+class FixedEmbeddingBackend:
+    def __init__(self, vector: dict[str, float]) -> None:
+        self.vector = vector
+
+    def embed(self, text: str) -> dict[str, float]:
+        return self.vector
+
+
+def _assert_database_connection_shape(connection: DatabaseConnection) -> None:
+    assert connection is not None
 
 
 def test_pipeline_source_ref_snippet_is_centered_on_matched_terms() -> None:

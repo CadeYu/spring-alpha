@@ -2069,6 +2069,36 @@ Remaining limitations:
 - No schema migration or `pgvector` Python driver dependency has been added in this slice.
 - The next slice should add the actual Postgres schema/driver path behind the `VectorStore` protocol.
 
+### 2026-05-08: PGVector driver path for Python RAG
+
+Changed files:
+
+- `src/research-service/app/rag/llamaindex_pipeline.py`
+- `src/research-service/tests/rag/test_llamaindex_pipeline.py`
+- `src/research-service/pyproject.toml`
+- `src/research-service/uv.lock`
+- `planning/PROGRESS.md`
+
+What changed:
+
+- Added a lightweight `DatabaseConnection` protocol and `PsycopgDatabaseConnection` adapter.
+- Implemented `PgVectorStore.upsert` with `INSERT ... ON CONFLICT` for RAG nodes.
+- Implemented `PgVectorStore.search` with pgvector cosine-distance ordering constrained to candidate node IDs.
+- Added deterministic dense-vector serialization so sparse local embeddings and provider dense embeddings both fit fixed-dimension pgvector columns.
+- Added `build_vector_store_from_env`, gated behind `RAG_VECTOR_STORE_PROVIDER=pgvector`, with in-memory fallback when the database URL is absent.
+- Added `psycopg[binary]` as the Python Research Service Postgres driver dependency.
+
+Verification:
+
+- Red test first: RAG tests failed because `DatabaseConnection` and `build_vector_store_from_env` did not exist.
+- `uv run pytest tests/rag/test_llamaindex_pipeline.py -q` passed with 21 RAG tests and 34 third-party warnings.
+
+Remaining limitations:
+
+- This slice defines the Python PGVector driver path, but does not yet add schema migration or containerized Postgres integration.
+- `PgVectorStore` expects a table with `node_id`, `text`, `metadata`, and `embedding vector(...)` columns plus a unique key on `node_id`.
+- The next slice should add schema creation/migration and an optional container E2E against real PostgreSQL with the `vector` extension.
+
 ## Handoff Summary
 
 Spring Alpha v2 is currently defined as a productized AI financial research workbench with a Python Agent analysis path and evidence-grade RAG evaluation path.
