@@ -146,6 +146,39 @@ class RagDashboardArtifact(BaseModel):
     limitations: list[str]
 
 
+class RagProviderMiniEvalCaseSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    case_id: str = Field(alias="caseId")
+    ticker: str
+    task_type: str = Field(alias="taskType")
+    retrieved_sections: list[str] = Field(alias="retrievedSections")
+    expected_sections: list[str] = Field(alias="expectedSections")
+    expected_term_hit_rate: float = Field(alias="expectedTermHitRate")
+    top_1_section_correctness: float = Field(alias="top1SectionCorrectness")
+    empty_retrieval_rate: float = Field(alias="emptyRetrievalRate")
+    bad_section_leak_rate: float = Field(alias="badSectionLeakRate")
+
+
+class RagProviderMiniEvalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_version: str = Field(default="0.1.0", alias="schemaVersion")
+    stage: str
+    dataset_name: str = Field(alias="datasetName")
+    provider: str
+    embedding_model: str = Field(alias="embeddingModel")
+    vector_store: str = Field(alias="vectorStore")
+    baseline_label: str = Field(alias="baselineLabel")
+    case_count: int = Field(alias="caseCount")
+    embedding_calls: int = Field(alias="embeddingCalls")
+    estimated_cost_usd: float = Field(alias="estimatedCostUsd")
+    elapsed_ms: int = Field(alias="elapsedMs")
+    metrics: dict[str, float | int]
+    cases: list[RagProviderMiniEvalCaseSummary]
+    limitations: list[str]
+
+
 def build_stage0_eval_dataset() -> RagEvalDataset:
     return RagEvalDataset(
         name="stage0_mvp_retrieval_baseline",
@@ -184,6 +217,22 @@ def build_live_pipeline_eval_dataset() -> RagEvalDataset:
 
 def build_hard_live_pipeline_eval_dataset() -> RagEvalDataset:
     return load_live_rag_eval_dataset(_hard_dataset_path())
+
+
+def build_stage1_provider_mini_eval_dataset() -> RagEvalDataset:
+    hard_dataset = build_hard_live_pipeline_eval_dataset()
+    selected_case_ids = {
+        "hard_aapl_services_without_section_cue",
+        "hard_msft_capex_abbreviation",
+        "hard_tsla_risk_pricing_supply",
+        "hard_jpm_capital_return",
+        "hard_nvda_export_supply_risk",
+    }
+    selected_cases = [case for case in hard_dataset.cases if case.case_id in selected_case_ids]
+    return RagEvalDataset(
+        name="stage1_provider_mini_rag_eval",
+        cases=selected_cases,
+    )
 
 
 def load_live_rag_eval_dataset(
@@ -334,6 +383,60 @@ def write_stage1_hard_dashboard_artifact(
         encoding="utf-8",
     )
     return target_path
+
+
+def build_stage1_provider_mini_eval_summary(
+    artifact: RagBaselineEvalArtifact,
+    *,
+    provider: str,
+    embedding_model: str,
+    vector_store: str,
+    embedding_calls: int,
+    estimated_cost_usd: float,
+    elapsed_ms: int,
+) -> RagProviderMiniEvalSummary:
+    metrics = artifact.aggregate_metrics
+    return RagProviderMiniEvalSummary(
+        stage="stage_1_provider_mini_rag",
+        datasetName=artifact.dataset_name,
+        provider=provider,
+        embeddingModel=embedding_model,
+        vectorStore=vector_store,
+        baselineLabel=artifact.baseline_label,
+        caseCount=len(artifact.records),
+        embeddingCalls=embedding_calls,
+        estimatedCostUsd=estimated_cost_usd,
+        elapsedMs=elapsed_ms,
+        metrics={
+            "expectedSectionHitRate": metrics.expected_section_hit_rate,
+            "expectedTermHitRate": metrics.expected_term_hit_rate,
+            "top1SectionCorrectness": metrics.top_1_section_correctness,
+            "emptyRetrievalRate": metrics.empty_retrieval_rate,
+            "badSectionLeakRate": metrics.bad_section_leak_rate,
+            "averageSnippetLength": metrics.average_snippet_length,
+            "maxSourcePayloadBytes": metrics.max_source_payload_bytes,
+            "totalLatencyMs": metrics.total_latency_ms,
+        },
+        cases=[
+            RagProviderMiniEvalCaseSummary(
+                caseId=record.case_id,
+                ticker=record.ticker,
+                taskType=record.task_type.value,
+                retrievedSections=record.retrieved_sections,
+                expectedSections=record.expected_sections,
+                expectedTermHitRate=record.metrics.expected_term_hit_rate,
+                top1SectionCorrectness=record.metrics.top_1_section_correctness,
+                emptyRetrievalRate=record.metrics.empty_retrieval_rate,
+                badSectionLeakRate=record.metrics.bad_section_leak_rate,
+            )
+            for record in artifact.records
+        ],
+        limitations=[
+            "Manual live gate for provider-backed embeddings, not a default CI gate.",
+            "Estimated embedding cost is configured by the runner, not provider billing.",
+            "The mini suite is representative and intentionally smaller than the hard suite.",
+        ],
+    )
 
 
 def assert_rag_production_readiness(

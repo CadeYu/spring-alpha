@@ -161,6 +161,17 @@ eval threshold 检查 primary hybrid retrieval 的 expected section hit rate、
 expected term hit rate、top-1 section correctness、empty retrieval rate、bad
 section leak rate 和 source payload size。
 
+Provider-backed mini RAG eval gate，手动/optional live gate：
+
+```bash
+GEMINI_API_KEY="$GEMINI_API_KEY" ./scripts/verify-provider-mini-rag-eval.sh
+```
+
+该门禁会启动临时 PGVector，用 Gemini embeddings 跑 5 个 representative hard
+cases，只验证 primary hybrid retrieval，并记录 retrieval quality、elapsed
+time、embedding call count 和 estimated cost。它不属于默认 CI gate，避免外部
+provider 成本、限流和可用性影响基础验证。
+
 ## Full Local Verification
 
 当 Python Research Service 创建后，完整验证顺序建议为：

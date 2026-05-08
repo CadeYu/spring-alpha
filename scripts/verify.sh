@@ -24,6 +24,7 @@ required_files=(
   "scripts/verify-pgvector-rag.sh"
   "scripts/verify-gemini-pgvector-rag.sh"
   "scripts/verify-pgvector-rag-eval.sh"
+  "scripts/verify-provider-mini-rag-eval.sh"
   "src/research-service/Dockerfile"
   ".github/workflows/ci.yml"
 )
@@ -64,6 +65,7 @@ bash -n scripts/verify-compose-full-e2e.sh
 bash -n scripts/verify-pgvector-rag.sh
 bash -n scripts/verify-gemini-pgvector-rag.sh
 bash -n scripts/verify-pgvector-rag-eval.sh
+bash -n scripts/verify-provider-mini-rag-eval.sh
 
 echo "Checking research task contract consistency..."
 node - <<'NODE'
@@ -166,8 +168,10 @@ const requiredSnippets = [
   [evalScript, 'build_stage1_hard_eval_suite'],
   [evalModule, 'class RagProductionReadinessThresholds'],
   [evalModule, 'def assert_rag_production_readiness'],
+  [evalModule, 'build_stage1_provider_mini_eval_dataset'],
   [verifyDocs, './scripts/verify-compose-full-e2e.sh'],
   [verifyDocs, '../../scripts/verify-pgvector-rag-eval.sh'],
+  [verifyDocs, './scripts/verify-provider-mini-rag-eval.sh'],
 ];
 
 for (const [content, snippet] of requiredSnippets) {

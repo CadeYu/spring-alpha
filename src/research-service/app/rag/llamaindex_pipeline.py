@@ -7,6 +7,7 @@ from enum import StrEnum
 from hashlib import sha1
 from math import sqrt
 from os import getenv
+from time import perf_counter
 from typing import Any, Protocol
 from urllib import parse as url_parse
 from urllib import request as url_request
@@ -518,6 +519,7 @@ class LlamaIndexRagPipeline:
         sections: list[str] | None = None,
         top_k: int = 5,
     ) -> RetrieveEvidenceResult:
+        started_at = perf_counter()
         expanded_query = _expand_financial_query(query) if self.enable_query_expansion else query
         requested_sections = sections if self.enable_section_filter else None
         candidates = self._retrieve_candidates(
@@ -560,6 +562,7 @@ class LlamaIndexRagPipeline:
             query=query,
             retrieved_nodes=retrieved_nodes,
             source_refs=source_refs,
+            latency_ms=int((perf_counter() - started_at) * 1000),
             fallback_status=RetrievalFallbackStatus.NONE
             if retrieved_nodes
             else RetrievalFallbackStatus.EMPTY,
@@ -584,8 +587,7 @@ class LlamaIndexRagPipeline:
             node
             for node in ticker_nodes
             if not requested_sections
-            or _canonical_section_name(str(node.metadata.get("section", "")))
-            in requested_sections
+            or _canonical_section_name(str(node.metadata.get("section", ""))) in requested_sections
         ]
         candidate_nodes = section_filtered_nodes or ticker_nodes
         lexical_candidates = [

@@ -14,6 +14,8 @@ from app.evals.baseline import (
     build_stage1_hard_eval_suite,
     build_stage1_hard_primary_eval_artifact,
     build_stage1_hard_dashboard_artifact,
+    build_stage1_provider_mini_eval_dataset,
+    build_stage1_provider_mini_eval_summary,
     load_live_rag_filing_corpus,
     run_live_pipeline_eval,
     run_live_pipeline_experiment_suite,
@@ -140,6 +142,52 @@ def test_hard_live_rag_eval_dataset_exercises_retrieval_failures() -> None:
     assert any(case.expected_sections == ["Risk Factors"] for case in dataset.cases)
     assert all(case.expected_terms for case in dataset.cases)
     assert all(case.bad_sections for case in dataset.cases)
+
+
+def test_provider_mini_eval_dataset_selects_representative_hard_cases() -> None:
+    dataset = build_stage1_provider_mini_eval_dataset()
+
+    assert dataset.name == "stage1_provider_mini_rag_eval"
+    assert len(dataset.cases) == 5
+    assert {case.ticker for case in dataset.cases} == {"AAPL", "MSFT", "TSLA", "JPM", "NVDA"}
+    assert {case.task_type.value for case in dataset.cases} == {
+        "business_driver_deep_dive",
+        "cash_flow_capital_allocation",
+    }
+    assert any(case.expected_sections == ["Segment Information"] for case in dataset.cases)
+    assert any(case.expected_sections == ["Risk Factors"] for case in dataset.cases)
+    assert any(
+        case.expected_sections == ["Liquidity and Capital Resources"] for case in dataset.cases
+    )
+
+
+def test_provider_mini_eval_summary_records_provider_latency_and_cost() -> None:
+    artifact = run_live_pipeline_eval(
+        build_stage1_provider_mini_eval_dataset(),
+        strategy=RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL,
+    )
+
+    summary = build_stage1_provider_mini_eval_summary(
+        artifact,
+        provider="gemini",
+        embedding_model="gemini-embedding-001",
+        vector_store="pgvector",
+        embedding_calls=42,
+        estimated_cost_usd=0.0123,
+        elapsed_ms=1234,
+    )
+    payload = summary.model_dump(mode="json", by_alias=True)
+
+    assert payload["stage"] == "stage_1_provider_mini_rag"
+    assert payload["provider"] == "gemini"
+    assert payload["embeddingModel"] == "gemini-embedding-001"
+    assert payload["vectorStore"] == "pgvector"
+    assert payload["caseCount"] == 5
+    assert payload["embeddingCalls"] == 42
+    assert payload["estimatedCostUsd"] == 0.0123
+    assert payload["elapsedMs"] == 1234
+    assert payload["metrics"]["emptyRetrievalRate"] == 0.0
+    assert len(payload["cases"]) == 5
 
 
 def test_live_pipeline_experiment_suite_compares_retrieval_strategies() -> None:
