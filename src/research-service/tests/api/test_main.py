@@ -139,13 +139,7 @@ def test_agent_run_endpoint_can_use_llm_planner_for_first_tool_call() -> None:
                 }
             ).complete_json(request)
 
-    client = TestClient(
-        create_app(
-            DeterministicAgentWorkflow(
-                llm_client=SequenceLlmClient()
-            )
-        )
-    )
+    client = TestClient(create_app(DeterministicAgentWorkflow(llm_client=SequenceLlmClient())))
 
     response = client.post(
         "/agent/runs",
@@ -161,7 +155,10 @@ def test_agent_run_endpoint_can_use_llm_planner_for_first_tool_call() -> None:
     payload = response.json()
 
     assert payload["status"] == AgentRunStatus.OK
-    assert payload["events"][0]["summary"] == "Plan next step: LLM planner selected MD&A evidence."
+    assert payload["events"][0]["summary"].startswith(
+        "Plan next step: LLM planner selected MD&A evidence."
+    )
+    assert "[planner_context" in payload["events"][0]["summary"]
     assert payload["events"][1]["tool_name"] == "search_filing_sections"
     assert payload["final_report"]["task_sections"]["task_type"] == "business_driver_deep_dive"
 
@@ -200,9 +197,10 @@ def test_agent_run_endpoint_builds_request_scoped_llm_planner_from_provider_conf
     payload = response.json()
 
     assert created == [(LlmProvider.SILICONFLOW, "secret")]
-    assert payload["events"][0]["summary"] == (
+    assert payload["events"][0]["summary"].startswith(
         "Plan next step: Provider planner selected business signals."
     )
+    assert "[planner_context" in payload["events"][0]["summary"]
     assert payload["events"][1]["tool_name"] == "get_business_signals"
     assert "secret" not in response.text
 
@@ -256,7 +254,10 @@ def test_agent_run_endpoint_lets_live_planner_finalize_after_observing_first_too
     assert tool_names == ["search_filing_sections", "search_filing_sections"]
     assert any(
         event["phase"] == "finalize_report"
-        and event["summary"] == "Planner finalized: Evidence is enough for this bounded smoke run."
+        and event["summary"].startswith(
+            "Planner finalized: Evidence is enough for this bounded smoke run."
+        )
+        and "[planner_context" in event["summary"]
         for event in payload["events"]
     )
 

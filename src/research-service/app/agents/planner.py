@@ -133,6 +133,11 @@ def _system_prompt() -> str:
 
 def _user_prompt(state: AgentState) -> str:
     default_tool = state.task_policy.allowed_tools[0]
+    remaining_steps = max(state.task_policy.max_steps - state.step_index, 0)
+    remaining_tool_calls = max(state.task_policy.max_tool_calls - state.tool_call_count, 0)
+    missing_outputs = (
+        ", ".join(state.coverage.missing_outputs) if state.coverage.missing_outputs else "none"
+    )
     return (
         "Choose the next tool for this task.\n"
         'Schema: {"decision":"call_tool","summary":"...","tool_name":"...","tool_input":{}}\n'
@@ -140,7 +145,12 @@ def _user_prompt(state: AgentState) -> str:
         f"Task: {state.task_type.value}\n"
         f"Allowed tools: {', '.join(state.task_policy.allowed_tools)}\n"
         f"Required outputs: {', '.join(state.task_policy.required_outputs)}\n"
+        f"Coverage status: {state.coverage.status}\n"
         f"Evidence count: {state.coverage.evidence_count}\n"
+        f"Citation coverage: {state.coverage.citation_coverage}\n"
+        f"Missing outputs: {missing_outputs}\n"
+        f"Remaining steps: {remaining_steps}\n"
+        f"Remaining tool calls: {remaining_tool_calls}\n"
         f"Recommended first tool: {default_tool}\n"
         f'Return a call_tool decision for "{default_tool}" unless evidence is already sufficient.'
     )

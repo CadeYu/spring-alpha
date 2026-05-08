@@ -108,7 +108,10 @@ def _run_live_planner_loop(
                 current,
                 AgentPhase.FINALIZE_REPORT,
                 ToolStatus.OK,
-                "Coverage is sufficient; finalizing bounded live planner loop.",
+                (
+                    "Coverage is sufficient; finalizing bounded live planner loop. "
+                    f"{_planner_context_suffix(current)}"
+                ),
             )
 
         if current.tool_call_count >= current.task_policy.max_tool_calls:
@@ -123,7 +126,7 @@ def _run_live_planner_loop(
                 current,
                 AgentPhase.FINALIZE_REPORT,
                 ToolStatus.OK,
-                f"Planner finalized: {decision.summary}",
+                f"Planner finalized: {decision.summary} {_planner_context_suffix(current)}",
             )
 
         call = decision.tool_call
@@ -131,7 +134,10 @@ def _run_live_planner_loop(
             reason = decision.degraded_reason or decision.summary
             current = _append_degraded_event(
                 current,
-                f"Planner decision was invalid; used deterministic fallback. {reason}",
+                (
+                    "Planner decision was invalid; used deterministic fallback. "
+                    f"{reason} {_planner_context_suffix(current)}"
+                ),
                 degraded_reason=reason,
             )
             call = _fallback_tool_call(current, fallback_calls)
@@ -139,7 +145,10 @@ def _run_live_planner_loop(
             reason = f"Planner tool {call.tool_name} is not allowed for {current.task_type.value}."
             current = _append_degraded_event(
                 current,
-                f"Planner decision was invalid; used deterministic fallback. {reason}",
+                (
+                    "Planner decision was invalid; used deterministic fallback. "
+                    f"{reason} {_planner_context_suffix(current)}"
+                ),
                 degraded_reason=reason,
             )
             call = _fallback_tool_call(current, fallback_calls)
@@ -157,7 +166,10 @@ def _run_live_planner_loop(
                 current,
                 AgentPhase.FINALIZE_REPORT,
                 ToolStatus.OK,
-                "Coverage is sufficient; finalizing bounded live planner loop.",
+                (
+                    "Coverage is sufficient; finalizing bounded live planner loop. "
+                    f"{_planner_context_suffix(current)}"
+                ),
             )
         return _append_degraded_event(
             current,
@@ -196,7 +208,7 @@ def _execute_planned_call(
         state,
         AgentPhase.BUILD_EVIDENCE_PLAN,
         ToolStatus.OK,
-        f"Plan next step: {call.summary}",
+        f"Plan next step: {call.summary} {_planner_context_suffix(state)}",
         tool_name=call.tool_name,
     )
     current = registry.execute(current, call)
@@ -211,6 +223,19 @@ def _execute_planned_call(
             if coverage_result.should_finalize
             else "Coverage gaps remain; continue bounded loop if budget allows."
         ),
+    )
+
+
+def _planner_context_suffix(state: AgentState) -> str:
+    remaining_steps = max(state.task_policy.max_steps - state.step_index, 0)
+    remaining_tool_calls = max(state.task_policy.max_tool_calls - state.tool_call_count, 0)
+    return (
+        "[planner_context "
+        f"remaining_steps={remaining_steps} "
+        f"remaining_tool_calls={remaining_tool_calls} "
+        f"coverage={state.coverage.status} "
+        f"evidence={state.coverage.evidence_count} "
+        f"citation_coverage={state.coverage.citation_coverage}]"
     )
 
 

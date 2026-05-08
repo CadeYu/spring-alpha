@@ -66,9 +66,42 @@ def test_live_planner_runs_tool_observe_tool_until_finalize() -> None:
         "get_business_signals",
     ]
     assert any(
-        event.summary == "Planner finalized: Observed evidence and citations are enough."
+        event.summary.startswith("Planner finalized: Observed evidence and citations are enough.")
+        and "[planner_context" in event.summary
         for event in result.events
     )
+
+
+def test_live_planner_events_include_compact_budget_and_coverage_telemetry() -> None:
+    planner = SequencePlannerClient(
+        [
+            {
+                "decision": "call_tool",
+                "summary": "Search filing evidence.",
+                "tool_name": "search_filing_sections",
+                "tool_input": {"sections": ["MD&A"], "query": "revenue margin"},
+            },
+            {
+                "decision": "finalize",
+                "summary": "Evidence is enough.",
+            },
+        ]
+    )
+    workflow = DeterministicAgentWorkflow(llm_client=planner)
+
+    result = workflow.run(request("run_live_planner_telemetry"))
+
+    planning_summary = result.events[0].summary
+    finalize_summary = result.events[-1].summary
+
+    assert "remaining_steps=5" in planning_summary
+    assert "remaining_tool_calls=5" in planning_summary
+    assert "coverage=degraded" in planning_summary
+    assert "evidence=0" in planning_summary
+    assert "remaining_steps=4" in finalize_summary
+    assert "remaining_tool_calls=4" in finalize_summary
+    assert "coverage=complete" in finalize_summary
+    assert "evidence=1" in finalize_summary
 
 
 def test_live_planner_stops_when_coverage_is_sufficient() -> None:
@@ -104,7 +137,8 @@ def test_live_planner_stops_when_coverage_is_sufficient() -> None:
     assert len(planner.requests) == 2
     assert "search_metric_evidence" not in tool_names
     assert any(
-        event.summary == "Coverage is sufficient; finalizing bounded live planner loop."
+        event.summary.startswith("Coverage is sufficient; finalizing bounded live planner loop.")
+        and "[planner_context" in event.summary
         for event in result.events
     )
 
@@ -187,7 +221,8 @@ def test_live_planner_finalizes_when_coverage_completes_on_last_budgeted_tool() 
     assert len(planner.requests) == 5
     assert not result.degraded_reasons
     assert any(
-        event.summary == "Coverage is sufficient; finalizing bounded live planner loop."
+        event.summary.startswith("Coverage is sufficient; finalizing bounded live planner loop.")
+        and "[planner_context" in event.summary
         for event in result.events
     )
 
