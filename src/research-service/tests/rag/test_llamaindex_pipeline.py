@@ -5,6 +5,7 @@ from app.contracts.research_task import ResearchTaskType
 from app.rag.llamaindex_pipeline import (
     DeterministicFinancialEmbeddingBackend,
     FilingDocument,
+    GeminiEmbeddingBackend,
     LlamaIndexRagPipeline,
     ProviderEmbeddingFallbackBackend,
     RetrievalFallbackStatus,
@@ -280,6 +281,47 @@ def test_hybrid_pipeline_uses_env_embedding_backend_by_default(
     assert isinstance(pipeline.embedding_backend, ProviderEmbeddingFallbackBackend)
     assert pipeline.embedding_backend.provider.value == "siliconflow"
     assert "not configured" in pipeline.embedding_backend.degraded_reason
+
+
+def test_embedding_backend_env_factory_builds_gemini_backend_when_configured(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RAG_EMBEDDING_PROVIDER", "gemini")
+    monkeypatch.setenv("RAG_EMBEDDING_API_KEY", "test-key")
+
+    backend = build_embedding_backend_from_env()
+
+    assert isinstance(backend, GeminiEmbeddingBackend)
+    assert backend.model == "gemini-embedding-001"
+
+
+def test_gemini_embedding_backend_calls_embed_content_api() -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def transport(
+        url: str,
+        payload: dict[str, object],
+        timeout_seconds: float,
+    ) -> dict[str, object]:
+        calls.append((url, payload))
+        assert timeout_seconds == 8.0
+        return {"embedding": {"values": [0.25, -0.5, 0.75]}}
+
+    backend = GeminiEmbeddingBackend(api_key="test-key", transport=transport)
+
+    vector = backend.embed("platform support")
+
+    assert vector == {"dim_0": 0.25, "dim_1": -0.5, "dim_2": 0.75}
+    assert calls == [
+        (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "gemini-embedding-001:embedContent?key=test-key",
+            {
+                "model": "models/gemini-embedding-001",
+                "content": {"parts": [{"text": "platform support"}]},
+            },
+        )
+    ]
 
 
 def test_pipeline_source_ref_snippet_is_centered_on_matched_terms() -> None:

@@ -2009,6 +2009,39 @@ Remaining limitations:
 - There is still no persistent vector store in Python RAG; the vector index remains in-memory.
 - The next slice can add a non-default live embedding smoke test with an explicit provider key, or expand the hard eval set before enabling provider embeddings.
 
+### 2026-05-08: Gemini provider-backed embedding smoke
+
+Changed files:
+
+- `src/research-service/app/rag/llamaindex_pipeline.py`
+- `src/research-service/tests/rag/test_llamaindex_pipeline.py`
+- `planning/PROGRESS.md`
+
+What changed:
+
+- Added `GeminiEmbeddingBackend` for the official Gemini `models.embedContent` API.
+- Kept provider-backed embeddings opt-in through `RAG_EMBEDDING_PROVIDER=gemini` and `RAG_EMBEDDING_API_KEY`.
+- Converted Gemini dense embedding responses into the existing vector-index dictionary format.
+- Added injectable embedding transport for deterministic contract tests without storing provider keys.
+- Kept deterministic local embeddings as the default path and kept unconfigured providers on fallback behavior.
+
+Observed provider smoke:
+
+- Gemini embedding smoke returned `GeminiEmbeddingBackend`, `3072` dimensions, and normalized vector norm `1.0`.
+- Gemini-backed hybrid retrieval smoke returned fallback status `none`, section `Segment Information`, and rerank reason `hybrid_section_vector_lexical_overlap`.
+
+Verification:
+
+- Red test first: RAG tests failed because `GeminiEmbeddingBackend` did not exist.
+- `uv run pytest tests/rag/test_llamaindex_pipeline.py` passed with 17 RAG tests and 34 third-party warnings.
+- Live smoke was run with the API key passed only through the process environment; no provider key was written to code, docs, or git.
+
+Remaining limitations:
+
+- Only Gemini has a real provider-backed embedding implementation so far; SiliconFlow and OpenAI remain fallback-only at this boundary.
+- Provider-backed embedding is still opt-in and not the production default.
+- Python RAG vector storage is still in-memory, not PGVector.
+
 ## Handoff Summary
 
 Spring Alpha v2 is currently defined as a productized AI financial research workbench with a Python Agent analysis path and evidence-grade RAG evaluation path.

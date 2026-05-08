@@ -1,3 +1,4 @@
+import json
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -6,6 +7,8 @@ from hashlib import sha1
 from math import sqrt
 from os import getenv
 from typing import Any, Protocol
+from urllib import parse as url_parse
+from urllib import request as url_request
 
 from llama_index.core.schema import NodeWithScore, TextNode
 from pydantic import BaseModel, ConfigDict, Field
@@ -70,6 +73,16 @@ class EmbeddingBackend(Protocol):
         """Return a deterministic sparse embedding for local retrieval experiments."""
 
 
+class EmbeddingTransport(Protocol):
+    def __call__(
+        self,
+        url: str,
+        payload: dict[str, object],
+        timeout_seconds: float,
+    ) -> dict[str, object]:
+        """POST an embedding request and return the decoded JSON response."""
+
+
 class EmbeddingProvider(StrEnum):
     DETERMINISTIC = "deterministic"
     SILICONFLOW = "siliconflow"
@@ -121,6 +134,39 @@ class ProviderEmbeddingFallbackBackend:
         return self.fallback_backend.embed(text)
 
 
+class GeminiEmbeddingBackend:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str = "gemini-embedding-001",
+        timeout_seconds: float = 8.0,
+        transport: EmbeddingTransport | None = None,
+    ) -> None:
+        self.api_key = api_key
+        self.model = model
+        self.timeout_seconds = timeout_seconds
+        self._transport = transport or _urllib_json_transport
+
+    def embed(self, text: str) -> dict[str, float]:
+        response = self._transport(
+            self._embedding_url(),
+            {
+                "model": f"models/{self.model}",
+                "content": {"parts": [{"text": text}]},
+            },
+            self.timeout_seconds,
+        )
+        values = _embedding_values_from_response(response)
+        return {f"dim_{index}": value for index, value in enumerate(values)}
+
+    def _embedding_url(self) -> str:
+        return (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.model}:embedContent?key={url_parse.quote(self.api_key)}"
+        )
+
+
 class InMemoryVectorIndex:
     def __init__(self, embedding_backend: EmbeddingBackend) -> None:
         self.embedding_backend = embedding_backend
@@ -162,6 +208,9 @@ def build_embedding_backend_from_env() -> EmbeddingBackend:
             provider=provider,
             degraded_reason=f"{provider.value} embedding provider is not configured.",
         )
+
+    if provider == EmbeddingProvider.GEMINI:
+        return GeminiEmbeddingBackend(api_key=api_key)
 
     return ProviderEmbeddingFallbackBackend(
         provider=provider,
@@ -385,6 +434,40 @@ def _embedding_provider_from_name(name: str) -> EmbeddingProvider:
         return EmbeddingProvider(name)
     except ValueError:
         return EmbeddingProvider.DETERMINISTIC
+
+
+def _urllib_json_transport(
+    url: str,
+    payload: dict[str, object],
+    timeout_seconds: float,
+) -> dict[str, object]:
+    body = json.dumps(payload).encode("utf-8")
+    request = url_request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with url_request.urlopen(request, timeout=timeout_seconds) as response:
+        decoded = json.loads(response.read().decode("utf-8"))
+    if not isinstance(decoded, dict):
+        raise ValueError("Embedding provider response must be a JSON object")
+    return decoded
+
+
+def _embedding_values_from_response(response: dict[str, object]) -> list[float]:
+    embedding = response.get("embedding")
+    if not isinstance(embedding, dict):
+        raise ValueError("Embedding provider response did not include embedding")
+    values = embedding.get("values")
+    if not isinstance(values, list):
+        raise ValueError("Embedding provider response did not include embedding values")
+    parsed_values: list[float] = []
+    for value in values:
+        if not isinstance(value, int | float):
+            raise ValueError("Embedding provider returned a non-numeric embedding value")
+        parsed_values.append(float(value))
+    return parsed_values
 
 
 def _section_to_node(section: FilingSection, index: int) -> TextNode:
