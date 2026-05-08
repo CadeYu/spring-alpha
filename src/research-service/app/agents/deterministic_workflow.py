@@ -84,28 +84,6 @@ def _run_dynamic_deterministic_loop(
     while planned_calls and current.step_index < current.task_policy.max_steps:
         call = planned_calls.pop(0)
 
-        if llm_client is not None:
-            decision = plan_next_step(current, llm_client)
-            if decision.decision == PlannerDecisionType.FINALIZE:
-                return _append_loop_event(
-                    current,
-                    AgentPhase.FINALIZE_REPORT,
-                    ToolStatus.OK,
-                    f"Planner finalized: {decision.summary}",
-                )
-            if (
-                decision.decision == PlannerDecisionType.CALL_TOOL
-                and decision.tool_call is not None
-            ):
-                call = decision.tool_call
-            else:
-                current = _append_loop_event(
-                    current,
-                    AgentPhase.DEGRADED,
-                    ToolStatus.DEGRADED,
-                    decision.summary,
-                )
-
         current = _execute_planned_call(current, call, registry)
         if current.status == AgentRunStatus.DEGRADED:
             break
@@ -123,12 +101,6 @@ def _run_live_planner_loop(
     fallback_calls = list(calls)
 
     while current.step_index < current.task_policy.max_steps:
-        if current.tool_call_count >= current.task_policy.max_tool_calls:
-            return _append_degraded_event(
-                current,
-                "Tool budget exhausted before planner could finalize.",
-            )
-
         coverage_result = check_coverage(current)
         current = current.model_copy(update={"coverage": coverage_result.coverage})
         if coverage_result.should_finalize:
@@ -137,6 +109,12 @@ def _run_live_planner_loop(
                 AgentPhase.FINALIZE_REPORT,
                 ToolStatus.OK,
                 "Coverage is sufficient; finalizing bounded live planner loop.",
+            )
+
+        if current.tool_call_count >= current.task_policy.max_tool_calls:
+            return _append_degraded_event(
+                current,
+                "Tool budget exhausted before planner could finalize.",
             )
 
         decision = plan_next_step(current, llm_client)
@@ -157,6 +135,14 @@ def _run_live_planner_loop(
                 degraded_reason=reason,
             )
             call = _fallback_tool_call(current, fallback_calls)
+        elif call.tool_name not in current.task_policy.allowed_tools:
+            reason = f"Planner tool {call.tool_name} is not allowed for {current.task_type.value}."
+            current = _append_degraded_event(
+                current,
+                f"Planner decision was invalid; used deterministic fallback. {reason}",
+                degraded_reason=reason,
+            )
+            call = _fallback_tool_call(current, fallback_calls)
 
         previous_degraded_count = len(current.degraded_reasons)
         current = _execute_planned_call(current, call, registry)
@@ -164,6 +150,15 @@ def _run_live_planner_loop(
             break
 
     if current.step_index >= current.task_policy.max_steps:
+        coverage_result = check_coverage(current)
+        current = current.model_copy(update={"coverage": coverage_result.coverage})
+        if coverage_result.should_finalize:
+            return _append_loop_event(
+                current,
+                AgentPhase.FINALIZE_REPORT,
+                ToolStatus.OK,
+                "Coverage is sufficient; finalizing bounded live planner loop.",
+            )
         return _append_degraded_event(
             current,
             f"Planner step budget exhausted after {current.task_policy.max_steps} steps.",
