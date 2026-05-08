@@ -2,7 +2,7 @@ package com.springalpha.backend.controller;
 
 import com.springalpha.backend.financial.service.FmpQuotaExceededException;
 import com.springalpha.backend.financial.service.UnsupportedTickerCategoryException;
-import com.springalpha.backend.service.strategy.ProviderAuthenticationException;
+import com.springalpha.backend.service.provider.ProviderAuthenticationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ControllerAdvice;

@@ -42,6 +42,7 @@ Thumbs.db
 .env.test.local
 .env.production.local
 start_backend.sh
+start_research_service.sh
 backend/.env
 backend/test_run.sh
 **/application-local.yml
@@ -67,10 +68,21 @@ frontend/test_parser.js
 # Diagnose Scripts & Generated Docs
 diagnose_fmp.sh
 docs/
+!docs/
+docs/*
+!docs/spec.md
+!docs/decisions.md
+!docs/ui-guidelines.md
+!docs/task-contract.md
+!docs/dynamic-agent-loop.md
 
 # --- Local Diagnostics / Probe Artifacts ---
 /.codex_*.png
+/screencapture-*.png
 /backend/response.txt
 /tmp/
 /frontend/tmp/
 /frontend/test-results/
+
+# --- Local Font Assets ---
+/frontend/public/fonts/

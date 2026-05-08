@@ -101,6 +101,7 @@ describe("Home page", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     window.localStorage.clear();
+    window.localStorage.setItem("spring-alpha-siliconflow-key", "sk-test-123");
   });
 
   it("renders degraded source metadata from the quarterly-only analysis stream", async () => {
@@ -158,7 +159,7 @@ describe("Home page", () => {
       expect.anything(),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/sec/analyze/AAPL?lang=en&model=chatanywhere"),
+      expect.stringContaining("/sec/analyze/AAPL?lang=en&model=siliconflow"),
       expect.anything(),
     );
   });
@@ -205,9 +206,285 @@ describe("Home page", () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/AAPL?lang=en&model=chatanywhere",
+      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it("renders MVP task cards and submits the selected task type", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Business driver report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          metadata: {
+            modelName: "gpt-4o-mini",
+            generatedAt: "2026-03-09T10:00:00",
+            language: "en",
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+
+    expect(
+      screen.getByRole("radiogroup", { name: /research tasks/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: /latest earnings readout/i }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("radio", { name: /business driver deep dive/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", {
+        name: /cash flow & capital allocation/i,
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("radio", { name: /business driver deep dive/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    expect(
+      await screen.findByText("Apple Inc. · Q1 2026 · 2026-02-01"),
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=business_driver_deep_dive",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("renders task-specific report sections after selecting different research tasks", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const taskType = new URL(`http://test${url}`).searchParams.get(
+        "taskType",
+      );
+      return createSseResponse([
+        {
+          executiveSummary: `${taskType} report.`,
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [
+            {
+              metricName: "Revenue",
+              value: "$100B",
+              interpretation: "Revenue increased.",
+              sentiment: "positive",
+            },
+            {
+              metricName: "Operating Cash Flow",
+              value: "$30B",
+              interpretation: "Cash conversion improved.",
+              sentiment: "positive",
+            },
+            {
+              metricName: "Capital Expenditures",
+              value: "$3B",
+              interpretation: "Capex remained disciplined.",
+              sentiment: "neutral",
+            },
+          ],
+          businessDrivers: [
+            {
+              title: "Services momentum",
+              description: "Services demand improved.",
+              impact: "high",
+            },
+          ],
+          riskFactors: [
+            {
+              category: "Competition",
+              description: "Competition remains elevated.",
+              severity: "medium",
+            },
+          ],
+          citations: [],
+          bullCase: "Bull case.",
+          bearCase: "Bear case.",
+          metadata: {
+            modelName: "gpt-4o-mini",
+            generatedAt: "2026-03-09T10:00:00",
+            language: "en",
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+
+    fireEvent.click(
+      screen.getByRole("radio", { name: /business driver deep dive/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    expect(
+      await screen.findByText("Business Driver Research View"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Product / Segment Signals")).toBeInTheDocument();
+    expect(screen.getByText("Driver Map")).toBeInTheDocument();
+    expect(screen.getByText("Driver Evidence")).toBeInTheDocument();
+    expect(screen.getByTestId("business-drivers")).toBeInTheDocument();
+    expect(screen.queryByTestId("key-metrics")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("dupont-chart")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bull-bear-case")).not.toBeInTheDocument();
+    expect(screen.queryByText("Capital Allocation View")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("radio", {
+        name: /cash flow & capital allocation/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    expect(await screen.findByText("Capital Allocation View")).toBeInTheDocument();
+    expect(screen.getByText("Cash Conversion Quality")).toBeInTheDocument();
+    expect(screen.getByText("Cash Quality Verdict")).toBeInTheDocument();
+    expect(screen.getByText("Capital Allocation Lens")).toBeInTheDocument();
+    expect(screen.getAllByText("Operating Cash Flow").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("business-drivers")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("key-metrics")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("dupont-chart")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Business Driver Research View"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("prefers typed task sections over legacy inferred report fields", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Legacy business summary.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [
+            {
+              title: "Legacy services momentum",
+              description: "Legacy driver should not be the primary source.",
+              impact: "high",
+            },
+          ],
+          riskFactors: [],
+          citations: [],
+          bullCase: "Bull case.",
+          bearCase: "Bear case.",
+          taskSections: {
+            schemaVersion: "task_sections.v1",
+            taskType: "business_driver_deep_dive",
+            coverage: {
+              status: "complete",
+              missingSections: [],
+              evidenceCount: 1,
+            },
+            businessDriver: {
+              driverThesis: {
+                headline: "Typed driver thesis",
+                durability: "durable",
+                summary: "Typed driver summary.",
+              },
+              driverMap: {
+                product: [
+                  {
+                    title: "Typed product signal",
+                    summary: "Typed product evidence.",
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                ],
+                segment: [],
+                geography: [],
+                demand: [],
+                pricing: [],
+                customer: [],
+                strategy: [],
+              },
+              positiveSignals: [],
+              negativeSignals: [],
+              watchlist: ["Track typed product adoption."],
+            },
+          },
+          metadata: {
+            modelName: "gpt-4o-mini",
+            generatedAt: "2026-03-09T10:00:00",
+            language: "en",
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+
+    fireEvent.click(
+      screen.getByRole("radio", { name: /business driver deep dive/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    expect(await screen.findByText("Typed driver thesis")).toBeInTheDocument();
+    expect(screen.getByText("Typed product signal")).toBeInTheDocument();
+    expect(screen.getByText("Track typed product adoption.")).toBeInTheDocument();
+    expect(screen.queryByText("Legacy services momentum")).not.toBeInTheDocument();
+  });
+
+  it("renders the RAG eval dashboard with persisted stage 1 hard-suite comparisons", () => {
+    render(<Home />);
+
+    expect(screen.getByText("Experiment Lab")).toBeInTheDocument();
+    expect(screen.getByText("RAG Eval Dashboard")).toBeInTheDocument();
+    expect(screen.getByText("Stage 1 Hard RAG")).toBeInTheDocument();
+    expect(screen.getAllByText("hybrid_semantic_lexical_retrieval")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("Expected Term Hit Rate")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("Top-1 Section Correctness")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("Bad Section Leak Rate")[0]).toBeInTheDocument();
+    expect(screen.getByText("Context Precision")).toBeInTheDocument();
+    expect(screen.getByText("stage1_hard_rag_eval")).toBeInTheDocument();
+    expect(screen.getByText("hard_msft_semantic_platform_driver")).toBeInTheDocument();
+    expect(screen.getByText("Section-Aware Lexical")).toBeInTheDocument();
+    expect(screen.getByText("No Section Filter")).toBeInTheDocument();
+    expect(screen.getByText("No Query Expansion")).toBeInTheDocument();
+    expect(
+      screen.getByText("Generated from the local hard RAG eval suite."),
+    ).toBeInTheDocument();
   });
 
   it("submits the live input value instead of falling back to the stale default ticker", async () => {
@@ -262,7 +539,7 @@ describe("Home page", () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/V?lang=en&model=chatanywhere",
+      "/api/sec/analyze/V?lang=en&model=siliconflow&taskType=latest_earnings_readout",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(screen.getByTestId("key-metrics")).toHaveTextContent(
@@ -270,12 +547,12 @@ describe("Home page", () => {
     );
   });
 
-  it("requires a saved OpenAI key before running BYOK mode", async () => {
+  it("requires a saved provider key before running BYOK mode", async () => {
     vi.stubGlobal("fetch", vi.fn());
+    window.localStorage.removeItem("spring-alpha-siliconflow-key");
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /openai \(byok\)/i }));
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
     expect(
@@ -419,7 +696,7 @@ describe("Home page", () => {
     ).toBeInTheDocument();
   });
 
-  it("sends the saved OpenAI key when BYOK mode is used", async () => {
+  it("sends the saved provider key when BYOK mode is used", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -449,8 +726,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /openai \(byok\)/i }));
-    fireEvent.change(screen.getByPlaceholderText(/enter your openai key/i), {
+    fireEvent.change(screen.getByPlaceholderText(/enter your siliconflow key/i), {
       target: { value: "sk-test-123" },
     });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -460,14 +736,14 @@ describe("Home page", () => {
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining("/sec/analyze/"),
         expect.objectContaining({
-          headers: { "X-OpenAI-API-Key": "sk-test-123" },
+          headers: { "X-Provider-API-Key": "sk-test-123" },
           signal: expect.any(AbortSignal),
         }),
       );
     });
   });
 
-  it("surfaces explicit invalid-key errors for OpenAI BYOK instead of rendering an empty report shell", async () => {
+  it("surfaces explicit invalid-key errors for BYOK providers instead of rendering an empty report shell", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -479,9 +755,9 @@ describe("Home page", () => {
 
       return new Response(
         JSON.stringify({
-          error: "OpenAI API key is invalid or unauthorized for this project",
-          code: "OPENAI_API_KEY_INVALID",
-          source: "openai",
+          error: "SiliconFlow API key is invalid or unauthorized for this project",
+          code: "SILICONFLOW_API_KEY_INVALID",
+          source: "siliconflow",
         }),
         {
           status: 401,
@@ -494,8 +770,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /openai \(byok\)/i }));
-    fireEvent.change(screen.getByPlaceholderText(/enter your openai key/i), {
+    fireEvent.change(screen.getByPlaceholderText(/enter your siliconflow key/i), {
       target: { value: "sk-invalid-test" },
     });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -503,7 +778,7 @@ describe("Home page", () => {
 
     expect(
       await screen.findByText(
-        /OpenAI API key is invalid or unauthorized for this project/i,
+        /SiliconFlow API key is invalid or unauthorized for this project/i,
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Analysis Report/i)).not.toBeInTheDocument();

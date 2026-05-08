@@ -1,13 +1,17 @@
 package com.springalpha.backend.controller;
 
 import com.springalpha.backend.financial.contract.AnalysisReport;
+import com.springalpha.backend.financial.contract.ResearchTaskType;
 import com.springalpha.backend.financial.model.HistoricalDataPoint;
 import com.springalpha.backend.service.FinancialAnalysisService;
 import com.springalpha.backend.service.SecService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -54,12 +58,32 @@ public class SecController {
             @PathVariable String ticker,
             @RequestParam(defaultValue = "en") String lang,
             @RequestParam(defaultValue = "") String model,
-            @RequestHeader(name = "X-OpenAI-API-Key", required = false) String openAiApiKey) {
-        log.info("REST request to analyze stock: {}, lang: {}, model: {}", ticker, lang, model);
+            @RequestParam(defaultValue = ResearchTaskType.DEFAULT_REQUEST_VALUE) String taskType,
+            @RequestHeader HttpHeaders headers) {
+        ResearchTaskType researchTaskType = parseResearchTaskType(taskType);
+        log.info("REST request to analyze stock: {}, lang: {}, model: {}, taskType: {}",
+                ticker, lang, model, researchTaskType.requestValue());
         // The analysis flow still contains blocking FMP access, so move the entire
         // stream off the Netty event loop.
-        return Flux.defer(() -> analysisService.analyzeStock(ticker, lang, model, openAiApiKey))
+        return Flux.defer(() -> analysisService.analyzeStock(ticker, lang, model, resolveProviderApiKey(headers), researchTaskType))
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private String resolveProviderApiKey(HttpHeaders headers) {
+        String genericKey = headers.getFirst("X-Provider-API-Key");
+        if (genericKey != null && !genericKey.isBlank()) {
+            return genericKey;
+        }
+        String legacyOpenAiKey = headers.getFirst("X-OpenAI-API-Key");
+        return legacyOpenAiKey != null && !legacyOpenAiKey.isBlank() ? legacyOpenAiKey : null;
+    }
+
+    private ResearchTaskType parseResearchTaskType(String taskType) {
+        try {
+            return ResearchTaskType.fromRequestValue(taskType);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+        }
     }
 
     /**
@@ -83,8 +107,7 @@ public class SecController {
     /**
      * 获取可用的 AI 模型列表
      * <p>
-     * 返回当前系统支持的所有模型 (e.g. "groq", "chatanywhere", "openai")
-     * 以及默认模型。
+     * 返回当前系统支持的 BYOK provider 以及默认 provider。
      */
     @GetMapping("/models")
     public Map<String, Object> getAvailableModels() {

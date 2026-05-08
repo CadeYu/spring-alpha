@@ -1,4 +1,17 @@
 services:
+  research-service:
+    build: ./src/research-service
+    container_name: spring-alpha-research-service
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=5)" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
   backend:
     build: ./backend
     container_name: spring-alpha-backend
@@ -7,6 +20,11 @@ services:
     env_file: .env
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://ep-super-night-a1grbtke-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+      - RESEARCH_SERVICE_BASE_URL=http://research-service:8090
+      - RESEARCH_SERVICE_TIMEOUT=PT75S
+    depends_on:
+      research-service:
+        condition: service_healthy
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8081/api/sec/models" ]
       interval: 30s

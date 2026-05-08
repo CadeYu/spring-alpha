@@ -1,0 +1,1679 @@
+{
+  "stage": "stage_1_hard_rag",
+  "stageLabel": "Stage 1 Hard RAG",
+  "datasetName": "stage1_hard_rag_eval",
+  "systemUnderTest": "llamaindex_request_pipeline",
+  "baselineLabel": "hybrid_semantic_lexical_retrieval",
+  "metrics": [
+    {
+      "key": "expectedTermHitRate",
+      "label": "Expected Term Hit Rate",
+      "value": 1.0,
+      "format": "ratio"
+    },
+    {
+      "key": "expectedSectionHitRate",
+      "label": "Expected Section Hit Rate",
+      "value": 1.0,
+      "format": "ratio"
+    },
+    {
+      "key": "top1SectionCorrectness",
+      "label": "Top-1 Section Correctness",
+      "value": 1.0,
+      "format": "ratio"
+    },
+    {
+      "key": "emptyRetrievalRate",
+      "label": "Empty Retrieval Rate",
+      "value": 0.0,
+      "format": "ratio"
+    },
+    {
+      "key": "badSectionLeakRate",
+      "label": "Bad Section Leak Rate",
+      "value": 0.0,
+      "format": "ratio"
+    },
+    {
+      "key": "contextPrecision",
+      "label": "Context Precision",
+      "value": 1.0,
+      "format": "ratio"
+    },
+    {
+      "key": "maxSourcePayloadBytes",
+      "label": "Max Source Payload Bytes",
+      "value": 545.0,
+      "format": "milliseconds"
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "hard_aapl_services_without_section_cue",
+      "ticker": "AAPL",
+      "taskType": "business_driver_deep_dive",
+      "retrievedSections": [
+        "Segment Information"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_aapl_buyback_synonym",
+      "ticker": "AAPL",
+      "taskType": "cash_flow_capital_allocation",
+      "retrievedSections": [
+        "Liquidity and Capital Resources"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_msft_capex_abbreviation",
+      "ticker": "MSFT",
+      "taskType": "cash_flow_capital_allocation",
+      "retrievedSections": [
+        "Liquidity and Capital Resources"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_msft_segment_without_azure_term",
+      "ticker": "MSFT",
+      "taskType": "business_driver_deep_dive",
+      "retrievedSections": [
+        "Segment Information"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_tsla_risk_pricing_supply",
+      "ticker": "TSLA",
+      "taskType": "business_driver_deep_dive",
+      "retrievedSections": [
+        "Risk Factors"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_tsla_energy_segment_without_section_cue",
+      "ticker": "TSLA",
+      "taskType": "business_driver_deep_dive",
+      "retrievedSections": [
+        "Segment Information"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_jpm_capital_return",
+      "ticker": "JPM",
+      "taskType": "cash_flow_capital_allocation",
+      "retrievedSections": [
+        "Liquidity and Capital Resources"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_jpm_risk_without_exact_phrase",
+      "ticker": "JPM",
+      "taskType": "business_driver_deep_dive",
+      "retrievedSections": [
+        "Risk Factors"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_nvda_export_supply_risk",
+      "ticker": "NVDA",
+      "taskType": "business_driver_deep_dive",
+      "retrievedSections": [
+        "Risk Factors"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_nvda_capex_inventory_synonym",
+      "ticker": "NVDA",
+      "taskType": "cash_flow_capital_allocation",
+      "retrievedSections": [
+        "Liquidity and Capital Resources"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_amzn_aws_usage_driver",
+      "ticker": "AMZN",
+      "taskType": "business_driver_deep_dive",
+      "retrievedSections": [
+        "Segment Information"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_amzn_capex_abbreviation",
+      "ticker": "AMZN",
+      "taskType": "cash_flow_capital_allocation",
+      "retrievedSections": [
+        "Liquidity and Capital Resources"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    },
+    {
+      "caseId": "hard_msft_semantic_platform_driver",
+      "ticker": "MSFT",
+      "taskType": "business_driver_deep_dive",
+      "retrievedSections": [
+        "Segment Information"
+      ],
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 1.0,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        }
+      ]
+    }
+  ],
+  "stageComparisons": [
+    {
+      "stage": "stage_1_hard_rag",
+      "stageLabel": "Section-Aware Lexical",
+      "datasetName": "stage1_hard_rag_eval",
+      "systemUnderTest": "llamaindex_request_pipeline",
+      "baselineLabel": "section_aware_lexical_retrieval",
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 0.9230769230769231,
+          "format": "ratio"
+        },
+        {
+          "key": "expectedSectionHitRate",
+          "label": "Expected Section Hit Rate",
+          "value": 0.9230769230769231,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 0.9230769230769231,
+          "format": "ratio"
+        },
+        {
+          "key": "emptyRetrievalRate",
+          "label": "Empty Retrieval Rate",
+          "value": 0.07692307692307693,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        },
+        {
+          "key": "contextPrecision",
+          "label": "Context Precision",
+          "value": 0.9230769230769231,
+          "format": "ratio"
+        },
+        {
+          "key": "maxSourcePayloadBytes",
+          "label": "Max Source Payload Bytes",
+          "value": 545.0,
+          "format": "milliseconds"
+        }
+      ],
+      "cases": [
+        {
+          "caseId": "hard_aapl_services_without_section_cue",
+          "ticker": "AAPL",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_aapl_buyback_synonym",
+          "ticker": "AAPL",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_msft_capex_abbreviation",
+          "ticker": "MSFT",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_msft_segment_without_azure_term",
+          "ticker": "MSFT",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_tsla_risk_pricing_supply",
+          "ticker": "TSLA",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Risk Factors"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_tsla_energy_segment_without_section_cue",
+          "ticker": "TSLA",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_jpm_capital_return",
+          "ticker": "JPM",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_jpm_risk_without_exact_phrase",
+          "ticker": "JPM",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Risk Factors"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_nvda_export_supply_risk",
+          "ticker": "NVDA",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Risk Factors"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_nvda_capex_inventory_synonym",
+          "ticker": "NVDA",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_amzn_aws_usage_driver",
+          "ticker": "AMZN",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_amzn_capex_abbreviation",
+          "ticker": "AMZN",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_msft_semantic_platform_driver",
+          "ticker": "MSFT",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        }
+      ],
+      "stageComparisons": [],
+      "limitations": []
+    },
+    {
+      "stage": "stage_1_hard_rag",
+      "stageLabel": "No Section Filter",
+      "datasetName": "stage1_hard_rag_eval",
+      "systemUnderTest": "llamaindex_request_pipeline",
+      "baselineLabel": "no_section_filter_lexical_retrieval",
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 0.9230769230769231,
+          "format": "ratio"
+        },
+        {
+          "key": "expectedSectionHitRate",
+          "label": "Expected Section Hit Rate",
+          "value": 0.9230769230769231,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 0.8461538461538461,
+          "format": "ratio"
+        },
+        {
+          "key": "emptyRetrievalRate",
+          "label": "Empty Retrieval Rate",
+          "value": 0.07692307692307693,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.5384615384615384,
+          "format": "ratio"
+        },
+        {
+          "key": "contextPrecision",
+          "label": "Context Precision",
+          "value": 0.6153846153846154,
+          "format": "ratio"
+        },
+        {
+          "key": "maxSourcePayloadBytes",
+          "label": "Max Source Payload Bytes",
+          "value": 545.0,
+          "format": "milliseconds"
+        }
+      ],
+      "cases": [
+        {
+          "caseId": "hard_aapl_services_without_section_cue",
+          "ticker": "AAPL",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_aapl_buyback_synonym",
+          "ticker": "AAPL",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources",
+            "MD&A"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 1.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_msft_capex_abbreviation",
+          "ticker": "MSFT",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_msft_segment_without_azure_term",
+          "ticker": "MSFT",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information",
+            "MD&A",
+            "Risk Factors"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 1.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_tsla_risk_pricing_supply",
+          "ticker": "TSLA",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Risk Factors"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_tsla_energy_segment_without_section_cue",
+          "ticker": "TSLA",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information",
+            "MD&A"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 1.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_jpm_capital_return",
+          "ticker": "JPM",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources",
+            "MD&A"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 1.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_jpm_risk_without_exact_phrase",
+          "ticker": "JPM",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Risk Factors",
+            "Liquidity and Capital Resources",
+            "MD&A"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 1.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_nvda_export_supply_risk",
+          "ticker": "NVDA",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "MD&A",
+            "Risk Factors"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 1.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_nvda_capex_inventory_synonym",
+          "ticker": "NVDA",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_amzn_aws_usage_driver",
+          "ticker": "AMZN",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information",
+            "MD&A",
+            "Risk Factors"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 1.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_amzn_capex_abbreviation",
+          "ticker": "AMZN",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_msft_semantic_platform_driver",
+          "ticker": "MSFT",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        }
+      ],
+      "stageComparisons": [],
+      "limitations": []
+    },
+    {
+      "stage": "stage_1_hard_rag",
+      "stageLabel": "No Query Expansion",
+      "datasetName": "stage1_hard_rag_eval",
+      "systemUnderTest": "llamaindex_request_pipeline",
+      "baselineLabel": "no_query_expansion_lexical_retrieval",
+      "metrics": [
+        {
+          "key": "expectedTermHitRate",
+          "label": "Expected Term Hit Rate",
+          "value": 0.6923076923076923,
+          "format": "ratio"
+        },
+        {
+          "key": "expectedSectionHitRate",
+          "label": "Expected Section Hit Rate",
+          "value": 0.6923076923076923,
+          "format": "ratio"
+        },
+        {
+          "key": "top1SectionCorrectness",
+          "label": "Top-1 Section Correctness",
+          "value": 0.6923076923076923,
+          "format": "ratio"
+        },
+        {
+          "key": "emptyRetrievalRate",
+          "label": "Empty Retrieval Rate",
+          "value": 0.3076923076923077,
+          "format": "ratio"
+        },
+        {
+          "key": "badSectionLeakRate",
+          "label": "Bad Section Leak Rate",
+          "value": 0.0,
+          "format": "ratio"
+        },
+        {
+          "key": "contextPrecision",
+          "label": "Context Precision",
+          "value": 0.6923076923076923,
+          "format": "ratio"
+        },
+        {
+          "key": "maxSourcePayloadBytes",
+          "label": "Max Source Payload Bytes",
+          "value": 545.0,
+          "format": "milliseconds"
+        }
+      ],
+      "cases": [
+        {
+          "caseId": "hard_aapl_services_without_section_cue",
+          "ticker": "AAPL",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_aapl_buyback_synonym",
+          "ticker": "AAPL",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_msft_capex_abbreviation",
+          "ticker": "MSFT",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_msft_segment_without_azure_term",
+          "ticker": "MSFT",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_tsla_risk_pricing_supply",
+          "ticker": "TSLA",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Risk Factors"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_tsla_energy_segment_without_section_cue",
+          "ticker": "TSLA",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_jpm_capital_return",
+          "ticker": "JPM",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [
+            "Liquidity and Capital Resources"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_jpm_risk_without_exact_phrase",
+          "ticker": "JPM",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Risk Factors"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_nvda_export_supply_risk",
+          "ticker": "NVDA",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Risk Factors"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_nvda_capex_inventory_synonym",
+          "ticker": "NVDA",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_amzn_aws_usage_driver",
+          "ticker": "AMZN",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [
+            "Segment Information"
+          ],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 1.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_amzn_capex_abbreviation",
+          "ticker": "AMZN",
+          "taskType": "cash_flow_capital_allocation",
+          "retrievedSections": [],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        },
+        {
+          "caseId": "hard_msft_semantic_platform_driver",
+          "ticker": "MSFT",
+          "taskType": "business_driver_deep_dive",
+          "retrievedSections": [],
+          "metrics": [
+            {
+              "key": "expectedTermHitRate",
+              "label": "Expected Term Hit Rate",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "top1SectionCorrectness",
+              "label": "Top-1 Section Correctness",
+              "value": 0.0,
+              "format": "ratio"
+            },
+            {
+              "key": "badSectionLeakRate",
+              "label": "Bad Section Leak Rate",
+              "value": 0.0,
+              "format": "ratio"
+            }
+          ]
+        }
+      ],
+      "stageComparisons": [],
+      "limitations": []
+    }
+  ],
+  "limitations": [
+    "Generated from the local hard RAG eval suite.",
+    "Hybrid vector retrieval uses a deterministic local embedding backend, not provider-backed embeddings.",
+    "Artifact is a reproducible regression baseline, not a production-scale benchmark."
+  ]
+}

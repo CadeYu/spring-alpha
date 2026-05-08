@@ -4,7 +4,7 @@ spring:
   
   # PostgreSQL (Neon) Configuration
   datasource:
-    url: jdbc:postgresql://ep-super-night-a1grbtke-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+    url: jdbc:postgresql://ep-super-night-a1grbtke-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channelBinding=require
     username: ${NEON_USERNAME:neondb_owner}
     password: ${NEON_PASSWORD:}
     driver-class-name: org.postgresql.Driver
@@ -24,14 +24,14 @@ spring:
   
   # Spring AI Configuration
   ai:
-    # OpenAI (Groq) - 当前主力
+    # Used by infrastructure such as embeddings. Report generation is delegated
+    # to Python Research Service through app.research-service.
     openai:
-      base-url: https://api.groq.com/openai
-      # 使用环境变量注入，默认值为空 (防止 GitHub 泄露)
-      api-key: ${GROQ_API_KEY:}
+      base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}
+      api-key: ${SILICONFLOW_API_KEY:}
       chat:
         options:
-          model: llama-3.3-70b-versatile
+          model: ${SILICONFLOW_MODEL:Pro/moonshotai/Kimi-K2.6}
     
     # Vertex AI (Gemini) - used for remote embeddings only
     vertex:
@@ -54,23 +54,27 @@ app:
   # 嵌入模型提供商: gemini (remote) | local (ONNX)
   embedding-provider: gemini
   
-  # 切换默认策略：groq (Groq Llama 3.3) | chatanywhere | openai
-  ai-provider: groq  # ← 切换回 Groq (Llama 3.3)
+  # BYOK provider: siliconflow | openai | gemini
+  ai-provider: siliconflow
+
+  siliconflow:
+    api-key: ${SILICONFLOW_API_KEY:}
+    model: ${SILICONFLOW_MODEL:Pro/moonshotai/Kimi-K2.6}
+    base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}
   
-  # OpenAI Configuration (optional - requires OPENAI_API_KEY)
   openai:
-    enabled: true
     api-key: ${OPENAI_API_KEY:}
-    model: ${OPENAI_MODEL:gpt-4o-mini}
+    model: ${OPENAI_MODEL:gpt-5.2}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
-  
-  # ChatAnywhere Configuration (免费 GPT API, 200 次/天)
-  # 申请 Key: https://api.chatanywhere.tech/v1/oauth/free/render
-  chatanywhere:
-    enabled: true
-    api-key: ${CHATANYWHERE_API_KEY:}
-    model: ${CHATANYWHERE_MODEL:gpt-4o-mini}
-    base-url: ${CHATANYWHERE_BASE_URL:https://api.chatanywhere.org/v1}
+
+  gemini:
+    api-key: ${GEMINI_API_KEY:}
+    model: ${GEMINI_MODEL:gemini-2.5-pro}
+    base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+
+  research-service:
+    base-url: ${RESEARCH_SERVICE_BASE_URL:http://127.0.0.1:8090}
+    timeout: ${RESEARCH_SERVICE_TIMEOUT:PT75S}
   
   # Financial Modeling Prep API Configuration (experimental only; no longer on the main path)
   fmp:

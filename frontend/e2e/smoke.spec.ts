@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+const liveAgentEnabled = process.env.RUN_LIVE_AGENT_E2E === "true";
+const liveSiliconFlowKey = process.env.SILICONFLOW_API_KEY;
+
 function sseBody(payloads: unknown[]) {
   return payloads
     .map((payload) => `data: ${JSON.stringify(payload)}\n`)
@@ -30,10 +33,144 @@ async function mockFinancialFactsRoute(
   await page.route("**/api/java/financial/**", handler);
 }
 
+const TASK_E2E_CASES = [
+  {
+    taskType: "latest_earnings_readout",
+    radioName: /latest earnings readout/i,
+    ticker: "AAPL",
+    companyName: "Apple Inc.",
+    summary: "Latest earnings readout mocked E2E summary.",
+    citation: "Latest earnings citation from MD&A.",
+  },
+  {
+    taskType: "business_driver_deep_dive",
+    radioName: /business driver deep dive/i,
+    ticker: "MSFT",
+    companyName: "Microsoft Corporation",
+    summary: "Business driver deep dive mocked E2E summary.",
+    citation: "Business drivers citation from the business section.",
+  },
+  {
+    taskType: "cash_flow_capital_allocation",
+    radioName: /cash flow & capital allocation/i,
+    ticker: "NVDA",
+    companyName: "NVIDIA Corporation",
+    summary: "Cash flow capital allocation mocked E2E summary.",
+    citation: "Cash flow citation from liquidity and capital resources.",
+  },
+] as const;
+
 test.describe("Spring Alpha smoke", () => {
-  test("free-model analysis renders grounded report metadata and citations", async ({
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "spring-alpha-siliconflow-key",
+        "test-skip-provider-validation",
+      );
+    });
+  });
+
+  for (const taskCase of TASK_E2E_CASES) {
+    test(`${taskCase.taskType} runs through the mocked analysis path`, async ({
+      page,
+    }) => {
+      const observedTaskTypes: string[] = [];
+
+      await mockHistoryRoute(page, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([]),
+        });
+      });
+
+      await mockFinancialFactsRoute(page, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({}),
+        });
+      });
+
+      await mockAnalyzeRoute(page, async (route) => {
+        const url = new URL(route.request().url());
+        const taskType = url.searchParams.get("taskType");
+        observedTaskTypes.push(taskType ?? "");
+
+        if (taskType !== taskCase.taskType) {
+          await route.fulfill({
+            status: 400,
+            contentType: "application/json",
+            body: JSON.stringify({
+              error: `Unexpected taskType: ${taskType ?? "missing"}`,
+            }),
+          });
+          return;
+        }
+
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          body: sseBody([
+            {
+              executiveSummary: taskCase.summary,
+              companyName: taskCase.companyName,
+              period: "Q1 2026",
+              filingDate: "2026-03-31",
+              keyMetrics: [],
+              businessDrivers: [],
+              riskFactors: [],
+              citations: [
+                {
+                  section: "MD&A",
+                  excerpt: taskCase.citation,
+                  verificationStatus: "VERIFIED",
+                },
+              ],
+              metadata: {
+                modelName: "gpt-4o-mini",
+                generatedAt: "2026-03-09T10:00:00Z",
+                language: "en",
+              },
+              sourceContext: {
+                status: "GROUNDED",
+                message: "Grounded in SEC text evidence.",
+              },
+            },
+          ]),
+        });
+      });
+
+      await page.goto("/app");
+      await page
+        .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
+        .fill(taskCase.ticker);
+      await page.getByRole("radio", { name: taskCase.radioName }).click();
+      await expect(
+        page.getByRole("radio", { name: taskCase.radioName }),
+      ).toBeChecked();
+      await page.getByRole("button", { name: /analyze/i }).click();
+
+      await expect(
+        page.getByText(`${taskCase.companyName} · Q1 2026 · 2026-03-31`),
+      ).toBeVisible();
+      await expect(page.getByText(taskCase.summary).first()).toBeVisible();
+      await expect(page.getByText(taskCase.citation)).toBeVisible();
+      expect(observedTaskTypes).toEqual([taskCase.taskType]);
+    });
+  }
+
+  test("BYOK analysis renders grounded report metadata and citations", async ({
     page,
   }) => {
+    await mockFinancialFactsRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+    });
+
     await mockHistoryRoute(page, async (route) => {
       await route.fulfill({
         status: 200,
@@ -111,18 +248,28 @@ test.describe("Spring Alpha smoke", () => {
   });
 
   test("BYOK mode blocks submission when no key is saved", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.removeItem("spring-alpha-siliconflow-key");
+    });
     await page.goto("/app");
-    await page.getByRole("button", { name: /openai \(byok\)/i }).click();
     await page.getByRole("button", { name: /analyze/i }).click();
 
     await expect(
-      page.getByText(/requires you to enter and save your api key first/i),
+      page.getByText(/SiliconFlow BYOK mode requires you to enter and save your api key first/i),
     ).toBeVisible();
   });
 
   test("TSLA first run in Chinese shows degraded-source notice", async ({
     page,
   }) => {
+    await mockFinancialFactsRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+    });
+
     await mockHistoryRoute(page, async (route) => {
       await route.fulfill({
         status: 200,
@@ -177,6 +324,14 @@ test.describe("Spring Alpha smoke", () => {
     page,
   }) => {
     let analyzeCount = 0;
+
+    await mockFinancialFactsRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+    });
 
     await mockHistoryRoute(page, async (route) => {
       await route.fulfill({
@@ -413,6 +568,14 @@ test.describe("Spring Alpha smoke", () => {
       resolveFirstHistory = resolve;
     });
 
+    await mockFinancialFactsRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+    });
+
     await mockHistoryRoute(page, async (route) => {
       historyCount += 1;
 
@@ -515,5 +678,68 @@ test.describe("Spring Alpha smoke", () => {
       page.getByText("Microsoft Corporation · Q2 2026 · 2026-07-30"),
     ).toBeVisible();
     await expect(page.getByText("FY 2024")).not.toBeVisible();
+  });
+});
+
+test.describe("Spring Alpha live Agent path", () => {
+  test.skip(
+    !liveAgentEnabled,
+    "Set RUN_LIVE_AGENT_E2E=true to run the non-mocked Agent E2E path.",
+  );
+  test.skip(
+    liveAgentEnabled && !liveSiliconFlowKey,
+    "Set SILICONFLOW_API_KEY to run the live SiliconFlow Agent E2E path.",
+  );
+
+  test("renders Python Research Service agent output through the browser", async ({
+    page,
+  }, testInfo) => {
+    testInfo.setTimeout(180_000);
+    const siliconFlowKey = liveSiliconFlowKey;
+    test.skip(!siliconFlowKey, "SILICONFLOW_API_KEY is required.");
+
+    await mockHistoryRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+
+    await mockFinancialFactsRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+    });
+
+    await page.addInitScript((key) => {
+      window.localStorage.setItem("spring-alpha-siliconflow-key", key);
+    }, siliconFlowKey);
+
+    await page.goto("/app");
+    await page
+      .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
+      .fill("AAPL");
+    await page
+      .getByRole("radio", { name: /business driver deep dive/i })
+      .click();
+    await page.getByRole("button", { name: /analyze/i }).click();
+
+    await expect(
+      page.getByText("Deterministic business driver deep dive generated").first(),
+    ).toBeVisible({ timeout: 120_000 });
+    await expect(
+      page.getByText(/Source Citations & Verification/i),
+    ).toBeVisible();
+    await expect(page.getByText(/Agent Progress/i)).toBeVisible();
+    await expect(page.getByText(/search_filing_sections/i).first()).toBeVisible();
+    await expect(
+      page
+        .locator("#pdf-section-citations")
+        .getByText(/SOURCE/i)
+        .first(),
+    ).toBeVisible();
   });
 });

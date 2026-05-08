@@ -1,0 +1,16 @@
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Revenue increased because data center demand for accelerated computing and networking products grew.
+Gross margin benefited from product mix, higher volume, and disciplined cost management.
+Management discussed supply availability, customer demand, and investments in new products.
+
+Segment Information
+Data Center revenue reflected compute, networking, and AI infrastructure demand.
+Gaming revenue reflected GPU sell-through, channel inventory, and product transitions.
+Professional Visualization and Automotive revenue contributed to diversified growth.
+
+Liquidity and Capital Resources
+Cash provided by operating activities supported inventory purchases, capital expenditures, and share repurchases.
+Liquidity remained strong due to cash, investments, and operating cash generation.
+
+Item 1A. Risk Factors
+Export controls, supply constraints, customer concentration, competition, and product transition risk could affect results.

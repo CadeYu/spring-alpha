@@ -1,4 +1,7 @@
 import { NextRequest } from 'next/server';
+import { isResearchTaskId } from '@/lib/researchTasks';
+
+const ANALYSIS_PROXY_TIMEOUT_MS = 240_000;
 
 /**
  * SSE bridge route for stock analysis.
@@ -13,20 +16,33 @@ export async function GET(
     const { ticker } = await params;
     const lang = request.nextUrl.searchParams.get('lang') || 'en';
     const model = request.nextUrl.searchParams.get('model') || '';
-    const openAiApiKey = request.headers.get('x-openai-api-key');
+    const taskType = request.nextUrl.searchParams.get('taskType') || '';
+    const providerApiKey =
+        request.headers.get('x-provider-api-key') ||
+        request.headers.get('x-openai-api-key');
 
     const baseUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8081';
-    const backendUrl = `${baseUrl}/api/sec/analyze/${ticker}?lang=${lang}&model=${model}`;
+    const backendParams = new URLSearchParams({ lang, model });
+    if (taskType) {
+        if (!isResearchTaskId(taskType)) {
+            return new Response(
+                JSON.stringify({ error: `Unsupported taskType: ${taskType}` }),
+                { status: 400, headers: { 'Content-Type': 'application/json' } }
+            );
+        }
+        backendParams.set('taskType', taskType);
+    }
+    const backendUrl = `${baseUrl}/api/sec/analyze/${ticker}?${backendParams.toString()}`;
 
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 120_000); // 120s timeout
+        const timeoutId = setTimeout(() => controller.abort(), ANALYSIS_PROXY_TIMEOUT_MS);
         request.signal.addEventListener('abort', () => controller.abort(), { once: true });
 
         const response = await fetch(backendUrl, {
             headers: {
                 'Accept': 'text/event-stream',
-                ...(openAiApiKey ? { 'X-OpenAI-API-Key': openAiApiKey } : {}),
+                ...(providerApiKey ? { 'X-Provider-API-Key': providerApiKey } : {}),
             },
             signal: controller.signal,
         });
@@ -75,7 +91,7 @@ export async function GET(
         return new Response(stream, {
             status: 200,
             headers: {
-                'Content-Type': 'text/event-stream',
+                'Content-Type': 'text/event-stream; charset=utf-8',
                 'Cache-Control': 'no-cache, no-transform',
                 'X-Accel-Buffering': 'no',
             },
@@ -90,5 +106,5 @@ export async function GET(
     }
 }
 
-// Allow streaming responses up to 120 seconds
-export const maxDuration = 120;
+// Allow long-running live LLM research streams.
+export const maxDuration = 240;

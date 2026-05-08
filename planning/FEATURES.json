@@ -1,0 +1,67 @@
+{
+  "version": "0.1.0",
+  "source": "docs/spec.md",
+  "scope": "mvp",
+  "features": [
+    {
+      "id": "task_card_entry",
+      "title": "Task card research entry",
+      "description": "Allow users to select a ticker and one of the MVP research task cards without free-form prompt input.",
+      "completed": true
+    },
+    {
+      "id": "latest_earnings_readout",
+      "title": "Latest Earnings Readout",
+      "description": "Replace the default Analyze flow with a structured earnings dashboard backed by source context.",
+      "completed": true
+    },
+    {
+      "id": "business_driver_deep_dive",
+      "title": "Business Driver Deep Dive",
+      "description": "Analyze products, segments, demand, pricing, customers, competition, and strategy using evidence-backed RAG.",
+      "completed": true
+    },
+    {
+      "id": "cash_flow_capital_allocation",
+      "title": "Cash Flow and Capital Allocation",
+      "description": "Analyze operating cash flow, free cash flow, capex, buybacks, dividends, debt, and liquidity.",
+      "completed": true
+    },
+    {
+      "id": "bounded_agent_workflow",
+      "title": "Bounded Agent workflow",
+      "description": "Run a controlled LangGraph workflow with structured events, fallback states, and no exposed chain-of-thought.",
+      "completed": true
+    },
+    {
+      "id": "llamaindex_rag_pipeline",
+      "title": "LlamaIndex RAG pipeline",
+      "description": "Build SEC filing ingestion, section-aware parsing, nodes, metadata, retrieval, rerank, and source packaging.",
+      "completed": true
+    },
+    {
+      "id": "evidence_aware_generation",
+      "title": "Evidence-aware generation",
+      "description": "Attach key claims to source snippets, section metadata, filing metadata, and citation status.",
+      "completed": true
+    },
+    {
+      "id": "rag_baseline_eval",
+      "title": "RAG baseline evaluation",
+      "description": "Create Stage 0 eval datasets and compare baseline retrieval and generation metrics.",
+      "completed": true
+    },
+    {
+      "id": "rag_eval_dashboard",
+      "title": "RAG Eval Dashboard",
+      "description": "Display eval artifacts and stage comparisons for retrieval quality, faithfulness, latency, and cost.",
+      "completed": true
+    },
+    {
+      "id": "report_archive",
+      "title": "Report archive and handoff artifacts",
+      "description": "Persist final reports, agent events, retrieval records, citation validation, and eval artifacts for review.",
+      "completed": true
+    }
+  ]
+}

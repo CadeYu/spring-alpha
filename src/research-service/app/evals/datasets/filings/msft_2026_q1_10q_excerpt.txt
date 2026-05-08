@@ -1,0 +1,16 @@
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Cloud revenue increased as Azure consumption grew and commercial bookings remained healthy.
+Operating income expanded because productivity software demand and cloud gross margin improved.
+Management discussed outlook for AI infrastructure investment and enterprise demand.
+
+Segment Information
+Productivity and Business Processes benefited from Microsoft 365 commercial seat growth.
+Intelligent Cloud growth was driven by Azure, server products, and enterprise services.
+More Personal Computing included Windows, devices, gaming, and search advertising.
+
+Liquidity and Capital Resources
+Cash provided by operations funded capital expenditures for data centers and share repurchases.
+Liquidity was supported by cash, short-term investments, and access to credit markets.
+
+Item 1A. Risk Factors
+Cloud demand, cybersecurity incidents, competition, regulation, and data center capacity could affect results.

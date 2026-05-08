@@ -1,0 +1,92 @@
+{
+  "stage": "stage_0_baseline",
+  "stageLabel": "Stage 0 Baseline",
+  "datasetName": "stage0_mvp_retrieval_baseline",
+  "systemUnderTest": "bounded_workflow_placeholder",
+  "baselineLabel": "current_placeholder_retrieval",
+  "metrics": [
+    {
+      "key": "retrievalRecallAt5",
+      "label": "Retrieval Recall@5",
+      "value": 1,
+      "format": "ratio"
+    },
+    {
+      "key": "contextPrecision",
+      "label": "Context Precision",
+      "value": 1,
+      "format": "ratio"
+    },
+    {
+      "key": "faithfulness",
+      "label": "Faithfulness Proxy",
+      "value": 1,
+      "format": "ratio"
+    },
+    {
+      "key": "citationCoverage",
+      "label": "Citation Coverage",
+      "value": 1,
+      "format": "ratio"
+    },
+    {
+      "key": "fallbackRate",
+      "label": "Fallback Rate",
+      "value": 0,
+      "format": "ratio"
+    },
+    {
+      "key": "totalLatencyMs",
+      "label": "Total Latency",
+      "value": 0,
+      "format": "milliseconds"
+    },
+    {
+      "key": "costUsd",
+      "label": "Cost",
+      "value": 0,
+      "format": "usd"
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "stage0_latest_earnings_tsla",
+      "ticker": "TSLA",
+      "taskType": "latest_earnings_readout",
+      "retrievedSections": ["MD&A"],
+      "metrics": [
+        { "key": "retrievalRecallAt5", "value": 1, "format": "ratio" },
+        { "key": "contextPrecision", "value": 1, "format": "ratio" },
+        { "key": "citationCoverage", "value": 1, "format": "ratio" }
+      ]
+    },
+    {
+      "caseId": "stage0_business_drivers_aapl",
+      "ticker": "AAPL",
+      "taskType": "business_driver_deep_dive",
+      "retrievedSections": ["Business Drivers"],
+      "metrics": [
+        { "key": "retrievalRecallAt5", "value": 1, "format": "ratio" },
+        { "key": "contextPrecision", "value": 1, "format": "ratio" },
+        { "key": "citationCoverage", "value": 1, "format": "ratio" }
+      ]
+    },
+    {
+      "caseId": "stage0_cash_flow_msft",
+      "ticker": "MSFT",
+      "taskType": "cash_flow_capital_allocation",
+      "retrievedSections": ["Cash Flow and Capital Allocation"],
+      "metrics": [
+        { "key": "retrievalRecallAt5", "value": 1, "format": "ratio" },
+        { "key": "contextPrecision", "value": 1, "format": "ratio" },
+        { "key": "citationCoverage", "value": 1, "format": "ratio" }
+      ]
+    }
+  ],
+  "stageComparisons": [],
+  "limitations": [
+    "Static Stage 0 artifact fixture.",
+    "Placeholder bounded workflow baseline, not live LlamaIndex retrieval.",
+    "No stage comparison API or persisted experiment history yet."
+  ]
+}

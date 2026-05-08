@@ -71,11 +71,11 @@ const copy = {
       productHighlights: [
         {
           title: "模型接入方式",
-          body: "默认可直接使用免费托管模型，也支持切换到 OpenAI BYOK，自带 Key 后走官方接口。",
+          body: "默认使用 BYOK 模式，用户可选择 SiliconFlow、OpenAI 或 Gemini，并使用自己的 API Key。",
         },
         {
-          title: "免费可用模型",
-          body: "内置 ChatAnywhere 的 GPT-4o mini，以及 Groq 的 Llama 3.3，开箱即可体验。",
+          title: "Provider 选择",
+          body: "第一版不再提供免费托管模型，真实 E2E 默认使用 SiliconFlow 的 Kimi K2.6。",
         },
         {
           title: "技术栈",
@@ -227,11 +227,11 @@ const copy = {
       productHighlights: [
         {
           title: "Model access",
-          body: "Use the built-in free hosted models by default, or switch to OpenAI in BYOK mode with your own key.",
+          body: "Use BYOK by default with SiliconFlow, OpenAI, or Gemini, each backed by the user's own API key.",
         },
         {
-          title: "Free model options",
-          body: "The app ships with ChatAnywhere GPT-4o mini and Groq Llama 3.3 so it works out of the box.",
+          title: "BYOK provider options",
+          body: "Free hosted models are removed; live E2E defaults to SiliconFlow Kimi K2.6.",
         },
         {
           title: "Tech stack",
@@ -244,7 +244,7 @@ const copy = {
       "Quarterly report analysis",
       "SEC + Yahoo dual-source enrichment",
       "Key metrics and trend charts",
-      "Multi-model support with BYOK",
+      "BYOK provider support",
       "Risk factors and driver breakdowns",
       "PDF report export",
     ],

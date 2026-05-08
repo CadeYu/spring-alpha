@@ -1,13 +1,12 @@
 package com.springalpha.backend.controller;
 
 import com.springalpha.backend.financial.contract.AnalysisReport;
+import com.springalpha.backend.financial.contract.ResearchTaskType;
 import com.springalpha.backend.financial.model.HistoricalDataPoint;
 import com.springalpha.backend.financial.service.FinancialDataService;
 import com.springalpha.backend.service.FinancialAnalysisService;
 import com.springalpha.backend.service.SecService;
-import com.springalpha.backend.service.profile.CompanyProfileSnapshotService;
-import com.springalpha.backend.service.signals.BusinessSignalSnapshotService;
-import com.springalpha.backend.service.strategy.AiAnalysisStrategy;
+import com.springalpha.backend.service.provider.ProviderCredentialValidator;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -19,7 +18,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
 
 class SecControllerTest {
 
@@ -33,8 +31,8 @@ class SecControllerTest {
         WebTestClient client = WebTestClient.bindToController(controller).build();
 
         List<AnalysisReport> reports = client.get()
-                .uri("/api/sec/analyze/TSLA?lang=zh&model=openai")
-                .header("X-OpenAI-API-Key", "sk-test")
+                .uri("/api/sec/analyze/TSLA?lang=zh&model=siliconflow")
+                .header("X-Provider-API-Key", "sk-test")
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
                 .expectStatus().isOk()
@@ -47,9 +45,52 @@ class SecControllerTest {
         assertTrue(reports != null && !reports.isEmpty());
         assertEquals("Tesla, Inc.", reports.get(0).getCompanyName());
         assertEquals("zh", analysisService.lastLang);
-        assertEquals("openai", analysisService.lastModel);
+        assertEquals("siliconflow", analysisService.lastModel);
         assertEquals("quarterly", analysisService.lastReportType);
         assertEquals("sk-test", analysisService.lastOpenAiApiKey);
+        assertEquals(ResearchTaskType.LATEST_EARNINGS_READOUT, analysisService.lastTaskType);
+    }
+
+    @Test
+    void analyzeEndpointPassesLatestEarningsReadoutTaskTypeToService() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        SecController controller = new SecController(secService, analysisService);
+
+        WebTestClient client = WebTestClient.bindToController(controller).build();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM)
+                .returnResult(AnalysisReport.class)
+                .getResponseBody()
+                .collectList()
+                .block();
+
+        assertEquals(ResearchTaskType.LATEST_EARNINGS_READOUT, analysisService.lastTaskType);
+        assertEquals(1, analysisService.callCount);
+    }
+
+    @Test
+    void analyzeEndpointRejectsUnsupportedTaskTypeBeforeCallingService() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        SecController controller = new SecController(secService, analysisService);
+
+        WebTestClient client = WebTestClient.bindToController(controller).build();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?taskType=freeform_prompt")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        assertEquals(0, analysisService.callCount);
     }
 
     @Test
@@ -87,10 +128,11 @@ class SecControllerTest {
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.models[0]").isEqualTo("chatanywhere")
+                .jsonPath("$.models[0]").isEqualTo("gemini")
                 .jsonPath("$.models[1]").isEqualTo("openai")
-                .jsonPath("$.default").isEqualTo("chatanywhere")
-                .jsonPath("$.count").isEqualTo(2);
+                .jsonPath("$.models[2]").isEqualTo("siliconflow")
+                .jsonPath("$.default").isEqualTo("siliconflow")
+                .jsonPath("$.count").isEqualTo(3);
     }
 
     @Test
@@ -121,20 +163,30 @@ class SecControllerTest {
         private String lastModel;
         private String lastReportType;
         private String lastOpenAiApiKey;
+        private ResearchTaskType lastTaskType;
+        private int callCount;
 
         private FakeFinancialAnalysisService(SecService secService, FinancialDataService financialDataService) {
-            super(secService, new com.springalpha.backend.service.rag.VectorRagService(null), financialDataService,
-                    mock(BusinessSignalSnapshotService.class),
-                    mock(CompanyProfileSnapshotService.class),
-                    List.<AiAnalysisStrategy>of());
+            super(secService,
+                    new FakeProviderCredentialValidator(),
+                    request -> Mono.empty(),
+                    new com.springalpha.backend.service.research.ResearchAgentReportMapper());
         }
 
         @Override
         public Flux<AnalysisReport> analyzeStock(String ticker, String lang, String model, String openAiApiKey) {
+            return analyzeStock(ticker, lang, model, openAiApiKey, ResearchTaskType.LATEST_EARNINGS_READOUT);
+        }
+
+        @Override
+        public Flux<AnalysisReport> analyzeStock(String ticker, String lang, String model, String openAiApiKey,
+                ResearchTaskType taskType) {
+            this.callCount++;
             this.lastLang = lang;
             this.lastModel = model;
             this.lastReportType = "quarterly";
             this.lastOpenAiApiKey = openAiApiKey;
+            this.lastTaskType = taskType;
             return Flux.just(AnalysisReport.builder()
                     .executiveSummary("stub report")
                     .companyName("Tesla, Inc.")
@@ -146,12 +198,30 @@ class SecControllerTest {
 
         @Override
         public List<String> getAvailableModels() {
-            return List.of("chatanywhere", "openai");
+            return List.of("gemini", "openai", "siliconflow");
         }
 
         @Override
         public String getDefaultModel() {
-            return "chatanywhere";
+            return "siliconflow";
+        }
+    }
+
+    private static final class FakeProviderCredentialValidator implements ProviderCredentialValidator {
+
+        @Override
+        public List<String> availableProviders() {
+            return List.of("gemini", "openai", "siliconflow");
+        }
+
+        @Override
+        public String defaultProvider() {
+            return "siliconflow";
+        }
+
+        @Override
+        public Mono<Void> validate(String provider, String apiKey) {
+            return Mono.empty();
         }
     }
 

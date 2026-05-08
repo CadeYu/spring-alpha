@@ -115,6 +115,12 @@ public class AnalysisReport {
     private String filingDate;
 
     /**
+     * Task-specific typed report sections. This is additive and nullable so the
+     * legacy AnalysisReport fields remain backward-compatible during migration.
+     */
+    private TaskSpecificSections taskSections;
+
+    /**
      * Represents a single financial metric with interpretation
      */
     @Data
@@ -186,6 +192,21 @@ public class AnalysisReport {
         private String modelName; // e.g., "gpt-4o-mini", "llama-3.3-70b"
         private String generatedAt; // ISO timestamp
         private String language; // "en", "zh"
+        private List<AgentEventMetadata> agentEvents;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class AgentEventMetadata {
+        private String phase;
+        private String status;
+        private String summary;
+        private String toolName;
+        private long latencyMs;
+        private String degradedReason;
     }
 
     @Data
@@ -196,6 +217,180 @@ public class AnalysisReport {
     public static class SourceContext {
         private String status; // "GROUNDED", "LIMITED", "DEGRADED", "UNAVAILABLE"
         private String message;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class TaskSpecificSections {
+        private String schemaVersion;
+        private ResearchTaskType taskType;
+        private TaskSectionCoverage coverage;
+        private LatestEarningsSections latestEarnings;
+        private BusinessDriverSections businessDriver;
+        private CashFlowCapitalAllocationSections cashFlowCapitalAllocation;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class TaskSectionCoverage {
+        private String status;
+        private List<String> missingSections;
+        private int evidenceCount;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class EvidenceRef {
+        private String section;
+        private String excerpt;
+        private String filingDate;
+        private String accessionNumber;
+        private String sourceId;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class EvidenceBoundPoint {
+        private String title;
+        private String summary;
+        private List<EvidenceRef> evidenceRefs;
+        private String citationStatus;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class EvidenceBoundMetric {
+        private String name;
+        private String value;
+        private String period;
+        private String interpretation;
+        private List<EvidenceRef> evidenceRefs;
+        private String citationStatus;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class LatestEarningsSections {
+        private ToplineVerdict toplineVerdict;
+        private List<EvidenceBoundPoint> keyTakeaways;
+        private LatestFinancialDashboard financialDashboard;
+        private List<EvidenceBoundPoint> driverSnapshot;
+        private List<EvidenceBoundPoint> riskSnapshot;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ToplineVerdict {
+        private String headline;
+        private String summary;
+        private String verdict;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class LatestFinancialDashboard {
+        private List<EvidenceBoundMetric> metrics;
+        private List<String> chartFocus;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class BusinessDriverSections {
+        private DriverThesis driverThesis;
+        private DriverMap driverMap;
+        private List<EvidenceBoundPoint> positiveSignals;
+        private List<EvidenceBoundPoint> negativeSignals;
+        private List<String> watchlist;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class DriverThesis {
+        private String headline;
+        private String durability;
+        private String summary;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class DriverMap {
+        private List<EvidenceBoundPoint> product;
+        private List<EvidenceBoundPoint> segment;
+        private List<EvidenceBoundPoint> geography;
+        private List<EvidenceBoundPoint> demand;
+        private List<EvidenceBoundPoint> pricing;
+        private List<EvidenceBoundPoint> customer;
+        private List<EvidenceBoundPoint> strategy;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class CashFlowCapitalAllocationSections {
+        private CashQualityVerdict cashQualityVerdict;
+        private List<EvidenceBoundMetric> cashMetrics;
+        private CapitalAllocation capitalAllocation;
+        private List<EvidenceBoundPoint> allocationDiscipline;
+        private List<EvidenceBoundPoint> redFlags;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class CashQualityVerdict {
+        private String headline;
+        private String earningsBackedByCash;
+        private String summary;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class CapitalAllocation {
+        private List<EvidenceBoundPoint> capex;
+        private List<EvidenceBoundPoint> buybacks;
+        private List<EvidenceBoundPoint> dividends;
+        private List<EvidenceBoundPoint> debt;
+        private List<EvidenceBoundPoint> liquidity;
     }
 
     /**

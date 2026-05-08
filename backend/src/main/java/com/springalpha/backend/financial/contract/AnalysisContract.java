@@ -48,6 +48,11 @@ public class AnalysisContract {
     private String reportType;
 
     /**
+     * Research task requested by the user.
+     */
+    private ResearchTaskType researchTaskType;
+
+    /**
      * Computed financial facts - the ONLY source of numerical data.
      * LLMs must not introduce any numbers not present in this object.
      */
