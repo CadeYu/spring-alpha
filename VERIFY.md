@@ -150,6 +150,17 @@ RAG eval smoke test：
 uv run pytest tests/evals -m smoke
 ```
 
+PGVector-backed RAG production readiness gate：
+
+```bash
+../../scripts/verify-pgvector-rag-eval.sh
+```
+
+该门禁会启动临时 PGVector，生成 Stage 1 hard RAG artifact，并通过 Python
+eval threshold 检查 primary hybrid retrieval 的 expected section hit rate、
+expected term hit rate、top-1 section correctness、empty retrieval rate、bad
+section leak rate 和 source payload size。
+
 ## Full Local Verification
 
 当 Python Research Service 创建后，完整验证顺序建议为：
@@ -208,6 +219,17 @@ Production analysis path gate:
 - `RESEARCH_SERVICE_BASE_URL` and `RESEARCH_SERVICE_TIMEOUT` configure the required Python service boundary.
 - There is no Java report-generation fallback or analysis feature flag.
 - Research Service unavailable states must return explicit unavailable/degraded responses.
+
+Compose full E2E gate:
+
+```bash
+./scripts/verify-compose-full-e2e.sh
+```
+
+该脚本使用隔离端口启动 Spring Boot backend、Python Research Service、PGVector
+和 frontend，并等待 Research `/health`、backend `/api/sec/models` 与 frontend
+`/app` 可访问。它验证生产主链路的服务拓扑和 PGVector wiring，而不是 Java
+analysis fallback。
 
 `services` 模式要求本地 shell 已配置数据库密码，因为 Spring Boot 当前会在启动时初始化 JPA：
 

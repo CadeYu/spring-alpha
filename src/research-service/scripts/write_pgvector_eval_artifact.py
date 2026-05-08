@@ -5,7 +5,12 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
-from app.evals.baseline import RetrievalExperimentStrategy, write_stage1_hard_dashboard_artifact
+from app.evals.baseline import (
+    RetrievalExperimentStrategy,
+    assert_rag_production_readiness,
+    build_stage1_hard_dashboard_artifact_from_suite,
+    build_stage1_hard_eval_suite,
+)
 from app.rag.llamaindex_pipeline import (
     DeterministicFinancialEmbeddingBackend,
     LlamaIndexRagPipeline,
@@ -41,13 +46,21 @@ def main() -> int:
         return LlamaIndexRagPipeline(
             enable_section_filter=strategy != RetrievalExperimentStrategy.NO_SECTION_FILTER,
             enable_query_expansion=strategy != RetrievalExperimentStrategy.NO_QUERY_EXPANSION,
-            enable_hybrid_retrieval=strategy
-            == RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL,
+            enable_hybrid_retrieval=strategy == RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL,
             embedding_backend=embedding_backend,
             vector_store=store,
         )
 
-    write_stage1_hard_dashboard_artifact(target_path, pipeline_factory=pipeline_factory)
+    suite = build_stage1_hard_eval_suite(pipeline_factory=pipeline_factory)
+    artifacts_by_label = {artifact.baseline_label: artifact for artifact in suite}
+    primary = artifacts_by_label[RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL.value]
+    assert_rag_production_readiness(primary)
+    dashboard_artifact = build_stage1_hard_dashboard_artifact_from_suite(suite)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(
+        dashboard_artifact.model_dump_json(by_alias=True, indent=2),
+        encoding="utf-8",
+    )
     print(target_path)
     return 0
 

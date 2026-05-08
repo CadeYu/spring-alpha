@@ -102,6 +102,17 @@ class RagBaselineEvalArtifact(BaseModel):
     aggregate_metrics: RagBaselineMetrics
 
 
+class RagProductionReadinessThresholds(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min_expected_section_hit_rate: float = 1.0
+    min_expected_term_hit_rate: float = 1.0
+    min_top_1_section_correctness: float = 1.0
+    max_empty_retrieval_rate: float = 0.0
+    max_bad_section_leak_rate: float = 0.0
+    min_max_source_payload_bytes: int = 1
+
+
 class RagDashboardMetric(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -258,8 +269,13 @@ def build_stage1_hard_dashboard_artifact(
     *,
     pipeline_factory: PipelineFactory | None = None,
 ) -> RagDashboardArtifact:
-    dataset = build_hard_live_pipeline_eval_dataset()
-    suite = run_live_pipeline_experiment_suite(dataset, pipeline_factory=pipeline_factory)
+    suite = build_stage1_hard_eval_suite(pipeline_factory=pipeline_factory)
+    return build_stage1_hard_dashboard_artifact_from_suite(suite)
+
+
+def build_stage1_hard_dashboard_artifact_from_suite(
+    suite: list[RagBaselineEvalArtifact],
+) -> RagDashboardArtifact:
     artifacts_by_label = {artifact.baseline_label: artifact for artifact in suite}
     primary = artifacts_by_label[RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL.value]
     comparisons = [
@@ -289,6 +305,23 @@ def build_stage1_hard_dashboard_artifact(
     )
 
 
+def build_stage1_hard_eval_suite(
+    *,
+    pipeline_factory: PipelineFactory | None = None,
+) -> list[RagBaselineEvalArtifact]:
+    dataset = build_hard_live_pipeline_eval_dataset()
+    return run_live_pipeline_experiment_suite(dataset, pipeline_factory=pipeline_factory)
+
+
+def build_stage1_hard_primary_eval_artifact(
+    *,
+    pipeline_factory: PipelineFactory | None = None,
+) -> RagBaselineEvalArtifact:
+    suite = build_stage1_hard_eval_suite(pipeline_factory=pipeline_factory)
+    artifacts_by_label = {artifact.baseline_label: artifact for artifact in suite}
+    return artifacts_by_label[RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL.value]
+
+
 def write_stage1_hard_dashboard_artifact(
     target_path: Path,
     *,
@@ -301,6 +334,60 @@ def write_stage1_hard_dashboard_artifact(
         encoding="utf-8",
     )
     return target_path
+
+
+def assert_rag_production_readiness(
+    artifact: RagBaselineEvalArtifact,
+    *,
+    thresholds: RagProductionReadinessThresholds | None = None,
+) -> None:
+    gate = thresholds or RagProductionReadinessThresholds()
+    metrics = artifact.aggregate_metrics
+    failures: list[str] = []
+
+    _check_minimum(
+        failures,
+        name="expected_section_hit_rate",
+        actual=metrics.expected_section_hit_rate,
+        minimum=gate.min_expected_section_hit_rate,
+    )
+    _check_minimum(
+        failures,
+        name="expected_term_hit_rate",
+        actual=metrics.expected_term_hit_rate,
+        minimum=gate.min_expected_term_hit_rate,
+    )
+    _check_minimum(
+        failures,
+        name="top_1_section_correctness",
+        actual=metrics.top_1_section_correctness,
+        minimum=gate.min_top_1_section_correctness,
+    )
+    _check_maximum(
+        failures,
+        name="empty_retrieval_rate",
+        actual=metrics.empty_retrieval_rate,
+        maximum=gate.max_empty_retrieval_rate,
+    )
+    _check_maximum(
+        failures,
+        name="bad_section_leak_rate",
+        actual=metrics.bad_section_leak_rate,
+        maximum=gate.max_bad_section_leak_rate,
+    )
+    _check_minimum(
+        failures,
+        name="max_source_payload_bytes",
+        actual=float(metrics.max_source_payload_bytes),
+        minimum=float(gate.min_max_source_payload_bytes),
+    )
+
+    if failures:
+        joined_failures = "; ".join(failures)
+        raise AssertionError(
+            f"RAG production readiness gate failed for {artifact.stage} "
+            f"{artifact.baseline_label}: {joined_failures}"
+        )
 
 
 def _evaluate_case(
@@ -473,6 +560,28 @@ def _term_hit_rate(text: str, expected_terms: list[str]) -> float:
 
 def _safe_ratio(numerator: int, denominator: int) -> float:
     return numerator / denominator if denominator else 0.0
+
+
+def _check_minimum(
+    failures: list[str],
+    *,
+    name: str,
+    actual: float,
+    minimum: float,
+) -> None:
+    if actual < minimum:
+        failures.append(f"{name}={actual:.4f} below minimum {minimum:.4f}")
+
+
+def _check_maximum(
+    failures: list[str],
+    *,
+    name: str,
+    actual: float,
+    maximum: float,
+) -> None:
+    if actual > maximum:
+        failures.append(f"{name}={actual:.4f} above maximum {maximum:.4f}")
 
 
 def _average_metrics(metrics: list[RagBaselineMetrics]) -> RagBaselineMetrics:

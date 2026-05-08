@@ -1,9 +1,36 @@
 services:
+  pgvector:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-spring_alpha}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-spring_alpha}
+      - POSTGRES_DB=${POSTGRES_DB:-spring_alpha}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
   research-service:
     build: ./src/research-service
-    container_name: spring-alpha-research-service
     ports:
-      - "8090:8090"
+      - "${RESEARCH_SERVICE_HOST_PORT:-8090}:8090"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - RAG_EMBEDDING_PROVIDER=${RAG_EMBEDDING_PROVIDER:-}
+      - RAG_EMBEDDING_API_KEY=${RAG_EMBEDDING_API_KEY:-}
+      - RAG_VECTOR_STORE_PROVIDER=${RAG_VECTOR_STORE_PROVIDER:-pgvector}
+      - RAG_VECTOR_DATABASE_URL=postgresql://${POSTGRES_USER:-spring_alpha}:${POSTGRES_PASSWORD:-spring_alpha}@pgvector:5432/${POSTGRES_DB:-spring_alpha}
+      - RAG_VECTOR_TABLE_NAME=${RAG_VECTOR_TABLE_NAME:-rag_chunks}
+      - RAG_VECTOR_INITIALIZE_SCHEMA=${RAG_VECTOR_INITIALIZE_SCHEMA:-true}
+      - RAG_EMBEDDING_DIMENSION=${RAG_EMBEDDING_DIMENSION:-3072}
+    depends_on:
+      pgvector:
+        condition: service_healthy
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=5)" ]
       interval: 30s
@@ -14,15 +41,18 @@ services:
 
   backend:
     build: ./backend
-    container_name: spring-alpha-backend
     ports:
-      - "8081:8081"
+      - "${BACKEND_HOST_PORT:-8081}:8081"
     env_file: .env
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://ep-super-night-a1grbtke-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://pgvector:5432/${POSTGRES_DB:-spring_alpha}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-spring_alpha}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-spring_alpha}
       - RESEARCH_SERVICE_BASE_URL=http://research-service:8090
       - RESEARCH_SERVICE_TIMEOUT=PT75S
     depends_on:
+      pgvector:
+        condition: service_healthy
       research-service:
         condition: service_healthy
     healthcheck:
@@ -39,12 +69,11 @@ services:
       args:
         - BACKEND_URL=http://backend:8081
         - STANDALONE=true
-    container_name: spring-alpha-frontend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_HOST_PORT:-3000}:3000"
     environment:
       - BACKEND_URL=http://backend:8081
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped

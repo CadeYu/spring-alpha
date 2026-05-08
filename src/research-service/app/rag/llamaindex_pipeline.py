@@ -383,7 +383,10 @@ class PsycopgDatabaseConnection:
 def build_vector_store_from_env(
     embedding_backend: EmbeddingBackend,
 ) -> VectorStore:
-    provider_name = getenv("RAG_VECTOR_STORE_PROVIDER", "memory").lower()
+    provider_name = getenv(
+        "RAG_VECTOR_STORE_PROVIDER",
+        "pgvector" if getenv("RAG_VECTOR_DATABASE_URL") else "memory",
+    ).lower()
     if provider_name != "pgvector":
         return InMemoryVectorStore(embedding_backend)
 
@@ -405,12 +408,12 @@ def build_vector_store_from_env(
 
 
 def build_embedding_backend_from_env() -> EmbeddingBackend:
-    provider_name = getenv("RAG_EMBEDDING_PROVIDER", EmbeddingProvider.DETERMINISTIC.value).lower()
+    provider_name = getenv("RAG_EMBEDDING_PROVIDER", _default_embedding_provider_name()).lower()
     provider = _embedding_provider_from_name(provider_name)
     if provider == EmbeddingProvider.DETERMINISTIC:
         return DeterministicFinancialEmbeddingBackend()
 
-    api_key = getenv("RAG_EMBEDDING_API_KEY")
+    api_key = getenv("RAG_EMBEDDING_API_KEY") or _provider_default_api_key(provider)
     if not api_key:
         return ProviderEmbeddingFallbackBackend(
             provider=provider,
@@ -423,6 +426,15 @@ def build_embedding_backend_from_env() -> EmbeddingBackend:
     return ProviderEmbeddingFallbackBackend(
         provider=provider,
         degraded_reason=f"{provider.value} embedding provider is not enabled in local tests.",
+    )
+
+
+def build_production_rag_pipeline_from_env() -> "LlamaIndexRagPipeline":
+    embedding_backend = build_embedding_backend_from_env()
+    return LlamaIndexRagPipeline(
+        enable_hybrid_retrieval=True,
+        embedding_backend=embedding_backend,
+        vector_store=build_vector_store_from_env(embedding_backend),
     )
 
 
@@ -643,6 +655,22 @@ def _embedding_provider_from_name(name: str) -> EmbeddingProvider:
         return EmbeddingProvider(name)
     except ValueError:
         return EmbeddingProvider.DETERMINISTIC
+
+
+def _default_embedding_provider_name() -> str:
+    if getenv("GEMINI_API_KEY"):
+        return EmbeddingProvider.GEMINI.value
+    return EmbeddingProvider.DETERMINISTIC.value
+
+
+def _provider_default_api_key(provider: EmbeddingProvider) -> str | None:
+    if provider == EmbeddingProvider.GEMINI:
+        return getenv("GEMINI_API_KEY")
+    if provider == EmbeddingProvider.SILICONFLOW:
+        return getenv("SILICONFLOW_API_KEY")
+    if provider == EmbeddingProvider.OPENAI:
+        return getenv("OPENAI_API_KEY")
+    return None
 
 
 def _urllib_json_transport(

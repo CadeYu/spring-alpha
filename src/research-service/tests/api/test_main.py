@@ -7,7 +7,7 @@ from app.agents.tool_registry import default_tool_registry
 from app.contracts.agent import AgentRunStatus, LlmProvider
 from app.contracts.research_task import ResearchTaskType
 from app.main import create_app
-from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline
+from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline, PgVectorStoreConfig
 
 
 def test_health_endpoint_reports_service_status() -> None:
@@ -361,3 +361,59 @@ Earnings dashboard metrics include revenue, gross margin, and operating income.
     assert source_refs[0]["source_id"].startswith("AAPL:0000320193-26-000004")
     assert "Services revenue increased" in source_refs[0]["snippet"]
     assert "Evidence placeholder" not in source_refs[0]["snippet"]
+
+
+def test_agent_run_endpoint_uses_production_rag_pipeline_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("RAG_VECTOR_STORE_PROVIDER", raising=False)
+    monkeypatch.setenv("RAG_VECTOR_DATABASE_URL", "postgresql://example")
+    monkeypatch.setenv("RAG_VECTOR_TABLE_NAME", "rag_chunks")
+    monkeypatch.setenv("RAG_EMBEDDING_DIMENSION", "3")
+    captured: dict[str, object] = {}
+
+    class RecordingPgVectorStore:
+        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            captured["config"] = kwargs["config"]
+            self._memory_store = None
+
+        def upsert(self, node):  # type: ignore[no-untyped-def]
+            return None
+
+        def search(self, *, query, nodes, top_k):  # type: ignore[no-untyped-def]
+            return []
+
+    monkeypatch.setattr(
+        "app.rag.llamaindex_pipeline.PgVectorStore",
+        RecordingPgVectorStore,
+    )
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/agent/runs",
+        json={
+            "run_id": "run_api_pgvector_default",
+            "ticker": "aapl",
+            "task_type": "business_driver_deep_dive",
+            "language": "en",
+            "filings": [
+                {
+                    "ticker": "AAPL",
+                    "filing_type": "10-Q",
+                    "filing_date": "2026-04-30",
+                    "accession_number": "0000320193-26-000005",
+                    "text": """
+Segment Information
+Services demand improved across enterprise customers.
+""",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    config = captured["config"]
+    assert isinstance(config, PgVectorStoreConfig)
+    assert config.database_url == "postgresql://example"
+    assert config.table_name == "rag_chunks"
+    assert config.embedding_dimension == 3

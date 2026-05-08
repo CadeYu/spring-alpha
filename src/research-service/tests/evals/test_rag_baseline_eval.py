@@ -2,11 +2,17 @@ from pathlib import Path
 
 from app.evals.baseline import (
     RagBaselineEvalArtifact,
+    RagBaselineMetrics,
     RagEvalMetricFormat,
+    RagProductionReadinessThresholds,
     RetrievalExperimentStrategy,
+    assert_rag_production_readiness,
     build_hard_live_pipeline_eval_dataset,
     build_live_pipeline_eval_dataset,
     build_stage0_eval_dataset,
+    build_stage1_hard_dashboard_artifact_from_suite,
+    build_stage1_hard_eval_suite,
+    build_stage1_hard_primary_eval_artifact,
     build_stage1_hard_dashboard_artifact,
     load_live_rag_filing_corpus,
     run_live_pipeline_eval,
@@ -147,9 +153,7 @@ def test_live_pipeline_experiment_suite_compares_retrieval_strategies() -> None:
         RetrievalExperimentStrategy.NO_SECTION_FILTER.value,
         RetrievalExperimentStrategy.NO_QUERY_EXPANSION.value,
     }
-    metrics_by_label = {
-        artifact.baseline_label: artifact.aggregate_metrics for artifact in suite
-    }
+    metrics_by_label = {artifact.baseline_label: artifact.aggregate_metrics for artifact in suite}
     section_aware = metrics_by_label[RetrievalExperimentStrategy.SECTION_AWARE_LEXICAL.value]
     hybrid = metrics_by_label[RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL.value]
     no_section_filter = metrics_by_label[RetrievalExperimentStrategy.NO_SECTION_FILTER.value]
@@ -215,6 +219,24 @@ def test_stage1_hard_dashboard_artifact_is_frontend_safe() -> None:
     assert payload["metrics"][0]["key"] == "expectedTermHitRate"
 
 
+def test_stage1_hard_dashboard_artifact_can_be_built_from_existing_suite() -> None:
+    suite = build_stage1_hard_eval_suite()
+
+    artifact = build_stage1_hard_dashboard_artifact_from_suite(suite)
+
+    assert artifact.baseline_label == RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL.value
+    assert len(artifact.stage_comparisons) == len(RetrievalExperimentStrategy) - 1
+
+
+def test_stage1_hard_primary_eval_artifact_is_hybrid_baseline() -> None:
+    artifact = build_stage1_hard_primary_eval_artifact()
+
+    assert artifact.stage == "stage_1_live_pipeline"
+    assert artifact.dataset_name == "stage1_hard_rag_eval"
+    assert artifact.baseline_label == RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL.value
+    assert artifact.aggregate_metrics.expected_term_hit_rate == 1.0
+
+
 def test_stage1_hard_dashboard_artifact_can_be_written_to_json(tmp_path: Path) -> None:
     target = tmp_path / "stage1-hard.json"
 
@@ -247,6 +269,72 @@ def test_stage1_hard_dashboard_artifact_writer_accepts_pipeline_factory(
     payload = target.read_text(encoding="utf-8")
     assert '"stage": "stage_1_hard_rag"' in payload
     assert '"stageComparisons"' in payload
+
+
+def test_rag_production_readiness_gate_accepts_current_hard_hybrid_baseline() -> None:
+    artifact = run_live_pipeline_eval(
+        build_hard_live_pipeline_eval_dataset(),
+        strategy=RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL,
+    )
+
+    assert_rag_production_readiness(artifact)
+
+
+def test_rag_production_readiness_gate_reports_threshold_failures() -> None:
+    artifact = run_live_pipeline_eval(
+        build_hard_live_pipeline_eval_dataset(),
+        strategy=RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL,
+    )
+    artifact.aggregate_metrics = RagBaselineMetrics(
+        retrieval_recall_at_5=1.0,
+        context_precision=1.0,
+        faithfulness=0.0,
+        answer_term_coverage=0.0,
+        citation_coverage=1.0,
+        fallback_rate=0.0,
+        total_latency_ms=0,
+        cost_usd=0.0,
+        expected_section_hit_rate=0.5,
+        expected_term_hit_rate=0.5,
+        top_1_section_correctness=0.5,
+        empty_retrieval_rate=0.25,
+        bad_section_leak_rate=0.25,
+        average_snippet_length=12.0,
+        max_source_payload_bytes=0,
+    )
+
+    try:
+        assert_rag_production_readiness(artifact)
+    except AssertionError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected readiness gate to fail")
+
+    assert "expected_section_hit_rate" in message
+    assert "expected_term_hit_rate" in message
+    assert "top_1_section_correctness" in message
+    assert "empty_retrieval_rate" in message
+    assert "bad_section_leak_rate" in message
+    assert "max_source_payload_bytes" in message
+
+
+def test_rag_production_readiness_gate_allows_explicit_threshold_overrides() -> None:
+    artifact = run_live_pipeline_eval(
+        build_hard_live_pipeline_eval_dataset(),
+        strategy=RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL,
+    )
+
+    assert_rag_production_readiness(
+        artifact,
+        thresholds=RagProductionReadinessThresholds(
+            min_expected_section_hit_rate=0.5,
+            min_expected_term_hit_rate=0.5,
+            min_top_1_section_correctness=0.5,
+            max_empty_retrieval_rate=0.5,
+            max_bad_section_leak_rate=0.5,
+            min_max_source_payload_bytes=1,
+        ),
+    )
 
 
 def _is_ratio(value: float) -> bool:

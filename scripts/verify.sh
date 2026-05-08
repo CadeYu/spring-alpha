@@ -20,6 +20,7 @@ required_files=(
   "scripts/dev.sh"
   "scripts/e2e-local.sh"
   "scripts/verify-research-service-bridge.sh"
+  "scripts/verify-compose-full-e2e.sh"
   "scripts/verify-pgvector-rag.sh"
   "scripts/verify-gemini-pgvector-rag.sh"
   "scripts/verify-pgvector-rag-eval.sh"
@@ -59,6 +60,7 @@ bash -n scripts/verify.sh
 bash -n scripts/dev.sh
 bash -n scripts/e2e-local.sh
 bash -n scripts/verify-research-service-bridge.sh
+bash -n scripts/verify-compose-full-e2e.sh
 bash -n scripts/verify-pgvector-rag.sh
 bash -n scripts/verify-gemini-pgvector-rag.sh
 bash -n scripts/verify-pgvector-rag-eval.sh
@@ -101,7 +103,12 @@ const fs = require('fs');
 
 const compose = fs.readFileSync('docker-compose.yml', 'utf8');
 const requiredSnippets = [
+  'pgvector:',
+  'pgvector/pgvector:pg16',
   'research-service:',
+  'RAG_VECTOR_STORE_PROVIDER=${RAG_VECTOR_STORE_PROVIDER:-pgvector}',
+  'RAG_VECTOR_DATABASE_URL=postgresql://',
+  'RAG_VECTOR_INITIALIZE_SCHEMA=${RAG_VECTOR_INITIALIZE_SCHEMA:-true}',
   'RESEARCH_SERVICE_BASE_URL=http://research-service:8090',
   'condition: service_healthy',
 ];
@@ -142,6 +149,30 @@ for (const file of files) {
     if (content.includes(phrase)) {
       throw new Error(`Production path docs still mention forbidden legacy phrase "${phrase}" in ${file}`);
     }
+  }
+}
+NODE
+
+echo "Checking Python RAG production readiness gates..."
+node - <<'NODE'
+const fs = require('fs');
+
+const evalScript = fs.readFileSync('src/research-service/scripts/write_pgvector_eval_artifact.py', 'utf8');
+const evalModule = fs.readFileSync('src/research-service/app/evals/baseline.py', 'utf8');
+const verifyDocs = fs.readFileSync('VERIFY.md', 'utf8');
+
+const requiredSnippets = [
+  [evalScript, 'assert_rag_production_readiness'],
+  [evalScript, 'build_stage1_hard_eval_suite'],
+  [evalModule, 'class RagProductionReadinessThresholds'],
+  [evalModule, 'def assert_rag_production_readiness'],
+  [verifyDocs, './scripts/verify-compose-full-e2e.sh'],
+  [verifyDocs, '../../scripts/verify-pgvector-rag-eval.sh'],
+];
+
+for (const [content, snippet] of requiredSnippets) {
+  if (!content.includes(snippet)) {
+    throw new Error(`Missing Python RAG readiness gate snippet: ${snippet}`);
   }
 }
 NODE

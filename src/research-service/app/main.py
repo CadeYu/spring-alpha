@@ -12,7 +12,7 @@ from app.agents.llm_gateway import (
 )
 from app.agents.tool_registry import default_tool_registry
 from app.contracts.agent import AgentRequest, BoundedAgentResult, LlmProvider
-from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline
+from app.rag.llamaindex_pipeline import FilingDocument, build_production_rag_pipeline_from_env
 
 SERVICE_NAME = "spring-alpha-research-service"
 SERVICE_VERSION = "0.1.0"
@@ -67,7 +67,7 @@ def _workflow_for_request_filings(
     if not request.filings:
         return DeterministicAgentWorkflow(llm_client=llm_client)
 
-    pipeline = LlamaIndexRagPipeline()
+    pipeline = build_production_rag_pipeline_from_env()
     for filing in request.filings:
         pipeline.ingest_filing(
             FilingDocument(

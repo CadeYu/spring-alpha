@@ -15,6 +15,7 @@ from app.rag.llamaindex_pipeline import (
     RetrievalFallbackStatus,
     SectionAwareFilingParser,
     build_embedding_backend_from_env,
+    build_production_rag_pipeline_from_env,
     build_vector_store_from_env,
 )
 
@@ -238,6 +239,18 @@ def test_embedding_backend_env_factory_defaults_to_deterministic(
 
     assert isinstance(backend, DeterministicFinancialEmbeddingBackend)
     assert backend.embed("platform support")
+
+
+def test_embedding_backend_env_factory_defaults_to_gemini_when_api_key_exists(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("RAG_EMBEDDING_PROVIDER", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
+    backend = build_embedding_backend_from_env()
+
+    assert isinstance(backend, GeminiEmbeddingBackend)
+    assert backend.api_key == "test-gemini-key"
 
 
 def test_hybrid_pipeline_degrades_to_deterministic_embedding_when_provider_is_unconfigured(
@@ -512,6 +525,37 @@ def test_vector_store_env_factory_builds_pgvector_store_when_configured(
     assert isinstance(store, PgVectorStore)
     assert store.config.table_name == "rag_chunks"
     assert store.config.embedding_dimension == 3
+
+
+def test_vector_store_env_factory_defaults_to_pgvector_when_database_url_exists(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("RAG_VECTOR_STORE_PROVIDER", raising=False)
+    monkeypatch.setenv("RAG_VECTOR_DATABASE_URL", "postgresql://example")
+    monkeypatch.setenv("RAG_VECTOR_TABLE_NAME", "rag_chunks")
+    monkeypatch.setenv("RAG_EMBEDDING_DIMENSION", "3")
+
+    store = build_vector_store_from_env(DeterministicFinancialEmbeddingBackend())
+
+    assert isinstance(store, PgVectorStore)
+    assert store.config.table_name == "rag_chunks"
+    assert store.config.embedding_dimension == 3
+
+
+def test_production_rag_pipeline_env_factory_enables_hybrid_retrieval(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("RAG_VECTOR_STORE_PROVIDER", raising=False)
+    monkeypatch.delenv("RAG_VECTOR_DATABASE_URL", raising=False)
+    monkeypatch.delenv("RAG_EMBEDDING_PROVIDER", raising=False)
+    monkeypatch.delenv("RAG_EMBEDDING_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    pipeline = build_production_rag_pipeline_from_env()
+
+    assert pipeline.enable_hybrid_retrieval is True
+    assert isinstance(pipeline.vector_store, InMemoryVectorStore)
+    assert isinstance(pipeline.embedding_backend, DeterministicFinancialEmbeddingBackend)
 
 
 class RecordingConnection:
