@@ -12,6 +12,7 @@ import {
   BriefcaseBusiness,
   ChartColumnIncreasing,
   WalletCards,
+  AlertTriangle,
 } from "lucide-react";
 import { ExecutiveSummary } from "@/components/analysis/ExecutiveSummary";
 import { KeyMetrics } from "@/components/analysis/KeyMetrics";
@@ -87,6 +88,13 @@ const BYOK_PROVIDERS = [
 
 type ByokProviderId = (typeof BYOK_PROVIDERS)[number]["id"];
 
+type AnalysisErrorState = {
+  message: string;
+  code?: string;
+  source?: string;
+  degraded?: boolean;
+};
+
 const RESEARCH_TASKS = [
   {
     id: "latest_earnings_readout",
@@ -136,7 +144,7 @@ export default function EarningsAnalystApp() {
   const [providerKeySaved, setProviderKeySaved] = useState(false);
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AnalysisErrorState | null>(null);
   const [historyData, setHistoryData] = useState<HistoricalDataPoint[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const tickerInputRef = useRef<HTMLInputElement>(null);
@@ -229,11 +237,11 @@ export default function EarningsAnalystApp() {
     );
     if (!submittedTicker || isLoading) return;
     if (!providerApiKey.trim()) {
-      setError(
-        isZh
+      setError({
+        message: isZh
           ? `请先输入并保存你的 ${selectedProvider.name} API Key。`
           : `${selectedProvider.name} BYOK mode requires you to enter and save your API key first.`,
-      );
+      });
       return;
     }
 
@@ -274,18 +282,7 @@ export default function EarningsAnalystApp() {
 
       if (!response.ok || !response.body) {
         const errorText = await response.text();
-        let message = `Network response error: ${response.statusText}`;
-        if (errorText) {
-          try {
-            const parsed = JSON.parse(errorText) as { error?: string };
-            if (parsed.error) {
-              message = parsed.error;
-            }
-          } catch {
-            message = errorText;
-          }
-        }
-        throw new Error(message);
+        throw analysisErrorFromResponseText(errorText, response.statusText);
       }
 
       const reader = response.body.getReader();
@@ -357,7 +354,7 @@ export default function EarningsAnalystApp() {
         return;
       }
       console.error("Fetch Error:", error);
-      setError(error instanceof Error ? error.message : String(error));
+      setError(normalizeAnalysisError(error));
     } finally {
       if (requestIdRef.current === requestId) {
         setIsLoading(false);
@@ -376,11 +373,11 @@ export default function EarningsAnalystApp() {
     const trimmedKey = providerApiKey.trim();
     if (!trimmedKey) {
       setProviderKeySaved(false);
-      setError(
-        isZh
+      setError({
+        message: isZh
           ? `请输入有效的 ${selectedProvider.name} API Key。`
           : `Please enter a valid ${selectedProvider.name} API key.`,
-      );
+      });
       return;
     }
     window.localStorage.setItem(selectedProvider.storageKey, trimmedKey);
@@ -393,11 +390,11 @@ export default function EarningsAnalystApp() {
     window.localStorage.removeItem(selectedProvider.storageKey);
     setProviderApiKey("");
     setProviderKeySaved(false);
-    setError(
-      isZh
+    setError({
+      message: isZh
         ? `已清除 ${selectedProvider.name} Key，请重新输入。`
         : `${selectedProvider.name} key cleared. Enter a new key to continue.`,
-    );
+    });
   };
 
   // Auto-scroll to bottom
@@ -602,13 +599,7 @@ export default function EarningsAnalystApp() {
         </Card>
 
         {/* Error Display */}
-        {error && (
-          <Card className="bg-red-900/20 border-red-700">
-            <CardContent className="p-4">
-              <p className="text-red-400">❌ Error: {error}</p>
-            </CardContent>
-          </Card>
-        )}
+        {error && <AnalysisErrorPanel error={error} isZh={isZh} />}
 
         {/* Analysis Report */}
         {report && (
@@ -1745,4 +1736,111 @@ function buildCapitalAllocationEvidence(report: AnalysisReport) {
 function citationMatchesKeywords(citation: Citation, keywords: string[]) {
   const haystack = `${citation.section} ${citation.excerpt}`.toLowerCase();
   return keywords.some((keyword) => haystack.includes(keyword));
+}
+
+function analysisErrorFromResponseText(
+  errorText: string,
+  statusText: string,
+): AnalysisErrorState {
+  if (!errorText) {
+    return { message: `Network response error: ${statusText}` };
+  }
+  try {
+    const parsed = JSON.parse(errorText) as Partial<AnalysisErrorState> & {
+      error?: string;
+    };
+    return {
+      message: parsed.error || parsed.message || `Network response error: ${statusText}`,
+      code: parsed.code,
+      source: parsed.source,
+      degraded: parsed.degraded,
+    };
+  } catch {
+    return { message: errorText };
+  }
+}
+
+function normalizeAnalysisError(error: unknown): AnalysisErrorState {
+  if (isAnalysisErrorState(error)) {
+    return error;
+  }
+  return {
+    message: error instanceof Error ? error.message : String(error),
+  };
+}
+
+function isAnalysisErrorState(error: unknown): error is AnalysisErrorState {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof (error as AnalysisErrorState).message === "string"
+  );
+}
+
+function AnalysisErrorPanel({
+  error,
+  isZh,
+}: {
+  error: AnalysisErrorState;
+  isZh: boolean;
+}) {
+  const isResearchServiceUnavailable =
+    error.code === "RESEARCH_SERVICE_UNAVAILABLE" ||
+    error.source === "python-research-service";
+
+  if (isResearchServiceUnavailable) {
+    return (
+      <Card
+        role="alert"
+        className="border-amber-500/40 bg-amber-950/20 text-amber-100"
+      >
+        <CardContent className="space-y-3 p-4">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-amber-400/30 bg-amber-400/10 text-amber-300">
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 space-y-2">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-amber-200">
+                  {isZh
+                    ? "Python Research Service 不可用"
+                    : "Python Research Service unavailable"}
+                </p>
+                <p className="text-sm leading-relaxed text-amber-100/90">
+                  {error.message}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="rounded border border-amber-400/30 bg-amber-400/10 px-2 py-1 font-medium text-amber-200">
+                  {isZh ? "Agent 降级" : "Agent degraded"}
+                </span>
+                {error.source && (
+                  <span className="rounded border border-slate-700 bg-slate-950/60 px-2 py-1 text-slate-300">
+                    source: {error.source}
+                  </span>
+                )}
+                {error.code && (
+                  <span className="rounded border border-slate-700 bg-slate-950/60 px-2 py-1 text-slate-300">
+                    code: {error.code}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card role="alert" className="border-red-700 bg-red-900/20">
+      <CardContent className="p-4">
+        <p className="text-sm leading-relaxed text-red-300">
+          {isZh ? "错误：" : "Error: "}
+          {error.message}
+        </p>
+      </CardContent>
+    </Card>
+  );
 }

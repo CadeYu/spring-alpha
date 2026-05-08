@@ -819,6 +819,47 @@ describe("Home page", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("surfaces Python Research Service unavailable errors as degraded agent status", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          error:
+            "Python Research Service is unavailable. Analysis cannot be generated right now.",
+          code: "RESEARCH_SERVICE_UNAVAILABLE",
+          source: "python-research-service",
+          degraded: true,
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    expect(
+      await screen.findByText(/Python Research Service unavailable/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Agent degraded/i)).toBeInTheDocument();
+    expect(screen.getByText(/python-research-service/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Analysis cannot be generated right now/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Analysis Report/i)).not.toBeInTheDocument();
+  });
+
   it("ignores stale history responses after switching to a new ticker", async () => {
     const firstHistory = createDeferredResponse();
     const secondHistory = createDeferredResponse();
