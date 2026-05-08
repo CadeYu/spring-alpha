@@ -2099,6 +2099,33 @@ Remaining limitations:
 - `PgVectorStore` expects a table with `node_id`, `text`, `metadata`, and `embedding vector(...)` columns plus a unique key on `node_id`.
 - The next slice should add schema creation/migration and an optional container E2E against real PostgreSQL with the `vector` extension.
 
+### 2026-05-08: PGVector schema initialization gate
+
+Changed files:
+
+- `src/research-service/app/rag/llamaindex_pipeline.py`
+- `src/research-service/tests/rag/test_llamaindex_pipeline.py`
+- `planning/PROGRESS.md`
+
+What changed:
+
+- Added `PgVectorStore.initialize_schema()` for explicit `vector` extension, table, and HNSW cosine index creation.
+- Kept schema initialization opt-in with `RAG_VECTOR_INITIALIZE_SCHEMA=true`.
+- Added `updated_at` refresh during node upsert.
+- Kept the default path in-memory unless `RAG_VECTOR_STORE_PROVIDER=pgvector` and `RAG_VECTOR_DATABASE_URL` are both configured.
+
+Verification:
+
+- Red test first: RAG tests failed because `PgVectorStore.initialize_schema` did not exist.
+- `uv run pytest tests/rag/test_llamaindex_pipeline.py -q` passed with 22 RAG tests and 34 third-party warnings.
+- `uv run ruff check app tests` passed.
+- `uv run mypy app tests` passed.
+
+Remaining limitations:
+
+- Schema initialization is contract-tested with an injected connection, not yet exercised against a real PostgreSQL container.
+- The next slice should add a real PGVector integration smoke gated by local/container database availability.
+
 ## Handoff Summary
 
 Spring Alpha v2 is currently defined as a productized AI financial research workbench with a Python Agent analysis path and evidence-grade RAG evaluation path.

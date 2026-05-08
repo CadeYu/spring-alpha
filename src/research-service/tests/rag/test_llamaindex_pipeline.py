@@ -459,6 +459,28 @@ def test_pgvector_store_searches_candidates_by_node_id() -> None:
     assert search_params["limit"] == 1
 
 
+def test_pgvector_store_initializes_schema_when_requested() -> None:
+    connection = RecordingConnection()
+    store = PgVectorStore(
+        config=PgVectorStoreConfig(
+            database_url="postgresql://example",
+            table_name="rag_chunks",
+            embedding_dimension=3,
+        ),
+        embedding_backend=DeterministicFinancialEmbeddingBackend(),
+        connection_factory=lambda _: connection,
+    )
+
+    store.initialize_schema()
+
+    assert connection.commits == 1
+    executed_sql = "\n".join(query for query, _ in connection.executed)
+    assert "CREATE EXTENSION IF NOT EXISTS vector" in executed_sql
+    assert "CREATE TABLE IF NOT EXISTS rag_chunks" in executed_sql
+    assert "embedding vector(3) NOT NULL" in executed_sql
+    assert "CREATE INDEX IF NOT EXISTS rag_chunks_embedding_idx" in executed_sql
+
+
 def test_vector_store_env_factory_builds_pgvector_store_when_configured(
     monkeypatch: MonkeyPatch,
 ) -> None:

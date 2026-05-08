@@ -250,6 +250,34 @@ class PgVectorStore:
         self.embedding_backend = embedding_backend
         self._connection_factory = connection_factory or PsycopgDatabaseConnection.connect
 
+    def initialize_schema(self) -> None:
+        connection = self._connection_factory(self.config.database_url)
+        try:
+            connection.execute("CREATE EXTENSION IF NOT EXISTS vector", {})
+            connection.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {self.config.table_name} (
+                    node_id text PRIMARY KEY,
+                    text text NOT NULL,
+                    metadata jsonb NOT NULL,
+                    embedding vector({self.config.embedding_dimension}) NOT NULL,
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """,
+                {},
+            )
+            connection.execute(
+                f"""
+                CREATE INDEX IF NOT EXISTS {self.config.table_name}_embedding_idx
+                ON {self.config.table_name}
+                USING hnsw (embedding vector_cosine_ops)
+                """,
+                {},
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
     def upsert(self, node: TextNode) -> None:
         connection = self._connection_factory(self.config.database_url)
         try:
@@ -262,7 +290,8 @@ class PgVectorStore:
                 ON CONFLICT (node_id) DO UPDATE SET
                     text = EXCLUDED.text,
                     metadata = EXCLUDED.metadata,
-                    embedding = EXCLUDED.embedding
+                    embedding = EXCLUDED.embedding,
+                    updated_at = now()
                 """,
                 {
                     "node_id": node.node_id,
@@ -361,7 +390,7 @@ def build_vector_store_from_env(
     if not database_url:
         return InMemoryVectorStore(embedding_backend)
 
-    return PgVectorStore(
+    store = PgVectorStore(
         config=PgVectorStoreConfig(
             database_url=database_url,
             table_name=getenv("RAG_VECTOR_TABLE_NAME", "rag_chunks"),
@@ -369,6 +398,9 @@ def build_vector_store_from_env(
         ),
         embedding_backend=embedding_backend,
     )
+    if getenv("RAG_VECTOR_INITIALIZE_SCHEMA", "false").lower() == "true":
+        store.initialize_schema()
+    return store
 
 
 def build_embedding_backend_from_env() -> EmbeddingBackend:
