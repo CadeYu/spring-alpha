@@ -36,6 +36,12 @@ Live Gemini embeddings with PGVector smoke:
 GEMINI_API_KEY="$GEMINI_API_KEY" ../../scripts/verify-gemini-pgvector-rag.sh
 ```
 
+PGVector-backed RAG eval artifact smoke:
+
+```bash
+../../scripts/verify-pgvector-rag-eval.sh
+```
+
 The PGVector path is opt-in. Use `RAG_VECTOR_STORE_PROVIDER=pgvector`,
 `RAG_VECTOR_DATABASE_URL`, `RAG_VECTOR_TABLE_NAME`, `RAG_EMBEDDING_DIMENSION`,
 and optionally `RAG_VECTOR_INITIALIZE_SCHEMA=true` when running the service

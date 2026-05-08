@@ -226,5 +226,28 @@ def test_stage1_hard_dashboard_artifact_can_be_written_to_json(tmp_path: Path) -
     assert '"hybrid_semantic_lexical_retrieval"' in payload
 
 
+def test_stage1_hard_dashboard_artifact_writer_accepts_pipeline_factory(
+    tmp_path: Path,
+) -> None:
+    created_pipelines: list[LlamaIndexRagPipeline] = []
+
+    def pipeline_factory(strategy: RetrievalExperimentStrategy) -> LlamaIndexRagPipeline:
+        pipeline = LlamaIndexRagPipeline(
+            enable_hybrid_retrieval=strategy == RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL
+        )
+        created_pipelines.append(pipeline)
+        return pipeline
+
+    target = tmp_path / "stage1-hard-pgvector.json"
+
+    write_stage1_hard_dashboard_artifact(target, pipeline_factory=pipeline_factory)
+
+    assert target.exists()
+    assert len(created_pipelines) == len(RetrievalExperimentStrategy)
+    payload = target.read_text(encoding="utf-8")
+    assert '"stage": "stage_1_hard_rag"' in payload
+    assert '"stageComparisons"' in payload
+
+
 def _is_ratio(value: float) -> bool:
     return 0.0 <= value <= 1.0

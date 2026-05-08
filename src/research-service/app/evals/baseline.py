@@ -254,9 +254,12 @@ def run_live_pipeline_experiment_suite(
     ]
 
 
-def build_stage1_hard_dashboard_artifact() -> RagDashboardArtifact:
+def build_stage1_hard_dashboard_artifact(
+    *,
+    pipeline_factory: PipelineFactory | None = None,
+) -> RagDashboardArtifact:
     dataset = build_hard_live_pipeline_eval_dataset()
-    suite = run_live_pipeline_experiment_suite(dataset)
+    suite = run_live_pipeline_experiment_suite(dataset, pipeline_factory=pipeline_factory)
     artifacts_by_label = {artifact.baseline_label: artifact for artifact in suite}
     primary = artifacts_by_label[RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL.value]
     comparisons = [
@@ -286,8 +289,12 @@ def build_stage1_hard_dashboard_artifact() -> RagDashboardArtifact:
     )
 
 
-def write_stage1_hard_dashboard_artifact(target_path: Path) -> Path:
-    artifact = build_stage1_hard_dashboard_artifact()
+def write_stage1_hard_dashboard_artifact(
+    target_path: Path,
+    *,
+    pipeline_factory: PipelineFactory | None = None,
+) -> Path:
+    artifact = build_stage1_hard_dashboard_artifact(pipeline_factory=pipeline_factory)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     target_path.write_text(
         artifact.model_dump_json(by_alias=True, indent=2),

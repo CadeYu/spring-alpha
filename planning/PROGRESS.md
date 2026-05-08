@@ -2225,6 +2225,42 @@ Remaining limitations:
 
 - The hook enables PGVector/provider-backed eval runs, but there is not yet a persisted generated eval artifact for the live PGVector/Gemini path.
 
+### 2026-05-08: PGVector-backed RAG eval artifact smoke
+
+Changed files:
+
+- `src/research-service/app/evals/baseline.py`
+- `src/research-service/tests/evals/test_rag_baseline_eval.py`
+- `src/research-service/scripts/write_pgvector_eval_artifact.py`
+- `scripts/verify-pgvector-rag-eval.sh`
+- `scripts/verify.sh`
+- `src/research-service/README.md`
+- `planning/PROGRESS.md`
+
+What changed:
+
+- Extended `build_stage1_hard_dashboard_artifact` and `write_stage1_hard_dashboard_artifact` to accept a `PipelineFactory`.
+- Added a PGVector-backed eval artifact writer that builds Stage 1 hard RAG dashboard JSON through real PGVector stores.
+- Added `scripts/verify-pgvector-rag-eval.sh`, which starts a temporary PGVector container, writes a dashboard artifact, and checks key quality metrics.
+- Added the eval smoke script to project structure verification.
+
+Observed integration result:
+
+- The first eval smoke failed because direct Python script execution did not have `PYTHONPATH=.`.
+- The second eval smoke failed because generated PGVector table names used hyphens, which correctly violated the SQL identifier guard.
+- After fixing both script boundaries, `./scripts/verify-pgvector-rag-eval.sh` passed.
+
+Verification:
+
+- Red test first: eval tests failed because the dashboard writer did not accept `pipeline_factory`.
+- `uv run pytest tests/evals/test_rag_baseline_eval.py -q` passed with 11 eval tests and 34 third-party warnings.
+- `./scripts/verify-pgvector-rag-eval.sh` passed and generated a temporary Stage 1 hard RAG dashboard artifact.
+
+Remaining limitations:
+
+- The PGVector eval artifact is generated as a temporary smoke artifact, not yet committed as a frontend dashboard fixture.
+- The provider-backed Gemini + PGVector eval artifact remains a future gated live eval, because running the whole hard suite with provider embeddings would make many external calls.
+
 ## Handoff Summary
 
 Spring Alpha v2 is currently defined as a productized AI financial research workbench with a Python Agent analysis path and evidence-grade RAG evaluation path.
