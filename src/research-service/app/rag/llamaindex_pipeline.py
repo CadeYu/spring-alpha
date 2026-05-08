@@ -11,7 +11,7 @@ from urllib import parse as url_parse
 from urllib import request as url_request
 
 from llama_index.core.schema import NodeWithScore, TextNode
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.contracts.report import CitationStatus, SourceRef
 from app.contracts.research_task import ResearchTaskType
@@ -44,6 +44,22 @@ class FilingSection(BaseModel):
     text: str
 
 
+class PgVectorStoreConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    database_url: str = Field(min_length=1)
+    table_name: str = Field(min_length=1)
+    embedding_dimension: int = Field(gt=0)
+
+    @field_validator("table_name")
+    @classmethod
+    def normalize_table_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", normalized):
+            raise ValueError("PGVector table name must be a simple SQL identifier")
+        return normalized
+
+
 class RetrievedNode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -71,6 +87,20 @@ class RetrieveEvidenceResult(BaseModel):
 class EmbeddingBackend(Protocol):
     def embed(self, text: str) -> dict[str, float]:
         """Return a deterministic sparse embedding for local retrieval experiments."""
+
+
+class VectorStore(Protocol):
+    def upsert(self, node: TextNode) -> None:
+        """Persist or refresh a node embedding."""
+
+    def search(
+        self,
+        *,
+        query: str,
+        nodes: list[TextNode],
+        top_k: int,
+    ) -> list[NodeWithScore]:
+        """Return nearest vector candidates constrained to candidate nodes."""
 
 
 class EmbeddingTransport(Protocol):
@@ -167,7 +197,7 @@ class GeminiEmbeddingBackend:
         )
 
 
-class InMemoryVectorIndex:
+class InMemoryVectorStore:
     def __init__(self, embedding_backend: EmbeddingBackend) -> None:
         self.embedding_backend = embedding_backend
         self._vectors: dict[str, dict[str, float]] = {}
@@ -194,6 +224,29 @@ class InMemoryVectorIndex:
             key=lambda candidate: float(candidate.score or 0.0),
             reverse=True,
         )[:top_k]
+
+
+class PgVectorStore:
+    def __init__(
+        self,
+        *,
+        config: PgVectorStoreConfig,
+        embedding_backend: EmbeddingBackend,
+    ) -> None:
+        self.config = config
+        self.embedding_backend = embedding_backend
+
+    def upsert(self, node: TextNode) -> None:
+        raise NotImplementedError("PGVector driver is not configured for Python RAG yet.")
+
+    def search(
+        self,
+        *,
+        query: str,
+        nodes: list[TextNode],
+        top_k: int,
+    ) -> list[NodeWithScore]:
+        raise NotImplementedError("PGVector driver is not configured for Python RAG yet.")
 
 
 def build_embedding_backend_from_env() -> EmbeddingBackend:
@@ -262,6 +315,7 @@ class LlamaIndexRagPipeline:
         enable_query_expansion: bool = True,
         enable_hybrid_retrieval: bool = False,
         embedding_backend: EmbeddingBackend | None = None,
+        vector_store: VectorStore | None = None,
     ) -> None:
         self.parser = parser or SectionAwareFilingParser()
         self.enable_section_filter = enable_section_filter
@@ -272,7 +326,7 @@ class LlamaIndexRagPipeline:
             if enable_hybrid_retrieval
             else DeterministicFinancialEmbeddingBackend()
         )
-        self._vector_index = InMemoryVectorIndex(self.embedding_backend)
+        self.vector_store = vector_store or InMemoryVectorStore(self.embedding_backend)
         self._nodes: list[TextNode] = []
         self._node_ids: set[str] = set()
 
@@ -284,7 +338,7 @@ class LlamaIndexRagPipeline:
         self._node_ids.update(node.node_id for node in new_nodes)
         if self.enable_hybrid_retrieval:
             for node in new_nodes:
-                self._vector_index.upsert(node)
+                self.vector_store.upsert(node)
         return new_nodes
 
     def retrieve_evidence(
@@ -374,7 +428,7 @@ class LlamaIndexRagPipeline:
             if score > 0
         ]
         if self.enable_hybrid_retrieval:
-            vector_candidates = self._vector_index.search(
+            vector_candidates = self.vector_store.search(
                 query=query,
                 nodes=candidate_nodes,
                 top_k=top_k,

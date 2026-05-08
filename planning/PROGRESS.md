@@ -2042,6 +2042,33 @@ Remaining limitations:
 - Provider-backed embedding is still opt-in and not the production default.
 - Python RAG vector storage is still in-memory, not PGVector.
 
+### 2026-05-08: Vector store boundary and PGVector-ready skeleton
+
+Changed files:
+
+- `src/research-service/app/rag/llamaindex_pipeline.py`
+- `src/research-service/tests/rag/test_llamaindex_pipeline.py`
+- `planning/PROGRESS.md`
+
+What changed:
+
+- Added a `VectorStore` protocol for RAG embedding persistence and nearest-neighbor search.
+- Converted the old in-memory vector index into `InMemoryVectorStore`.
+- Added `vector_store` injection to `LlamaIndexRagPipeline` so retrieval no longer hardcodes an in-memory implementation.
+- Added `PgVectorStoreConfig` with table-name normalization and embedding-dimension validation.
+- Added a `PgVectorStore` skeleton that fails explicitly until the driver/schema slice is implemented.
+
+Verification:
+
+- Red test first: RAG tests failed because `InMemoryVectorStore`, `PgVectorStoreConfig`, and `PgVectorStore` did not exist.
+- `uv run pytest tests/rag/test_llamaindex_pipeline.py` passed with 21 RAG tests and 34 third-party warnings.
+
+Remaining limitations:
+
+- `PgVectorStore` is a contract skeleton only; it does not connect to PostgreSQL yet.
+- No schema migration or `pgvector` Python driver dependency has been added in this slice.
+- The next slice should add the actual Postgres schema/driver path behind the `VectorStore` protocol.
+
 ## Handoff Summary
 
 Spring Alpha v2 is currently defined as a productized AI financial research workbench with a Python Agent analysis path and evidence-grade RAG evaluation path.

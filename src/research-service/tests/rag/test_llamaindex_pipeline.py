@@ -6,7 +6,10 @@ from app.rag.llamaindex_pipeline import (
     DeterministicFinancialEmbeddingBackend,
     FilingDocument,
     GeminiEmbeddingBackend,
+    InMemoryVectorStore,
     LlamaIndexRagPipeline,
+    PgVectorStore,
+    PgVectorStoreConfig,
     ProviderEmbeddingFallbackBackend,
     RetrievalFallbackStatus,
     SectionAwareFilingParser,
@@ -322,6 +325,86 @@ def test_gemini_embedding_backend_calls_embed_content_api() -> None:
             },
         )
     ]
+
+
+def test_in_memory_vector_store_upserts_and_searches_nodes() -> None:
+    store = InMemoryVectorStore(DeterministicFinancialEmbeddingBackend())
+    node = TextNode(
+        id_="node_1",
+        text="Azure, server products, and enterprise services drove cloud growth.",
+        metadata={"section": "Segment Information"},
+    )
+
+    store.upsert(node)
+    results = store.search(query="platform support", nodes=[node], top_k=1)
+
+    assert results
+    assert results[0].node.node_id == "node_1"
+    assert float(results[0].score or 0.0) > 0
+
+
+def test_hybrid_pipeline_accepts_vector_store_boundary() -> None:
+    store = InMemoryVectorStore(DeterministicFinancialEmbeddingBackend())
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True, vector_store=store)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="MSFT",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000000000-26-000026",
+            text="""
+Segment Information
+Azure, server products, and enterprise services drove Intelligent Cloud growth.
+""",
+        )
+    )
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_vector_store_boundary",
+        ticker="MSFT",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        query="platform support",
+        sections=["Segment Information"],
+        top_k=1,
+    )
+
+    assert result.fallback_status == RetrievalFallbackStatus.NONE
+    assert result.source_refs[0].section == "Segment Information"
+    assert pipeline.vector_store is store
+
+
+def test_pgvector_store_config_normalizes_table_and_dimension() -> None:
+    config = PgVectorStoreConfig(
+        database_url="postgresql://example",
+        table_name=" rag_chunks ",
+        embedding_dimension=3072,
+    )
+
+    assert config.table_name == "rag_chunks"
+    assert config.embedding_dimension == 3072
+
+
+def test_pgvector_store_is_explicitly_not_connected_before_driver_slice() -> None:
+    store = PgVectorStore(
+        config=PgVectorStoreConfig(
+            database_url="postgresql://example",
+            table_name="rag_chunks",
+            embedding_dimension=3072,
+        ),
+        embedding_backend=DeterministicFinancialEmbeddingBackend(),
+    )
+    node = TextNode(
+        id_="node_1",
+        text="Azure and enterprise services.",
+        metadata={"section": "Segment Information"},
+    )
+
+    try:
+        store.upsert(node)
+    except NotImplementedError as error:
+        assert "PGVector driver is not configured" in str(error)
+    else:
+        raise AssertionError("PgVectorStore should fail explicitly before driver wiring")
 
 
 def test_pipeline_source_ref_snippet_is_centered_on_matched_terms() -> None:
