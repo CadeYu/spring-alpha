@@ -2126,6 +2126,44 @@ Remaining limitations:
 - Schema initialization is contract-tested with an injected connection, not yet exercised against a real PostgreSQL container.
 - The next slice should add a real PGVector integration smoke gated by local/container database availability.
 
+### 2026-05-08: Real PGVector RAG integration smoke
+
+Changed files:
+
+- `src/research-service/app/rag/llamaindex_pipeline.py`
+- `src/research-service/tests/rag/test_llamaindex_pipeline.py`
+- `src/research-service/tests/rag/test_pgvector_integration.py`
+- `src/research-service/pyproject.toml`
+- `src/research-service/README.md`
+- `scripts/verify-pgvector-rag.sh`
+- `scripts/verify.sh`
+- `planning/PROGRESS.md`
+
+What changed:
+
+- Added a real PGVector integration test gated by `RAG_PGVECTOR_TEST_DATABASE_URL`.
+- Added `scripts/verify-pgvector-rag.sh`, which starts a temporary `pgvector/pgvector:pg16` container and runs the Python RAG PGVector test.
+- Registered the `integration` pytest marker.
+- Fixed real psycopg `jsonb` adaptation by wrapping node metadata in `Jsonb`.
+- Added the PGVector smoke script to project structure verification.
+
+Observed integration result:
+
+- The first real container smoke failed because psycopg could not adapt a raw Python `dict` into `jsonb`.
+- After adding the `Jsonb` parameter wrapper, `./scripts/verify-pgvector-rag.sh` passed.
+- The passing smoke exercised `initialize_schema -> ingest_filing -> upsert -> pgvector search -> retrieve_evidence`.
+
+Verification:
+
+- `uv run pytest tests/rag/test_pgvector_integration.py -q` skips when `RAG_PGVECTOR_TEST_DATABASE_URL` is absent.
+- `uv run pytest tests/rag/test_llamaindex_pipeline.py -q` passed with 22 RAG tests and 34 third-party warnings.
+- `./scripts/verify-pgvector-rag.sh` passed with 1 real PGVector integration test and 34 third-party warnings.
+
+Remaining limitations:
+
+- PGVector is still opt-in, not the default production RAG store.
+- The smoke uses deterministic embeddings; provider-backed Gemini embeddings and PGVector together still need a gated live smoke before defaulting this path.
+
 ## Handoff Summary
 
 Spring Alpha v2 is currently defined as a productized AI financial research workbench with a Python Agent analysis path and evidence-grade RAG evaluation path.

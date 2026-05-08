@@ -296,7 +296,7 @@ class PgVectorStore:
                 {
                     "node_id": node.node_id,
                     "text": node.get_content(),
-                    "metadata": dict(node.metadata),
+                    "metadata": _jsonb_parameter(dict(node.metadata)),
                     "embedding": _dense_vector_literal(
                         self.embedding_backend.embed(_node_embedding_text(node)),
                         self.config.embedding_dimension,
@@ -750,6 +750,14 @@ def _float_from_row_value(value: object) -> float:
     if not isinstance(value, int | float | str):
         raise ValueError("PGVector score must be numeric")
     return float(value)
+
+
+def _jsonb_parameter(value: dict[str, Any]) -> object:
+    try:
+        from psycopg.types.json import Jsonb
+    except ImportError:
+        return value
+    return Jsonb(value)
 
 
 def _vector_dimension_index(key: str, dimension: int) -> int:

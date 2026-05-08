@@ -417,8 +417,7 @@ def test_pgvector_store_upserts_nodes_with_normalized_embedding() -> None:
     assert "INSERT INTO rag_chunks" in upsert_sql
     assert upsert_params["node_id"] == "node_1"
     assert upsert_params["embedding"] == "[0.5773502692,0.5773502692,0.5773502692]"
-    assert isinstance(metadata, dict)
-    assert metadata["section"] == "Segment Information"
+    assert _metadata_value(metadata, "section") == "Segment Information"
 
 
 def test_pgvector_store_searches_candidates_by_node_id() -> None:
@@ -523,6 +522,15 @@ class FixedEmbeddingBackend:
 
 def _assert_database_connection_shape(connection: DatabaseConnection) -> None:
     assert connection is not None
+
+
+def _metadata_value(metadata: object, key: str) -> object:
+    if isinstance(metadata, dict):
+        return metadata[key]
+    wrapped = getattr(metadata, "obj", None)
+    if isinstance(wrapped, dict):
+        return wrapped[key]
+    raise AssertionError("Metadata parameter must be a dict or Jsonb wrapper")
 
 
 def test_pipeline_source_ref_snippet_is_centered_on_matched_terms() -> None:
