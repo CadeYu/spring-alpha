@@ -266,14 +266,15 @@ class PgVectorStore:
                 """,
                 {},
             )
-            connection.execute(
-                f"""
-                CREATE INDEX IF NOT EXISTS {self.config.table_name}_embedding_idx
-                ON {self.config.table_name}
-                USING hnsw (embedding vector_cosine_ops)
-                """,
-                {},
-            )
+            if self.config.embedding_dimension <= 2000:
+                connection.execute(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS {self.config.table_name}_embedding_idx
+                    ON {self.config.table_name}
+                    USING hnsw (embedding vector_cosine_ops)
+                    """,
+                    {},
+                )
             connection.commit()
         finally:
             connection.close()

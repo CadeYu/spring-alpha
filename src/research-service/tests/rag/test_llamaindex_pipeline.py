@@ -480,6 +480,25 @@ def test_pgvector_store_initializes_schema_when_requested() -> None:
     assert "CREATE INDEX IF NOT EXISTS rag_chunks_embedding_idx" in executed_sql
 
 
+def test_pgvector_store_skips_hnsw_index_for_high_dimension_embeddings() -> None:
+    connection = RecordingConnection()
+    store = PgVectorStore(
+        config=PgVectorStoreConfig(
+            database_url="postgresql://example",
+            table_name="rag_chunks",
+            embedding_dimension=3072,
+        ),
+        embedding_backend=DeterministicFinancialEmbeddingBackend(),
+        connection_factory=lambda _: connection,
+    )
+
+    store.initialize_schema()
+
+    executed_sql = "\n".join(query for query, _ in connection.executed)
+    assert "embedding vector(3072) NOT NULL" in executed_sql
+    assert "USING hnsw" not in executed_sql
+
+
 def test_vector_store_env_factory_builds_pgvector_store_when_configured(
     monkeypatch: MonkeyPatch,
 ) -> None:

@@ -7,6 +7,7 @@ from app.contracts.research_task import ResearchTaskType
 from app.rag.llamaindex_pipeline import (
     DeterministicFinancialEmbeddingBackend,
     FilingDocument,
+    GeminiEmbeddingBackend,
     LlamaIndexRagPipeline,
     PgVectorStore,
     PgVectorStoreConfig,
@@ -56,6 +57,62 @@ Azure, server products, and enterprise services drove Intelligent Cloud growth.
         ticker="MSFT",
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
         query="platform support",
+        sections=["Segment Information"],
+        top_k=1,
+    )
+
+    assert result.source_refs
+    assert result.source_refs[0].section == "Segment Information"
+    assert "Azure" in result.source_refs[0].snippet
+
+
+@pytest.mark.integration
+@pytest.mark.live
+def test_gemini_embeddings_retrieve_rag_evidence_against_real_pgvector() -> None:
+    database_url = os.getenv("RAG_PGVECTOR_TEST_DATABASE_URL")
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not database_url:
+        pytest.skip("RAG_PGVECTOR_TEST_DATABASE_URL is required for PGVector integration tests")
+    if not api_key:
+        pytest.skip("GEMINI_API_KEY is required for live Gemini embedding tests")
+
+    table_name = f"rag_live_{uuid4().hex}"
+    embedding_backend = GeminiEmbeddingBackend(api_key=api_key)
+    store = PgVectorStore(
+        config=PgVectorStoreConfig(
+            database_url=database_url,
+            table_name=table_name,
+            embedding_dimension=3072,
+        ),
+        embedding_backend=embedding_backend,
+    )
+    store.initialize_schema()
+    pipeline = LlamaIndexRagPipeline(
+        enable_hybrid_retrieval=True,
+        embedding_backend=embedding_backend,
+        vector_store=store,
+    )
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="MSFT",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000000000-26-000031",
+            text="""
+Segment Information
+Azure, server products, and enterprise services drove Intelligent Cloud growth.
+
+Item 1A. Risk Factors
+Competition and regulation could affect future results.
+""",
+        )
+    )
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_gemini_pgvector_live",
+        ticker="MSFT",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        query="cloud platform enterprise services",
         sections=["Segment Information"],
         top_k=1,
     )

@@ -2164,6 +2164,44 @@ Remaining limitations:
 - PGVector is still opt-in, not the default production RAG store.
 - The smoke uses deterministic embeddings; provider-backed Gemini embeddings and PGVector together still need a gated live smoke before defaulting this path.
 
+### 2026-05-08: Live Gemini embeddings with PGVector smoke
+
+Changed files:
+
+- `src/research-service/app/rag/llamaindex_pipeline.py`
+- `src/research-service/tests/rag/test_llamaindex_pipeline.py`
+- `src/research-service/tests/rag/test_pgvector_integration.py`
+- `src/research-service/pyproject.toml`
+- `src/research-service/README.md`
+- `scripts/verify-gemini-pgvector-rag.sh`
+- `scripts/verify.sh`
+- `planning/PROGRESS.md`
+
+What changed:
+
+- Added a live integration test for Gemini provider-backed embeddings with real PGVector storage.
+- Added `scripts/verify-gemini-pgvector-rag.sh`, which starts a temporary PGVector container and runs only the live test.
+- Registered the `live` pytest marker.
+- Added a schema guard that skips HNSW index creation for embeddings above 2000 dimensions.
+- Documented the high-dimensional Gemini PGVector path and its exact cosine ordering behavior.
+
+Observed integration result:
+
+- Red test first: high-dimensional schema initialization failed the new expectation because HNSW was still created for 3072 dimensions.
+- After adding the dimension guard, `GEMINI_API_KEY=... ./scripts/verify-gemini-pgvector-rag.sh` passed.
+- The passing live smoke exercised `GeminiEmbeddingBackend -> PGVector upsert/search -> retrieve_evidence`.
+
+Verification:
+
+- `uv run pytest tests/rag/test_llamaindex_pipeline.py tests/rag/test_pgvector_integration.py -q` passed with 23 tests, 2 skips, and 34 third-party warnings.
+- `./scripts/verify-pgvector-rag.sh` passed with 1 deterministic PGVector test, 1 live skip, and 34 third-party warnings.
+- `GEMINI_API_KEY=... ./scripts/verify-gemini-pgvector-rag.sh` passed with 1 live test, 1 deselected, and 34 third-party warnings.
+
+Remaining limitations:
+
+- Gemini + PGVector is proven as a gated smoke, but is still not production default.
+- Exact cosine ordering for 3072-dimensional Gemini embeddings is acceptable for smoke and small retrieval sets, but production-scale PGVector will need an index strategy such as lower-dimensional embeddings, halfvec, sparsevec, or a separate vector backend.
+
 ## Handoff Summary
 
 Spring Alpha v2 is currently defined as a productized AI financial research workbench with a Python Agent analysis path and evidence-grade RAG evaluation path.

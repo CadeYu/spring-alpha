@@ -26,6 +26,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "integration: tests that require external services",
+    "live: tests that call live external providers",
 ]
 
 [tool.ruff]

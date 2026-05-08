@@ -21,6 +21,7 @@ required_files=(
   "scripts/e2e-local.sh"
   "scripts/verify-research-service-bridge.sh"
   "scripts/verify-pgvector-rag.sh"
+  "scripts/verify-gemini-pgvector-rag.sh"
   "src/research-service/Dockerfile"
   ".github/workflows/ci.yml"
 )
@@ -58,6 +59,7 @@ bash -n scripts/dev.sh
 bash -n scripts/e2e-local.sh
 bash -n scripts/verify-research-service-bridge.sh
 bash -n scripts/verify-pgvector-rag.sh
+bash -n scripts/verify-gemini-pgvector-rag.sh
 
 echo "Checking research task contract consistency..."
 node - <<'NODE'
