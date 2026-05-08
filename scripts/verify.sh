@@ -113,4 +113,37 @@ for (const snippet of requiredSnippets) {
 }
 NODE
 
+echo "Checking production analysis path documentation..."
+node - <<'NODE'
+const fs = require('fs');
+
+const forbidden = [
+  'RESEARCH_SERVICE_ENABLED',
+  'Legacy Java analysis path remains available',
+  'legacy Java fallback',
+  'Java 主链路可以保留稳定 fallback',
+  '旧 Java 分析链路保持可用',
+  '旧分析链路回退',
+];
+
+const files = [
+  'ARCHITECTURE.md',
+  'VERIFY.md',
+  'docs/decisions.md',
+  'docs/spec.md',
+  'docs/task-contract.md',
+  'docs/dynamic-agent-loop.md',
+  'backend/src/main/resources/application.yml',
+];
+
+for (const file of files) {
+  const content = fs.readFileSync(file, 'utf8');
+  for (const phrase of forbidden) {
+    if (content.includes(phrase)) {
+      throw new Error(`Production path docs still mention forbidden legacy phrase "${phrase}" in ${file}`);
+    }
+  }
+}
+NODE
+
 echo "Project structure verification passed."

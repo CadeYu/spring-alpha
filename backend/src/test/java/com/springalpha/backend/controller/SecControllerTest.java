@@ -7,6 +7,7 @@ import com.springalpha.backend.financial.service.FinancialDataService;
 import com.springalpha.backend.service.FinancialAnalysisService;
 import com.springalpha.backend.service.SecService;
 import com.springalpha.backend.service.provider.ProviderCredentialValidator;
+import com.springalpha.backend.service.research.ResearchServiceUnavailableException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -94,6 +95,32 @@ class SecControllerTest {
     }
 
     @Test
+    void analyzeEndpointReturnsServiceUnavailableWhenResearchServiceFails() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        analysisService.error = new ResearchServiceUnavailableException(
+                "Python Research Service is unavailable: connection refused");
+        SecController controller = new SecController(secService, analysisService);
+
+        WebTestClient client = WebTestClient.bindToController(controller)
+                .controllerAdvice(new ApiExceptionHandler())
+                .build();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isEqualTo(503)
+                .expectBody(String.class)
+                .value(body -> {
+                    assertTrue(body.contains("RESEARCH_SERVICE_UNAVAILABLE"));
+                    assertTrue(body.contains("python-research-service"));
+                    assertTrue(body.contains("degraded"));
+                });
+    }
+
+    @Test
     void get10kContentTruncatesLargeResponses() {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
@@ -165,6 +192,7 @@ class SecControllerTest {
         private String lastOpenAiApiKey;
         private ResearchTaskType lastTaskType;
         private int callCount;
+        private RuntimeException error;
 
         private FakeFinancialAnalysisService(SecService secService, FinancialDataService financialDataService) {
             super(secService,
@@ -187,6 +215,9 @@ class SecControllerTest {
             this.lastReportType = "quarterly";
             this.lastOpenAiApiKey = openAiApiKey;
             this.lastTaskType = taskType;
+            if (error != null) {
+                return Flux.error(error);
+            }
             return Flux.just(AnalysisReport.builder()
                     .executiveSummary("stub report")
                     .companyName("Tesla, Inc.")

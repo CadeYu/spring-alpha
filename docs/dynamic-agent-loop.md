@@ -4,7 +4,7 @@
 
 本文档定义 Spring Alpha Python Research Service 的 dynamic tool-calling agent loop 设计。
 
-当前系统已经具备三任务入口、typed `taskSections`、Java legacy fallback、Python Research Service API boundary 和 cross-service contract E2E。下一步不是把某一个模型写死进 Agent，而是把 Research Service 升级为：
+当前系统已经具备三任务入口、typed `taskSections`、Python Research Service API boundary 和 cross-service contract E2E。Spring Boot 只作为产品 API 和 Python Agent client；分析、RAG 和报告生成统一在 Research Service 内完成。下一步不是把某一个模型写死进 Agent，而是把 Research Service 升级为：
 
 ```text
 task-specific policy

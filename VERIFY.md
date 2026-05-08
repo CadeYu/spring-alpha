@@ -16,7 +16,7 @@ uv
 PostgreSQL with PGVector
 ```
 
-Python Research Service 尚未创建前，只运行现有 frontend 和 backend 命令。
+Python Research Service 是生产分析主路径。分析相关验证应优先覆盖 Java backend 到 Python `/agent/runs` 的 typed bridge；如果 Research Service 不可用，后端应返回明确 unavailable/degraded 错误。
 
 ## One-command Scripts
 
@@ -201,6 +201,13 @@ Mocked E2E：
 ```
 
 该脚本不启动完整 Spring Boot 应用，也不依赖数据库；它只验证 Java typed client 可以通过 HTTP 调用 Python deterministic `/agent/runs`，并把返回结果映射为前端可渲染的 `AnalysisReport.taskSections`。
+
+Production analysis path gate:
+
+- Spring Boot analysis requests always delegate report generation to Python Research Service.
+- `RESEARCH_SERVICE_BASE_URL` and `RESEARCH_SERVICE_TIMEOUT` configure the required Python service boundary.
+- There is no Java report-generation fallback or analysis feature flag.
+- Research Service unavailable states must return explicit unavailable/degraded responses.
 
 `services` 模式要求本地 shell 已配置数据库密码，因为 Spring Boot 当前会在启动时初始化 JPA：
 

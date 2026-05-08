@@ -90,6 +90,43 @@ class ResearchServiceAgentClientTest {
         }
     }
 
+    @Test
+    void runMapsResearchServiceHttpFailureToUnavailableException() {
+        WebClient.Builder builder = WebClient.builder()
+                .exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.SERVICE_UNAVAILABLE)
+                        .header("Content-Type", "application/json")
+                        .body("""
+                                {
+                                  "detail": "service warming up"
+                                }
+                                """)
+                        .build()));
+        ResearchServiceAgentClient client = new ResearchServiceAgentClient(
+                builder,
+                "http://127.0.0.1:8090",
+                Duration.ofSeconds(1));
+
+        ResearchServiceUnavailableException error = assertThrows(
+                ResearchServiceUnavailableException.class,
+                () -> client.run(request()).block());
+
+        assertTrue(error.getMessage().contains("Python Research Service is unavailable"));
+    }
+
+    @Test
+    void runMapsConnectionFailureToUnavailableException() {
+        ResearchServiceAgentClient client = new ResearchServiceAgentClient(
+                WebClient.builder(),
+                "http://127.0.0.1:1",
+                Duration.ofMillis(500));
+
+        ResearchServiceUnavailableException error = assertThrows(
+                ResearchServiceUnavailableException.class,
+                () -> client.run(request()).block());
+
+        assertTrue(error.getMessage().contains("Python Research Service is unavailable"));
+    }
+
     private ResearchAgentRequest request() {
         return new ResearchAgentRequest(
                 "run_java_001",

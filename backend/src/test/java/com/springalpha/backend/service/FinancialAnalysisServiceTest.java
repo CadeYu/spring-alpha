@@ -7,6 +7,7 @@ import com.springalpha.backend.service.provider.ProviderCredentialValidator;
 import com.springalpha.backend.service.research.ResearchAgentClient;
 import com.springalpha.backend.service.research.ResearchAgentRequest;
 import com.springalpha.backend.service.research.ResearchAgentResult;
+import com.springalpha.backend.service.research.ResearchServiceUnavailableException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import reactor.core.publisher.Mono;
@@ -111,7 +112,7 @@ class FinancialAnalysisServiceTest {
                 researchAgentClient,
                 new com.springalpha.backend.service.research.ResearchAgentReportMapper());
 
-        RuntimeException error = assertThrows(RuntimeException.class,
+        ResearchServiceUnavailableException error = assertThrows(ResearchServiceUnavailableException.class,
                 () -> service.analyzeStock(
                         "TSLA",
                         "en",
@@ -121,7 +122,7 @@ class FinancialAnalysisServiceTest {
                         .collectList()
                         .block());
 
-        assertEquals("research service unavailable", error.getMessage());
+        assertEquals("Python Research Service is unavailable: service unavailable", error.getMessage());
         assertEquals(1, researchAgentClient.calls);
     }
 
@@ -238,7 +239,8 @@ class FinancialAnalysisServiceTest {
         }
 
         private static FakeResearchAgentClient failure() {
-            return new FakeResearchAgentClient(null, new RuntimeException("research service unavailable"), false);
+            return new FakeResearchAgentClient(null, new ResearchServiceUnavailableException(
+                    "Python Research Service is unavailable: service unavailable"), false);
         }
 
         private static FakeResearchAgentClient empty() {

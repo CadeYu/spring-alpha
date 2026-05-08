@@ -12,7 +12,7 @@
 
 原因：
 
-- 当前 Java 后端已经承担 SSE、历史记录、金融数据聚合和旧分析链路。
+- 当前 Java 后端已经承担 SSE、历史记录、金融数据聚合、SEC filing fetch 和 Python Agent client。
 - 当前 Next.js 前端已经承担 Dashboard、PDF、图表和用户工作台。
 - 全量重写会放大迁移风险，且不会直接提升 RAG 质量。
 
@@ -24,7 +24,8 @@
 
 - LangGraph、LlamaIndex、Ragas、DeepEval 等生态在 Python 中更成熟。
 - Python sidecar 可以承载实验型工程路线。
-- Java 主链路可以保留稳定 fallback。
+- Spring Boot 保持为产品 API 和数据网关，Agent/RAG/report generation 统一交给 Python Research Service。
+- Python Research Service 不可用时返回明确 unavailable/degraded 错误，而不是回退到 Java 报告生成。
 
 ### 3. LlamaIndex 作为 RAG 主框架
 
@@ -89,9 +90,19 @@
 - 每个阶段都应记录质量、延迟和成本。
 - 主观感觉不能替代 regression data。
 
+### 9. Python Agent 是生产默认分析路径
+
+结论：分析请求不再通过 feature flag 切回 Java report generation。
+
+原因：
+
+- Java 侧 RAG、embedding 和 report-generation 残留已经移除。
+- 保留双分析链路会让 citation、RAG eval 和 task-specific contract 变得不可复现。
+- Spring Boot 继续负责 provider credential validation、SEC filing fetch、financial data APIs 和 Research Service client。
+- Research Service unavailable 是产品错误状态，应显式返回给前端并展示 degraded/unavailable 状态。
+
 ## 待决策事项
 
-- Python Research Service 的运行代码何时从 contract-only 目录扩展为可启动服务。
 - Agent/RAG contract 是否同步生成 Java DTO。
 - MVP 是否需要最小 RAG Eval Dashboard，还是先输出 Markdown / JSON artifact。
 - CI 是否在第一阶段运行 Python eval smoke tests。

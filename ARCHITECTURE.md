@@ -7,7 +7,7 @@
 新版 Spring Alpha 的核心形态是：
 
 - Next.js 负责产品界面与可视化。
-- Spring Boot 负责主 API、SSE、历史记录和旧链路回退。
+- Spring Boot 负责主 API、SSE、历史记录、SEC filing fetch、financial data APIs 和 Python Agent client。
 - Python Research Service 负责 Agent 与 LlamaIndex RAG。
 - PostgreSQL / PGVector 作为统一持久化与向量存储。
 
@@ -70,7 +70,7 @@ frontend/src/
   User workflow, task cards, dashboard, evidence trail, eval dashboard.
 
 backend/src/main/java/com/springalpha/backend/
-  API gateway, SSE relay, existing financial data services, fallback path.
+  API gateway, SSE relay, SEC filing fetch, financial data APIs, Python Agent client.
 
 src/research-service/app/agents/
   LangGraph state machines and bounded agent workflows.
@@ -124,7 +124,7 @@ Browser
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
 | Frontend | Next.js, React, TypeScript, Tailwind, Recharts | Task cards, dashboard, evidence trail, eval dashboard |
-| Backend | Java 21, Spring Boot, WebFlux, JPA, Spring AI | Main API, SSE relay, history, current analysis path, fallback |
+| Backend | Java 21, Spring Boot, WebFlux, JPA | Main API, SSE relay, history, SEC filing fetch, financial data APIs, Python Agent client |
 | Database | PostgreSQL, PGVector | Financial data, vectors, run records, eval records |
 
 ### Research Runtime
@@ -264,16 +264,16 @@ Frontend must not display:
 - Private model scratchpad.
 - Provider-specific internal prompts.
 
-## Feature Flag 原则
+## Production Analysis Path
 
-新版 Agent/RAG 路径必须通过 feature flag 开启。
+生产分析路径只走 Python Research Service：
 
-默认要求：
+- Spring Boot 接收前端请求、校验 provider key、抓取 SEC filing 文本，并调用 Python Research Service `/agent/runs`。
+- 报告生成、Agent planning、RAG retrieval、citation/evidence assembly 都归 Python Research Service。
+- 如果 Python Research Service 不可用，Spring Boot 返回明确的 unavailable/degraded 错误，不生成 Java report，也不走隐藏 fallback。
+- Financial data APIs、SEC filing fetch、dashboard data fallback 可以保留在 Spring Boot；它们不是 analysis/report-generation fallback。
 
-- Legacy Java analysis path remains available.
-- Python Agent path can be disabled without breaking the product.
-- RAG experiment stages can be compared against baseline.
-- Degraded results must be explicit in API responses and UI state.
+RAG experiment stages仍然可以离线对比 baseline，但生产用户请求不得在同一次分析里混用 Java report generation 和 Python Agent report generation。
 
 ## 架构原则
 

@@ -41,6 +41,8 @@ app:
     model: ${GEMINI_MODEL:gemini-2.5-pro}
     base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
 
+  # Production analysis path. Spring Boot always delegates report generation to
+  # Python Research Service and does not provide a Java report-generation fallback.
   research-service:
     base-url: ${RESEARCH_SERVICE_BASE_URL:http://127.0.0.1:8090}
     timeout: ${RESEARCH_SERVICE_TIMEOUT:PT75S}

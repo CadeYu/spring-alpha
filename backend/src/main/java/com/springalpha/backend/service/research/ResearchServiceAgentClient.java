@@ -4,9 +4,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.concurrent.TimeoutException;
 
 @Service
 public class ResearchServiceAgentClient implements ResearchAgentClient {
@@ -37,6 +40,24 @@ public class ResearchServiceAgentClient implements ResearchAgentClient {
                 .retrieve()
                 .bodyToMono(ResearchAgentResult.class)
                 .timeout(timeout)
-                .filter(result -> result.finalReport() != null);
+                .filter(result -> result.finalReport() != null)
+                .onErrorMap(this::mapUnavailable);
+    }
+
+    private Throwable mapUnavailable(Throwable error) {
+        if (error instanceof ResearchServiceUnavailableException) {
+            return error;
+        }
+        if (error instanceof WebClientResponseException responseException) {
+            return new ResearchServiceUnavailableException(
+                    "Python Research Service is unavailable: HTTP " + responseException.getStatusCode().value(),
+                    error);
+        }
+        if (error instanceof WebClientRequestException || error instanceof TimeoutException) {
+            return new ResearchServiceUnavailableException(
+                    "Python Research Service is unavailable: " + error.getMessage(),
+                    error);
+        }
+        return error;
     }
 }

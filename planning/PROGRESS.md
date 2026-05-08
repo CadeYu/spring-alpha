@@ -2294,3 +2294,40 @@ Verification:
 Remaining limitations:
 
 - The Spring Boot analysis request still depends on Python Research Service availability. If that service is down, analysis fails explicitly instead of falling back to Java analysis.
+
+### 2026-05-08: Python Agent production default gate
+
+Changed files:
+
+- `backend/src/main/java/com/springalpha/backend/controller/ApiExceptionHandler.java`
+- `backend/src/main/java/com/springalpha/backend/service/research/ResearchServiceAgentClient.java`
+- `backend/src/main/java/com/springalpha/backend/service/research/ResearchServiceUnavailableException.java`
+- `backend/src/main/resources/application.yml`
+- `backend/src/test/java/com/springalpha/backend/controller/SecControllerTest.java`
+- `backend/src/test/java/com/springalpha/backend/service/FinancialAnalysisServiceTest.java`
+- `backend/src/test/java/com/springalpha/backend/service/research/ResearchServiceAgentClientTest.java`
+- `ARCHITECTURE.md`
+- `VERIFY.md`
+- `docs/decisions.md`
+- `docs/spec.md`
+- `docs/task-contract.md`
+- `docs/dynamic-agent-loop.md`
+- `scripts/verify.sh`
+- `planning/PROGRESS.md`
+
+What changed:
+
+- Documented Python Research Service as the production default and only report-generation path.
+- Added `ResearchServiceUnavailableException` and mapped Research Service HTTP/connection/timeouts to an explicit unavailable error.
+- Added API error handling that returns `RESEARCH_SERVICE_UNAVAILABLE` with `source=python-research-service` and `degraded=true`.
+- Added a project verification gate that rejects current architecture docs or config if they reintroduce `RESEARCH_SERVICE_ENABLED` or Java analysis fallback language.
+- Kept Spring Boot provider credential validation, SEC filing fetch, financial data APIs, and Research Service client as the backend boundary.
+
+Verification:
+
+- Red tests first: targeted backend tests failed because Research Service HTTP/connection errors were raw WebClient errors and controller responses were 500.
+- `mvn -q -Dtest=ResearchServiceAgentClientTest,FinancialAnalysisServiceTest,SecControllerTest test` passed after mapping unavailable errors.
+
+Remaining limitations:
+
+- Frontend can still improve the visual treatment of `RESEARCH_SERVICE_UNAVAILABLE`, but the backend contract is now explicit and non-fallback.

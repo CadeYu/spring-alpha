@@ -17,7 +17,7 @@
 - 保持现有 `AnalysisReport` 向后兼容。
 - 新增 task-specific payload，不一次性删除旧字段。
 - 前端优先渲染 typed task sections；缺失时回退到当前短期布局。
-- Java fallback、LLM strategy、Python research-service 最终产出同一套 schema。
+- Python research-service 是分析与报告生成的唯一生产产出方；Java 只负责 typed client 和兼容 envelope 映射。
 - 每个关键 point 或 metric 都应能绑定 evidence。
 - 不暴露 raw chain-of-thought。
 - 不把 open-ended agent 输出直接透传到 UI。
@@ -50,7 +50,6 @@ export interface AnalysisReport {
 
 `taskSections` 是新增字段。旧字段仍用于：
 
-- legacy Java fallback；
 - PDF 兼容；
 - 渐进式 SSE 合并；
 - task sections 缺失时的前端 fallback；
@@ -347,19 +346,16 @@ class EvidenceAwareReport(BaseModel):
 第一阶段：
 
 - Java `AnalysisReport` 新增 nullable `taskSections`。
-- 增加 fallback builder，从旧字段合成最低限度 task sections。
 - Validator 增加 task-specific checks，但只 warning，不阻断。
 
 第二阶段：
 
-- LLM prompt 要求返回 task sections。
-- `BaseAiStrategy` parse 后校验 task sections。
-- 对缺失字段执行 deterministic repair 或 fallback builder。
+- Python Research Service 返回 task sections。
+- Java `ResearchAgentReportMapper` 将 Python contract 映射到 `AnalysisReport.taskSections`。
+- 对缺失字段执行 deterministic repair 或标记 degraded。
 
 第三阶段：
 
-- Python research-service 返回 typed task sections。
-- Java `ResearchAgentReportMapper` 将 Python contract 映射到 `AnalysisReport.taskSections`。
 - Validator 将核心 task-specific 缺失升级为 degraded 状态。
 
 ## E2E 验收标准
@@ -368,8 +364,8 @@ class EvidenceAwareReport(BaseModel):
 - Business 页面使用 `taskSections.businessDriver` 渲染 Driver Thesis、Driver Map、Signals 和 Watchlist。
 - Cash 页面使用 `taskSections.cashFlowCapitalAllocation` 渲染 Cash Quality、Cash Metrics、Capital Allocation 和 Red Flags。
 - 三个页面在首屏、主体模块、证据组织上明显不同。
-- 当 `taskSections` 缺失时，前端仍能显示当前短期 fallback 页面。
-- 后端旧 Java fallback 仍能返回合法 `AnalysisReport`。
+- 当 `taskSections` 缺失时，前端仍能显示 unavailable/degraded 状态或当前短期兼容页面。
+- Python Research Service 不可用时，后端返回明确 503/degraded 错误，不生成 Java report。
 - Python research-service 可独立通过 Pydantic validation。
 
 ## 后期演进
