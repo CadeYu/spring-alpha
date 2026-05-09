@@ -55,19 +55,37 @@ Citation status 使用保守状态：
 
 ## Agent Progress 规则
 
+默认产品界面展示 trust summary，不直接展示 raw trace。
+
 可展示：
 
-- 当前阶段。
-- 数据源。
-- 检索数量。
-- 校验结果摘要。
-- degraded reason。
+- Source status.
+- Evidence count.
+- Citation coverage.
+- Filing type、filing date、section 和 short snippet。
+- Human-readable degraded or unavailable reason。
 
 不可展示：
 
 - Raw chain-of-thought.
 - Provider private prompts.
 - Hidden scratchpad.
+- Provider key.
+- Full prompt payload.
+- Full filing text.
+- Raw `AgentEvent` JSON.
+- Raw `planner_context` fields.
+- Tool budget、step budget 和 fallback counter，除非在内部 debug panel。
+
+内部 debug panel 可展示：
+
+- Phase.
+- Tool name.
+- Status.
+- Latency.
+- Decision summary.
+- Coverage summary.
+- Degraded reason.
 
 ## Dashboard 规则
 

@@ -141,6 +141,53 @@ class AgentState(BaseModel):
 - final report 必须从 state 中可追溯生成。
 - 失败不抛给前端为裸异常，而是转换成 degraded event 和 degraded reason。
 
+## Trace 与用户可见边界
+
+Agent trace 是内部可观测性材料，不是普通用户界面本身。Agent Runtime
+必须生成结构化 events，用于 eval、release gate、内部 debug 和线上支持；产品前端默认只展示压缩后的 trust summary。
+
+分层规则：
+
+```text
+Internal trace
+  -> eval assertions
+  -> release readiness artifacts
+  -> internal debug panel
+  -> support diagnostics
+
+User-facing trust summary
+  -> source status
+  -> evidence count
+  -> citation coverage
+  -> degraded or unavailable reason
+```
+
+普通用户默认只看到：
+
+- source status，例如 `grounded`、`partial`、`unavailable`。
+- evidence summary，例如使用了多少 filing sections、是否有 citation coverage。
+- source context，例如 filing type、filing date、section 和 short snippet。
+- human-readable warning，例如 Research Service unavailable、partial evidence、citation missing。
+
+普通用户默认不看到：
+
+- raw `AgentEvent` JSON。
+- `planner_context` 原始字段。
+- tool budget、step budget、fallback counter 等调试字段。
+- provider private prompts、hidden scratchpad 或 raw chain-of-thought。
+- provider key、长 filing 原文、完整 prompt payload 或未脱敏异常。
+
+高级/内部 debug panel 可以展开 Agent trace，但必须满足：
+
+- 只展示 structured decision summary，不展示 raw chain-of-thought。
+- 可以展示 phase、tool name、status、latency、degraded reason、coverage summary。
+- 可以展示 `planner_context` 的只读摘要，用于解释 planner 为什么 finalize、coverage stop 或 fallback。
+- 不能展示 provider key、request secret、完整 filing text、完整 prompt 或 provider 原始错误体。
+
+Release dashboard 只展示 gate-level 聚合指标，例如 provider decision count、fallback count、stop reason、tool names 和 compose status。它不展示逐步 raw event。
+
+日志只保留运行诊断必需字段，例如 run id、provider、model、latency、status、error code 和 degraded reason。日志不得成为 Agent trace 的唯一来源，也不得写入 secrets、长文本 evidence 或 provider prompt。
+
 ## Planner 输出
 
 Planner 输出不是自然语言答案，而是严格 JSON。
