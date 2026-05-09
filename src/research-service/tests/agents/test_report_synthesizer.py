@@ -2,6 +2,7 @@ from app.agents.deterministic_workflow import DeterministicAgentWorkflow
 from app.agents.llm_gateway import StaticJsonLlmClient
 from app.agents.report_synthesizer import (
     ReportSynthesisError,
+    synthesize_business_driver_report,
     synthesize_latest_earnings_report,
 )
 from app.contracts.agent import (
@@ -118,6 +119,114 @@ def test_synthesizer_rejects_unknown_source_ids() -> None:
         assert "Unknown source_id" in str(exc)
     else:
         raise AssertionError("synthesizer should reject unknown source ids")
+
+
+def test_synthesizer_builds_business_driver_sections_from_evidence() -> None:
+    state = state_with_business_driver_evidence()
+    client = StaticJsonLlmClient(
+        {
+            "driver_thesis": {
+                "headline": "Services engagement is the primary business driver",
+                "durability": "mixed",
+                "summary": "The cited filing evidence points to services demand and engagement.",
+            },
+            "driver_map": {
+                "product": [
+                    {
+                        "title": "Services",
+                        "summary": "Services demand improved according to the filing.",
+                        "source_ids": ["driver_src_1"],
+                        "citation_status": "supported",
+                    }
+                ],
+                "segment": [],
+                "geography": [],
+                "demand": [
+                    {
+                        "title": "Installed base",
+                        "summary": "Installed base engagement expanded.",
+                        "source_ids": ["driver_src_1"],
+                        "citation_status": "supported",
+                    }
+                ],
+                "pricing": [],
+                "customer": [],
+                "strategy": [],
+            },
+            "positive_signals": [
+                {
+                    "title": "Demand",
+                    "summary": "Demand commentary is positive but evidence remains narrow.",
+                    "source_ids": ["driver_src_1"],
+                    "citation_status": "partial",
+                }
+            ],
+            "negative_signals": [],
+            "watchlist": ["Track whether services engagement persists next quarter."],
+            "claims": [
+                {
+                    "text": "Services engagement is a key business driver.",
+                    "source_ids": ["driver_src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+        }
+    )
+
+    report = synthesize_business_driver_report(business_driver_request(), state, client)
+
+    assert report.task_sections.driver_thesis.headline == (
+        "Services engagement is the primary business driver"
+    )
+    assert report.task_sections.driver_map.product[0].evidence_refs[0].source_id == ("driver_src_1")
+    assert report.task_sections.watchlist == [
+        "Track whether services engagement persists next quarter."
+    ]
+    assert report.sections == {
+        "summary": "The cited filing evidence points to services demand and engagement.",
+        "synthesis": "llm",
+    }
+    assert report.claims[0].source_refs[0].source_id == "driver_src_1"
+
+
+def test_business_driver_synthesizer_rejects_unknown_source_ids() -> None:
+    state = state_with_business_driver_evidence()
+    client = StaticJsonLlmClient(
+        {
+            "driver_thesis": {
+                "headline": "Unsupported driver thesis",
+                "durability": "mixed",
+                "summary": "This cites a fabricated source.",
+            },
+            "driver_map": {
+                "product": [
+                    {
+                        "title": "Unsupported",
+                        "summary": "This source id is not available.",
+                        "source_ids": ["missing_driver_source"],
+                        "citation_status": "supported",
+                    }
+                ],
+                "segment": [],
+                "geography": [],
+                "demand": [],
+                "pricing": [],
+                "customer": [],
+                "strategy": [],
+            },
+            "positive_signals": [],
+            "negative_signals": [],
+            "watchlist": [],
+            "claims": [],
+        }
+    )
+
+    try:
+        synthesize_business_driver_report(business_driver_request(), state, client)
+    except ReportSynthesisError as exc:
+        assert "Unknown source_id" in str(exc)
+    else:
+        raise AssertionError("business driver synthesizer should reject unknown source ids")
 
 
 def test_synthesizer_prompt_contains_evidence_not_raw_trace() -> None:
@@ -260,6 +369,106 @@ def test_agent_uses_synthesized_latest_earnings_report_when_llm_is_available() -
     assert "Deterministic latest earnings" not in result.final_report["claims"][0]["text"]
 
 
+def test_agent_uses_synthesized_business_driver_report_when_llm_is_available() -> None:
+    class PlanningAndSynthesisClient:
+        provider = LlmProvider.OPENAI
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete_json(self, llm_request):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            if self.calls == 1:
+                return StaticJsonLlmClient(
+                    {
+                        "decision": "call_tool",
+                        "summary": "Search business driver evidence.",
+                        "tool_name": "search_filing_sections",
+                        "tool_input": {
+                            "sections": ["MD&A"],
+                            "query": "services demand engagement",
+                        },
+                    }
+                ).complete_json(llm_request)
+            if self.calls == 2:
+                return StaticJsonLlmClient(
+                    {
+                        "decision": "finalize",
+                        "summary": "Business driver evidence is ready for synthesis.",
+                    }
+                ).complete_json(llm_request)
+            return StaticJsonLlmClient(
+                {
+                    "driver_thesis": {
+                        "headline": "Services demand is the core business driver",
+                        "durability": "mixed",
+                        "summary": "The synthesized report uses cited filing evidence.",
+                    },
+                    "driver_map": {
+                        "product": [
+                            {
+                                "title": "Services",
+                                "summary": "Services demand is tied to cited evidence.",
+                                "source_ids": ["run_agent_business_synth:filing:1"],
+                                "citation_status": "supported",
+                            }
+                        ],
+                        "segment": [],
+                        "geography": [],
+                        "demand": [],
+                        "pricing": [],
+                        "customer": [],
+                        "strategy": [],
+                    },
+                    "positive_signals": [
+                        {
+                            "title": "Demand",
+                            "summary": "Demand is positive but should be monitored.",
+                            "source_ids": ["run_agent_business_synth:filing:1"],
+                            "citation_status": "partial",
+                        }
+                    ],
+                    "negative_signals": [],
+                    "watchlist": ["Watch whether demand persists."],
+                    "claims": [
+                        {
+                            "text": "Services demand is the core business driver.",
+                            "source_ids": ["run_agent_business_synth:filing:1"],
+                            "citation_status": "supported",
+                        }
+                    ],
+                }
+            ).complete_json(llm_request)
+
+    client = PlanningAndSynthesisClient()
+    workflow = DeterministicAgentWorkflow(
+        llm_client=client,
+        report_synthesis_client=client,
+        enable_report_synthesis=True,
+    )
+
+    result = workflow.run(
+        AgentRequest(
+            run_id="run_agent_business_synth",
+            ticker="AAPL",
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        )
+    )
+
+    assert result.final_report is not None
+    assert result.status == AgentRunStatus.OK
+    assert result.final_report["sections"]["synthesis"] == "llm"
+    assert result.final_report["task_sections"]["driver_thesis"]["headline"] == (
+        "Services demand is the core business driver"
+    )
+    assert (
+        result.final_report["task_sections"]["driver_map"]["product"][0]["evidence_refs"][0][
+            "source_id"
+        ]
+        == "run_agent_business_synth:filing:1"
+    )
+
+
 def test_agent_falls_back_to_deterministic_report_when_synthesis_is_invalid() -> None:
     class InvalidSynthesisClient:
         provider = LlmProvider.OPENAI
@@ -339,6 +548,17 @@ def request() -> AgentRequest:
     )
 
 
+def business_driver_request() -> AgentRequest:
+    return AgentRequest(
+        run_id="run_business_synthesis_001",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        llm_provider=LlmProvider.OPENAI,
+        llm_model="test-model",
+        llm_api_key="secret",
+    )
+
+
 def state_with_evidence() -> AgentState:
     state = AgentState(
         run_id="run_synthesis_001",
@@ -365,6 +585,52 @@ def state_with_evidence() -> AgentState:
                             "filing_date": "2026-04-30",
                             "accession_number": "0000320193-26-000001",
                             "citation_status": "supported",
+                        }
+                    ],
+                }
+            ),
+            "retrieval_records": [
+                {
+                    "tool_name": "search_filing_sections",
+                    "status": "ok",
+                    "source_ref_count": 1,
+                }
+            ],
+        }
+    )
+
+
+def state_with_business_driver_evidence() -> AgentState:
+    state = AgentState(
+        run_id="run_business_synthesis_001",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        provider=LlmProvider.OPENAI,
+        model="test-model",
+        task_policy=default_task_policy(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE),
+    )
+    return state.model_copy(
+        update={
+            "evidence_memory": state.evidence_memory.model_copy(
+                update={
+                    "source_refs": [
+                        {
+                            "source_id": "driver_src_1",
+                            "section": "MD&A",
+                            "snippet": (
+                                "Services demand improved because installed base "
+                                "engagement expanded across customers."
+                            ),
+                            "filing_type": "10-Q",
+                            "filing_date": "2026-04-30",
+                            "accession_number": "0000320193-26-000010",
+                            "citation_status": "supported",
+                        }
+                    ],
+                    "business_signals": [
+                        {
+                            "signal": "services_engagement",
+                            "summary": "Installed base engagement expanded.",
                         }
                     ],
                 }

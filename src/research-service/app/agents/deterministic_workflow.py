@@ -4,6 +4,7 @@ from app.agents.coverage import check_coverage
 from app.agents.llm_gateway import LlmClient
 from app.agents.planner import PlannerDecisionType, plan_next_step
 from app.agents.report_synthesizer import (
+    synthesize_business_driver_report,
     synthesize_latest_earnings_report,
 )
 from app.agents.tool_registry import (
@@ -481,9 +482,11 @@ def _build_final_report_with_optional_synthesis(
     state: AgentState,
     llm_client: LlmClient | None,
 ) -> tuple[EvidenceAwareReport, AgentState]:
-    if llm_client is None or request.task_type != ResearchTaskType.LATEST_EARNINGS_READOUT:
+    if llm_client is None or not _supports_report_synthesis(request.task_type):
         return _build_final_report(request, state), state
     try:
+        if request.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+            return synthesize_business_driver_report(request, state, llm_client), state
         return synthesize_latest_earnings_report(request, state, llm_client), state
     except Exception as exc:
         degraded_state = _append_degraded_event(
@@ -492,6 +495,13 @@ def _build_final_report_with_optional_synthesis(
             degraded_reason=f"Report synthesis failed: {exc}",
         )
         return _build_final_report(request, degraded_state), degraded_state
+
+
+def _supports_report_synthesis(task_type: ResearchTaskType) -> bool:
+    return task_type in {
+        ResearchTaskType.LATEST_EARNINGS_READOUT,
+        ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+    }
 
 
 def _build_final_report(request: AgentRequest, state: AgentState) -> EvidenceAwareReport:

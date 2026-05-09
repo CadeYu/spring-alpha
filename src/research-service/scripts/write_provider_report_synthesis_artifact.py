@@ -17,6 +17,7 @@ from app.agents.llm_gateway import (
     default_model_for_provider,
 )
 from app.contracts.agent import AgentRequest, LlmProvider
+from app.contracts.research_task import ResearchTaskType
 
 STAGE = "stage_1_provider_report_synthesis"
 
@@ -26,6 +27,7 @@ class ProviderReportSynthesisConfig:
     provider: LlmProvider
     model: str
     api_key: str
+    task_type: ResearchTaskType = ResearchTaskType.LATEST_EARNINGS_READOUT
 
 
 def write_provider_report_synthesis_artifact(
@@ -43,7 +45,7 @@ def write_provider_report_synthesis_artifact(
         transport=transport,
     )
     workflow = DeterministicAgentWorkflow(
-        llm_client=_deterministic_planner_client(config.provider),
+        llm_client=_deterministic_planner_client(config.provider, config.task_type),
         report_synthesis_client=synthesis_client,
         enable_report_synthesis=True,
     )
@@ -70,22 +72,15 @@ def main() -> int:
 
 
 class _DeterministicPlannerClient:
-    def __init__(self, provider: LlmProvider) -> None:
+    def __init__(self, provider: LlmProvider, task_type: ResearchTaskType) -> None:
         self.provider = provider
+        self.task_type = task_type
         self._calls = 0
 
     def complete_json(self, request: LlmRequest) -> LlmResponse:
         self._calls += 1
         if self._calls == 1:
-            content = {
-                "decision": "call_tool",
-                "summary": "Search evidence before provider report synthesis.",
-                "tool_name": "search_filing_sections",
-                "tool_input": {
-                    "sections": ["MD&A"],
-                    "query": "latest earnings revenue gross margin demand risk",
-                },
-            }
+            content = _first_tool_decision(self.task_type)
         else:
             content = {
                 "decision": "finalize",
@@ -98,15 +93,53 @@ class _DeterministicPlannerClient:
         )
 
 
-def _deterministic_planner_client(provider: LlmProvider) -> _DeterministicPlannerClient:
-    return _DeterministicPlannerClient(provider)
+def _deterministic_planner_client(
+    provider: LlmProvider,
+    task_type: ResearchTaskType,
+) -> _DeterministicPlannerClient:
+    return _DeterministicPlannerClient(provider, task_type)
+
+
+def _first_tool_decision(task_type: ResearchTaskType) -> dict[str, object]:
+    if task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+        return {
+            "decision": "call_tool",
+            "summary": "Search business driver evidence before provider report synthesis.",
+            "tool_name": "search_filing_sections",
+            "tool_input": {
+                "sections": ["MD&A", "Business"],
+                "query": "business drivers services demand segment product strategy",
+            },
+        }
+    return {
+        "decision": "call_tool",
+        "summary": "Search evidence before provider report synthesis.",
+        "tool_name": "search_filing_sections",
+        "tool_input": {
+            "sections": ["MD&A"],
+            "query": "latest earnings revenue gross margin demand risk",
+        },
+    }
 
 
 def _config_from_env() -> ProviderReportSynthesisConfig:
     provider = _provider_from_env()
     api_key = _api_key_for_provider(provider)
     model = os.getenv("PROVIDER_REPORT_SYNTHESIS_MODEL") or default_model_for_provider(provider)
-    return ProviderReportSynthesisConfig(provider=provider, model=model, api_key=api_key)
+    task_type = _task_type_from_env()
+    return ProviderReportSynthesisConfig(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        task_type=task_type,
+    )
+
+
+def _task_type_from_env() -> ResearchTaskType:
+    raw_task_type = os.getenv("PROVIDER_REPORT_SYNTHESIS_TASK_TYPE")
+    if raw_task_type:
+        return ResearchTaskType(raw_task_type.strip().lower())
+    return ResearchTaskType.LATEST_EARNINGS_READOUT
 
 
 def _provider_from_env() -> LlmProvider:
@@ -150,7 +183,7 @@ def _agent_request(config: ProviderReportSynthesisConfig) -> AgentRequest:
     return AgentRequest(
         run_id="provider_report_synthesis_smoke",
         ticker="AAPL",
-        task_type="latest_earnings_readout",
+        task_type=config.task_type,
         language="en",
         llm_provider=config.provider,
         llm_model=config.model,
@@ -177,7 +210,7 @@ def _artifact_payload(
             if source_ref.get("source_id")
         }
     )
-    headline = (task_sections.get("topline_verdict") or {}).get("headline")
+    headline = _headline_from_task_sections(task_sections)
     return {
         "stage": STAGE,
         "provider": config.provider.value,
@@ -193,6 +226,16 @@ def _artifact_payload(
     }
 
 
+def _headline_from_task_sections(task_sections: dict[str, object]) -> object:
+    topline_verdict = task_sections.get("topline_verdict")
+    if isinstance(topline_verdict, dict):
+        return topline_verdict.get("headline")
+    driver_thesis = task_sections.get("driver_thesis")
+    if isinstance(driver_thesis, dict):
+        return driver_thesis.get("headline")
+    return None
+
+
 def assert_provider_report_synthesis_gate(
     payload: dict[str, object],
     *,
@@ -200,8 +243,9 @@ def assert_provider_report_synthesis_gate(
 ) -> None:
     if payload["stage"] != STAGE:
         raise RuntimeError("unexpected provider report synthesis stage")
-    if payload["finalReportTaskType"] != "latest_earnings_readout":
-        raise RuntimeError("provider synthesis did not return latest earnings sections")
+    expected_task_types = {"latest_earnings_readout", "business_driver_deep_dive"}
+    if payload["finalReportTaskType"] not in expected_task_types:
+        raise RuntimeError("provider synthesis did not return supported task sections")
     if payload.get("synthesis") != "llm":
         raise RuntimeError("provider synthesis did not mark final report as llm synthesized")
     if int(payload.get("claimCount", 0)) <= 0:

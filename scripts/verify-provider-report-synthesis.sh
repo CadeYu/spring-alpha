@@ -32,8 +32,11 @@ with open(path, encoding="utf-8") as artifact_file:
 
 if artifact["stage"] != "stage_1_provider_report_synthesis":
     raise SystemExit("unexpected provider report synthesis stage")
-if artifact["finalReportTaskType"] != "latest_earnings_readout":
-    raise SystemExit("provider synthesis did not return latest earnings sections")
+if artifact["finalReportTaskType"] not in {
+    "latest_earnings_readout",
+    "business_driver_deep_dive",
+}:
+    raise SystemExit("provider synthesis did not return supported task sections")
 if artifact["synthesis"] != "llm":
     raise SystemExit("provider synthesis did not use llm final synthesis")
 if artifact["claimCount"] <= 0:

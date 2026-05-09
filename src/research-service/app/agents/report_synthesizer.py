@@ -5,7 +5,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.agents.llm_gateway import LlmClient, LlmRequest
 from app.contracts.agent import AgentRequest, AgentState
 from app.contracts.report import (
+    BusinessDriverSections,
     CitationStatus,
+    DriverMap,
+    DriverThesis,
     EvidenceAwareReport,
     EvidenceBoundClaim,
     EvidenceBoundMetric,
@@ -67,6 +70,29 @@ class _LatestEarningsSynthesis(BaseModel):
     financial_dashboard: _SynthesizedDashboard
     driver_snapshot: list[_SynthesizedPoint] = Field(default_factory=list)
     risk_snapshot: list[_SynthesizedPoint] = Field(default_factory=list)
+    claims: list[_SynthesizedClaim] = Field(default_factory=list)
+
+
+class _SynthesizedDriverMap(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product: list[_SynthesizedPoint] = Field(default_factory=list)
+    segment: list[_SynthesizedPoint] = Field(default_factory=list)
+    geography: list[_SynthesizedPoint] = Field(default_factory=list)
+    demand: list[_SynthesizedPoint] = Field(default_factory=list)
+    pricing: list[_SynthesizedPoint] = Field(default_factory=list)
+    customer: list[_SynthesizedPoint] = Field(default_factory=list)
+    strategy: list[_SynthesizedPoint] = Field(default_factory=list)
+
+
+class _BusinessDriverSynthesis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    driver_thesis: DriverThesis
+    driver_map: _SynthesizedDriverMap
+    positive_signals: list[_SynthesizedPoint] = Field(default_factory=list)
+    negative_signals: list[_SynthesizedPoint] = Field(default_factory=list)
+    watchlist: list[str] = Field(default_factory=list)
     claims: list[_SynthesizedClaim] = Field(default_factory=list)
 
 
@@ -146,6 +172,83 @@ def synthesize_latest_earnings_report(
     )
 
 
+def synthesize_business_driver_report(
+    request: AgentRequest,
+    state: AgentState,
+    client: LlmClient,
+) -> EvidenceAwareReport:
+    if request.task_type != ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+        raise ReportSynthesisError(f"Unsupported synthesis task: {request.task_type.value}")
+
+    source_refs = _source_refs_from_state(state)
+    source_refs_by_id = {source_ref.source_id: source_ref for source_ref in source_refs}
+    response = client.complete_json(
+        LlmRequest(
+            run_id=request.run_id,
+            provider=client.provider,
+            model=request.llm_model,
+            task_type=request.task_type,
+            system_prompt=_system_prompt(),
+            user_prompt=_business_driver_prompt(request, state, source_refs),
+            state=state,
+            timeout_seconds=60,
+        )
+    )
+    payload = _BusinessDriverSynthesis.model_validate(response.content)
+    _validate_business_driver_source_ids(payload, source_refs_by_id)
+    task_sections = BusinessDriverSections(
+        schema_version="task_sections.v1",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        coverage=_business_driver_coverage(payload, source_refs),
+        driver_thesis=payload.driver_thesis,
+        driver_map=DriverMap(
+            product=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.driver_map.product
+            ],
+            segment=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.driver_map.segment
+            ],
+            geography=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.driver_map.geography
+            ],
+            demand=[
+                _point_from_payload(point, source_refs_by_id) for point in payload.driver_map.demand
+            ],
+            pricing=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.driver_map.pricing
+            ],
+            customer=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.driver_map.customer
+            ],
+            strategy=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.driver_map.strategy
+            ],
+        ),
+        positive_signals=[
+            _point_from_payload(point, source_refs_by_id) for point in payload.positive_signals
+        ],
+        negative_signals=[
+            _point_from_payload(point, source_refs_by_id) for point in payload.negative_signals
+        ],
+        watchlist=payload.watchlist,
+    )
+    return EvidenceAwareReport(
+        run_id=request.run_id,
+        ticker=state.ticker,
+        task_type=request.task_type,
+        task_sections=task_sections,
+        sections={"summary": payload.driver_thesis.summary, "synthesis": "llm"},
+        claims=_claims_from_payload(request, payload.claims, source_refs, source_refs_by_id),
+        retrieval_records=state.retrieval_records,
+    )
+
+
 def _system_prompt() -> str:
     return (
         "You are a financial research report synthesizer. Return one JSON object only. "
@@ -154,19 +257,49 @@ def _system_prompt() -> str:
     )
 
 
+def _business_driver_prompt(
+    request: AgentRequest,
+    state: AgentState,
+    source_refs: list[SourceRef],
+) -> str:
+    evidence_lines = _evidence_lines(source_refs)
+    return (
+        "Generate typed business driver deep dive task sections.\n"
+        "Return JSON only. Do not use strings where objects or arrays are required.\n"
+        "Use exactly this shape:\n"
+        "{\n"
+        '  "driver_thesis": {"headline": "...", "durability": '
+        '"durable|mixed|temporary|unclear", "summary": "..."},\n'
+        '  "driver_map": {"product": [], "segment": [], "geography": [], '
+        '"demand": [], "pricing": [], "customer": [], "strategy": []},\n'
+        '  "positive_signals": [{"title": "...", "summary": "...", '
+        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+        '  "negative_signals": [{"title": "...", "summary": "...", '
+        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+        '  "watchlist": ["..."],\n'
+        '  "claims": [{"text": "...", "source_ids": ["..."], '
+        '"citation_status": "supported|partial|missing|unverified"}]\n'
+        "}\n"
+        "Each driver_map category value must be an array of points with title, summary, "
+        "source_ids, and citation_status.\n"
+        "Every source_ids value must come from provided evidence only.\n"
+        "If evidence is thin, still return the same object/array shape with cautious text.\n"
+        f"Ticker: {state.ticker}\n"
+        f"Task: {request.task_type.value}\n"
+        f"Business signals: {_json_safe(state.evidence_memory.business_signals)}\n"
+        f"Coverage: status={state.coverage.status}; "
+        f"evidence_count={state.coverage.evidence_count}; "
+        f"citation_coverage={state.coverage.citation_coverage}\n"
+        "Evidence:\n" + "\n".join(evidence_lines)
+    )
+
+
 def _user_prompt(
     request: AgentRequest,
     state: AgentState,
     source_refs: list[SourceRef],
 ) -> str:
-    evidence_lines = [
-        (
-            f"- source_id={source_ref.source_id}; section={source_ref.section}; "
-            f"filing_type={source_ref.filing_type}; filing_date={source_ref.filing_date}; "
-            f"snippet={_clip(source_ref.snippet)}"
-        )
-        for source_ref in source_refs
-    ]
+    evidence_lines = _evidence_lines(source_refs)
     facts = state.evidence_memory.facts
     return (
         "Generate typed latest earnings task sections.\n"
@@ -238,6 +371,22 @@ def _validate_source_ids(
                 raise ReportSynthesisError(f"Unknown source_id in synthesized report: {source_id}")
 
 
+def _validate_business_driver_source_ids(
+    payload: _BusinessDriverSynthesis,
+    source_refs_by_id: dict[str, SourceRef],
+) -> None:
+    source_id_groups: list[list[str]] = [
+        *[point.source_ids for point in _driver_map_points(payload.driver_map)],
+        *[point.source_ids for point in payload.positive_signals],
+        *[point.source_ids for point in payload.negative_signals],
+        *[claim.source_ids for claim in payload.claims],
+    ]
+    for source_ids in source_id_groups:
+        for source_id in source_ids:
+            if source_id not in source_refs_by_id:
+                raise ReportSynthesisError(f"Unknown source_id in synthesized report: {source_id}")
+
+
 def _coverage(
     payload: _LatestEarningsSynthesis,
     source_refs: list[SourceRef],
@@ -258,6 +407,65 @@ def _coverage(
         missing_sections=missing_sections,
         evidence_count=len(source_refs),
     )
+
+
+def _business_driver_coverage(
+    payload: _BusinessDriverSynthesis,
+    source_refs: list[SourceRef],
+) -> TaskSectionCoverage:
+    missing_sections = []
+    if not any(_driver_map_points(payload.driver_map)):
+        missing_sections.append("driver_map")
+    if not payload.positive_signals and not payload.negative_signals:
+        missing_sections.append("signals")
+    if not payload.watchlist:
+        missing_sections.append("watchlist")
+    if not source_refs:
+        missing_sections.append("evidence_refs")
+    return TaskSectionCoverage(
+        status="complete" if not missing_sections else "partial",
+        missing_sections=missing_sections,
+        evidence_count=len(source_refs),
+    )
+
+
+def _driver_map_points(driver_map: _SynthesizedDriverMap) -> list[_SynthesizedPoint]:
+    return [
+        *driver_map.product,
+        *driver_map.segment,
+        *driver_map.geography,
+        *driver_map.demand,
+        *driver_map.pricing,
+        *driver_map.customer,
+        *driver_map.strategy,
+    ]
+
+
+def _claims_from_payload(
+    request: AgentRequest,
+    claims: list[_SynthesizedClaim],
+    source_refs: list[SourceRef],
+    source_refs_by_id: dict[str, SourceRef],
+) -> list[EvidenceBoundClaim]:
+    synthesized_claims = [
+        EvidenceBoundClaim(
+            claim_id=f"{request.run_id}:synthesized_claim:{index + 1}",
+            text=claim.text,
+            citation_status=claim.citation_status,
+            source_refs=[source_refs_by_id[source_id] for source_id in claim.source_ids],
+        )
+        for index, claim in enumerate(claims)
+    ]
+    if not synthesized_claims and source_refs:
+        synthesized_claims = [
+            EvidenceBoundClaim(
+                claim_id=f"{request.run_id}:synthesized_claim:1",
+                text="Evidence-bound synthesis generated without explicit claims.",
+                citation_status=source_refs[0].citation_status,
+                source_refs=source_refs[:1],
+            )
+        ]
+    return synthesized_claims
 
 
 def _point_from_payload(
@@ -298,6 +506,17 @@ def _evidence_ref(source_ref: SourceRef) -> EvidenceRef:
         accession_number=source_ref.accession_number,
         source_id=source_ref.source_id,
     )
+
+
+def _evidence_lines(source_refs: list[SourceRef]) -> list[str]:
+    return [
+        (
+            f"- source_id={source_ref.source_id}; section={source_ref.section}; "
+            f"filing_type={source_ref.filing_type}; filing_date={source_ref.filing_date}; "
+            f"snippet={_clip(source_ref.snippet)}"
+        )
+        for source_ref in source_refs
+    ]
 
 
 def _citation_status_from_value(value: Any) -> CitationStatus:
