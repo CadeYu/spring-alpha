@@ -6,6 +6,9 @@ from app.agents.llm_gateway import LlmClient, LlmRequest
 from app.contracts.agent import AgentRequest, AgentState
 from app.contracts.report import (
     BusinessDriverSections,
+    CapitalAllocation,
+    CashFlowCapitalAllocationSections,
+    CashQualityVerdict,
     CitationStatus,
     DriverMap,
     DriverThesis,
@@ -98,6 +101,27 @@ class _BusinessDriverSynthesis(BaseModel):
     positive_signals: list[_SynthesizedPoint] = Field(default_factory=list)
     negative_signals: list[_SynthesizedPoint] = Field(default_factory=list)
     watchlist: list[str] = Field(default_factory=list)
+    claims: list[_SynthesizedClaim] = Field(default_factory=list)
+
+
+class _SynthesizedCapitalAllocation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capex: list[_SynthesizedPoint] = Field(default_factory=list)
+    buybacks: list[_SynthesizedPoint] = Field(default_factory=list)
+    dividends: list[_SynthesizedPoint] = Field(default_factory=list)
+    debt: list[_SynthesizedPoint] = Field(default_factory=list)
+    liquidity: list[_SynthesizedPoint] = Field(default_factory=list)
+
+
+class _CashFlowSynthesis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cash_quality_verdict: CashQualityVerdict
+    cash_metrics: list[_SynthesizedMetric] = Field(default_factory=list)
+    capital_allocation: _SynthesizedCapitalAllocation
+    allocation_discipline: list[_SynthesizedPoint] = Field(default_factory=list)
+    red_flags: list[_SynthesizedPoint] = Field(default_factory=list)
     claims: list[_SynthesizedClaim] = Field(default_factory=list)
 
 
@@ -256,6 +280,77 @@ def synthesize_business_driver_report(
     )
 
 
+def synthesize_cash_flow_report(
+    request: AgentRequest,
+    state: AgentState,
+    client: LlmClient,
+) -> EvidenceAwareReport:
+    if request.task_type != ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
+        raise ReportSynthesisError(f"Unsupported synthesis task: {request.task_type.value}")
+
+    source_refs = _source_refs_from_state(state)
+    source_refs_by_id = _alias_source_refs_by_id(source_refs)
+    response = _complete_synthesis_json(
+        client,
+        LlmRequest(
+            run_id=request.run_id,
+            provider=client.provider,
+            model=request.llm_model,
+            task_type=request.task_type,
+            system_prompt=_system_prompt(),
+            user_prompt=_cash_flow_prompt(request, state, source_refs),
+            state=state,
+            timeout_seconds=120,
+        ),
+    )
+    payload = _CashFlowSynthesis.model_validate(response.content)
+    _validate_cash_flow_source_ids(payload, source_refs_by_id)
+    task_sections = CashFlowCapitalAllocationSections(
+        schema_version="task_sections.v1",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        coverage=_cash_flow_coverage(payload, source_refs),
+        cash_quality_verdict=payload.cash_quality_verdict,
+        cash_metrics=[
+            _metric_from_payload(metric, source_refs_by_id) for metric in payload.cash_metrics
+        ],
+        capital_allocation=CapitalAllocation(
+            capex=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.capital_allocation.capex
+            ],
+            buybacks=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.capital_allocation.buybacks
+            ],
+            dividends=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.capital_allocation.dividends
+            ],
+            debt=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.capital_allocation.debt
+            ],
+            liquidity=[
+                _point_from_payload(point, source_refs_by_id)
+                for point in payload.capital_allocation.liquidity
+            ],
+        ),
+        allocation_discipline=[
+            _point_from_payload(point, source_refs_by_id) for point in payload.allocation_discipline
+        ],
+        red_flags=[_point_from_payload(point, source_refs_by_id) for point in payload.red_flags],
+    )
+    return EvidenceAwareReport(
+        run_id=request.run_id,
+        ticker=state.ticker,
+        task_type=request.task_type,
+        task_sections=task_sections,
+        sections={"summary": payload.cash_quality_verdict.summary, "synthesis": "llm"},
+        claims=_claims_from_payload(request, payload.claims, source_refs, source_refs_by_id),
+        retrieval_records=state.retrieval_records,
+    )
+
+
 def _system_prompt() -> str:
     return (
         "You are a financial research report synthesizer. Return one JSON object only. "
@@ -308,6 +403,50 @@ def _business_driver_prompt(
         f"Ticker: {state.ticker}\n"
         f"Task: {request.task_type.value}\n"
         f"Business signals: {_json_safe(state.evidence_memory.business_signals)}\n"
+        f"Coverage: status={state.coverage.status}; "
+        f"evidence_count={state.coverage.evidence_count}; "
+        f"citation_coverage={state.coverage.citation_coverage}\n"
+        "Evidence:\n" + "\n".join(evidence_lines)
+    )
+
+
+def _cash_flow_prompt(
+    request: AgentRequest,
+    state: AgentState,
+    source_refs: list[SourceRef],
+) -> str:
+    evidence_refs = _aliased_source_refs(source_refs)
+    evidence_lines = _evidence_lines(evidence_refs, source_refs)
+    allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
+    return (
+        "Generate typed cash flow and capital allocation task sections.\n"
+        "Return JSON only. Do not use strings where objects or arrays are required.\n"
+        f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
+        "Never invent source_ids. Do not cite facts, concepts, or node ids not listed above.\n"
+        "Use exactly this shape:\n"
+        "{\n"
+        '  "cash_quality_verdict": {"headline": "...", '
+        '"earnings_backed_by_cash": "yes|mixed|no|unclear", "summary": "..."},\n'
+        '  "cash_metrics": [{"name": "...", "value": "...", '
+        '"period": "latest_quarter", "interpretation": "...", "source_ids": ["..."], '
+        '"citation_status": "supported|partial|missing|unverified"}],\n'
+        '  "capital_allocation": {"capex": [], "buybacks": [], "dividends": [], '
+        '"debt": [], "liquidity": []},\n'
+        '  "allocation_discipline": [{"title": "...", "summary": "...", '
+        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+        '  "red_flags": [{"title": "...", "summary": "...", '
+        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+        '  "claims": [{"text": "...", "source_ids": ["..."], '
+        '"citation_status": "supported|partial|missing|unverified"}]\n'
+        "}\n"
+        "Each capital_allocation category value must be an array of points with title, "
+        "summary, source_ids, and citation_status.\n"
+        "Every source_ids value must come from provided evidence only.\n"
+        "If evidence is thin, still return the same object/array shape with cautious text.\n"
+        f"Ticker: {state.ticker}\n"
+        f"Task: {request.task_type.value}\n"
+        f"Facts: {_json_safe(state.evidence_memory.facts)}\n"
+        f"Metric evidence: {_json_safe(state.evidence_memory.metric_evidence)}\n"
         f"Coverage: status={state.coverage.status}; "
         f"evidence_count={state.coverage.evidence_count}; "
         f"citation_coverage={state.coverage.citation_coverage}\n"
@@ -427,6 +566,23 @@ def _validate_business_driver_source_ids(
                 raise ReportSynthesisError(f"Unknown source_id in synthesized report: {source_id}")
 
 
+def _validate_cash_flow_source_ids(
+    payload: _CashFlowSynthesis,
+    source_refs_by_id: dict[str, SourceRef],
+) -> None:
+    source_id_groups: list[list[str]] = [
+        *[metric.source_ids for metric in payload.cash_metrics],
+        *[point.source_ids for point in _capital_allocation_points(payload.capital_allocation)],
+        *[point.source_ids for point in payload.allocation_discipline],
+        *[point.source_ids for point in payload.red_flags],
+        *[claim.source_ids for claim in payload.claims],
+    ]
+    for source_ids in source_id_groups:
+        for source_id in source_ids:
+            if source_id not in source_refs_by_id:
+                raise ReportSynthesisError(f"Unknown source_id in synthesized report: {source_id}")
+
+
 def _coverage(
     payload: _LatestEarningsSynthesis,
     source_refs: list[SourceRef],
@@ -478,6 +634,38 @@ def _driver_map_points(driver_map: _SynthesizedDriverMap) -> list[_SynthesizedPo
         *driver_map.pricing,
         *driver_map.customer,
         *driver_map.strategy,
+    ]
+
+
+def _cash_flow_coverage(
+    payload: _CashFlowSynthesis,
+    source_refs: list[SourceRef],
+) -> TaskSectionCoverage:
+    missing_sections = []
+    if not payload.cash_metrics:
+        missing_sections.append("cash_metrics")
+    if not any(_capital_allocation_points(payload.capital_allocation)):
+        missing_sections.append("capital_allocation")
+    if not payload.allocation_discipline:
+        missing_sections.append("allocation_discipline")
+    if not source_refs:
+        missing_sections.append("evidence_refs")
+    return TaskSectionCoverage(
+        status="complete" if not missing_sections else "partial",
+        missing_sections=missing_sections,
+        evidence_count=len(source_refs),
+    )
+
+
+def _capital_allocation_points(
+    capital_allocation: _SynthesizedCapitalAllocation,
+) -> list[_SynthesizedPoint]:
+    return [
+        *capital_allocation.capex,
+        *capital_allocation.buybacks,
+        *capital_allocation.dividends,
+        *capital_allocation.debt,
+        *capital_allocation.liquidity,
     ]
 
 

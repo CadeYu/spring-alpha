@@ -5,6 +5,7 @@ from app.agents.llm_gateway import LlmClient
 from app.agents.planner import PlannerDecisionType, plan_next_step
 from app.agents.report_synthesizer import (
     synthesize_business_driver_report,
+    synthesize_cash_flow_report,
     synthesize_latest_earnings_report,
 )
 from app.agents.tool_registry import (
@@ -487,6 +488,8 @@ def _build_final_report_with_optional_synthesis(
     try:
         if request.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
             return synthesize_business_driver_report(request, state, llm_client), state
+        if request.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
+            return synthesize_cash_flow_report(request, state, llm_client), state
         return synthesize_latest_earnings_report(request, state, llm_client), state
     except Exception as exc:
         degraded_state = _append_degraded_event(
@@ -501,6 +504,7 @@ def _supports_report_synthesis(task_type: ResearchTaskType) -> bool:
     return task_type in {
         ResearchTaskType.LATEST_EARNINGS_READOUT,
         ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
     }
 
 

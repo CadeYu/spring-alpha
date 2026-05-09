@@ -6,7 +6,7 @@ from app.agents.domain_tools import (
 from app.agents.tool_registry import default_tool_registry
 from app.contracts.agent import AgentState, ToolCall, default_task_policy
 from app.contracts.research_task import ResearchTaskType
-from app.contracts.tools import CitationVerificationInput, CompanyFactsInput
+from app.contracts.tools import BusinessSignalsInput, CitationVerificationInput, CompanyFactsInput
 from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline
 
 
@@ -196,6 +196,98 @@ Operating cash flow funded capital expenditures and share repurchases.
         },
     ]
     assert retrieved_node["metadata"]["filing_type"] == "10-Q"
+
+
+def test_domain_service_extracts_business_signals_from_existing_evidence() -> None:
+    pipeline = LlamaIndexRagPipeline()
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000320193-26-000006",
+            text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Services revenue increased because demand improved and installed base engagement expanded.
+Gross margin benefited from favorable mix and pricing.
+
+Item 1A. Risk Factors
+Supply constraints and competitive pressure could affect future results.
+""",
+        )
+    )
+    service = LlamaIndexResearchToolService(pipeline)
+    registry = default_tool_registry(service)
+    state = AgentState(
+        run_id="run_domain_business_signals",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        task_policy=default_task_policy(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE),
+    )
+
+    with_evidence = registry.execute(
+        state,
+        ToolCall(
+            run_id=state.run_id,
+            task_type=state.task_type,
+            step_index=0,
+            tool_name="search_filing_sections",
+            tool_input={
+                "sections": ["MD&A", "Risk Factors"],
+                "query": "services demand installed base pricing supply constraints competition",
+            },
+            summary="Search business driver evidence.",
+        ),
+    )
+    updated = registry.execute(
+        with_evidence,
+        ToolCall(
+            run_id=state.run_id,
+            task_type=state.task_type,
+            step_index=1,
+            tool_name="get_business_signals",
+            tool_input={"signal_types": ["product", "demand", "pricing", "risk"]},
+            summary="Extract business signals.",
+        ),
+    )
+
+    signal_records = updated.evidence_memory.business_signals
+    signal_types = {record["signal_type"] for record in signal_records}
+
+    assert "business_driver_placeholder" not in str(signal_records)
+    assert {"product", "demand"}.issubset(signal_types)
+    assert any(record["signal_type"] == "pricing" for record in signal_records)
+    assert all(record["source_id"] for record in signal_records)
+    assert all(record["section"] in {"MD&A", "Risk Factors"} for record in signal_records)
+    assert all(record["snippet"] for record in signal_records)
+    assert all(record["citation_status"] == "unverified" for record in signal_records)
+    assert updated.retrieval_records[-1]["tool_name"] == "get_business_signals"
+    assert updated.retrieval_records[-1]["signal_count"] == len(signal_records)
+    assert updated.retrieval_records[-1]["signal_types"] == sorted(signal_types)
+
+
+def test_domain_service_does_not_invent_business_signals_without_evidence() -> None:
+    service = DeterministicResearchToolService()
+    state = AgentState(
+        run_id="run_domain_no_business_signals",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        task_policy=default_task_policy(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE),
+    )
+
+    result = service.get_business_signals(
+        BusinessSignalsInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            signal_types=["demand"],
+        ),
+        state,
+    )
+
+    assert result.status == "empty"
+    assert result.data == {"records": []}
+    assert result.degraded_reasons == ["No evidence available for business signal extraction."]
 
 
 def test_domain_service_returns_sec_company_facts() -> None:

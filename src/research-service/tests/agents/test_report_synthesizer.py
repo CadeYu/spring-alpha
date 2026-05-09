@@ -3,6 +3,7 @@ from app.agents.llm_gateway import StaticJsonLlmClient
 from app.agents.report_synthesizer import (
     ReportSynthesisError,
     synthesize_business_driver_report,
+    synthesize_cash_flow_report,
     synthesize_latest_earnings_report,
 )
 from app.contracts.agent import (
@@ -227,6 +228,40 @@ def test_business_driver_synthesizer_rejects_unknown_source_ids() -> None:
         assert "Unknown source_id" in str(exc)
     else:
         raise AssertionError("business driver synthesizer should reject unknown source ids")
+
+
+def test_synthesizer_builds_cash_flow_sections_from_evidence() -> None:
+    state = state_with_cash_flow_evidence()
+    client = StaticJsonLlmClient(cash_flow_synthesis_payload("cash_src_1"))
+
+    report = synthesize_cash_flow_report(cash_flow_request(), state, client)
+
+    assert report.task_sections.cash_quality_verdict.headline == (
+        "Operating cash flow supports capital returns"
+    )
+    assert report.task_sections.cash_quality_verdict.earnings_backed_by_cash == "mixed"
+    assert report.task_sections.cash_metrics[0].name == "Operating cash flow"
+    assert report.task_sections.cash_metrics[0].evidence_refs[0].source_id == "cash_src_1"
+    assert report.task_sections.capital_allocation.buybacks[0].evidence_refs[0].source_id == (
+        "cash_src_1"
+    )
+    assert report.sections == {
+        "summary": "Cash generation funded capex and buybacks, with liquidity still cited.",
+        "synthesis": "llm",
+    }
+    assert report.claims[0].source_refs[0].source_id == "cash_src_1"
+
+
+def test_cash_flow_synthesizer_rejects_unknown_source_ids() -> None:
+    state = state_with_cash_flow_evidence()
+    client = StaticJsonLlmClient(cash_flow_synthesis_payload("missing_cash_source"))
+
+    try:
+        synthesize_cash_flow_report(cash_flow_request(), state, client)
+    except ReportSynthesisError as exc:
+        assert "Unknown source_id" in str(exc)
+    else:
+        raise AssertionError("cash flow synthesizer should reject unknown source ids")
 
 
 def test_synthesizer_prompt_contains_evidence_not_raw_trace() -> None:
@@ -615,6 +650,79 @@ def test_agent_uses_synthesized_business_driver_report_when_llm_is_available() -
     )
 
 
+def test_agent_uses_synthesized_cash_flow_report_when_llm_is_available() -> None:
+    class PlanningAndSynthesisClient:
+        provider = LlmProvider.OPENAI
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete_json(self, llm_request):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            if self.calls == 1:
+                return StaticJsonLlmClient(
+                    {
+                        "decision": "call_tool",
+                        "summary": "Collect cash flow company facts.",
+                        "tool_name": "get_company_facts",
+                        "tool_input": {
+                            "period": "latest_quarter",
+                            "metrics": ["operating cash flow", "capex"],
+                        },
+                    }
+                ).complete_json(llm_request)
+            if self.calls == 2:
+                return StaticJsonLlmClient(
+                    {
+                        "decision": "call_tool",
+                        "summary": "Search cash flow and capital allocation evidence.",
+                        "tool_name": "search_filing_sections",
+                        "tool_input": {
+                            "sections": ["Cash Flows", "MD&A"],
+                            "query": "operating cash flow capex buybacks liquidity",
+                        },
+                    }
+                ).complete_json(llm_request)
+            if self.calls == 3:
+                return StaticJsonLlmClient(
+                    {
+                        "decision": "finalize",
+                        "summary": "Cash evidence is ready for synthesis.",
+                    }
+                ).complete_json(llm_request)
+            return StaticJsonLlmClient(
+                cash_flow_synthesis_payload("run_agent_cash_synth:filing:1")
+            ).complete_json(llm_request)
+
+    client = PlanningAndSynthesisClient()
+    workflow = DeterministicAgentWorkflow(
+        llm_client=client,
+        report_synthesis_client=client,
+        enable_report_synthesis=True,
+    )
+
+    result = workflow.run(
+        AgentRequest(
+            run_id="run_agent_cash_synth",
+            ticker="AAPL",
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        )
+    )
+
+    assert result.final_report is not None
+    assert result.status == AgentRunStatus.OK
+    assert result.final_report["sections"]["synthesis"] == "llm"
+    assert result.final_report["task_sections"]["cash_quality_verdict"]["headline"] == (
+        "Operating cash flow supports capital returns"
+    )
+    assert (
+        result.final_report["task_sections"]["capital_allocation"]["buybacks"][0]["evidence_refs"][
+            0
+        ]["source_id"]
+        == "run_agent_cash_synth:filing:1"
+    )
+
+
 def test_agent_falls_back_to_deterministic_report_when_synthesis_is_invalid() -> None:
     class InvalidSynthesisClient:
         provider = LlmProvider.OPENAI
@@ -699,6 +807,17 @@ def business_driver_request() -> AgentRequest:
         run_id="run_business_synthesis_001",
         ticker="AAPL",
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        llm_provider=LlmProvider.OPENAI,
+        llm_model="test-model",
+        llm_api_key="secret",
+    )
+
+
+def cash_flow_request() -> AgentRequest:
+    return AgentRequest(
+        run_id="run_cash_synthesis_001",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
         llm_provider=LlmProvider.OPENAI,
         llm_model="test-model",
         llm_api_key="secret",
@@ -790,3 +909,131 @@ def state_with_business_driver_evidence() -> AgentState:
             ],
         }
     )
+
+
+def state_with_cash_flow_evidence() -> AgentState:
+    state = AgentState(
+        run_id="run_cash_synthesis_001",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        provider=LlmProvider.OPENAI,
+        model="test-model",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+    )
+    return state.model_copy(
+        update={
+            "evidence_memory": state.evidence_memory.model_copy(
+                update={
+                    "facts": {
+                        "period": "latest_quarter",
+                        "metrics": [
+                            {
+                                "name": "operating cash flow",
+                                "value": "29000000000",
+                                "unit": "USD",
+                            }
+                        ],
+                    },
+                    "source_refs": [
+                        {
+                            "source_id": "cash_src_1",
+                            "section": "Cash Flow Statement",
+                            "snippet": (
+                                "Operating cash flow funded capital expenditures and "
+                                "share repurchases while liquidity remained strong."
+                            ),
+                            "filing_type": "10-Q",
+                            "filing_date": "2026-04-30",
+                            "accession_number": "0000320193-26-000020",
+                            "citation_status": "supported",
+                        }
+                    ],
+                    "metric_evidence": [
+                        {
+                            "metric": "operating cash flow",
+                            "period": "latest_quarter",
+                            "source_id": "cash_src_1",
+                        }
+                    ],
+                }
+            ),
+            "retrieval_records": [
+                {
+                    "tool_name": "get_company_facts",
+                    "status": "ok",
+                    "metric_count": 1,
+                    "fact_source": "sec_companyfacts",
+                    "source_ref_count": 0,
+                },
+                {
+                    "tool_name": "search_filing_sections",
+                    "status": "ok",
+                    "source_ref_count": 1,
+                },
+            ],
+        }
+    )
+
+
+def cash_flow_synthesis_payload(source_id: str) -> dict[str, object]:
+    return {
+        "cash_quality_verdict": {
+            "headline": "Operating cash flow supports capital returns",
+            "earnings_backed_by_cash": "mixed",
+            "summary": "Cash generation funded capex and buybacks, with liquidity still cited.",
+        },
+        "cash_metrics": [
+            {
+                "name": "Operating cash flow",
+                "value": "Evidence-backed",
+                "period": "latest_quarter",
+                "interpretation": "Operating cash flow is tied to the cited cash flow evidence.",
+                "source_ids": [source_id],
+                "citation_status": "supported",
+            }
+        ],
+        "capital_allocation": {
+            "capex": [
+                {
+                    "title": "Capex",
+                    "summary": "Capital expenditures were funded by operating cash flow.",
+                    "source_ids": [source_id],
+                    "citation_status": "supported",
+                }
+            ],
+            "buybacks": [
+                {
+                    "title": "Share repurchases",
+                    "summary": "Share repurchases were cited as a use of cash.",
+                    "source_ids": [source_id],
+                    "citation_status": "supported",
+                }
+            ],
+            "dividends": [],
+            "debt": [],
+            "liquidity": [
+                {
+                    "title": "Liquidity",
+                    "summary": "Liquidity remained strong in the cited evidence.",
+                    "source_ids": [source_id],
+                    "citation_status": "partial",
+                }
+            ],
+        },
+        "allocation_discipline": [
+            {
+                "title": "Funding discipline",
+                "summary": "The cited evidence links cash generation to capital returns.",
+                "source_ids": [source_id],
+                "citation_status": "supported",
+            }
+        ],
+        "red_flags": [],
+        "claims": [
+            {
+                "text": "Operating cash flow funded capex and share repurchases.",
+                "source_ids": [source_id],
+                "citation_status": "supported",
+            }
+        ],
+    }

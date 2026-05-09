@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -29,18 +30,22 @@ class ProviderToolE2EConfig:
     provider: LlmProvider
     model: str
     api_key: str
+    task_type: ResearchTaskType = ResearchTaskType.LATEST_EARNINGS_READOUT
 
 
 def write_provider_tool_e2e_artifact(
     target_path: Path,
     *,
     config: ProviderToolE2EConfig,
+    synthesis_transport: Callable[[str, dict[str, object], dict[str, str], int], dict[str, object]]
+    | None = None,
 ) -> Path:
     started_at = perf_counter()
     llm_client = OpenAiCompatibleLlmClient(
         config.provider,
         config.api_key,
         base_url=_base_url_for_provider(config.provider),
+        transport=synthesis_transport,
     )
     pipeline = LlamaIndexRagPipeline()
     request = _agent_request(config)
@@ -61,7 +66,7 @@ def write_provider_tool_e2e_artifact(
                 facts_provider=SecCompanyFactsProvider(),
             )
         ),
-        llm_client=_DeterministicPlannerClient(config.provider),
+        llm_client=_DeterministicPlannerClient(config.provider, config.task_type),
         report_synthesis_client=llm_client,
         enable_report_synthesis=True,
     )
@@ -87,13 +92,18 @@ def main() -> int:
 
 
 class _DeterministicPlannerClient:
-    def __init__(self, provider: LlmProvider) -> None:
+    def __init__(self, provider: LlmProvider, task_type: ResearchTaskType) -> None:
         self.provider = provider
+        self._task_type = task_type
         self._calls = 0
 
     def complete_json(self, request: LlmRequest) -> LlmResponse:
         self._calls += 1
-        if self._calls == 1:
+        if self._task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+            content = _business_driver_planner_decision(self._calls)
+        elif self._task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
+            content = _cash_flow_planner_decision(self._calls)
+        elif self._calls == 1:
             content = {
                 "decision": "call_tool",
                 "summary": "Collect SEC company facts before tool E2E synthesis.",
@@ -126,10 +136,14 @@ class _DeterministicPlannerClient:
 
 
 def _agent_request(config: ProviderToolE2EConfig) -> AgentRequest:
+    if config.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+        return _business_driver_agent_request(config)
+    if config.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
+        return _cash_flow_agent_request(config)
     return AgentRequest(
         run_id="provider_tool_e2e_smoke",
         ticker="AAPL",
-        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        task_type=config.task_type,
         language="en",
         llm_provider=config.provider,
         llm_model=config.model,
@@ -153,11 +167,76 @@ Foreign exchange, supply constraints, and competitive pressure could affect futu
     )
 
 
+def _cash_flow_agent_request(config: ProviderToolE2EConfig) -> AgentRequest:
+    return AgentRequest(
+        run_id="provider_tool_e2e_smoke",
+        ticker="AAPL",
+        task_type=config.task_type,
+        language="en",
+        llm_provider=config.provider,
+        llm_model=config.model,
+        llm_api_key=config.api_key,
+        filings=[
+            AgentFilingDocument(
+                ticker="AAPL",
+                filing_type="10-Q",
+                filing_date="2026-04-30",
+                accession_number="0000320193-26-000779",
+                text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Operating cash flow funded capital expenditures and share repurchases.
+Free cash flow remained supported by working capital discipline and services profitability.
+
+Consolidated Statements of Cash Flows
+Net cash provided by operating activities increased, while capital expenditures and buybacks
+remained the primary uses of cash.
+""",
+            )
+        ],
+    )
+
+
+def _business_driver_agent_request(config: ProviderToolE2EConfig) -> AgentRequest:
+    return AgentRequest(
+        run_id="provider_tool_e2e_smoke",
+        ticker="AAPL",
+        task_type=config.task_type,
+        language="en",
+        llm_provider=config.provider,
+        llm_model=config.model,
+        llm_api_key=config.api_key,
+        filings=[
+            AgentFilingDocument(
+                ticker="AAPL",
+                filing_type="10-Q",
+                filing_date="2026-04-30",
+                accession_number="0000320193-26-000778",
+                text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Services revenue increased because demand improved and installed base engagement expanded.
+Gross margin benefited from favorable mix and pricing.
+
+Item 1A. Risk Factors
+Foreign exchange, supply constraints, and competitive pressure could affect future results.
+""",
+            )
+        ],
+    )
+
+
 def _config_from_env() -> ProviderToolE2EConfig:
     provider = _provider_from_env()
     api_key = _api_key_for_provider(provider)
     model = os.getenv("PROVIDER_TOOL_E2E_MODEL") or default_model_for_provider(provider)
-    return ProviderToolE2EConfig(provider=provider, model=model, api_key=api_key)
+    task_type = ResearchTaskType(
+        os.getenv("PROVIDER_TOOL_E2E_TASK_TYPE") or ResearchTaskType.LATEST_EARNINGS_READOUT.value
+    )
+    return ProviderToolE2EConfig(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        task_type=task_type,
+    )
 
 
 def _provider_from_env() -> LlmProvider:
@@ -212,6 +291,8 @@ def _artifact_payload(
     if not isinstance(facts, dict):
         facts = {}
     fact_record = _fact_record(retrieval_records)
+    signal_record = _signal_record(retrieval_records)
+    metric_record = _metric_evidence_record(retrieval_records)
     return {
         "stage": STAGE,
         "provider": config.provider.value,
@@ -225,6 +306,9 @@ def _artifact_payload(
         "factSource": facts.get("source") or fact_record.get("fact_source"),
         "factMetricCount": _fact_metric_count(facts, fact_record),
         "ragSourceRefCount": _source_ref_count(retrieval_records),
+        "metricEvidenceCount": _metric_evidence_count(metric_record),
+        "signalCount": _signal_count(signal_record),
+        "signalTypes": signal_record.get("signal_types", []),
         "toolNames": [
             record.get("tool_name")
             for record in retrieval_records
@@ -241,12 +325,30 @@ def assert_provider_tool_e2e_gate(payload: dict[str, object]) -> None:
         raise RuntimeError("provider tool E2E requires ok status")
     if payload.get("synthesis") != "llm":
         raise RuntimeError("provider tool E2E did not use llm final synthesis")
+    if int(payload.get("ragSourceRefCount", 0)) <= 0:
+        raise RuntimeError("provider tool E2E returned no RAG source refs")
+    if payload.get("finalReportTaskType") == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE.value:
+        if int(payload.get("signalCount", 0)) <= 0:
+            raise RuntimeError("provider tool E2E returned no business signals")
+        tool_names = payload.get("toolNames")
+        if not isinstance(tool_names, list) or "get_business_signals" not in tool_names:
+            raise RuntimeError("provider tool E2E did not run business signals tool")
+        return
+    if payload.get("finalReportTaskType") == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION.value:
+        if payload.get("factSource") != "sec_companyfacts":
+            raise RuntimeError("provider tool E2E did not use SEC company facts")
+        if int(payload.get("factMetricCount", 0)) <= 0:
+            raise RuntimeError("provider tool E2E returned no SEC fact metrics")
+        if int(payload.get("metricEvidenceCount", 0)) <= 0:
+            raise RuntimeError("provider tool E2E returned no metric evidence")
+        tool_names = payload.get("toolNames")
+        if not isinstance(tool_names, list) or "search_metric_evidence" not in tool_names:
+            raise RuntimeError("provider tool E2E did not run metric evidence tool")
+        return
     if payload.get("factSource") != "sec_companyfacts":
         raise RuntimeError("provider tool E2E did not use SEC company facts")
     if int(payload.get("factMetricCount", 0)) <= 0:
         raise RuntimeError("provider tool E2E returned no SEC fact metrics")
-    if int(payload.get("ragSourceRefCount", 0)) <= 0:
-        raise RuntimeError("provider tool E2E returned no RAG source refs")
 
 
 def _source_ref_count(retrieval_records: object) -> int:
@@ -268,6 +370,24 @@ def _fact_record(retrieval_records: object) -> dict[str, object]:
     return {}
 
 
+def _signal_record(retrieval_records: object) -> dict[str, object]:
+    if not isinstance(retrieval_records, list):
+        return {}
+    for record in retrieval_records:
+        if isinstance(record, dict) and record.get("tool_name") == "get_business_signals":
+            return record
+    return {}
+
+
+def _metric_evidence_record(retrieval_records: object) -> dict[str, object]:
+    if not isinstance(retrieval_records, list):
+        return {}
+    for record in retrieval_records:
+        if isinstance(record, dict) and record.get("tool_name") == "search_metric_evidence":
+            return record
+    return {}
+
+
 def _fact_metric_count(facts: dict[str, object], fact_record: dict[str, object]) -> int:
     metrics = facts.get("metrics")
     if isinstance(metrics, list):
@@ -276,6 +396,85 @@ def _fact_metric_count(facts: dict[str, object], fact_record: dict[str, object])
     if isinstance(metric_count, int):
         return metric_count
     return 0
+
+
+def _metric_evidence_count(metric_record: dict[str, object]) -> int:
+    retrieved_nodes = metric_record.get("retrieved_nodes")
+    if isinstance(retrieved_nodes, list):
+        return len(retrieved_nodes)
+    return int(metric_record.get("source_ref_count", 0))
+
+
+def _signal_count(signal_record: dict[str, object]) -> int:
+    signal_count = signal_record.get("signal_count")
+    if isinstance(signal_count, int):
+        return signal_count
+    return 0
+
+
+def _business_driver_planner_decision(call_count: int) -> dict[str, object]:
+    if call_count == 1:
+        return {
+            "decision": "call_tool",
+            "summary": "Search RAG filing evidence before business signal extraction.",
+            "tool_name": "search_filing_sections",
+            "tool_input": {
+                "sections": ["MD&A", "Risk Factors"],
+                "query": (
+                    "services demand installed base engagement pricing "
+                    "supply constraints competition"
+                ),
+            },
+        }
+    if call_count == 2:
+        return {
+            "decision": "call_tool",
+            "summary": "Extract source-bound business signals before synthesis.",
+            "tool_name": "get_business_signals",
+            "tool_input": {"signal_types": ["product", "demand", "pricing", "risk"]},
+        }
+    return {
+        "decision": "finalize",
+        "summary": "RAG evidence and business signals are ready for synthesis.",
+    }
+
+
+def _cash_flow_planner_decision(call_count: int) -> dict[str, object]:
+    if call_count == 1:
+        return {
+            "decision": "call_tool",
+            "summary": "Collect SEC cash flow facts before synthesis.",
+            "tool_name": "get_company_facts",
+            "tool_input": {
+                "period": "latest_quarter",
+                "metrics": ["operating cash flow", "capex"],
+            },
+        }
+    if call_count == 2:
+        return {
+            "decision": "call_tool",
+            "summary": "Search RAG cash flow filing evidence before synthesis.",
+            "tool_name": "search_filing_sections",
+            "tool_input": {
+                "sections": ["Cash Flows", "MD&A"],
+                "query": "operating cash flow capex buybacks liquidity working capital",
+            },
+        }
+    if call_count == 3:
+        return {
+            "decision": "call_tool",
+            "summary": "Search metric evidence for cash quality synthesis.",
+            "tool_name": "search_metric_evidence",
+            "tool_input": {
+                "metrics": ["operating cash flow", "capital expenditures"],
+                "period": "latest_quarter",
+                "query": "operating cash flow capital expenditures buybacks liquidity",
+            },
+        }
+    return {
+        "decision": "finalize",
+        "summary": "SEC facts, RAG evidence, and metric evidence are ready for synthesis.",
+    }
 
 
 def _json_dumps(payload: dict[str, object]) -> str:

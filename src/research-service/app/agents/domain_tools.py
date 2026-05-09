@@ -132,7 +132,9 @@ class DeterministicResearchToolService:
         source_ref = {
             "source_id": f"{state.run_id}:filing:1",
             "section": tool_input.sections[0],
-            "snippet": "Evidence placeholder from the selected filing section.",
+            "snippet": (
+                f"Evidence placeholder for {tool_input.query} from the selected filing section."
+            ),
             "citation_status": "unverified",
         }
         return ToolResult.ok(
@@ -178,16 +180,17 @@ class DeterministicResearchToolService:
         tool_input: BusinessSignalsInput,
         state: AgentState,
     ) -> ToolResult:
+        records = _extract_business_signal_records(
+            state.evidence_memory.source_refs,
+            tool_input.signal_types,
+        )
+        if not records:
+            return ToolResult.empty(
+                data={"records": []},
+                degraded_reason="No evidence available for business signal extraction.",
+            )
         return ToolResult.ok(
-            data={
-                "records": [
-                    {
-                        "signal": "business_driver_placeholder",
-                        "signal_types": tool_input.signal_types,
-                        "summary": "Business signal placeholder from deterministic runner.",
-                    }
-                ]
-            }
+            data={"records": records},
         )
 
     def verify_citations(
@@ -376,6 +379,79 @@ def _retrieved_nodes(result: RetrieveEvidenceResult) -> list[dict[str, object]]:
     return [node.model_dump(mode="json") for node in result.retrieved_nodes]
 
 
+def _extract_business_signal_records(
+    source_refs: list[dict[str, object]],
+    requested_signal_types: list[str],
+) -> list[dict[str, object]]:
+    requested_types = {
+        _normalize_signal_type(signal_type)
+        for signal_type in requested_signal_types
+        if signal_type.strip()
+    }
+    if not requested_types:
+        requested_types = set(_BUSINESS_SIGNAL_KEYWORDS)
+
+    records: list[dict[str, object]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for source_ref in source_refs:
+        source_id = str(source_ref.get("source_id") or "").strip()
+        snippet = str(source_ref.get("snippet") or "").strip()
+        if not source_id or not snippet:
+            continue
+        for sentence in _signal_candidate_sentences(snippet):
+            matched_types = _matched_signal_types(sentence, requested_types)
+            for signal_type in matched_types:
+                key = (source_id, signal_type, sentence.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                records.append(
+                    {
+                        "signal_type": signal_type,
+                        "signal": _signal_title(signal_type, sentence),
+                        "summary": sentence,
+                        "source_id": source_id,
+                        "section": str(source_ref.get("section") or "Unknown"),
+                        "snippet": sentence,
+                        "citation_status": str(source_ref.get("citation_status") or "unverified"),
+                    }
+                )
+    return records
+
+
+def _normalize_signal_type(signal_type: str) -> str:
+    return re.sub(r"\s+", "_", signal_type.strip().lower())
+
+
+def _signal_candidate_sentences(snippet: str) -> list[str]:
+    sentences = [
+        sentence.strip(" \n\t\r;:")
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", snippet)
+        if sentence.strip(" \n\t\r;:")
+    ]
+    return sentences or [snippet]
+
+
+def _matched_signal_types(sentence: str, requested_types: set[str]) -> list[str]:
+    normalized_sentence = sentence.lower()
+    matched_types = [
+        signal_type
+        for signal_type in sorted(requested_types)
+        if any(keyword in normalized_sentence for keyword in _keywords_for_signal(signal_type))
+    ]
+    return matched_types
+
+
+def _keywords_for_signal(signal_type: str) -> tuple[str, ...]:
+    return _BUSINESS_SIGNAL_KEYWORDS.get(signal_type, ())
+
+
+def _signal_title(signal_type: str, sentence: str) -> str:
+    label = signal_type.replace("_", " ").title()
+    first_clause = re.split(r",| because | while | and ", sentence, maxsplit=1)[0].strip()
+    return f"{label}: {first_clause[:96]}"
+
+
 def _preferred_metric_sections(metrics: list[str]) -> list[str]:
     joined = " ".join(metrics).lower()
     if any(term in joined for term in ("cash", "capex", "buyback", "repurchase", "debt")):
@@ -519,6 +595,75 @@ _CONCEPTS_BY_METRIC: dict[str, list[str]] = {
         "PaymentsForRepurchaseOfCommonStock",
         "PaymentsForRepurchaseOfEquity",
     ],
+}
+
+_BUSINESS_SIGNAL_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "product": (
+        "service",
+        "services",
+        "product",
+        "hardware",
+        "software",
+        "platform",
+        "device",
+    ),
+    "segment": (
+        "segment",
+        "enterprise",
+        "consumer",
+        "geography",
+        "geographic",
+        "region",
+    ),
+    "demand": (
+        "demand",
+        "engagement",
+        "customer",
+        "installed base",
+        "growth",
+        "grew",
+        "increased",
+    ),
+    "pricing": (
+        "pricing",
+        "price",
+        "mix",
+        "margin",
+        "gross margin",
+        "favorable mix",
+    ),
+    "strategy": (
+        "strategy",
+        "investment",
+        "launch",
+        "ecosystem",
+        "initiative",
+        "expand",
+    ),
+    "risk": (
+        "risk",
+        "competition",
+        "competitive",
+        "supply",
+        "foreign exchange",
+        "constraint",
+        "constraints",
+        "pressure",
+    ),
+    "customer": (
+        "customer",
+        "customers",
+        "installed base",
+        "engagement",
+        "retention",
+    ),
+    "geography": (
+        "geography",
+        "geographic",
+        "region",
+        "international",
+        "foreign exchange",
+    ),
 }
 
 

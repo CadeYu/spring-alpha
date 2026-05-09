@@ -283,6 +283,21 @@ def _retrieval_payload(result: ToolResult) -> dict[str, Any]:
     retrieved_nodes = result.data.get("retrieved_nodes")
     if isinstance(retrieved_nodes, list):
         return {"retrieved_nodes": retrieved_nodes}
+    records = result.data.get("records")
+    if isinstance(records, list) and any(
+        isinstance(record, dict) and "signal_type" in record for record in records
+    ):
+        signal_types = sorted(
+            {
+                str(record["signal_type"])
+                for record in records
+                if isinstance(record, dict) and record.get("signal_type")
+            }
+        )
+        return {
+            "signal_count": len(records),
+            "signal_types": signal_types,
+        }
     metrics = result.data.get("metrics")
     if isinstance(metrics, list):
         payload: dict[str, Any] = {"metric_count": len(metrics)}

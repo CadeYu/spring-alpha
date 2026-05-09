@@ -36,12 +36,27 @@ if artifact["status"] != "ok":
     raise SystemExit("provider tool E2E did not finish ok")
 if artifact["synthesis"] != "llm":
     raise SystemExit("provider tool E2E did not use llm final synthesis")
-if artifact["factSource"] != "sec_companyfacts":
-    raise SystemExit("provider tool E2E did not use SEC company facts")
-if artifact["factMetricCount"] <= 0:
-    raise SystemExit("provider tool E2E returned no fact metrics")
 if artifact["ragSourceRefCount"] <= 0:
     raise SystemExit("provider tool E2E returned no RAG source refs")
+if artifact.get("finalReportTaskType") == "business_driver_deep_dive":
+    if artifact.get("signalCount", 0) <= 0:
+        raise SystemExit("provider tool E2E returned no business signals")
+    if "get_business_signals" not in artifact.get("toolNames", []):
+        raise SystemExit("provider tool E2E did not run business signals tool")
+elif artifact.get("finalReportTaskType") == "cash_flow_capital_allocation":
+    if artifact["factSource"] != "sec_companyfacts":
+        raise SystemExit("provider tool E2E did not use SEC company facts")
+    if artifact["factMetricCount"] <= 0:
+        raise SystemExit("provider tool E2E returned no fact metrics")
+    if artifact.get("metricEvidenceCount", 0) <= 0:
+        raise SystemExit("provider tool E2E returned no metric evidence")
+    if "search_metric_evidence" not in artifact.get("toolNames", []):
+        raise SystemExit("provider tool E2E did not run metric evidence tool")
+else:
+    if artifact["factSource"] != "sec_companyfacts":
+        raise SystemExit("provider tool E2E did not use SEC company facts")
+    if artifact["factMetricCount"] <= 0:
+        raise SystemExit("provider tool E2E returned no fact metrics")
 PY
 
 echo "Provider tool E2E verification passed: ${ARTIFACT_PATH}"
