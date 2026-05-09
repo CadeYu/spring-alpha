@@ -172,6 +172,18 @@ cases，只验证 primary hybrid retrieval，并记录 retrieval quality、elaps
 time、embedding call count 和 estimated cost。它不属于默认 CI gate，避免外部
 provider 成本、限流和可用性影响基础验证。
 
+Provider live planner smoke gate，手动/optional live gate：
+
+```bash
+PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" ./scripts/verify-provider-live-planner.sh
+```
+
+如果未显式设置 `PROVIDER`，脚本会按 `SILICONFLOW_API_KEY`、`GEMINI_API_KEY`、
+`OPENAI_API_KEY` 的顺序选择第一个可用 provider。该门禁验证真实 provider
+planner 可以通过统一 `complete_json` 边界进入 bounded loop，并检查 events 中
+保留 `planner_context`、tool execution、typed task sections 和 provider live
+planner artifact。它不属于默认 CI gate，避免 provider 成本、限流和输出波动影响基础验证。
+
 ## Full Local Verification
 
 当 Python Research Service 创建后，完整验证顺序建议为：

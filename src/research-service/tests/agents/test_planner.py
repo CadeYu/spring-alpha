@@ -145,3 +145,29 @@ def test_planner_prompt_includes_budget_and_coverage_context() -> None:
     assert "Citation coverage: missing" in prompt
     assert "Remaining steps: 3" in prompt
     assert "Remaining tool calls: 2" in prompt
+    assert client.requests[0].timeout_seconds == 45
+
+
+def test_planner_prompt_guides_zero_evidence_runs_to_retrieval_tools() -> None:
+    state = AgentState(
+        run_id="run_planner_prompt_evidence",
+        ticker="AAPL",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        provider=LlmProvider.OPENAI,
+        model="test-model",
+        task_policy=default_task_policy(ResearchTaskType.LATEST_EARNINGS_READOUT),
+        coverage=CoverageState(
+            status="partial",
+            missing_outputs=["earningsSummary", "financialHighlights"],
+            evidence_count=0,
+            citation_coverage="missing",
+        ),
+    )
+    client = RecordingJsonLlmClient({"decision": "finalize", "summary": "Ready."})
+
+    plan_next_step(state, client)
+
+    prompt = client.requests[0].user_prompt
+    assert "Evidence-producing tools: search_filing_sections, search_metric_evidence" in prompt
+    assert "Avoid repeating tools that did not improve coverage." in prompt
+    assert "If evidence count is 0, prefer an evidence-producing tool." in prompt

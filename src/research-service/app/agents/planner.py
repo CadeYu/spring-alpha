@@ -49,7 +49,7 @@ def plan_next_step(state: AgentState, client: LlmClient) -> PlannerDecision:
                 system_prompt=_system_prompt(),
                 user_prompt=_user_prompt(state),
                 state=state,
-                timeout_seconds=15,
+                timeout_seconds=45,
             )
         )
         payload = _PlannerJson.model_validate(response.content)
@@ -133,17 +133,24 @@ def _system_prompt() -> str:
 
 def _user_prompt(state: AgentState) -> str:
     default_tool = state.task_policy.allowed_tools[0]
+    evidence_tools = [
+        tool
+        for tool in ("search_filing_sections", "search_metric_evidence")
+        if tool in state.task_policy.allowed_tools
+    ]
     remaining_steps = max(state.task_policy.max_steps - state.step_index, 0)
     remaining_tool_calls = max(state.task_policy.max_tool_calls - state.tool_call_count, 0)
     missing_outputs = (
         ", ".join(state.coverage.missing_outputs) if state.coverage.missing_outputs else "none"
     )
+    evidence_tool_list = ", ".join(evidence_tools) if evidence_tools else "none"
     return (
         "Choose the next tool for this task.\n"
         'Schema: {"decision":"call_tool","summary":"...","tool_name":"...","tool_input":{}}\n'
         'Or: {"decision":"finalize","summary":"..."}\n'
         f"Task: {state.task_type.value}\n"
         f"Allowed tools: {', '.join(state.task_policy.allowed_tools)}\n"
+        f"Evidence-producing tools: {evidence_tool_list}\n"
         f"Required outputs: {', '.join(state.task_policy.required_outputs)}\n"
         f"Coverage status: {state.coverage.status}\n"
         f"Evidence count: {state.coverage.evidence_count}\n"
@@ -152,5 +159,9 @@ def _user_prompt(state: AgentState) -> str:
         f"Remaining steps: {remaining_steps}\n"
         f"Remaining tool calls: {remaining_tool_calls}\n"
         f"Recommended first tool: {default_tool}\n"
-        f'Return a call_tool decision for "{default_tool}" unless evidence is already sufficient.'
+        "Avoid repeating tools that did not improve coverage.\n"
+        "If evidence count is 0, prefer an evidence-producing tool.\n"
+        "Finalize only when required outputs have enough cited evidence.\n"
+        f'Use "{default_tool}" for company facts, but choose evidence-producing tools when '
+        "citation or source coverage is missing."
     )

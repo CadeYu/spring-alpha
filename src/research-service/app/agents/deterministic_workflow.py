@@ -157,6 +157,18 @@ def _run_live_planner_loop(
                 planner_context=_planner_context(current),
             )
             call = _fallback_tool_call(current, fallback_calls)
+        elif _needs_evidence_fallback(current, call):
+            reason = _evidence_fallback_reason(current, call)
+            current = _append_degraded_event(
+                current,
+                (
+                    "Planner decision was invalid; used deterministic fallback. "
+                    f"{reason} {_planner_context_suffix(current)}"
+                ),
+                degraded_reason=reason,
+                planner_context=_planner_context(current),
+            )
+            call = _fallback_tool_call(current, fallback_calls)
 
         previous_degraded_count = len(current.degraded_reasons)
         current = _execute_planned_call(current, call, registry)
@@ -193,6 +205,32 @@ def _fallback_tool_call(state: AgentState, calls: list[ToolCall]) -> ToolCall:
             "summary": f"Deterministic fallback: {fallback.summary}",
         }
     )
+
+
+def _needs_evidence_fallback(state: AgentState, call: ToolCall) -> bool:
+    evidence_tools = {"search_filing_sections", "search_metric_evidence"}
+    latest_record = state.retrieval_records[-1] if state.retrieval_records else {}
+    repeated_tool = latest_record.get("tool_name") == call.tool_name
+    if (
+        repeated_tool
+        and call.tool_name != "verify_citations"
+        and state.coverage.citation_coverage != "partial"
+    ):
+        return True
+    if call.tool_name in evidence_tools or state.coverage.evidence_count > 0:
+        return False
+    if not any(tool_name in state.task_policy.allowed_tools for tool_name in evidence_tools):
+        return False
+    return repeated_tool
+
+
+def _evidence_fallback_reason(state: AgentState, call: ToolCall) -> str:
+    if state.coverage.evidence_count == 0:
+        return (
+            f"Planner repeated non-evidence tool {call.tool_name} "
+            "while evidence coverage was empty."
+        )
+    return f"Planner repeated tool {call.tool_name} before coverage was sufficient."
 
 
 def _tool_execution_failed(state: AgentState, previous_degraded_count: int) -> bool:

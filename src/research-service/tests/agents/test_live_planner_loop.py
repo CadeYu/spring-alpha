@@ -271,6 +271,90 @@ def test_live_planner_rejects_disallowed_tool_decision_and_uses_fallback() -> No
     )
 
 
+def test_live_planner_falls_back_when_zero_evidence_tool_repeats() -> None:
+    planner = SequencePlannerClient(
+        [
+            {
+                "decision": "call_tool",
+                "summary": "Collect company facts first.",
+                "tool_name": "get_company_facts",
+                "tool_input": {"period": "latest_quarter", "metrics": ["revenue"]},
+            },
+            {
+                "decision": "call_tool",
+                "summary": "Collect company facts again.",
+                "tool_name": "get_company_facts",
+                "tool_input": {"period": "latest_quarter", "metrics": ["gross margin"]},
+            },
+            {
+                "decision": "finalize",
+                "summary": "Fallback evidence is enough.",
+            },
+        ]
+    )
+    workflow = DeterministicAgentWorkflow(llm_client=planner)
+
+    result = workflow.run(request("run_live_repeated_zero_evidence_tool"))
+
+    plan_events = [
+        event.tool_name for event in result.events if event.summary.startswith("Plan next step:")
+    ]
+
+    assert result.status == AgentRunStatus.DEGRADED
+    assert plan_events[:2] == ["get_company_facts", "search_filing_sections"]
+    assert any(
+        "repeated non-evidence tool get_company_facts while evidence coverage was empty" in reason
+        for reason in result.degraded_reasons
+    )
+
+
+def test_live_planner_falls_back_when_repeated_tool_blocks_citation_coverage() -> None:
+    planner = SequencePlannerClient(
+        [
+            {
+                "decision": "call_tool",
+                "summary": "Search filing evidence.",
+                "tool_name": "search_filing_sections",
+                "tool_input": {"sections": ["MD&A"], "query": "revenue margin"},
+            },
+            {
+                "decision": "call_tool",
+                "summary": "Collect company facts.",
+                "tool_name": "get_company_facts",
+                "tool_input": {"period": "latest_quarter", "metrics": ["revenue"]},
+            },
+            {
+                "decision": "call_tool",
+                "summary": "Collect company facts again.",
+                "tool_name": "get_company_facts",
+                "tool_input": {"period": "latest_quarter", "metrics": ["gross margin"]},
+            },
+            {
+                "decision": "finalize",
+                "summary": "Fallback citation coverage is enough.",
+            },
+        ]
+    )
+    workflow = DeterministicAgentWorkflow(llm_client=planner)
+
+    result = workflow.run(request("run_live_repeated_tool_before_citations"))
+
+    plan_events = [
+        event.tool_name for event in result.events if event.summary.startswith("Plan next step:")
+    ]
+
+    assert result.status == AgentRunStatus.DEGRADED
+    assert plan_events[:3] == [
+        "search_filing_sections",
+        "get_company_facts",
+        "search_metric_evidence",
+    ]
+    assert any(
+        "Planner repeated tool get_company_facts before coverage was sufficient" in reason
+        for reason in result.degraded_reasons
+    )
+
+
 def request(
     run_id: str,
     task_type: ResearchTaskType = ResearchTaskType.LATEST_EARNINGS_READOUT,
