@@ -6,6 +6,7 @@ import com.springalpha.backend.service.provider.ProviderCredentialValidator;
 import com.springalpha.backend.service.research.ResearchAgentClient;
 import com.springalpha.backend.service.research.ResearchAgentReportMapper;
 import com.springalpha.backend.service.research.ResearchAgentRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+@Slf4j
 @Service
 public class FinancialAnalysisService {
 
@@ -73,8 +75,10 @@ public class FinancialAnalysisService {
             String providerApiKey,
             ResearchTaskType taskType,
             String filingText) {
+        String runId = "run_" + UUID.randomUUID();
+        long startedAtNanos = System.nanoTime();
         ResearchAgentRequest request = new ResearchAgentRequest(
-                "run_" + UUID.randomUUID(),
+                runId,
                 ticker,
                 taskType,
                 language,
@@ -89,11 +93,22 @@ public class FinancialAnalysisService {
                         null,
                         filingText)));
 
+        log.info("research_agent_start runId={} ticker={} taskType={} provider={}",
+                runId, ticker, taskType, provider);
+
         return researchAgentClient.run(request)
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "Python Research Service is required for analysis but returned no report")))
                 .map(result -> researchAgentReportMapper.toAnalysisReport(result, request.language()))
+                .doOnNext(report -> log.info("research_agent_complete runId={} status=OK latencyMs={}",
+                        runId, elapsedMillis(startedAtNanos)))
+                .doOnError(error -> log.warn("research_agent_failed runId={} status=ERROR latencyMs={} errorCode={}",
+                        runId, elapsedMillis(startedAtNanos), error.getClass().getSimpleName()))
                 .flux();
+    }
+
+    private long elapsedMillis(long startedAtNanos) {
+        return (System.nanoTime() - startedAtNanos) / 1_000_000;
     }
 
     private String resolveProvider(String model) {

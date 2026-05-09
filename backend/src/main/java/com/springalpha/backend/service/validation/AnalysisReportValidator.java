@@ -11,19 +11,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
- * 幻觉校验器 (Hallucination Validator)
- * <p>
- * **核心职能**: 防止 LLM "一本正经地胡说八道"。
- * **工作原理**:
- * 1. 从 LLM 生成的文本报告中提取所有数字。
- * 2. 尝试在 "Ground Truth" (FinancialFacts) 中找到这些数字 (允许 1% 误差)。
- * 3. 如果通过 ETL 获取的财报里没有这个数字，则标记为 "Possible Hallucination" (潜在幻觉)。
- * <p>
- * 这是金融 AI 应用中 **最重要** 的安全网。
+ * Conservative report validator for numeric grounding and citation hygiene.
  */
 @Slf4j
 @Service
@@ -226,8 +216,8 @@ public class AnalysisReportValidator {
 
         for (AnalysisReport.Citation citation : report.getCitations()) {
             if (isPlaceholderCitation(citation)) {
-                log.warn("🚩 Dropping placeholder citation: section='{}', excerpt='{}'",
-                        citation.getSection(), citation.getExcerpt());
+                log.warn("Dropping placeholder citation: section='{}', excerptLength={}",
+                        citation.getSection(), textLength(citation.getExcerpt()));
                 continue;
             }
 
@@ -236,7 +226,8 @@ public class AnalysisReportValidator {
             }
 
             if (isLowSignalTableCitation(citation.getExcerpt())) {
-                log.warn("🚩 Dropping low-signal table citation: '{}'", citation.getExcerpt());
+                log.warn("Dropping low-signal table citation: section='{}', excerptLength={}",
+                        citation.getSection(), textLength(citation.getExcerpt()));
                 continue;
             }
 
@@ -244,7 +235,8 @@ public class AnalysisReportValidator {
 
             // Deduplicate: If we already have this exact excerpt, skip it
             if (seenNormalizedExcerpts.contains(normalizedExcerpt)) {
-                log.debug("Found duplicate citation, skipping: {}", citation.getExcerpt());
+                log.debug("Dropping duplicate citation: section='{}', excerptLength={}",
+                        citation.getSection(), textLength(citation.getExcerpt()));
                 continue;
             }
             seenNormalizedExcerpts.add(normalizedExcerpt);
@@ -261,7 +253,8 @@ public class AnalysisReportValidator {
                     // Drop non-verbatim citations instead of surfacing red-cross snippets that were
                     // paraphrased or stitched together by the model.
                     citation.setVerificationStatus("NOT_FOUND");
-                    log.warn("🚩 Dropping citation not found in source text: '{}'", citation.getExcerpt());
+                    log.warn("Dropping citation not found in source text: section='{}', excerptLength={}",
+                            citation.getSection(), textLength(citation.getExcerpt()));
                 }
             }
         }
@@ -307,6 +300,10 @@ public class AnalysisReportValidator {
                 || raw.contains(";") || raw.contains(":");
 
         return numericGroups >= 2 && alphaWords <= 5 && !hasSentencePunctuation;
+    }
+
+    private int textLength(String value) {
+        return value == null ? 0 : value.length();
     }
 
     private int countMatches(Pattern pattern, String value) {

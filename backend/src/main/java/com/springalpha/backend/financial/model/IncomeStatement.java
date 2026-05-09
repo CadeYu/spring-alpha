@@ -10,10 +10,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 /**
- * 利润表 (Income Statement)
- * <p>
- * 用于承载 SEC companyfacts 和 market enrichment 标准化后的利润表字段。
- * 包含：Revenue, Cost of Revenue, Gross Profit, Operating Expenses, Net Income 等。
+ * Normalized income statement fields from SEC companyfacts and Yahoo enrichment.
  */
 @Data
 @Builder

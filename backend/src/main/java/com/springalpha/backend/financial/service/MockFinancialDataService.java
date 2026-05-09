@@ -4,6 +4,7 @@ import com.springalpha.backend.financial.calculator.FinancialCalculator;
 import com.springalpha.backend.financial.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -18,6 +19,7 @@ import java.util.Map;
  * Currently supports: AAPL, MSFT, TSLA
  */
 @Service
+@Profile("test-fixture")
 public class MockFinancialDataService implements FinancialDataService {
 
         private static final Logger log = LoggerFactory.getLogger(MockFinancialDataService.class);

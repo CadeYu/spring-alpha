@@ -6,13 +6,12 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
- * 资产负债表 (Balance Sheet)
- * <p>
- * 用于承载 SEC companyfacts 和 market enrichment 标准化后的资产负债表字段。
- * 包含：Total Assets, Total Liabilities, Total Equity, Cash, Debt 等。
+ * Normalized balance sheet fields from SEC companyfacts and Yahoo enrichment.
  */
 @Data
 @Builder
@@ -62,7 +61,7 @@ public class BalanceSheet {
         }
         BigDecimal totalDebt = (shortTermDebt != null ? shortTermDebt : BigDecimal.ZERO)
                 .add(longTermDebt != null ? longTermDebt : BigDecimal.ZERO);
-        return totalDebt.divide(totalEquity, 4, BigDecimal.ROUND_HALF_UP);
+        return totalDebt.divide(totalEquity, 4, RoundingMode.HALF_UP);
     }
 
     /**
@@ -72,6 +71,6 @@ public class BalanceSheet {
         if (totalCurrentLiabilities == null || totalCurrentLiabilities.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO;
         }
-        return totalCurrentAssets.divide(totalCurrentLiabilities, 4, BigDecimal.ROUND_HALF_UP);
+        return totalCurrentAssets.divide(totalCurrentLiabilities, 4, RoundingMode.HALF_UP);
     }
 }

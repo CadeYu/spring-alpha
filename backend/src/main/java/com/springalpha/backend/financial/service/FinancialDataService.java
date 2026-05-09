@@ -5,18 +5,11 @@ import com.springalpha.backend.financial.model.FinancialFacts;
 import java.util.Optional;
 
 /**
- * Financial Data Service Interface - Defines the contract for obtaining
- * financial data.
+ * Contract for normalized financial facts used by dashboards and agent tools.
  * 
- * This abstraction ensures that:
- * 1. Data consumers don't care about the source (Mock, XBRL, API, etc.)
- * 2. We can swap implementations without breaking downstream code
- * 3. The output format (FinancialFacts) is guaranteed to be consistent
- * 
- * Implementations:
- * - MockFinancialDataService: Hardcoded data for testing
- * - XbrlFinancialDataService: Parse SEC XBRL filings (future)
- * - CachedFinancialDataService: Redis-backed cache (future)
+ * Production data flows through SEC company facts first, then enriches market
+ * metadata and selected quote fields from Yahoo Finance. Test fixtures should be
+ * profile-gated so they never participate in the production Spring context.
  */
 public interface FinancialDataService {
 
@@ -40,12 +33,6 @@ public interface FinancialDataService {
      */
     boolean isSupported(String ticker);
 
-    /**
-     * Get list of all supported tickers.
-     * Useful for testing and validation.
-     * 
-     * @return Array of supported ticker symbols
-     */
     /**
      * Get historical margin data for trends chart.
      */

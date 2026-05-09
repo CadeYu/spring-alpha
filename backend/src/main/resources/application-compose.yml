@@ -1,0 +1,13 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://pgvector:5432/spring_alpha}
+    username: ${SPRING_DATASOURCE_USERNAME:spring_alpha}
+    password: ${SPRING_DATASOURCE_PASSWORD:spring_alpha}
+
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+
+logging:
+  level:
+    com.springalpha: ${SPRING_ALPHA_LOG_LEVEL:INFO}

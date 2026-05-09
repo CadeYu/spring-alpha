@@ -1,25 +1,20 @@
 spring:
   application:
     name: spring-alpha-backend
-  
-  # PostgreSQL configuration. Production credentials must be provided by the
-  # runtime environment; local development defaults to a local database.
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/spring_alpha}
-    username: ${SPRING_DATASOURCE_USERNAME:${NEON_USERNAME:spring_alpha}}
-    password: ${SPRING_DATASOURCE_PASSWORD:${NEON_PASSWORD:}}
     driver-class-name: org.postgresql.Driver
     hikari:
-      connection-timeout: 30000       # 30s 连接超时
-      idle-timeout: 120000            # 2m 空闲超时（避免 Neon/pooler 提前收走）
-      max-lifetime: 240000            # 4m 最大生命周期，短于托管库常见连接回收窗口
-      keepalive-time: 30000           # 30s 心跳，降低 closed connection 噪音
-      minimum-idle: 1                 # 最小空闲连接
-      maximum-pool-size: 10           # 最大连接数
+      connection-timeout: 30000
+      idle-timeout: 120000
+      max-lifetime: 240000
+      keepalive-time: 30000
+      minimum-idle: 1
+      maximum-pool-size: 10
   
   jpa:
-    hibernate:
-      ddl-auto: update
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     show-sql: false
   
@@ -73,4 +68,4 @@ server:
 logging:
   level:
     root: INFO
-    com.springalpha: DEBUG
+    com.springalpha: INFO

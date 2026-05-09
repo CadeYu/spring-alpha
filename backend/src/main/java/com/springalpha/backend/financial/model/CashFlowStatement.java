@@ -7,12 +7,10 @@ import lombok.NoArgsConstructor;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
- * 现金流量表 (Cash Flow Statement)
- * <p>
- * 用于承载 SEC companyfacts 和 market enrichment 标准化后的现金流字段。
- * 包含：Operating Cash Flow, Capital Expenditure (Capex), Free Cash Flow 等。
+ * Normalized cash flow statement fields from SEC companyfacts and Yahoo enrichment.
  */
 @Data
 @Builder
@@ -62,6 +60,6 @@ public class CashFlowStatement {
         if (netIncome == null || netIncome.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO;
         }
-        return operatingCashFlow.divide(netIncome, 4, BigDecimal.ROUND_HALF_UP);
+        return operatingCashFlow.divide(netIncome, 4, RoundingMode.HALF_UP);
     }
 }

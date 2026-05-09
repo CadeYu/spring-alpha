@@ -10,14 +10,12 @@ import java.math.BigDecimal;
 import java.util.Map;
 
 /**
- * 财务事实数据 (Ground Truth)
- * <p>
- * 这是 RAG 流程中的 **核心数据结构**。
- * 它存储从 SEC companyfacts 和 Yahoo market enrichment 获取的、经过验证的 **真实** 财务数据。
- * <p>
- * **为什么需要它？**
- * 防止 LLM 发挥想象力去"编造"数字。我们在 Prompt 中会强制 LLM 使用这里的数字
- * 进行计算和分析，而不是自己去算。
+ * Normalized financial facts from SEC companyfacts with Yahoo market enrichment.
+ *
+ * This model is the Java boundary object for dashboards and Python Agent
+ * requests. Numeric fundamentals should originate from SEC filings whenever
+ * available; market profile, security classification, and valuation context may
+ * come from Yahoo Finance enrichment.
  */
 @Data
 @Builder
