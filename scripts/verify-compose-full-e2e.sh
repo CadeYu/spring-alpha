@@ -64,6 +64,50 @@ wait_for_http "${RESEARCH_SERVICE_URL}/health" "Python Research Service"
 wait_for_http "${BACKEND_URL}/api/sec/models" "Spring Boot backend"
 wait_for_http "${FRONTEND_URL}/app" "Next.js frontend"
 
+echo "Checking Python Agent run with request-scoped filing evidence..."
+AGENT_RESPONSE="$(
+  curl -fsS \
+    -H "Content-Type: application/json" \
+    -d '{
+      "run_id": "compose_full_e2e_agent",
+      "ticker": "AAPL",
+      "task_type": "latest_earnings_readout",
+      "language": "en",
+      "filings": [
+        {
+          "ticker": "AAPL",
+          "filing_type": "10-Q",
+          "filing_date": "2026-01-01",
+          "accession_number": "compose-e2e",
+          "text": "Management Discussion and Analysis. Apple revenue increased because services demand, iPhone demand, and gross margin improved. Risk Factors include supply chain disruption and foreign exchange volatility. Liquidity and Capital Resources show operating cash flow, capital expenditures, and share repurchases."
+        }
+      ]
+    }' \
+    "${RESEARCH_SERVICE_URL}/agent/runs"
+)"
+
+AGENT_RESPONSE="${AGENT_RESPONSE}" python - <<'PY'
+import json
+import os
+
+payload = json.loads(os.environ["AGENT_RESPONSE"])
+if payload["run_id"] != "compose_full_e2e_agent":
+    raise SystemExit("agent run_id mismatch")
+if payload["status"] not in {"ok", "degraded"}:
+    raise SystemExit(f"unexpected agent status: {payload['status']}")
+events = payload.get("events") or []
+if not events:
+    raise SystemExit("agent run returned no events")
+final_report = payload.get("final_report") or {}
+task_sections = final_report.get("task_sections") or {}
+if task_sections.get("task_type") != "latest_earnings_readout":
+    raise SystemExit("agent run did not return latest earnings task sections")
+if not final_report.get("retrieval_records"):
+    raise SystemExit("agent run did not return retrieval records")
+if not any(event.get("tool_name") == "search_filing_sections" for event in events):
+    raise SystemExit("agent run did not execute filing section retrieval")
+PY
+
 echo "Checking compose service health..."
 compose ps
 
