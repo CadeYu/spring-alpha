@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from app.agents.bounded_workflow import BoundedAgentWorkflow
 from app.agents.deterministic_workflow import DeterministicAgentWorkflow
-from app.agents.domain_tools import LlamaIndexResearchToolService
+from app.agents.domain_tools import LlamaIndexResearchToolService, SecCompanyFactsProvider
 from app.agents.llm_gateway import (
     LlmClient,
     create_llm_client,
@@ -26,6 +26,7 @@ def create_app(
     workflow: AgentWorkflow | None = None,
     *,
     llm_client_factory: LlmClientFactory | None = None,
+    facts_provider: SecCompanyFactsProvider | None = None,
 ) -> FastAPI:
     client_factory = llm_client_factory or (
         lambda provider, api_key: create_llm_client(provider, api_key=api_key)
@@ -42,13 +43,18 @@ def create_app(
 
     @app.post("/agent/runs", response_model=BoundedAgentResult)
     def run_agent(request: AgentRequest) -> BoundedAgentResult:
-        request_workflow = _workflow_for_request_filings(request, workflow)
+        request_workflow = _workflow_for_request_filings(
+            request,
+            workflow,
+            facts_provider=facts_provider,
+        )
         if workflow is None and request.llm_provider is not None and request.llm_api_key:
             model = request.llm_model or default_model_for_provider(request.llm_provider)
             request_scoped_workflow = _workflow_for_request_filings(
                 request.model_copy(update={"llm_model": model}),
                 workflow,
                 llm_client=client_factory(request.llm_provider, request.llm_api_key),
+                facts_provider=facts_provider,
             )
             return request_scoped_workflow.run(request.model_copy(update={"llm_model": model}))
         return request_workflow.run(request)
@@ -61,6 +67,7 @@ def _workflow_for_request_filings(
     configured_workflow: AgentWorkflow | None,
     *,
     llm_client: LlmClient | None = None,
+    facts_provider: SecCompanyFactsProvider | None = None,
 ) -> AgentWorkflow:
     if configured_workflow is not None:
         return configured_workflow
@@ -82,7 +89,9 @@ def _workflow_for_request_filings(
             )
         )
     return DeterministicAgentWorkflow(
-        registry=default_tool_registry(LlamaIndexResearchToolService(pipeline)),
+        registry=default_tool_registry(
+            LlamaIndexResearchToolService(pipeline, facts_provider=facts_provider)
+        ),
         llm_client=llm_client,
         report_synthesis_client=llm_client,
         enable_report_synthesis=llm_client is not None,

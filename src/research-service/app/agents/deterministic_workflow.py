@@ -528,10 +528,19 @@ def _build_final_report(request: AgentRequest, state: AgentState) -> EvidenceAwa
             TaskSpecificSections,
             _task_sections_from_request(request, summary, source_refs, citation_status),
         ),
-        sections={"summary": summary},
+        sections=_report_sections(summary, state),
         claims=claims,
         retrieval_records=state.retrieval_records,
     )
+
+
+def _report_sections(summary: str, state: AgentState) -> dict[str, Any]:
+    sections: dict[str, Any] = {"summary": summary}
+    if state.evidence_memory.facts:
+        sections["facts"] = state.evidence_memory.facts
+    if state.evidence_memory.business_signals:
+        sections["business_signals"] = state.evidence_memory.business_signals
+    return sections
 
 
 def _source_refs_from_state(state: AgentState) -> list[SourceRef]:

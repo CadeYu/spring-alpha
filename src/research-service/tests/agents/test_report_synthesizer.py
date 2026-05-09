@@ -265,6 +265,152 @@ def test_synthesizer_prompt_contains_evidence_not_raw_trace() -> None:
     assert "scratchpad" not in client.prompt
 
 
+def test_synthesizer_uses_short_source_aliases_in_provider_prompt() -> None:
+    class RecordingClient:
+        provider = LlmProvider.OPENAI
+
+        def __init__(self) -> None:
+            self.prompt = ""
+
+        def complete_json(self, llm_request):  # type: ignore[no-untyped-def]
+            self.prompt = llm_request.user_prompt
+            return StaticJsonLlmClient(
+                {
+                    "topline_verdict": {
+                        "headline": "Alias source ids are stable",
+                        "summary": "The provider cited a short source alias.",
+                        "verdict": "mixed",
+                    },
+                    "key_takeaways": [
+                        {
+                            "title": "Alias",
+                            "summary": "Short aliases reduce source id copying errors.",
+                            "source_ids": ["src_1"],
+                            "citation_status": "supported",
+                        }
+                    ],
+                    "financial_dashboard": {"metrics": [], "chart_focus": []},
+                    "driver_snapshot": [],
+                    "risk_snapshot": [],
+                    "claims": [
+                        {
+                            "text": "The cited source alias maps back to the original source.",
+                            "source_ids": ["src_1"],
+                            "citation_status": "supported",
+                        }
+                    ],
+                }
+            ).complete_json(llm_request)
+
+    long_source_id = "AAPL:0000320193-26-000013:md-a:0:73f365bd8dfb"
+    state = state_with_evidence().model_copy(
+        update={
+            "evidence_memory": state_with_evidence().evidence_memory.model_copy(
+                update={
+                    "source_refs": [
+                        {
+                            "source_id": long_source_id,
+                            "section": "MD&A",
+                            "snippet": "Services revenue increased because demand improved.",
+                            "citation_status": "unverified",
+                        }
+                    ]
+                }
+            )
+        }
+    )
+    client = RecordingClient()
+
+    report = synthesize_latest_earnings_report(request(), state, client)
+
+    assert 'Allowed source_ids: ["src_1"]' in client.prompt
+    assert f"original_source_id={long_source_id}" in client.prompt
+    assert report.claims[0].source_refs[0].source_id == long_source_id
+
+
+def test_synthesizer_retries_transient_llm_json_failure() -> None:
+    class FlakyClient:
+        provider = LlmProvider.OPENAI
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete_json(self, llm_request):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            if self.calls == 1:
+                raise ValueError("bad provider JSON")
+            return StaticJsonLlmClient(
+                {
+                    "topline_verdict": {
+                        "headline": "Evidence-bound retry succeeded",
+                        "summary": "The retry produced a valid synthesized report.",
+                        "verdict": "mixed",
+                    },
+                    "key_takeaways": [],
+                    "financial_dashboard": {"metrics": [], "chart_focus": []},
+                    "driver_snapshot": [],
+                    "risk_snapshot": [],
+                    "claims": [
+                        {
+                            "text": "Retry synthesis cited the available source.",
+                            "source_ids": ["src_1"],
+                            "citation_status": "supported",
+                        }
+                    ],
+                }
+            ).complete_json(llm_request)
+
+    client = FlakyClient()
+
+    report = synthesize_latest_earnings_report(request(), state_with_evidence(), client)
+
+    assert client.calls == 2
+    assert report.task_sections.topline_verdict.headline == "Evidence-bound retry succeeded"
+    assert report.sections == {
+        "summary": "The retry produced a valid synthesized report.",
+        "synthesis": "llm",
+    }
+
+
+def test_synthesizer_accepts_numeric_metric_values_from_provider() -> None:
+    client = StaticJsonLlmClient(
+        {
+            "topline_verdict": {
+                "headline": "Numeric facts were normalized",
+                "summary": "The provider returned numeric metric values that were normalized.",
+                "verdict": "mixed",
+            },
+            "key_takeaways": [],
+            "financial_dashboard": {
+                "metrics": [
+                    {
+                        "name": "Revenue",
+                        "value": 219659000000,
+                        "period": "latest_quarter",
+                        "interpretation": "Revenue came from cited company facts.",
+                        "source_ids": ["src_1"],
+                        "citation_status": "supported",
+                    }
+                ],
+                "chart_focus": ["revenue"],
+            },
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "claims": [
+                {
+                    "text": "Revenue was grounded in the cited source.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+        }
+    )
+
+    report = synthesize_latest_earnings_report(request(), state_with_evidence(), client)
+
+    assert report.task_sections.financial_dashboard.metrics[0].value == "219659000000"
+
+
 def test_agent_uses_synthesized_latest_earnings_report_when_llm_is_available() -> None:
     class PlanningAndSynthesisClient:
         provider = LlmProvider.OPENAI

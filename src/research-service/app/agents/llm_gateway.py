@@ -86,7 +86,7 @@ class OpenAiCompatibleLlmClient:
             ],
             "response_format": {"type": "json_object"},
             "temperature": 0,
-            "max_tokens": 512,
+            "max_tokens": 2048,
         }
         raw = self._transport(
             f"{self._base_url}/chat/completions",

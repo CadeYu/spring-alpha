@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.llm_gateway import LlmClient, LlmRequest
 from app.contracts.agent import AgentRequest, AgentState
@@ -45,6 +45,11 @@ class _SynthesizedMetric(BaseModel):
     interpretation: str = Field(min_length=1)
     source_ids: list[str] = Field(default_factory=list)
     citation_status: CitationStatus = CitationStatus.UNVERIFIED
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def normalize_value(cls, value: object) -> str:
+        return str(value)
 
 
 class _SynthesizedDashboard(BaseModel):
@@ -105,8 +110,9 @@ def synthesize_latest_earnings_report(
         raise ReportSynthesisError(f"Unsupported synthesis task: {request.task_type.value}")
 
     source_refs = _source_refs_from_state(state)
-    source_refs_by_id = {source_ref.source_id: source_ref for source_ref in source_refs}
-    response = client.complete_json(
+    source_refs_by_id = _alias_source_refs_by_id(source_refs)
+    response = _complete_synthesis_json(
+        client,
         LlmRequest(
             run_id=request.run_id,
             provider=client.provider,
@@ -115,8 +121,8 @@ def synthesize_latest_earnings_report(
             system_prompt=_system_prompt(),
             user_prompt=_user_prompt(request, state, source_refs),
             state=state,
-            timeout_seconds=60,
-        )
+            timeout_seconds=120,
+        ),
     )
     payload = _LatestEarningsSynthesis.model_validate(response.content)
     _validate_source_ids(payload, source_refs_by_id)
@@ -181,8 +187,9 @@ def synthesize_business_driver_report(
         raise ReportSynthesisError(f"Unsupported synthesis task: {request.task_type.value}")
 
     source_refs = _source_refs_from_state(state)
-    source_refs_by_id = {source_ref.source_id: source_ref for source_ref in source_refs}
-    response = client.complete_json(
+    source_refs_by_id = _alias_source_refs_by_id(source_refs)
+    response = _complete_synthesis_json(
+        client,
         LlmRequest(
             run_id=request.run_id,
             provider=client.provider,
@@ -191,8 +198,8 @@ def synthesize_business_driver_report(
             system_prompt=_system_prompt(),
             user_prompt=_business_driver_prompt(request, state, source_refs),
             state=state,
-            timeout_seconds=60,
-        )
+            timeout_seconds=120,
+        ),
     )
     payload = _BusinessDriverSynthesis.model_validate(response.content)
     _validate_business_driver_source_ids(payload, source_refs_by_id)
@@ -257,15 +264,29 @@ def _system_prompt() -> str:
     )
 
 
+def _complete_synthesis_json(client: LlmClient, request: LlmRequest):
+    last_error: Exception | None = None
+    for _ in range(2):
+        try:
+            return client.complete_json(request)
+        except Exception as exc:
+            last_error = exc
+    raise ReportSynthesisError(f"LLM synthesis JSON failed after retry: {last_error}")
+
+
 def _business_driver_prompt(
     request: AgentRequest,
     state: AgentState,
     source_refs: list[SourceRef],
 ) -> str:
-    evidence_lines = _evidence_lines(source_refs)
+    evidence_refs = _aliased_source_refs(source_refs)
+    evidence_lines = _evidence_lines(evidence_refs, source_refs)
+    allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
     return (
         "Generate typed business driver deep dive task sections.\n"
         "Return JSON only. Do not use strings where objects or arrays are required.\n"
+        f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
+        "Never invent source_ids. Do not cite facts, concepts, or node ids not listed above.\n"
         "Use exactly this shape:\n"
         "{\n"
         '  "driver_thesis": {"headline": "...", "durability": '
@@ -299,11 +320,15 @@ def _user_prompt(
     state: AgentState,
     source_refs: list[SourceRef],
 ) -> str:
-    evidence_lines = _evidence_lines(source_refs)
+    evidence_refs = _aliased_source_refs(source_refs)
+    evidence_lines = _evidence_lines(evidence_refs, source_refs)
+    allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
     facts = state.evidence_memory.facts
     return (
         "Generate typed latest earnings task sections.\n"
         "Return JSON only. Do not use strings where objects or arrays are required.\n"
+        f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
+        "Never invent source_ids. Do not cite facts, concepts, or node ids not listed above.\n"
         "Use exactly this shape:\n"
         "{\n"
         '  "topline_verdict": {"headline": "...", "summary": "...", '
@@ -352,6 +377,21 @@ def _source_refs_from_state(state: AgentState) -> list[SourceRef]:
         except ValueError:
             continue
     return refs
+
+
+def _alias_source_refs_by_id(source_refs: list[SourceRef]) -> dict[str, SourceRef]:
+    refs_by_id: dict[str, SourceRef] = {}
+    for index, source_ref in enumerate(source_refs, start=1):
+        refs_by_id[f"src_{index}"] = source_ref
+        refs_by_id[source_ref.source_id] = source_ref
+    return refs_by_id
+
+
+def _aliased_source_refs(source_refs: list[SourceRef]) -> list[SourceRef]:
+    return [
+        source_ref.model_copy(update={"source_id": f"src_{index}"})
+        for index, source_ref in enumerate(source_refs, start=1)
+    ]
 
 
 def _validate_source_ids(
@@ -508,14 +548,19 @@ def _evidence_ref(source_ref: SourceRef) -> EvidenceRef:
     )
 
 
-def _evidence_lines(source_refs: list[SourceRef]) -> list[str]:
+def _evidence_lines(
+    source_refs: list[SourceRef],
+    original_source_refs: list[SourceRef] | None = None,
+) -> list[str]:
+    originals = original_source_refs or source_refs
     return [
         (
             f"- source_id={source_ref.source_id}; section={source_ref.section}; "
+            f"original_source_id={original_source_ref.source_id}; "
             f"filing_type={source_ref.filing_type}; filing_date={source_ref.filing_date}; "
             f"snippet={_clip(source_ref.snippet)}"
         )
-        for source_ref in source_refs
+        for source_ref, original_source_ref in zip(source_refs, originals, strict=False)
     ]
 
 
@@ -538,4 +583,6 @@ def _clip(text: str, limit: int = 700) -> str:
 
 
 def _json_safe(value: Any) -> str:
-    return str(value)
+    import json
+
+    return json.dumps(value, ensure_ascii=True)

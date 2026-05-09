@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agents.deterministic_workflow import DeterministicAgentWorkflow
+from app.agents.domain_tools import SecCompanyFactsProvider
 from app.agents.llm_gateway import LlmClient, StaticJsonLlmClient
 from app.agents.tool_registry import default_tool_registry
 from app.contracts.agent import AgentRunStatus, LlmProvider
@@ -494,6 +495,52 @@ Earnings dashboard metrics include revenue, gross margin, and operating income.
     assert "Evidence placeholder" not in source_refs[0]["snippet"]
 
 
+def test_agent_run_endpoint_uses_sec_company_facts_with_request_filings() -> None:
+    client = TestClient(
+        create_app(facts_provider=SecCompanyFactsProvider(transport=fake_sec_transport))
+    )
+
+    response = client.post(
+        "/agent/runs",
+        json={
+            "run_id": "run_api_request_filing_facts",
+            "ticker": "aapl",
+            "task_type": "latest_earnings_readout",
+            "language": "en",
+            "filings": [
+                {
+                    "ticker": "AAPL",
+                    "filing_type": "10-Q",
+                    "filing_date": "2026-04-30",
+                    "accession_number": "0000320193-26-000006",
+                    "text": """
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Services revenue increased because demand improved and installed base engagement expanded.
+Gross margin benefited from mix.
+Earnings dashboard metrics include revenue, gross margin, and operating income.
+""",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    facts = payload["final_report"]["sections"]["facts"]
+
+    fact_tools = [
+        record
+        for record in payload["final_report"]["retrieval_records"]
+        if record["tool_name"] == "get_company_facts"
+    ]
+    assert facts["source"] == "sec_companyfacts"
+    assert facts["metrics"][0]["name"] == "revenue"
+    assert facts["metrics"][0]["value"] == 90000000000
+    assert fact_tools
+    assert fact_tools[0]["metric_count"] == 2
+    assert fact_tools[0]["fact_source"] == "sec_companyfacts"
+
+
 def test_agent_run_endpoint_uses_production_rag_pipeline_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -548,3 +595,50 @@ Services demand improved across enterprise customers.
     assert config.database_url == "postgresql://example"
     assert config.table_name == "rag_chunks"
     assert config.embedding_dimension == 3
+
+
+def fake_sec_transport(url: str, timeout_seconds: float) -> dict[str, object]:
+    if url.endswith("/company_tickers.json"):
+        return {
+            "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."},
+        }
+    if url.endswith("/CIK0000320193.json"):
+        return {
+            "cik": 320193,
+            "entityName": "Apple Inc.",
+            "facts": {
+                "us-gaap": {
+                    "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                        "label": "Revenue from Contract with Customer, Excluding Assessed Tax",
+                        "units": {
+                            "USD": [
+                                {
+                                    "val": 90000000000,
+                                    "fy": 2026,
+                                    "fp": "Q1",
+                                    "form": "10-Q",
+                                    "filed": "2026-02-01",
+                                    "accn": "0000320193-26-000001",
+                                }
+                            ]
+                        },
+                    },
+                    "GrossProfit": {
+                        "label": "Gross Profit",
+                        "units": {
+                            "USD": [
+                                {
+                                    "val": 41000000000,
+                                    "fy": 2026,
+                                    "fp": "Q1",
+                                    "form": "10-Q",
+                                    "filed": "2026-02-01",
+                                    "accn": "0000320193-26-000001",
+                                }
+                            ]
+                        },
+                    },
+                }
+            },
+        }
+    raise AssertionError(f"Unexpected SEC URL: {url}")

@@ -103,7 +103,7 @@ def test_openai_compatible_client_parses_json_from_chat_completion() -> None:
     assert response.usage == {"total_tokens": 12}
     assert captured["url"] == "https://example.test/v1/chat/completions"
     payload = cast(dict[str, object], captured["payload"])
-    assert payload["max_tokens"] == 512
+    assert payload["max_tokens"] == 2048
     assert captured["timeout_seconds"] == 5
     assert captured["authorization"] == "Bearer secret"
     assert "secret" not in response.model_dump_json()

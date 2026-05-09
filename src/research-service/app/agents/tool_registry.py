@@ -283,6 +283,16 @@ def _retrieval_payload(result: ToolResult) -> dict[str, Any]:
     retrieved_nodes = result.data.get("retrieved_nodes")
     if isinstance(retrieved_nodes, list):
         return {"retrieved_nodes": retrieved_nodes}
+    metrics = result.data.get("metrics")
+    if isinstance(metrics, list):
+        payload: dict[str, Any] = {"metric_count": len(metrics)}
+        source = result.data.get("source")
+        if isinstance(source, str):
+            payload["fact_source"] = source
+        missing_metrics = result.data.get("missing_metrics")
+        if isinstance(missing_metrics, list):
+            payload["missing_metric_count"] = len(missing_metrics)
+        return payload
     return {}
 
 

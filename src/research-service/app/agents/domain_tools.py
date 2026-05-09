@@ -1,4 +1,7 @@
+import json
 import re
+from collections.abc import Callable, Mapping
+from urllib import request as url_request
 
 from app.contracts.agent import AgentState, ToolResult
 from app.contracts.tools import (
@@ -11,9 +14,107 @@ from app.contracts.tools import (
 )
 from app.rag.llamaindex_pipeline import LlamaIndexRagPipeline, RetrieveEvidenceResult
 
+SecJsonTransport = Callable[[str, float], dict[str, object]]
+
+
+class SecCompanyFactsProvider:
+    def __init__(
+        self,
+        *,
+        transport: SecJsonTransport | None = None,
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        self._transport = transport or _sec_json_transport
+        self._timeout_seconds = timeout_seconds
+        self._ticker_map: dict[str, dict[str, object]] | None = None
+
+    def fetch_company_facts(
+        self,
+        *,
+        ticker: str,
+        period: str | None,
+        metrics: list[str],
+    ) -> dict[str, object]:
+        ticker_record = self._ticker_record(ticker)
+        cik = int(ticker_record["cik_str"])
+        companyfacts = self._transport(
+            f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json",
+            self._timeout_seconds,
+        )
+        requested_metrics = metrics or ["revenue", "gross margin", "operating income"]
+        metric_records = [
+            record
+            for metric in requested_metrics
+            for record in [_latest_metric_record(companyfacts, metric, period or "latest_quarter")]
+            if record is not None
+        ]
+        found_metric_names = {str(record["name"]) for record in metric_records}
+        missing_metrics = [
+            metric
+            for metric in requested_metrics
+            if _normalize_metric_name(metric) not in found_metric_names
+        ]
+        return {
+            "ticker": ticker.upper(),
+            "company_name": companyfacts.get("entityName") or ticker_record.get("title"),
+            "source": "sec_companyfacts",
+            "period": period or "latest_quarter",
+            "metrics": metric_records,
+            "missing_metrics": missing_metrics,
+        }
+
+    def _ticker_record(self, ticker: str) -> dict[str, object]:
+        normalized_ticker = ticker.upper()
+        known_cik = _KNOWN_CIK_BY_TICKER.get(normalized_ticker)
+        if known_cik is not None:
+            return {
+                "cik_str": known_cik,
+                "ticker": normalized_ticker,
+                "title": normalized_ticker,
+            }
+        ticker_map = self._load_ticker_map()
+        ticker_record = ticker_map.get(normalized_ticker)
+        if ticker_record is None:
+            raise ValueError(f"SEC ticker mapping not found for {normalized_ticker}")
+        return ticker_record
+
+    def _load_ticker_map(self) -> dict[str, dict[str, object]]:
+        if self._ticker_map is not None:
+            return self._ticker_map
+        payload = self._transport(
+            "https://www.sec.gov/files/company_tickers.json",
+            self._timeout_seconds,
+        )
+        self._ticker_map = {
+            str(record.get("ticker", "")).upper(): record
+            for record in payload.values()
+            if isinstance(record, dict) and record.get("ticker")
+        }
+        return self._ticker_map
+
 
 class DeterministicResearchToolService:
+    def __init__(self, facts_provider: SecCompanyFactsProvider | None = None) -> None:
+        self._facts_provider = facts_provider
+
     def get_company_facts(self, tool_input: CompanyFactsInput, state: AgentState) -> ToolResult:
+        if self._facts_provider is not None:
+            facts = self._facts_provider.fetch_company_facts(
+                ticker=state.ticker,
+                period=tool_input.period,
+                metrics=tool_input.metrics,
+            )
+            missing_metrics = [
+                str(metric) for metric in facts.get("missing_metrics", []) if str(metric)
+            ]
+            if missing_metrics:
+                return ToolResult.partial(
+                    data=facts,
+                    degraded_reason=(
+                        "SEC company facts missing metrics: " + ", ".join(missing_metrics)
+                    ),
+                )
+            return ToolResult.ok(data=facts)
         return ToolResult.ok(
             data={
                 "ticker": state.ticker,
@@ -121,7 +222,12 @@ class DeterministicResearchToolService:
 
 
 class LlamaIndexResearchToolService(DeterministicResearchToolService):
-    def __init__(self, rag_pipeline: LlamaIndexRagPipeline) -> None:
+    def __init__(
+        self,
+        rag_pipeline: LlamaIndexRagPipeline,
+        facts_provider: SecCompanyFactsProvider | None = None,
+    ) -> None:
+        super().__init__(facts_provider=facts_provider)
         self._rag_pipeline = rag_pipeline
 
     def search_filing_sections(
@@ -277,3 +383,152 @@ def _preferred_metric_sections(metrics: list[str]) -> list[str]:
     if any(term in joined for term in ("revenue", "margin", "income", "expense")):
         return ["MD&A", "Net Sales", "Segment Information"]
     return ["MD&A", "Financial Statements"]
+
+
+def _sec_json_transport(url: str, timeout_seconds: float) -> dict[str, object]:
+    request = url_request.Request(
+        url,
+        headers={"User-Agent": "spring-alpha-research-service/0.1 contact@example.com"},
+    )
+    with url_request.urlopen(request, timeout=timeout_seconds) as response:
+        decoded = json.loads(response.read().decode("utf-8"))
+    if not isinstance(decoded, dict):
+        raise ValueError("SEC response must be a JSON object")
+    return decoded
+
+
+def _latest_metric_record(
+    companyfacts: Mapping[str, object],
+    requested_metric: str,
+    period: str,
+) -> dict[str, object] | None:
+    normalized_metric = _normalize_metric_name(requested_metric)
+    concepts = _CONCEPTS_BY_METRIC.get(normalized_metric, [])
+    facts = companyfacts.get("facts")
+    if not isinstance(facts, dict):
+        return None
+    for taxonomy, taxonomy_payload in facts.items():
+        if not isinstance(taxonomy_payload, dict):
+            continue
+        for concept in concepts:
+            concept_payload = taxonomy_payload.get(concept)
+            if not isinstance(concept_payload, dict):
+                continue
+            unit, fact = _latest_fact(concept_payload, period)
+            if fact is None:
+                continue
+            return {
+                "name": normalized_metric,
+                "label": str(concept_payload.get("label") or concept),
+                "value": fact.get("val"),
+                "unit": unit,
+                "period": _fact_period(fact),
+                "fy": fact.get("fy"),
+                "fp": fact.get("fp"),
+                "form": fact.get("form"),
+                "filed": fact.get("filed"),
+                "accession_number": fact.get("accn"),
+                "taxonomy": str(taxonomy),
+                "concept": concept,
+            }
+    return None
+
+
+def _latest_fact(
+    concept_payload: Mapping[str, object],
+    period: str,
+) -> tuple[str, dict[str, object] | None]:
+    units = concept_payload.get("units")
+    if not isinstance(units, dict):
+        return "", None
+    candidate_units = ["USD", "shares", "pure", *[str(unit) for unit in units]]
+    for unit in candidate_units:
+        unit_facts = units.get(unit)
+        if not isinstance(unit_facts, list):
+            continue
+        facts = [
+            fact
+            for fact in unit_facts
+            if isinstance(fact, dict)
+            and fact.get("val") is not None
+            and _matches_period(fact, period)
+        ]
+        if not facts:
+            continue
+        return unit, max(facts, key=_fact_sort_key)
+    return "", None
+
+
+def _matches_period(fact: Mapping[str, object], period: str) -> bool:
+    normalized = period.lower()
+    if normalized in {"latest_quarter", "quarterly"}:
+        return str(fact.get("form", "")).upper() == "10-Q" and str(
+            fact.get("fp", "")
+        ).upper().startswith("Q")
+    if normalized in {"latest_annual", "annual", "fy"}:
+        return str(fact.get("form", "")).upper() == "10-K"
+    return True
+
+
+def _fact_sort_key(fact: Mapping[str, object]) -> tuple[int, str]:
+    fy = fact.get("fy")
+    fiscal_year = int(fy) if isinstance(fy, int | float) else 0
+    filed = str(fact.get("filed") or "")
+    return fiscal_year, filed
+
+
+def _fact_period(fact: Mapping[str, object]) -> str | None:
+    fy = fact.get("fy")
+    fp = fact.get("fp")
+    if fy is None or fp is None:
+        return None
+    return f"{fy}{fp}"
+
+
+def _normalize_metric_name(metric: str) -> str:
+    return re.sub(r"\s+", " ", metric.strip().lower().replace("_", " "))
+
+
+_CONCEPTS_BY_METRIC: dict[str, list[str]] = {
+    "revenue": [
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "Revenues",
+        "SalesRevenueNet",
+    ],
+    "gross margin": ["GrossProfit"],
+    "gross profit": ["GrossProfit"],
+    "operating income": ["OperatingIncomeLoss"],
+    "net income": ["NetIncomeLoss"],
+    "operating cash flow": [
+        "NetCashProvidedByUsedInOperatingActivities",
+        "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
+    ],
+    "capital expenditures": [
+        "PaymentsToAcquirePropertyPlantAndEquipment",
+        "CapitalExpendituresIncurredButNotYetPaid",
+    ],
+    "capex": [
+        "PaymentsToAcquirePropertyPlantAndEquipment",
+        "CapitalExpendituresIncurredButNotYetPaid",
+    ],
+    "buybacks": [
+        "PaymentsForRepurchaseOfCommonStock",
+        "PaymentsForRepurchaseOfEquity",
+    ],
+    "share repurchases": [
+        "PaymentsForRepurchaseOfCommonStock",
+        "PaymentsForRepurchaseOfEquity",
+    ],
+}
+
+
+_KNOWN_CIK_BY_TICKER: dict[str, int] = {
+    "AAPL": 320193,
+    "MSFT": 789019,
+    "GOOGL": 1652044,
+    "GOOG": 1652044,
+    "AMZN": 1018724,
+    "META": 1326801,
+    "NVDA": 1045810,
+    "TSLA": 1318605,
+}
