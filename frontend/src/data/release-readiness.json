@@ -63,6 +63,26 @@
       ]
     },
     {
+      "id": "provider_tool_e2e_gate",
+      "label": "Provider tool E2E gate",
+      "status": "passed",
+      "summary": "siliconflow / Pro/moonshotai/Kimi-K2.6 across task-specific tool paths",
+      "metrics": {
+        "latestEarningsPath": "SEC facts + RAG + LLM synthesis",
+        "businessDriverPath": "RAG + business signals + LLM synthesis",
+        "cashFlowPath": "SEC facts + RAG + metric evidence + LLM synthesis",
+        "cashFlowFactMetricCount": 2,
+        "cashFlowRagSourceRefs": 3,
+        "cashFlowMetricEvidenceCount": 1,
+        "degradedReasonCount": 0
+      },
+      "details": [
+        "Manual live gate for provider-backed tool execution and final report synthesis.",
+        "Validated cash_flow_capital_allocation with SEC companyfacts, RAG source refs, metric evidence, and LLM typed synthesis.",
+        "Business driver path validates evidence-bound business signals instead of SEC facts."
+      ]
+    },
+    {
       "id": "compose_full_e2e",
       "label": "Compose full E2E",
       "status": "passed",

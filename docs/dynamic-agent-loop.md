@@ -47,7 +47,12 @@ Spring Boot
           -> LlamaIndex retrieval
           -> SEC section search
           -> metric evidence search
+          -> evidence-bound business signal extraction
           -> citation verification
+      -> Report Synthesis
+          -> latest earnings typed synthesis
+          -> business driver typed synthesis
+          -> cash flow typed synthesis
 ```
 
 Agent Runtime 不知道具体模型。它只依赖统一的 LLM Gateway：
@@ -74,7 +79,18 @@ Agent Runtime 负责：
 - 调用 typed tools；
 - 记录 trace；
 - 检查 evidence gaps；
-- 输出 typed final report。
+- 使用 evidence memory 生成 typed final report。
+
+当前生产主路径中，最终报告 synthesis 已覆盖三个 MVP task：
+
+| Task | 取证路径 | LLM synthesis 输出 |
+| --- | --- | --- |
+| `latest_earnings_readout` | SEC companyfacts、RAG filing sections、metric evidence | `LatestEarningsSections` |
+| `business_driver_deep_dive` | RAG filing sections、evidence-bound business signals | `BusinessDriverSections` |
+| `cash_flow_capital_allocation` | SEC companyfacts、RAG filing sections、metric evidence | `CashFlowCapitalAllocationSections` |
+
+LLM synthesis 只能引用 `EvidenceMemory.source_refs` 中已有的 `source_id`。任何未知
+source id 都必须触发 synthesis fallback 或 degraded reason，不能被透传到产品报告。
 
 ## Loop 范式
 
@@ -249,14 +265,18 @@ Tool Registry 负责：
 
 | Tool | 作用 | 主要输入 | 主要输出 |
 | --- | --- | --- | --- |
-| `get_company_facts` | 获取财务事实和公司基础信息 | `ticker`, `period`, `metrics` | typed facts |
+| `get_company_facts` | 获取 SEC companyfacts 财务事实 | `ticker`, `period`, `metrics` | SEC-backed typed facts |
 | `search_filing_sections` | 检索 SEC filing section evidence | `ticker`, `sections`, `query` | source refs |
-| `search_metric_evidence` | 查找指标相关证据和 period alignment | `ticker`, `metrics`, `period` | evidence-bound metrics |
-| `get_business_signals` | 获取业务信号、产品、客户、分部线索 | `ticker`, `task_type` | typed business signals |
+| `search_metric_evidence` | 查找指标相关证据和 period alignment | `ticker`, `metrics`, `period` | evidence-bound metric records |
+| `get_business_signals` | 从已有 source refs 抽取业务信号、产品、客户、分部线索 | `signal_types` | source-bound business signals |
 | `verify_citations` | 验证 claim 与 source refs 的绑定质量 | `claims`, `source_refs` | citation validation |
 | `finalize_report` | 生成 typed `taskSections` 和 final report | `state`, `coverage` | `EvidenceAwareReport` |
 
 后续 RAG 专业化优先升级这些工具，而不是重写 Agent loop。
+
+`get_business_signals` 不允许无证据生成业务信号；当 evidence memory 中没有 source refs
+时，必须返回 empty/degraded reason。每条 signal 必须携带 source id、section、snippet
+和 citation status。
 
 ## Task Policy
 

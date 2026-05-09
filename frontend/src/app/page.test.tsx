@@ -466,6 +466,133 @@ describe("Home page", () => {
     expect(screen.queryByText("Legacy services momentum")).not.toBeInTheDocument();
   });
 
+  it("renders typed cash flow synthesis fields from the spring mapper envelope", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Legacy cash flow summary.",
+          companyName: "Apple Inc.",
+          period: "Q2 2026",
+          filingDate: "2026-04-30",
+          keyMetrics: [
+            {
+              metricName: "Legacy Free Cash Flow",
+              value: "Pending",
+              interpretation: "Legacy metric should not drive the typed view.",
+              sentiment: "neutral",
+            },
+          ],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          bullCase: "Bull case.",
+          bearCase: "Bear case.",
+          taskSections: {
+            schemaVersion: "task_sections.v1",
+            taskType: "cash_flow_capital_allocation",
+            coverage: {
+              status: "complete",
+              missingSections: [],
+              evidenceCount: 2,
+            },
+            cashFlowCapitalAllocation: {
+              cashQualityVerdict: {
+                headline: "Typed cash quality verdict",
+                earningsBackedByCash: "mixed",
+                summary: "Typed cash conversion summary.",
+              },
+              cashMetrics: [
+                {
+                  name: "Typed operating cash flow",
+                  value: "Positive",
+                  period: "latest quarter",
+                  interpretation: "Typed cash metric interpretation.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+              ],
+              capitalAllocation: {
+                capex: [
+                  {
+                    title: "Typed capex signal",
+                    summary: "Typed capex evidence.",
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                ],
+                buybacks: [
+                  {
+                    title: "Typed buyback signal",
+                    summary: "Typed buyback evidence.",
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                ],
+                dividends: [],
+                debt: [],
+                liquidity: [
+                  {
+                    title: "Typed liquidity signal",
+                    summary: "Typed liquidity evidence.",
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                ],
+              },
+              allocationDiscipline: [
+                {
+                  title: "Typed allocation discipline",
+                  summary: "Typed allocation discipline evidence.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+              ],
+              redFlags: [
+                {
+                  title: "Typed red flag",
+                  summary: "Typed red flag evidence.",
+                  evidenceRefs: [],
+                  citationStatus: "partial",
+                },
+              ],
+            },
+          },
+          metadata: {
+            modelName: "python-research-service",
+            generatedAt: "2026-03-09T10:00:00",
+            language: "en",
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+
+    fireEvent.click(
+      screen.getByRole("radio", { name: /cash flow & capital allocation/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    expect(await screen.findByText("Typed cash quality verdict")).toBeInTheDocument();
+    expect(screen.getByText("Typed operating cash flow")).toBeInTheDocument();
+    expect(screen.getByText("Typed capex signal")).toBeInTheDocument();
+    expect(screen.getByText("Typed buyback signal")).toBeInTheDocument();
+    expect(screen.getByText("Typed liquidity signal")).toBeInTheDocument();
+    expect(screen.getByText("Typed allocation discipline")).toBeInTheDocument();
+    expect(screen.getByText("Typed red flag")).toBeInTheDocument();
+    expect(screen.queryByText("Legacy Free Cash Flow")).not.toBeInTheDocument();
+  });
+
   it("renders the RAG eval dashboard with persisted stage 1 hard-suite comparisons", () => {
     render(<Home />);
 

@@ -2,11 +2,12 @@ spring:
   application:
     name: spring-alpha-backend
   
-  # PostgreSQL (Neon) Configuration
+  # PostgreSQL configuration. Production credentials must be provided by the
+  # runtime environment; local development defaults to a local database.
   datasource:
-    url: jdbc:postgresql://ep-super-night-a1grbtke-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channelBinding=require
-    username: ${NEON_USERNAME:neondb_owner}
-    password: ${NEON_PASSWORD:}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/spring_alpha}
+    username: ${SPRING_DATASOURCE_USERNAME:${NEON_USERNAME:spring_alpha}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${NEON_PASSWORD:}}
     driver-class-name: org.postgresql.Driver
     hikari:
       connection-timeout: 30000       # 30s 连接超时

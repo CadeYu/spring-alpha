@@ -12,6 +12,24 @@ deterministic workflow，便于 contract test 和降级验证。
 
 本服务不直接抓取 SEC；SEC fetching 仍由 Spring Boot 的 `SecService` 负责。
 
+## Current Agent Production Path
+
+Spring Boot 是产品 API 和 SEC filing fetch boundary；Python Research Service 是
+分析、RAG、tool execution 和报告 synthesis 的生产主路径。Spring Boot 不再提供 Java
+report-generation fallback。如果 Research Service 不可用，后端应返回明确的
+unavailable/degraded 错误，而不是偷偷生成旧报告。
+
+当前三个 MVP task 都支持 typed final synthesis：
+
+| Task | Tool path | Final synthesis |
+| --- | --- | --- |
+| `latest_earnings_readout` | SEC companyfacts, filing section RAG, metric evidence | LLM typed latest earnings report |
+| `business_driver_deep_dive` | filing section RAG, evidence-bound business signals | LLM typed business driver report |
+| `cash_flow_capital_allocation` | SEC companyfacts, filing section RAG, metric evidence | LLM typed cash-quality and capital allocation report |
+
+所有 provider synthesis 都必须通过 source id 白名单校验。LLM 只能引用 Agent
+evidence memory 中已有的 `source_id`，不能发明 citation。
+
 本地运行：
 
 ```bash
@@ -48,6 +66,30 @@ Manual provider-backed mini eval gate:
 GEMINI_API_KEY="$GEMINI_API_KEY" ../../scripts/verify-provider-mini-rag-eval.sh
 ```
 
+Provider tool E2E live gate:
+
+```bash
+PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" \
+../../scripts/verify-provider-tool-e2e.sh
+
+PROVIDER_TOOL_E2E_TASK_TYPE=business_driver_deep_dive \
+PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" \
+../../scripts/verify-provider-tool-e2e.sh
+
+PROVIDER_TOOL_E2E_TASK_TYPE=cash_flow_capital_allocation \
+PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" \
+../../scripts/verify-provider-tool-e2e.sh
+```
+
+The live provider tool gate validates task-specific production paths:
+
+- latest earnings: SEC facts + RAG source refs + LLM synthesis.
+- business driver: RAG source refs + business signals + LLM synthesis.
+- cash flow: SEC facts + RAG source refs + metric evidence + LLM synthesis.
+
+It is intentionally manual because SEC and provider availability can fluctuate.
+Provider keys must come from runtime environment variables only.
+
 Production RAG defaults are environment-driven. When `RAG_VECTOR_DATABASE_URL`
 is present, the request pipeline uses PGVector unless
 `RAG_VECTOR_STORE_PROVIDER` is explicitly set. When `GEMINI_API_KEY` is present,
@@ -71,8 +113,8 @@ embedding call count, and estimated cost in a JSON artifact. It is intentionally
 manual/optional so provider cost and availability do not affect default CI.
 
 The release readiness artifact writer combines the latest RAG hard dashboard,
-provider RAG summary, provider live planner smoke, and compose full E2E summary
-into one frontend-safe checklist fixture:
+provider RAG summary, provider live planner smoke, provider tool E2E smoke, and
+compose full E2E summary into one frontend-safe checklist fixture:
 
 ```bash
 uv run python scripts/write_release_readiness_artifact.py \

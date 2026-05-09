@@ -13,6 +13,7 @@ describe("release readiness artifact", () => {
       "rag_hard_gate",
       "provider_rag_sample_gate",
       "provider_live_planner_gate",
+      "provider_tool_e2e_gate",
       "compose_full_e2e",
     ]);
     expect(
@@ -20,6 +21,11 @@ describe("release readiness artifact", () => {
         (gate) => gate.id === "provider_rag_sample_gate",
       )?.metrics.caseCount,
     ).toBe(24);
+    expect(
+      RELEASE_READINESS_ARTIFACT.gates.find(
+        (gate) => gate.id === "provider_tool_e2e_gate",
+      )?.metrics.cashFlowPath,
+    ).toBe("SEC facts + RAG + metric evidence + LLM synthesis");
   });
 
   it("formats compact release metrics for checklist rows", () => {

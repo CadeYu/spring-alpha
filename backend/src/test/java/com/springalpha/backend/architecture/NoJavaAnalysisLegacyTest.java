@@ -18,7 +18,11 @@ class NoJavaAnalysisLegacyTest {
     void backendDoesNotContainJavaRagOrSpringAiAnalysisPath() throws IOException {
         List<Path> forbiddenPaths = List.of(
                 PROJECT_ROOT.resolve("src/main/java/com/springalpha/backend/service/rag"),
-                PROJECT_ROOT.resolve("src/test/java/com/springalpha/backend/service/rag"));
+                PROJECT_ROOT.resolve("src/test/java/com/springalpha/backend/service/rag"),
+                PROJECT_ROOT.resolve("src/main/java/com/springalpha/backend/service/profile"),
+                PROJECT_ROOT.resolve("src/test/java/com/springalpha/backend/service/profile"),
+                PROJECT_ROOT.resolve("src/main/java/com/springalpha/backend/service/signals"),
+                PROJECT_ROOT.resolve("src/test/java/com/springalpha/backend/service/signals"));
 
         for (Path forbiddenPath : forbiddenPaths) {
             assertFalse(Files.exists(forbiddenPath), () -> "Forbidden Java analysis path remains: " + forbiddenPath);
@@ -30,7 +34,11 @@ class NoJavaAnalysisLegacyTest {
                 "spring.ai",
                 "vectorstore",
                 "embedding-provider",
-                "PgVectorStoreAutoConfiguration");
+                "PgVectorStoreAutoConfiguration",
+                "CompanyProfileSnapshot",
+                "CompanyProfileExtractor",
+                "BusinessSignalSnapshot",
+                "BusinessSignalExtractor");
 
         try (Stream<Path> files = Files.walk(PROJECT_ROOT)) {
             List<Path> scannedFiles = files

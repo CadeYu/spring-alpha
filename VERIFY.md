@@ -213,8 +213,10 @@ PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" \
 
 该门禁使用 deterministic planner 固定取证路径，只让真实 provider 负责 final
 report synthesis。它验证最终 typed task sections 标记为 LLM synthesis、包含
-claim、且 claim 只能引用 Agent evidence memory 中已有的 `source_id`。它不属于
-默认 CI gate，避免 provider 成本和输出波动影响基础验证。
+claim、且 claim 只能引用 Agent evidence memory 中已有的 `source_id`。当前该
+较小 synthesis-only gate 覆盖 latest earnings 和 business driver；cash flow 的完整
+provider 验证走下方 Provider tool E2E gate，因为它需要同时验证 SEC facts、RAG
+和 metric evidence。它不属于默认 CI gate，避免 provider 成本和输出波动影响基础验证。
 
 Provider tool E2E smoke gate，手动/optional live gate：
 
@@ -222,10 +224,32 @@ Provider tool E2E smoke gate，手动/optional live gate：
 PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" ./scripts/verify-provider-tool-e2e.sh
 ```
 
-该门禁会在同一次 Agent run 中组合真实 SEC companyfacts tool、request-scoped
-RAG filing evidence、bounded planner 和 provider final synthesis。它验证 facts
-来源为 `sec_companyfacts`、RAG 返回 source refs，且最终 report synthesis 为 LLM。
-它不属于默认 CI gate，避免 SEC/provider 网络波动影响基础验证。
+默认 task 是 latest earnings。该门禁会在同一次 Agent run 中组合真实 SEC
+companyfacts tool、request-scoped RAG filing evidence、bounded planner 和 provider
+final synthesis。它验证 facts 来源为 `sec_companyfacts`、RAG 返回 source refs，
+且最终 report synthesis 为 LLM。
+
+也可以显式切换到另外两个生产任务：
+
+```bash
+PROVIDER_TOOL_E2E_TASK_TYPE=business_driver_deep_dive \
+PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" \
+./scripts/verify-provider-tool-e2e.sh
+
+PROVIDER_TOOL_E2E_TASK_TYPE=cash_flow_capital_allocation \
+PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" \
+./scripts/verify-provider-tool-e2e.sh
+```
+
+三个 task 的 provider tool E2E 验收边界不同：
+
+- latest earnings：SEC companyfacts + RAG filing evidence + LLM final synthesis。
+- business driver：RAG filing evidence + evidence-bound business signals + LLM final synthesis。
+- cash flow：SEC companyfacts + RAG filing evidence + metric evidence + LLM final synthesis。
+
+该 gate 是目前最接近生产主链路的 live smoke；它不属于默认 CI gate，避免
+SEC/provider 网络波动、provider 成本和输出波动影响基础验证。Provider key 只能通过
+运行时环境注入，不能写入仓库、测试快照、日志 artifact 或文档。
 
 Release readiness dashboard artifact：
 
@@ -240,8 +264,8 @@ uv run python scripts/write_release_readiness_artifact.py \
 ```
 
 该 artifact 把 RAG hard gate、provider RAG sample gate、provider live planner
-gate 和 compose full E2E summary 统一成 frontend checklist。它是 release
-readiness 快照，不会替代各 gate 本身。
+gate、provider tool E2E gate 和 compose full E2E summary 统一成 frontend checklist。
+它是 release readiness 快照，不会替代各 gate 本身。
 
 ## Full Local Verification
 

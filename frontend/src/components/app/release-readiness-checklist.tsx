@@ -23,6 +23,11 @@ const featuredMetricKeysByGate: Record<string, string[]> = {
     "fallbackCount",
     "stopReason",
   ],
+  provider_tool_e2e_gate: [
+    "latestEarningsPath",
+    "businessDriverPath",
+    "cashFlowPath",
+  ],
   compose_full_e2e: ["services", "agentTaskType", "retrievalRecords"],
 };
 
