@@ -3,6 +3,9 @@ from typing import Any, cast
 from app.agents.coverage import check_coverage
 from app.agents.llm_gateway import LlmClient
 from app.agents.planner import PlannerDecisionType, plan_next_step
+from app.agents.report_synthesizer import (
+    synthesize_latest_earnings_report,
+)
 from app.agents.tool_registry import (
     ToolRegistry,
     default_tool_registry,
@@ -34,9 +37,13 @@ class DeterministicAgentWorkflow:
         self,
         registry: ToolRegistry | None = None,
         llm_client: LlmClient | None = None,
+        report_synthesis_client: LlmClient | None = None,
+        enable_report_synthesis: bool = False,
     ) -> None:
         self._registry = registry or default_tool_registry()
         self._llm_client = llm_client
+        self._report_synthesis_client = report_synthesis_client
+        self._enable_report_synthesis = enable_report_synthesis
 
     def run(self, request: AgentRequest) -> BoundedAgentResult:
         state = AgentState(
@@ -54,7 +61,11 @@ class DeterministicAgentWorkflow:
             self._registry,
             self._llm_client,
         )
-        final_report = _build_final_report(request, state)
+        final_report, state = _build_final_report_with_optional_synthesis(
+            request,
+            state,
+            self._synthesis_client(),
+        )
         status = (
             AgentRunStatus.DEGRADED
             if state.degraded_reasons or state.status == AgentRunStatus.DEGRADED
@@ -68,6 +79,11 @@ class DeterministicAgentWorkflow:
             degraded_reasons=state.degraded_reasons,
             final_report=final_report.model_dump(mode="json"),
         )
+
+    def _synthesis_client(self) -> LlmClient | None:
+        if not self._enable_report_synthesis:
+            return None
+        return self._report_synthesis_client or self._llm_client
 
 
 def _run_dynamic_deterministic_loop(
@@ -458,6 +474,24 @@ def _planned_tool_calls(request: AgentRequest) -> list[ToolCall]:
         )
         for index, (tool_name, tool_input, summary) in enumerate(specs)
     ]
+
+
+def _build_final_report_with_optional_synthesis(
+    request: AgentRequest,
+    state: AgentState,
+    llm_client: LlmClient | None,
+) -> tuple[EvidenceAwareReport, AgentState]:
+    if llm_client is None or request.task_type != ResearchTaskType.LATEST_EARNINGS_READOUT:
+        return _build_final_report(request, state), state
+    try:
+        return synthesize_latest_earnings_report(request, state, llm_client), state
+    except Exception as exc:
+        degraded_state = _append_degraded_event(
+            state,
+            f"Report synthesis failed; used deterministic fallback. {exc}",
+            degraded_reason=f"Report synthesis failed: {exc}",
+        )
+        return _build_final_report(request, degraded_state), degraded_state
 
 
 def _build_final_report(request: AgentRequest, state: AgentState) -> EvidenceAwareReport:

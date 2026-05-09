@@ -212,6 +212,129 @@ def test_agent_run_endpoint_builds_request_scoped_llm_planner_from_provider_conf
     assert "secret" not in response.text
 
 
+def test_agent_run_endpoint_uses_request_scoped_llm_for_latest_earnings_synthesis() -> None:
+    class PlanningAndSynthesisClient:
+        provider = LlmProvider.SILICONFLOW
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete_json(self, request):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            if self.calls == 1:
+                return StaticJsonLlmClient(
+                    {
+                        "decision": "call_tool",
+                        "summary": "Provider planner selected filing evidence.",
+                        "tool_name": "search_filing_sections",
+                        "tool_input": {
+                            "sections": ["MD&A"],
+                            "query": "services revenue demand",
+                        },
+                    },
+                    provider=self.provider,
+                ).complete_json(request)
+            if self.calls == 2:
+                return StaticJsonLlmClient(
+                    {
+                        "decision": "finalize",
+                        "summary": "Evidence is ready for synthesis.",
+                    },
+                    provider=self.provider,
+                ).complete_json(request)
+            return StaticJsonLlmClient(
+                {
+                    "topline_verdict": {
+                        "headline": "Provider synthesis produced an evidence-bound readout",
+                        "summary": "The final report was synthesized from cited filing evidence.",
+                        "verdict": "mixed",
+                    },
+                    "key_takeaways": [
+                        {
+                            "title": "Services evidence",
+                            "summary": "Services revenue is tied to the cited MD&A evidence.",
+                            "source_ids": ["run_api_provider_synthesis:filing:1"],
+                            "citation_status": "supported",
+                        }
+                    ],
+                    "financial_dashboard": {
+                        "metrics": [
+                            {
+                                "name": "Revenue",
+                                "value": "Evidence-backed",
+                                "interpretation": (
+                                    "Revenue context is grounded in the cited snippet."
+                                ),
+                                "source_ids": ["run_api_provider_synthesis:filing:1"],
+                                "citation_status": "supported",
+                            }
+                        ],
+                        "chart_focus": ["revenue"],
+                    },
+                    "driver_snapshot": [
+                        {
+                            "title": "Demand",
+                            "summary": "Demand is the cited driver for the readout.",
+                            "source_ids": ["run_api_provider_synthesis:filing:1"],
+                            "citation_status": "supported",
+                        }
+                    ],
+                    "risk_snapshot": [
+                        {
+                            "title": "Evidence scope",
+                            "summary": (
+                                "The report stays cautious because evidence is concentrated."
+                            ),
+                            "source_ids": ["run_api_provider_synthesis:filing:1"],
+                            "citation_status": "partial",
+                        }
+                    ],
+                    "claims": [
+                        {
+                            "text": "Services revenue evidence supports a mixed readout.",
+                            "source_ids": ["run_api_provider_synthesis:filing:1"],
+                            "citation_status": "supported",
+                        }
+                    ],
+                },
+                provider=self.provider,
+            ).complete_json(request)
+
+    created: list[PlanningAndSynthesisClient] = []
+
+    def factory(provider: LlmProvider, api_key: str) -> LlmClient:
+        assert provider == LlmProvider.SILICONFLOW
+        assert api_key == "secret"
+        client = PlanningAndSynthesisClient()
+        created.append(client)
+        return client
+
+    client = TestClient(create_app(llm_client_factory=factory))
+
+    response = client.post(
+        "/agent/runs",
+        json={
+            "run_id": "run_api_provider_synthesis",
+            "ticker": "aapl",
+            "task_type": "latest_earnings_readout",
+            "language": "en",
+            "llm_provider": "siliconflow",
+            "llm_model": "Pro/moonshotai/Kimi-K2.6",
+            "llm_api_key": "secret",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert created[0].calls == 3
+    assert payload["final_report"]["sections"]["synthesis"] == "llm"
+    assert payload["final_report"]["task_sections"]["topline_verdict"]["headline"] == (
+        "Provider synthesis produced an evidence-bound readout"
+    )
+    assert "secret" not in response.text
+
+
 def test_agent_run_endpoint_lets_live_planner_finalize_after_observing_first_tool() -> None:
     class SequenceLlmClient:
         provider = LlmProvider.OPENAI

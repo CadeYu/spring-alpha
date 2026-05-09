@@ -197,6 +197,17 @@ planner 可以通过统一 `complete_json` 边界进入 bounded loop，并检查
 保留 `planner_context`、tool execution、typed task sections 和 provider live
 planner artifact。它不属于默认 CI gate，避免 provider 成本、限流和输出波动影响基础验证。
 
+Provider report synthesis smoke gate，手动/optional live gate：
+
+```bash
+PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" ./scripts/verify-provider-report-synthesis.sh
+```
+
+该门禁使用 deterministic planner 固定取证路径，只让真实 provider 负责 final
+report synthesis。它验证最终 `latest_earnings_readout` report 标记为 LLM
+synthesis、包含 claim、且 claim 只能引用 Agent evidence memory 中已有的
+`source_id`。它不属于默认 CI gate，避免 provider 成本和输出波动影响基础验证。
+
 Release readiness dashboard artifact：
 
 ```bash

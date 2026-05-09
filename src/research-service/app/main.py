@@ -65,7 +65,10 @@ def _workflow_for_request_filings(
     if configured_workflow is not None:
         return configured_workflow
     if not request.filings:
-        return DeterministicAgentWorkflow(llm_client=llm_client)
+        return DeterministicAgentWorkflow(
+            llm_client=llm_client,
+            enable_report_synthesis=llm_client is not None,
+        )
 
     pipeline = build_production_rag_pipeline_from_env()
     for filing in request.filings:
@@ -81,6 +84,8 @@ def _workflow_for_request_filings(
     return DeterministicAgentWorkflow(
         registry=default_tool_registry(LlamaIndexResearchToolService(pipeline)),
         llm_client=llm_client,
+        report_synthesis_client=llm_client,
+        enable_report_synthesis=llm_client is not None,
     )
 
 

@@ -202,6 +202,9 @@ const agentContract = fs.readFileSync('src/research-service/app/contracts/agent.
 const workflow = fs.readFileSync('src/research-service/app/agents/deterministic_workflow.py', 'utf8');
 const livePlannerScript = fs.readFileSync('src/research-service/scripts/write_provider_live_planner_artifact.py', 'utf8');
 const livePlannerGate = fs.readFileSync('scripts/verify-provider-live-planner.sh', 'utf8');
+const reportSynthesis = fs.readFileSync('src/research-service/app/agents/report_synthesizer.py', 'utf8');
+const reportSynthesisScript = fs.readFileSync('src/research-service/scripts/write_provider_report_synthesis_artifact.py', 'utf8');
+const reportSynthesisGate = fs.readFileSync('scripts/verify-provider-report-synthesis.sh', 'utf8');
 const verifyDocs = fs.readFileSync('VERIFY.md', 'utf8');
 
 const requiredSnippets = [
@@ -212,7 +215,12 @@ const requiredSnippets = [
   [livePlannerScript, 'stage_1_provider_live_planner'],
   [livePlannerScript, 'OpenAiCompatibleLlmClient'],
   [livePlannerGate, 'write_provider_live_planner_artifact.py'],
+  [reportSynthesis, 'synthesize_latest_earnings_report'],
+  [reportSynthesis, 'Unknown source_id in synthesized report'],
+  [reportSynthesisScript, 'stage_1_provider_report_synthesis'],
+  [reportSynthesisGate, 'write_provider_report_synthesis_artifact.py'],
   [verifyDocs, './scripts/verify-provider-live-planner.sh'],
+  [verifyDocs, './scripts/verify-provider-report-synthesis.sh'],
 ];
 
 for (const [content, snippet] of requiredSnippets) {
