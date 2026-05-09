@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Callable
+from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from time import perf_counter, sleep
 from uuid import uuid4
@@ -13,6 +15,8 @@ from app.evals.baseline import (
     assert_rag_production_readiness,
     build_stage1_provider_mini_eval_dataset,
     build_stage1_provider_mini_eval_summary,
+    build_stage1_provider_sample_eval_dataset,
+    build_stage1_provider_trend_record,
     run_live_pipeline_eval,
 )
 from app.rag.llamaindex_pipeline import (
@@ -25,6 +29,11 @@ from app.rag.llamaindex_pipeline import (
 
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
 DEFAULT_ESTIMATED_COST_PER_1K_CALLS = 0.0
+
+
+class ProviderEvalSuite(StrEnum):
+    MINI = "mini"
+    SAMPLE = "sample"
 
 
 class RetryingCountingEmbeddingBackend:
@@ -97,8 +106,9 @@ def main() -> int:
         )
 
     started_at = perf_counter()
+    suite = _suite_from_env()
     artifact = run_live_pipeline_eval(
-        build_stage1_provider_mini_eval_dataset(),
+        _dataset_for_suite(suite),
         strategy=RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL,
         pipeline_factory=pipeline_factory,
     )
@@ -124,10 +134,45 @@ def main() -> int:
         estimated_cost_usd=_estimated_cost_usd(embedding_backend.calls),
         elapsed_ms=elapsed_ms,
     )
+    if suite == ProviderEvalSuite.SAMPLE:
+        summary = summary.model_copy(update={"stage": _stage_for_suite(suite)})
     target_path.parent.mkdir(parents=True, exist_ok=True)
     target_path.write_text(summary.model_dump_json(by_alias=True, indent=2), encoding="utf-8")
+    trend_path = os.getenv("RAG_PROVIDER_EVAL_TREND_PATH")
+    if trend_path:
+        trend = build_stage1_provider_trend_record(
+            summary,
+            run_id=f"{summary.stage}:{uuid4().hex}",
+            recorded_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        )
+        _append_trend_record(Path(trend_path), trend.model_dump(mode="json", by_alias=True))
     print(target_path)
     return 0
+
+
+def _suite_from_env() -> ProviderEvalSuite:
+    return ProviderEvalSuite(os.getenv("RAG_PROVIDER_EVAL_SUITE", ProviderEvalSuite.MINI.value))
+
+
+def _dataset_for_suite(suite: ProviderEvalSuite):
+    if suite == ProviderEvalSuite.SAMPLE:
+        return build_stage1_provider_sample_eval_dataset()
+    return build_stage1_provider_mini_eval_dataset()
+
+
+def _stage_for_suite(suite: ProviderEvalSuite) -> str:
+    if suite == ProviderEvalSuite.SAMPLE:
+        return "stage_1_provider_sample_rag"
+    return "stage_1_provider_mini_rag"
+
+
+def _append_trend_record(target_path: Path, payload: dict[str, object]) -> None:
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    with target_path.open("a", encoding="utf-8") as trend_file:
+        import json
+
+        trend_file.write(json.dumps(payload, sort_keys=True))
+        trend_file.write("\n")
 
 
 def _estimated_cost_usd(embedding_calls: int) -> float:

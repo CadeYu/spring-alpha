@@ -169,9 +169,12 @@ const requiredSnippets = [
   [evalModule, 'class RagProductionReadinessThresholds'],
   [evalModule, 'def assert_rag_production_readiness'],
   [evalModule, 'build_stage1_provider_mini_eval_dataset'],
+  [evalModule, 'build_stage1_provider_sample_eval_dataset'],
+  [evalModule, 'build_stage1_provider_trend_record'],
   [verifyDocs, './scripts/verify-compose-full-e2e.sh'],
   [verifyDocs, '../../scripts/verify-pgvector-rag-eval.sh'],
   [verifyDocs, './scripts/verify-provider-mini-rag-eval.sh'],
+  [verifyDocs, 'RAG_PROVIDER_EVAL_SUITE=sample'],
 ];
 
 for (const [content, snippet] of requiredSnippets) {

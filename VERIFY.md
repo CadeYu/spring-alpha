@@ -172,6 +172,19 @@ cases，只验证 primary hybrid retrieval，并记录 retrieval quality、elaps
 time、embedding call count 和 estimated cost。它不属于默认 CI gate，避免外部
 provider 成本、限流和可用性影响基础验证。
 
+Provider-backed sample RAG eval gate，手动 release confidence gate：
+
+```bash
+RAG_PROVIDER_EVAL_SUITE=sample \
+RAG_PROVIDER_EVAL_TREND_PATH="${TMPDIR:-/tmp}/spring-alpha-rag-provider-trends.jsonl" \
+GEMINI_API_KEY="$GEMINI_API_KEY" \
+./scripts/verify-provider-mini-rag-eval.sh
+```
+
+sample suite 会跑 18-24 个分层 cases，覆盖 ticker、task type 和 SEC section
+类型，并可通过 `RAG_PROVIDER_EVAL_TREND_PATH` 追加 JSONL trend record。它仍然是
+手动 gate，不属于默认 CI。
+
 Provider live planner smoke gate，手动/optional live gate：
 
 ```bash

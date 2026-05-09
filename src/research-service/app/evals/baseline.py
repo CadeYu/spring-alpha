@@ -180,6 +180,27 @@ class RagProviderMiniEvalSummary(BaseModel):
     limitations: list[str]
 
 
+class RagProviderTrendRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_version: str = Field(default="0.1.0", alias="schemaVersion")
+    stage: str
+    run_id: str = Field(alias="runId")
+    recorded_at: str = Field(alias="recordedAt")
+    dataset_name: str = Field(alias="datasetName")
+    provider: str
+    embedding_model: str = Field(alias="embeddingModel")
+    vector_store: str = Field(alias="vectorStore")
+    baseline_label: str = Field(alias="baselineLabel")
+    case_count: int = Field(alias="caseCount")
+    embedding_calls: int = Field(alias="embeddingCalls")
+    embedding_attempts: int = Field(alias="embeddingAttempts")
+    estimated_cost_usd: float = Field(alias="estimatedCostUsd")
+    elapsed_ms: int = Field(alias="elapsedMs")
+    metrics: dict[str, float | int]
+    failed_case_ids: list[str] = Field(alias="failedCaseIds")
+
+
 def build_stage0_eval_dataset() -> RagEvalDataset:
     return RagEvalDataset(
         name="stage0_mvp_retrieval_baseline",
@@ -239,6 +260,41 @@ def build_stage1_provider_mini_eval_dataset() -> RagEvalDataset:
     selected_cases = [case for case in hard_dataset.cases if case.case_id in selected_case_ids]
     return RagEvalDataset(
         name="stage1_provider_mini_rag_eval",
+        cases=selected_cases,
+    )
+
+
+def build_stage1_provider_sample_eval_dataset() -> RagEvalDataset:
+    live_dataset = build_live_pipeline_eval_dataset()
+    selected_case_ids = {
+        "aapl_revenue_margin_drivers",
+        "aapl_services_business_driver",
+        "aapl_cash_flow_buybacks",
+        "aapl_risk_supply_regulation",
+        "msft_cloud_growth",
+        "msft_segment_azure",
+        "msft_capex_ai_infrastructure",
+        "msft_cyber_capacity_risk",
+        "tsla_auto_revenue_pricing",
+        "tsla_energy_storage_driver",
+        "tsla_capex_manufacturing",
+        "tsla_pricing_demand_risk",
+        "jpm_net_interest_income",
+        "jpm_consumer_banking_driver",
+        "jpm_liquidity_capital_actions",
+        "jpm_credit_market_risk",
+        "nvda_data_center_revenue",
+        "nvda_segment_ai_infrastructure",
+        "nvda_cash_flow_inventory_buybacks",
+        "nvda_export_supply_risk",
+        "amzn_sales_aws_advertising",
+        "amzn_aws_driver",
+        "amzn_capex_infrastructure",
+        "amzn_regulatory_fulfillment_risk",
+    }
+    selected_cases = [case for case in live_dataset.cases if case.case_id in selected_case_ids]
+    return RagEvalDataset(
+        name="stage1_provider_sample_rag_eval",
         cases=selected_cases,
     )
 
@@ -446,6 +502,38 @@ def build_stage1_provider_mini_eval_summary(
             "Estimated embedding cost is configured by the runner, not provider billing.",
             "The mini suite is representative and intentionally smaller than the hard suite.",
         ],
+    )
+
+
+def build_stage1_provider_trend_record(
+    summary: RagProviderMiniEvalSummary,
+    *,
+    run_id: str,
+    recorded_at: str,
+) -> RagProviderTrendRecord:
+    failed_case_ids = [
+        case.case_id
+        for case in summary.cases
+        if case.empty_retrieval_rate > 0.0
+        or case.bad_section_leak_rate > 0.0
+        or case.top_1_section_correctness < 1.0
+    ]
+    return RagProviderTrendRecord(
+        stage=summary.stage,
+        runId=run_id,
+        recordedAt=recorded_at,
+        datasetName=summary.dataset_name,
+        provider=summary.provider,
+        embeddingModel=summary.embedding_model,
+        vectorStore=summary.vector_store,
+        baselineLabel=summary.baseline_label,
+        caseCount=summary.case_count,
+        embeddingCalls=summary.embedding_calls,
+        embeddingAttempts=summary.embedding_attempts,
+        estimatedCostUsd=summary.estimated_cost_usd,
+        elapsedMs=summary.elapsed_ms,
+        metrics=summary.metrics,
+        failedCaseIds=failed_case_ids,
     )
 
 

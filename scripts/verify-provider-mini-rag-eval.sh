@@ -10,6 +10,7 @@ POSTGRES_PORT="${RAG_PROVIDER_MINI_EVAL_PORT:-55435}"
 IMAGE="${RAG_PGVECTOR_TEST_IMAGE:-pgvector/pgvector:pg16}"
 DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${POSTGRES_DB}"
 ARTIFACT_PATH="${RAG_PROVIDER_MINI_EVAL_ARTIFACT:-${TMPDIR:-/tmp}/spring-alpha-provider-mini-rag.json}"
+EVAL_SUITE="${RAG_PROVIDER_EVAL_SUITE:-mini}"
 STARTED_CONTAINER=""
 
 cleanup() {
@@ -68,23 +69,27 @@ RAG_PGVECTOR_TEST_DATABASE_URL="${DATABASE_URL}" \
 PYTHONPATH=. \
 uv run python scripts/write_provider_mini_eval_artifact.py "${ARTIFACT_PATH}" >/dev/null
 
-python - "${ARTIFACT_PATH}" <<'PY'
+python - "${ARTIFACT_PATH}" "${EVAL_SUITE}" <<'PY'
 import json
 import sys
 
 path = sys.argv[1]
+suite = sys.argv[2]
 with open(path, encoding="utf-8") as artifact_file:
     artifact = json.load(artifact_file)
 
 metrics = artifact["metrics"]
-if artifact["stage"] != "stage_1_provider_mini_rag":
+expected_stage = "stage_1_provider_sample_rag" if suite == "sample" else "stage_1_provider_mini_rag"
+min_cases = 18 if suite == "sample" else 10
+max_cases = 24 if suite == "sample" else 15
+if artifact["stage"] != expected_stage:
     raise SystemExit("unexpected provider mini eval stage")
 if artifact["provider"] != "gemini":
     raise SystemExit("unexpected provider mini eval provider")
 if artifact["vectorStore"] != "pgvector":
     raise SystemExit("unexpected provider mini eval vector store")
-if not 10 <= artifact["caseCount"] <= 15:
-    raise SystemExit("provider mini eval must run between 10 and 15 cases")
+if not min_cases <= artifact["caseCount"] <= max_cases:
+    raise SystemExit(f"provider eval must run between {min_cases} and {max_cases} cases")
 if artifact["embeddingCalls"] <= 0:
     raise SystemExit("provider mini eval did not record embedding calls")
 if artifact["embeddingAttempts"] < artifact["embeddingCalls"]:
@@ -97,4 +102,4 @@ if metrics.get("expectedTermHitRate", 0.0) < 0.8:
     raise SystemExit("provider mini eval expected term hit rate is below threshold")
 PY
 
-echo "Provider-backed mini RAG eval verification passed: ${ARTIFACT_PATH}"
+echo "Provider-backed ${EVAL_SUITE} RAG eval verification passed: ${ARTIFACT_PATH}"

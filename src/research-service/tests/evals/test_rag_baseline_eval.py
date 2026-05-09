@@ -16,6 +16,8 @@ from app.evals.baseline import (
     build_stage1_hard_primary_eval_artifact,
     build_stage1_provider_mini_eval_dataset,
     build_stage1_provider_mini_eval_summary,
+    build_stage1_provider_sample_eval_dataset,
+    build_stage1_provider_trend_record,
     load_live_rag_filing_corpus,
     run_live_pipeline_eval,
     run_live_pipeline_experiment_suite,
@@ -168,6 +170,36 @@ def test_provider_mini_eval_dataset_selects_representative_hard_cases() -> None:
     )
 
 
+def test_provider_sample_eval_dataset_expands_to_stratified_release_gate_cases() -> None:
+    dataset = build_stage1_provider_sample_eval_dataset()
+
+    assert dataset.name == "stage1_provider_sample_rag_eval"
+    assert 18 <= len(dataset.cases) <= 24
+    assert {case.ticker for case in dataset.cases} == {
+        "AAPL",
+        "MSFT",
+        "TSLA",
+        "JPM",
+        "NVDA",
+        "AMZN",
+    }
+    assert {case.task_type.value for case in dataset.cases} == {
+        "latest_earnings_readout",
+        "business_driver_deep_dive",
+        "cash_flow_capital_allocation",
+    }
+    required_sections = {
+        "MD&A",
+        "Segment Information",
+        "Liquidity and Capital Resources",
+        "Risk Factors",
+    }
+    assert required_sections.issubset(
+        {section for case in dataset.cases for section in case.expected_sections}
+    )
+    assert len({case.case_id for case in dataset.cases}) == len(dataset.cases)
+
+
 def test_provider_mini_eval_summary_records_provider_latency_and_cost() -> None:
     artifact = run_live_pipeline_eval(
         build_stage1_provider_mini_eval_dataset(),
@@ -196,6 +228,39 @@ def test_provider_mini_eval_summary_records_provider_latency_and_cost() -> None:
     assert payload["elapsedMs"] == 1234
     assert payload["metrics"]["emptyRetrievalRate"] == 0.0
     assert len(payload["cases"]) == payload["caseCount"]
+
+
+def test_provider_trend_record_preserves_quality_and_failure_context() -> None:
+    artifact = run_live_pipeline_eval(
+        build_stage1_provider_mini_eval_dataset(),
+        strategy=RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL,
+    )
+    summary = build_stage1_provider_mini_eval_summary(
+        artifact,
+        provider="gemini",
+        embedding_model="gemini-embedding-001",
+        vector_store="pgvector",
+        embedding_calls=42,
+        embedding_attempts=45,
+        estimated_cost_usd=0.0123,
+        elapsed_ms=1234,
+    )
+
+    trend = build_stage1_provider_trend_record(
+        summary,
+        run_id="provider-rag-2026-05-09",
+        recorded_at="2026-05-09T00:00:00Z",
+    )
+    payload = trend.model_dump(mode="json", by_alias=True)
+
+    assert payload["schemaVersion"] == "0.1.0"
+    assert payload["stage"] == "stage_1_provider_mini_rag"
+    assert payload["runId"] == "provider-rag-2026-05-09"
+    assert payload["recordedAt"] == "2026-05-09T00:00:00Z"
+    assert payload["provider"] == "gemini"
+    assert payload["caseCount"] == summary.case_count
+    assert payload["metrics"]["emptyRetrievalRate"] == 0.0
+    assert payload["failedCaseIds"] == []
 
 
 def test_live_pipeline_experiment_suite_compares_retrieval_strategies() -> None:
