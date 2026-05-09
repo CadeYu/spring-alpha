@@ -9,9 +9,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.math.BigDecimal;
 
 /**
- * 现金流量表 (Cash Flow Statement) - FMP API 映射类
+ * 现金流量表 (Cash Flow Statement)
  * <p>
- * 对应 FMP API 的 `/cash-flow-statement` 端点。
+ * 用于承载 SEC companyfacts 和 market enrichment 标准化后的现金流字段。
  * 包含：Operating Cash Flow, Capital Expenditure (Capex), Free Cash Flow 等。
  */
 @Data

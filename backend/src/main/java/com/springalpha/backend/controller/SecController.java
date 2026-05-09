@@ -63,8 +63,8 @@ public class SecController {
         ResearchTaskType researchTaskType = parseResearchTaskType(taskType);
         log.info("REST request to analyze stock: {}, lang: {}, model: {}, taskType: {}",
                 ticker, lang, model, researchTaskType.requestValue());
-        // The analysis flow still contains blocking FMP access, so move the entire
-        // stream off the Netty event loop.
+        // The analysis flow calls external SEC/Yahoo/Python Agent services, so move
+        // the stream off the Netty event loop.
         return Flux.defer(() -> analysisService.analyzeStock(ticker, lang, model, resolveProviderApiKey(headers), researchTaskType))
                 .subscribeOn(Schedulers.boundedElastic());
     }

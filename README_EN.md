@@ -42,7 +42,7 @@ Unlike traditional "chatbots", Spring Alpha is a **complete full-stack AI financ
 *   **One-Click PDF Export**: Integrated with `@react-pdf/renderer`, supporting the generation of "Goldman Sachs level" exquisite PDF reports in seconds.
 
 ### 🧠 Smart RAG & Anti-Hallucination
-*   **Hybrid Fact Engine**: Hard financial metrics (Revenue, Net Income, etc.) are directly pulled from the FMP API—LLMs are never allowed to guess numbers. For deep analysis, text is retrieved real-time from SEC 10-K filings using RAG.
+*   **Hybrid Fact Engine**: Hard financial metrics (Revenue, Net Income, etc.) are grounded in SEC companyfacts and enriched with Yahoo market data—LLMs are never allowed to guess numbers. For deep analysis, text is retrieved real-time from SEC filings using RAG.
 *   **Vector Retrieval**: Integrated with **PGVector** and local/cloud embeddings to accurately extract *MD&A* (Management's Discussion and Analysis) and *Risk Factors* sections.
 *   **Cross-Verification**: The frontend clearly identifies the verification status of every citation (✅ Verified / ❌ Hallucination), building 100% trustworthy research reports.
 
@@ -59,8 +59,8 @@ graph TD
     NextJS -->|SSE Stream| SpringBoot[🍃 Spring Boot Backend]
     
     subgraph Data Layer
-        SpringBoot <-->|Hard Data| FMP[📈 FMP API]
-        SpringBoot <-->|Raw HTML| SEC[🏛️ SEC EDGAR]
+        SpringBoot <-->|Company Facts| SEC[🏛️ SEC EDGAR]
+        SpringBoot <-->|Market Enrichment| Yahoo[📈 Yahoo Finance]
     end
     
     subgraph RAG & Database

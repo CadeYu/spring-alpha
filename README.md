@@ -249,7 +249,7 @@ npm run dev
 
 ```bash
 cd backend
-mvn -Dtest=SecControllerTest,SecServiceTest,FinancialAnalysisServiceTest,BaseAiStrategyTest,AnalysisReportValidatorTest,FmpFinancialDataServiceTest test
+mvn -Dtest=SecControllerTest,SecServiceTest,FinancialAnalysisServiceTest,AnalysisReportValidatorTest,HybridFinancialDataServiceTest,YahooFinanceMarketDataServiceTest test
 
 cd ../frontend
 npm run lint

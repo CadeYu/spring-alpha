@@ -48,15 +48,6 @@ app:
     base-url: ${RESEARCH_SERVICE_BASE_URL:http://127.0.0.1:8090}
     timeout: ${RESEARCH_SERVICE_TIMEOUT:PT75S}
   
-  # Financial Modeling Prep API Configuration (experimental only; no longer on the main path)
-  fmp:
-    api-key: ${FMP_API_KEY:}
-    api-keys: ${FMP_API_KEYS:}
-    base-url: https://financialmodelingprep.com/stable
-    cache:
-      facts-ttl: PT6H
-      history-ttl: PT24H
-
   yfinance:
     python-executable: ${PYTHON_BIN:python3}
     cache-ttl: PT6H

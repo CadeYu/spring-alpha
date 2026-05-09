@@ -9,9 +9,9 @@ import java.math.BigDecimal;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
- * 资产负债表 (Balance Sheet) - FMP API 映射类
+ * 资产负债表 (Balance Sheet)
  * <p>
- * 对应 FMP API 的 `/balance-sheet-statement` 端点。
+ * 用于承载 SEC companyfacts 和 market enrichment 标准化后的资产负债表字段。
  * 包含：Total Assets, Total Liabilities, Total Equity, Cash, Debt 等。
  */
 @Data

@@ -915,7 +915,7 @@ describe("Home page", () => {
     expect(screen.queryByText(/Analysis Report/i)).not.toBeInTheDocument();
   });
 
-  it("surfaces backend quota errors instead of a generic internal server error", async () => {
+  it("surfaces backend dependency errors instead of a generic internal server error", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -927,11 +927,12 @@ describe("Home page", () => {
 
       return new Response(
         JSON.stringify({
-          error:
-            "FMP daily quota exceeded. Configure additional API keys or wait for quota reset.",
+          error: "SEC company facts are temporarily unavailable.",
+          code: "SEC_DATA_UNAVAILABLE",
+          source: "sec",
         }),
         {
-          status: 429,
+          status: 503,
           headers: { "Content-Type": "application/json" },
         },
       );
@@ -943,7 +944,7 @@ describe("Home page", () => {
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
     expect(
-      await screen.findByText(/FMP daily quota exceeded/i),
+      await screen.findByText(/SEC company facts are temporarily unavailable/i),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/internal server error/i),

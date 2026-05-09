@@ -22,7 +22,17 @@ class NoJavaAnalysisLegacyTest {
                 PROJECT_ROOT.resolve("src/main/java/com/springalpha/backend/service/profile"),
                 PROJECT_ROOT.resolve("src/test/java/com/springalpha/backend/service/profile"),
                 PROJECT_ROOT.resolve("src/main/java/com/springalpha/backend/service/signals"),
-                PROJECT_ROOT.resolve("src/test/java/com/springalpha/backend/service/signals"));
+                PROJECT_ROOT.resolve("src/test/java/com/springalpha/backend/service/signals"),
+                PROJECT_ROOT.resolve("src/main/java/com/springalpha/backend/financial/service/%sFinancialDataService.java"
+                        .formatted(forbiddenProviderPrefix())),
+                PROJECT_ROOT.resolve("src/test/java/com/springalpha/backend/financial/service/%sFinancialDataServiceTest.java"
+                        .formatted(forbiddenProviderPrefix())),
+                PROJECT_ROOT.resolve("src/main/java/com/springalpha/backend/financial/service/%sApiException.java"
+                        .formatted(forbiddenProviderPrefix())),
+                PROJECT_ROOT.resolve("src/main/java/com/springalpha/backend/financial/service/%sQuotaExceededException.java"
+                        .formatted(forbiddenProviderPrefix())),
+                PROJECT_ROOT.resolve("src/main/java/com/springalpha/backend/financial/service/%sSupplementalData.java"
+                        .formatted(forbiddenProviderPrefix())));
 
         for (Path forbiddenPath : forbiddenPaths) {
             assertFalse(Files.exists(forbiddenPath), () -> "Forbidden Java analysis path remains: " + forbiddenPath);
@@ -38,7 +48,14 @@ class NoJavaAnalysisLegacyTest {
                 "CompanyProfileSnapshot",
                 "CompanyProfileExtractor",
                 "BusinessSignalSnapshot",
-                "BusinessSignalExtractor");
+                "BusinessSignalExtractor",
+                forbiddenProviderPrefix() + "FinancialDataService",
+                forbiddenProviderPrefix() + "ApiException",
+                forbiddenProviderPrefix() + "QuotaExceededException",
+                forbiddenProviderPrefix().toUpperCase() + "_QUOTA_EXCEEDED",
+                forbiddenProviderDomain(),
+                forbiddenProviderPrefix().toUpperCase() + "_API_KEY",
+                forbiddenProviderPrefix().toUpperCase() + "_API_KEYS");
 
         try (Stream<Path> files = Files.walk(PROJECT_ROOT)) {
             List<Path> scannedFiles = files
@@ -56,5 +73,13 @@ class NoJavaAnalysisLegacyTest {
                 }
             }
         }
+    }
+
+    private String forbiddenProviderPrefix() {
+        return "F" + "mp";
+    }
+
+    private String forbiddenProviderDomain() {
+        return "financial" + "modeling" + "prep.com";
     }
 }

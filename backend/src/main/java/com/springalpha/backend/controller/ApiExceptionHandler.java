@@ -1,6 +1,5 @@
 package com.springalpha.backend.controller;
 
-import com.springalpha.backend.financial.service.FmpQuotaExceededException;
 import com.springalpha.backend.financial.service.UnsupportedTickerCategoryException;
 import com.springalpha.backend.service.provider.ProviderAuthenticationException;
 import com.springalpha.backend.service.research.ResearchServiceUnavailableException;
@@ -13,15 +12,6 @@ import java.util.Map;
 
 @ControllerAdvice
 public class ApiExceptionHandler {
-
-    @ExceptionHandler(FmpQuotaExceededException.class)
-    public ResponseEntity<Map<String, Object>> handleFmpQuotaExceeded(FmpQuotaExceededException exception) {
-        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                .body(Map.of(
-                        "error", exception.getMessage(),
-                        "code", "FMP_QUOTA_EXCEEDED",
-                        "source", "fmp"));
-    }
 
     @ExceptionHandler(ProviderAuthenticationException.class)
     public ResponseEntity<Map<String, Object>> handleProviderAuthentication(ProviderAuthenticationException exception) {

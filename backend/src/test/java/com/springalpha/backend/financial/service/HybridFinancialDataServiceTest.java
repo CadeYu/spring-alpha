@@ -59,7 +59,7 @@ class HybridFinancialDataServiceTest {
                         new BigDecimal("3100000000"),
                         new BigDecimal("5600000000"),
                         new BigDecimal("80000000"))),
-                "Supplemental FMP data unavailable for: valuation",
+                "Supplemental market data unavailable for: valuation",
                 null));
 
         HybridFinancialDataService service = new HybridFinancialDataService(

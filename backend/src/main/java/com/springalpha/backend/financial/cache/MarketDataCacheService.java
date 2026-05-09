@@ -18,7 +18,7 @@ import java.util.Optional;
 public class MarketDataCacheService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketDataCacheService.class);
-    private static final String DEFAULT_SOURCE = "fmp";
+    private static final String DEFAULT_SOURCE = "sec-yahoo";
 
     private final MarketDataCacheRepository repository;
     private final ObjectMapper objectMapper;
