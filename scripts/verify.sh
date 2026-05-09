@@ -160,7 +160,11 @@ node - <<'NODE'
 const fs = require('fs');
 
 const evalScript = fs.readFileSync('src/research-service/scripts/write_pgvector_eval_artifact.py', 'utf8');
+const releaseScript = fs.readFileSync('src/research-service/scripts/write_release_readiness_artifact.py', 'utf8');
 const evalModule = fs.readFileSync('src/research-service/app/evals/baseline.py', 'utf8');
+const readinessLib = fs.readFileSync('frontend/src/lib/releaseReadiness.ts', 'utf8');
+const readinessComponent = fs.readFileSync('frontend/src/components/app/release-readiness-checklist.tsx', 'utf8');
+const readinessFixture = fs.readFileSync('frontend/src/data/release-readiness.json', 'utf8');
 const verifyDocs = fs.readFileSync('VERIFY.md', 'utf8');
 
 const requiredSnippets = [
@@ -171,10 +175,16 @@ const requiredSnippets = [
   [evalModule, 'build_stage1_provider_mini_eval_dataset'],
   [evalModule, 'build_stage1_provider_sample_eval_dataset'],
   [evalModule, 'build_stage1_provider_trend_record'],
+  [evalModule, 'build_release_readiness_artifact'],
+  [releaseScript, 'build_release_readiness_artifact'],
+  [readinessLib, 'RELEASE_READINESS_ARTIFACT'],
+  [readinessComponent, 'Release Readiness'],
+  [readinessFixture, 'provider_rag_sample_gate'],
   [verifyDocs, './scripts/verify-compose-full-e2e.sh'],
   [verifyDocs, '../../scripts/verify-pgvector-rag-eval.sh'],
   [verifyDocs, './scripts/verify-provider-mini-rag-eval.sh'],
   [verifyDocs, 'RAG_PROVIDER_EVAL_SUITE=sample'],
+  [verifyDocs, 'write_release_readiness_artifact.py'],
 ];
 
 for (const [content, snippet] of requiredSnippets) {

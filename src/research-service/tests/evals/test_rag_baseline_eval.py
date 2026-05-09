@@ -9,6 +9,7 @@ from app.evals.baseline import (
     assert_rag_production_readiness,
     build_hard_live_pipeline_eval_dataset,
     build_live_pipeline_eval_dataset,
+    build_release_readiness_artifact,
     build_stage0_eval_dataset,
     build_stage1_hard_dashboard_artifact,
     build_stage1_hard_dashboard_artifact_from_suite,
@@ -261,6 +262,65 @@ def test_provider_trend_record_preserves_quality_and_failure_context() -> None:
     assert payload["caseCount"] == summary.case_count
     assert payload["metrics"]["emptyRetrievalRate"] == 0.0
     assert payload["failedCaseIds"] == []
+
+
+def test_release_readiness_artifact_combines_production_gate_summaries() -> None:
+    rag_artifact = build_stage1_hard_dashboard_artifact()
+    provider_summary = build_stage1_provider_mini_eval_summary(
+        run_live_pipeline_eval(
+            build_stage1_provider_sample_eval_dataset(),
+            strategy=RetrievalExperimentStrategy.HYBRID_SEMANTIC_LEXICAL,
+        ),
+        provider="gemini",
+        embedding_model="gemini-embedding-001",
+        vector_store="pgvector",
+        embedding_calls=48,
+        embedding_attempts=48,
+        estimated_cost_usd=0.0,
+        elapsed_ms=54946,
+    ).model_copy(update={"stage": "stage_1_provider_sample_rag"})
+    planner_payload = {
+        "stage": "stage_1_provider_live_planner",
+        "provider": "siliconflow",
+        "model": "Qwen/Qwen2.5-7B-Instruct",
+        "status": "degraded",
+        "providerDecisionCount": 2,
+        "fallbackCount": 2,
+        "stopReason": "coverage_stop",
+        "toolNames": ["get_company_facts", "search_filing_sections", "verify_citations"],
+        "elapsedMs": 10371,
+        "degradedReasons": [
+            "Planner repeated tool get_company_facts before coverage was sufficient."
+        ],
+    }
+    compose_payload = {
+        "stage": "compose_full_e2e",
+        "status": "passed",
+        "services": ["frontend", "backend", "research-service", "pgvector"],
+        "agentTaskType": "latest_earnings_readout",
+        "retrievalRecords": 2,
+        "elapsedMs": 120000,
+    }
+
+    release = build_release_readiness_artifact(
+        rag_hard=rag_artifact,
+        provider_rag=provider_summary,
+        provider_planner=planner_payload,
+        compose_full_e2e=compose_payload,
+    )
+    payload = release.model_dump(mode="json", by_alias=True)
+
+    assert payload["stage"] == "release_readiness"
+    assert payload["overallStatus"] == "passed"
+    assert [gate["id"] for gate in payload["gates"]] == [
+        "rag_hard_gate",
+        "provider_rag_sample_gate",
+        "provider_live_planner_gate",
+        "compose_full_e2e",
+    ]
+    assert payload["gates"][1]["metrics"]["caseCount"] == 24
+    assert payload["gates"][2]["metrics"]["providerDecisionCount"] == 2
+    assert payload["gates"][3]["metrics"]["retrievalRecords"] == 2
 
 
 def test_live_pipeline_experiment_suite_compares_retrieval_strategies() -> None:

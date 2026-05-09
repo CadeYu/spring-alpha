@@ -201,6 +201,27 @@ class RagProviderTrendRecord(BaseModel):
     failed_case_ids: list[str] = Field(alias="failedCaseIds")
 
 
+class ReleaseReadinessGate(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str
+    label: str
+    status: str
+    summary: str
+    metrics: dict[str, float | int | str | list[str]]
+    details: list[str] = Field(default_factory=list)
+
+
+class ReleaseReadinessArtifact(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_version: str = Field(default="0.1.0", alias="schemaVersion")
+    stage: str = "release_readiness"
+    overall_status: str = Field(alias="overallStatus")
+    gates: list[ReleaseReadinessGate]
+    limitations: list[str]
+
+
 def build_stage0_eval_dataset() -> RagEvalDataset:
     return RagEvalDataset(
         name="stage0_mvp_retrieval_baseline",
@@ -534,6 +555,129 @@ def build_stage1_provider_trend_record(
         elapsedMs=summary.elapsed_ms,
         metrics=summary.metrics,
         failedCaseIds=failed_case_ids,
+    )
+
+
+def build_release_readiness_artifact(
+    *,
+    rag_hard: RagDashboardArtifact,
+    provider_rag: RagProviderMiniEvalSummary,
+    provider_planner: dict[str, Any],
+    compose_full_e2e: dict[str, Any],
+) -> ReleaseReadinessArtifact:
+    gates = [
+        _rag_hard_gate(rag_hard),
+        _provider_rag_gate(provider_rag),
+        _provider_planner_gate(provider_planner),
+        _compose_full_e2e_gate(compose_full_e2e),
+    ]
+    overall_status = "passed" if all(gate.status == "passed" for gate in gates) else "attention"
+    return ReleaseReadinessArtifact(
+        overallStatus=overall_status,
+        gates=gates,
+        limitations=[
+            "Readiness artifact summarizes latest generated gate outputs, not a live service API.",
+            "Provider-backed gates remain manual because external providers can be rate-limited.",
+            "Compose full E2E is represented by its verification summary, not full container logs.",
+        ],
+    )
+
+
+def _rag_hard_gate(artifact: RagDashboardArtifact) -> ReleaseReadinessGate:
+    metrics_by_key = {metric.key: metric.value for metric in artifact.metrics}
+    passed = (
+        metrics_by_key.get("expectedTermHitRate") == 1.0
+        and metrics_by_key.get("expectedSectionHitRate") == 1.0
+        and metrics_by_key.get("top1SectionCorrectness") == 1.0
+        and metrics_by_key.get("emptyRetrievalRate") == 0.0
+        and metrics_by_key.get("badSectionLeakRate") == 0.0
+    )
+    return ReleaseReadinessGate(
+        id="rag_hard_gate",
+        label="RAG hard retrieval gate",
+        status="passed" if passed else "attention",
+        summary=f"{artifact.dataset_name} / {artifact.baseline_label}",
+        metrics={
+            "expectedTermHitRate": metrics_by_key.get("expectedTermHitRate", 0.0),
+            "expectedSectionHitRate": metrics_by_key.get("expectedSectionHitRate", 0.0),
+            "top1SectionCorrectness": metrics_by_key.get("top1SectionCorrectness", 0.0),
+            "emptyRetrievalRate": metrics_by_key.get("emptyRetrievalRate", 1.0),
+            "badSectionLeakRate": metrics_by_key.get("badSectionLeakRate", 1.0),
+        },
+        details=artifact.limitations,
+    )
+
+
+def _provider_rag_gate(summary: RagProviderMiniEvalSummary) -> ReleaseReadinessGate:
+    metrics = summary.metrics
+    passed = (
+        metrics.get("expectedSectionHitRate") == 1.0
+        and metrics.get("expectedTermHitRate", 0.0) >= 0.8
+        and metrics.get("top1SectionCorrectness") == 1.0
+        and metrics.get("emptyRetrievalRate") == 0.0
+        and metrics.get("badSectionLeakRate") == 0.0
+    )
+    return ReleaseReadinessGate(
+        id="provider_rag_sample_gate",
+        label="Provider RAG sample gate",
+        status="passed" if passed else "attention",
+        summary=f"{summary.provider} {summary.embedding_model} on {summary.vector_store}",
+        metrics={
+            "caseCount": summary.case_count,
+            "embeddingCalls": summary.embedding_calls,
+            "embeddingAttempts": summary.embedding_attempts,
+            "estimatedCostUsd": summary.estimated_cost_usd,
+            "elapsedMs": summary.elapsed_ms,
+            "expectedTermHitRate": float(metrics.get("expectedTermHitRate", 0.0)),
+            "emptyRetrievalRate": float(metrics.get("emptyRetrievalRate", 1.0)),
+            "badSectionLeakRate": float(metrics.get("badSectionLeakRate", 1.0)),
+        },
+        details=summary.limitations,
+    )
+
+
+def _provider_planner_gate(payload: dict[str, Any]) -> ReleaseReadinessGate:
+    stop_reason = str(payload.get("stopReason", "unknown"))
+    tool_names = [str(tool_name) for tool_name in payload.get("toolNames", [])]
+    degraded_reasons = [str(reason) for reason in payload.get("degradedReasons", [])]
+    provider_decision_count = int(payload.get("providerDecisionCount", 0))
+    passed = (
+        provider_decision_count > 0
+        and stop_reason in {"planner_finalize", "coverage_stop"}
+        and bool({"search_filing_sections", "search_metric_evidence"}.intersection(tool_names))
+    )
+    return ReleaseReadinessGate(
+        id="provider_live_planner_gate",
+        label="Provider live planner gate",
+        status="passed" if passed else "attention",
+        summary=f"{payload.get('provider', 'unknown')} / {payload.get('model', 'unknown')}",
+        metrics={
+            "providerDecisionCount": provider_decision_count,
+            "fallbackCount": int(payload.get("fallbackCount", 0)),
+            "elapsedMs": int(payload.get("elapsedMs", 0)),
+            "stopReason": stop_reason,
+            "toolNames": tool_names,
+        },
+        details=degraded_reasons,
+    )
+
+
+def _compose_full_e2e_gate(payload: dict[str, Any]) -> ReleaseReadinessGate:
+    services = [str(service) for service in payload.get("services", [])]
+    retrieval_records = int(payload.get("retrievalRecords", 0))
+    passed = payload.get("status") == "passed" and retrieval_records > 0
+    return ReleaseReadinessGate(
+        id="compose_full_e2e",
+        label="Compose full E2E",
+        status="passed" if passed else "attention",
+        summary="Spring Boot + Python Agent + PGVector + frontend",
+        metrics={
+            "services": services,
+            "agentTaskType": str(payload.get("agentTaskType", "unknown")),
+            "retrievalRecords": retrieval_records,
+            "elapsedMs": int(payload.get("elapsedMs", 0)),
+        },
+        details=[],
     )
 
 

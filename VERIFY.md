@@ -197,6 +197,22 @@ planner 可以通过统一 `complete_json` 边界进入 bounded loop，并检查
 保留 `planner_context`、tool execution、typed task sections 和 provider live
 planner artifact。它不属于默认 CI gate，避免 provider 成本、限流和输出波动影响基础验证。
 
+Release readiness dashboard artifact：
+
+```bash
+cd src/research-service
+uv run python scripts/write_release_readiness_artifact.py \
+  ../../frontend/src/data/rag-eval/stage1-hard.json \
+  /path/to/provider-rag-summary.json \
+  /path/to/provider-live-planner.json \
+  /path/to/compose-full-e2e.json \
+  ../../frontend/src/data/release-readiness.json
+```
+
+该 artifact 把 RAG hard gate、provider RAG sample gate、provider live planner
+gate 和 compose full E2E summary 统一成 frontend checklist。它是 release
+readiness 快照，不会替代各 gate 本身。
+
 ## Full Local Verification
 
 当 Python Research Service 创建后，完整验证顺序建议为：

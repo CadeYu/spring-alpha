@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "0.1.0",
+  "stage": "release_readiness",
+  "overallStatus": "passed",
+  "gates": [
+    {
+      "id": "rag_hard_gate",
+      "label": "RAG hard retrieval gate",
+      "status": "passed",
+      "summary": "stage1_hard_rag_eval / hybrid_semantic_lexical_retrieval",
+      "metrics": {
+        "expectedTermHitRate": 1.0,
+        "expectedSectionHitRate": 1.0,
+        "top1SectionCorrectness": 1.0,
+        "emptyRetrievalRate": 0.0,
+        "badSectionLeakRate": 0.0
+      },
+      "details": [
+        "Generated from the local hard RAG eval suite.",
+        "Hybrid vector retrieval uses a deterministic local embedding backend, not provider-backed embeddings.",
+        "Artifact is a reproducible regression baseline, not a production-scale benchmark."
+      ]
+    },
+    {
+      "id": "provider_rag_sample_gate",
+      "label": "Provider RAG sample gate",
+      "status": "passed",
+      "summary": "gemini gemini-embedding-001 on pgvector",
+      "metrics": {
+        "caseCount": 24,
+        "embeddingCalls": 48,
+        "embeddingAttempts": 48,
+        "estimatedCostUsd": 0.0,
+        "elapsedMs": 54946,
+        "expectedTermHitRate": 1.0,
+        "emptyRetrievalRate": 0.0,
+        "badSectionLeakRate": 0.0
+      },
+      "details": [
+        "Manual live gate for provider-backed embeddings, not a default CI gate.",
+        "Estimated embedding cost is configured by the runner, not provider billing.",
+        "The sample suite is representative and intentionally smaller than the full suite."
+      ]
+    },
+    {
+      "id": "provider_live_planner_gate",
+      "label": "Provider live planner gate",
+      "status": "passed",
+      "summary": "siliconflow / Qwen/Qwen2.5-7B-Instruct",
+      "metrics": {
+        "providerDecisionCount": 2,
+        "fallbackCount": 2,
+        "elapsedMs": 10371,
+        "stopReason": "coverage_stop",
+        "toolNames": [
+          "get_company_facts",
+          "search_filing_sections",
+          "verify_citations"
+        ]
+      },
+      "details": [
+        "Planner repeated tool get_company_facts before coverage was sufficient."
+      ]
+    },
+    {
+      "id": "compose_full_e2e",
+      "label": "Compose full E2E",
+      "status": "passed",
+      "summary": "Spring Boot + Python Agent + PGVector + frontend",
+      "metrics": {
+        "services": [
+          "frontend",
+          "backend",
+          "research-service",
+          "pgvector"
+        ],
+        "agentTaskType": "latest_earnings_readout",
+        "retrievalRecords": 2,
+        "elapsedMs": 120000
+      },
+      "details": []
+    }
+  ],
+  "limitations": [
+    "Readiness artifact summarizes latest generated gate outputs, not a live service API.",
+    "Provider-backed gates remain manual because external providers can be rate-limited.",
+    "Compose full E2E is represented by its verification summary, not full container logs."
+  ]
+}

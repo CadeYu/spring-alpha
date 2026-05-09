@@ -485,6 +485,10 @@ describe("Home page", () => {
     expect(
       screen.getByText("Generated from the local hard RAG eval suite."),
     ).toBeInTheDocument();
+    expect(screen.getByText("Release Readiness")).toBeInTheDocument();
+    expect(screen.getByText("Provider RAG sample gate")).toBeInTheDocument();
+    expect(screen.getByText("Provider live planner gate")).toBeInTheDocument();
+    expect(screen.getByText("Compose full E2E")).toBeInTheDocument();
   });
 
   it("submits the live input value instead of falling back to the stale default ticker", async () => {

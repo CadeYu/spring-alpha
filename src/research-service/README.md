@@ -69,3 +69,16 @@ The provider-backed mini gate runs 10-15 representative hard cases through real
 Gemini embeddings and PGVector. It records retrieval quality, elapsed time,
 embedding call count, and estimated cost in a JSON artifact. It is intentionally
 manual/optional so provider cost and availability do not affect default CI.
+
+The release readiness artifact writer combines the latest RAG hard dashboard,
+provider RAG summary, provider live planner smoke, and compose full E2E summary
+into one frontend-safe checklist fixture:
+
+```bash
+uv run python scripts/write_release_readiness_artifact.py \
+  ../../frontend/src/data/rag-eval/stage1-hard.json \
+  /path/to/provider-rag-summary.json \
+  /path/to/provider-live-planner.json \
+  /path/to/compose-full-e2e.json \
+  ../../frontend/src/data/release-readiness.json
+```

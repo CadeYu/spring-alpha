@@ -5,6 +5,7 @@ import {
   STAGE1_HARD_RAG_EVAL_ARTIFACT,
 } from "@/lib/ragEvalDashboard";
 import { cn } from "@/lib/utils";
+import { ReleaseReadinessChecklist } from "@/components/app/release-readiness-checklist";
 
 const metricToneByIndex = [
   "border-emerald-500/30 bg-emerald-950/20 text-emerald-200",
@@ -17,10 +18,11 @@ export function RagEvalDashboard() {
   const artifact = STAGE1_HARD_RAG_EVAL_ARTIFACT;
 
   return (
-    <section
-      aria-labelledby="rag-eval-dashboard-title"
-      className="rounded-md border border-slate-800 bg-slate-900/70 p-4"
-    >
+    <div className="space-y-4">
+      <section
+        aria-labelledby="rag-eval-dashboard-title"
+        className="rounded-md border border-slate-800 bg-slate-900/70 p-4"
+      >
       <div className="flex flex-col gap-3 border-b border-slate-800 pb-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
@@ -167,6 +169,8 @@ export function RagEvalDashboard() {
           ))}
         </ul>
       </div>
-    </section>
+      </section>
+      <ReleaseReadinessChecklist />
+    </div>
   );
 }
