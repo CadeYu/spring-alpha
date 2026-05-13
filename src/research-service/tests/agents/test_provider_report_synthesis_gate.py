@@ -35,7 +35,7 @@ def test_provider_report_synthesis_artifact_records_llm_final_report(
     assert payload["synthesis"] == "llm"
     assert payload["finalReportTaskType"] == "latest_earnings_readout"
     assert payload["claimCount"] == 1
-    assert payload["citedSourceIds"] == ["provider_report_synthesis_smoke:filing:1"]
+    assert payload["citedSourceIds"]
     assert payload["headline"] == "Provider synthesis turned evidence into a cited readout"
 
 
@@ -63,7 +63,7 @@ def test_provider_report_synthesis_artifact_supports_business_driver_task(
     assert payload["synthesis"] == "llm"
     assert payload["finalReportTaskType"] == "business_driver_deep_dive"
     assert payload["claimCount"] == 1
-    assert payload["citedSourceIds"] == ["provider_report_synthesis_smoke:filing:1"]
+    assert payload["citedSourceIds"]
     assert payload["headline"] == "Services engagement is the main cited driver"
 
 
@@ -73,11 +73,12 @@ def _synthesis_transport(
     headers: dict[str, str],
     timeout_seconds: int,
 ) -> dict[str, object]:
+    source_id = _first_source_id_from_tool_messages(payload)
     return {
         "choices": [
             {
                 "message": {
-                    "content": json.dumps(_synthesis_payload()),
+                    "content": json.dumps(_synthesis_payload(source_id)),
                 }
             }
         ],
@@ -91,11 +92,12 @@ def _business_driver_synthesis_transport(
     headers: dict[str, str],
     timeout_seconds: int,
 ) -> dict[str, object]:
+    source_id = _first_source_id_from_tool_messages(payload)
     return {
         "choices": [
             {
                 "message": {
-                    "content": json.dumps(_business_driver_synthesis_payload()),
+                    "content": json.dumps(_business_driver_synthesis_payload(source_id)),
                 }
             }
         ],
@@ -103,8 +105,7 @@ def _business_driver_synthesis_transport(
     }
 
 
-def _synthesis_payload() -> dict[str, Any]:
-    source_id = "provider_report_synthesis_smoke:filing:1"
+def _synthesis_payload(source_id: str) -> dict[str, Any]:
     return {
         "topline_verdict": {
             "headline": "Provider synthesis turned evidence into a cited readout",
@@ -157,8 +158,7 @@ def _synthesis_payload() -> dict[str, Any]:
     }
 
 
-def _business_driver_synthesis_payload() -> dict[str, Any]:
-    source_id = "provider_report_synthesis_smoke:filing:1"
+def _business_driver_synthesis_payload(source_id: str) -> dict[str, Any]:
     return {
         "driver_thesis": {
             "headline": "Services engagement is the main cited driver",
@@ -206,3 +206,27 @@ def _business_driver_synthesis_payload() -> dict[str, Any]:
             }
         ],
     }
+
+
+def _first_source_id_from_tool_messages(payload: dict[str, object]) -> str:
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        raise AssertionError("LLM payload messages are required")
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            continue
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        tool_payload = json.loads(content)
+        for key in ("records", "retrieved_nodes"):
+            records = tool_payload.get(key)
+            if not isinstance(records, list):
+                continue
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                source_id = record.get("source_id") or record.get("node_id")
+                if source_id:
+                    return str(source_id)
+    raise AssertionError("At least one source id is required")

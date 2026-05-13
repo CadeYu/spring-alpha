@@ -9,20 +9,18 @@ from time import perf_counter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.agents.deterministic_workflow import DeterministicAgentWorkflow
 from app.agents.domain_tools import LlamaIndexResearchToolService, SecCompanyFactsProvider
 from app.agents.llm_gateway import (
-    LlmRequest,
-    LlmResponse,
     OpenAiCompatibleLlmClient,
     default_model_for_provider,
 )
-from app.agents.tool_registry import default_tool_registry
+from app.agents.research_workflow import ResearchAgentWorkflow
 from app.contracts.agent import AgentFilingDocument, AgentRequest, LlmProvider
 from app.contracts.research_task import ResearchTaskType
 from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline
 
 STAGE = "stage_1_provider_tool_e2e"
+type ToolCallSpec = tuple[str, str, dict[str, object]]
 
 
 @dataclass(frozen=True)
@@ -45,7 +43,9 @@ def write_provider_tool_e2e_artifact(
         config.provider,
         config.api_key,
         base_url=_base_url_for_provider(config.provider),
-        transport=synthesis_transport,
+        transport=_smoke_transport(config, synthesis_transport)
+        if synthesis_transport is not None
+        else None,
     )
     pipeline = LlamaIndexRagPipeline()
     request = _agent_request(config)
@@ -59,16 +59,13 @@ def write_provider_tool_e2e_artifact(
                 text=filing.text,
             )
         )
-    workflow = DeterministicAgentWorkflow(
-        registry=default_tool_registry(
-            LlamaIndexResearchToolService(
-                pipeline,
-                facts_provider=SecCompanyFactsProvider(),
-            )
+    workflow = ResearchAgentWorkflow(
+        tool_service=LlamaIndexResearchToolService(
+            pipeline,
+            facts_provider=SecCompanyFactsProvider(),
         ),
-        llm_client=_DeterministicPlannerClient(config.provider, config.task_type),
-        report_synthesis_client=llm_client,
-        enable_report_synthesis=True,
+        llm_client=llm_client,
+        rag_pipeline=pipeline,
     )
     result = workflow.run(request)
     elapsed_ms = int((perf_counter() - started_at) * 1000)
@@ -89,50 +86,6 @@ def main() -> int:
     )
     print(written_path)
     return 0
-
-
-class _DeterministicPlannerClient:
-    def __init__(self, provider: LlmProvider, task_type: ResearchTaskType) -> None:
-        self.provider = provider
-        self._task_type = task_type
-        self._calls = 0
-
-    def complete_json(self, request: LlmRequest) -> LlmResponse:
-        self._calls += 1
-        if self._task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
-            content = _business_driver_planner_decision(self._calls)
-        elif self._task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
-            content = _cash_flow_planner_decision(self._calls)
-        elif self._calls == 1:
-            content = {
-                "decision": "call_tool",
-                "summary": "Collect SEC company facts before tool E2E synthesis.",
-                "tool_name": "get_company_facts",
-                "tool_input": {
-                    "period": "latest_quarter",
-                    "metrics": ["revenue", "gross margin"],
-                },
-            }
-        elif self._calls == 2:
-            content = {
-                "decision": "call_tool",
-                "summary": "Search RAG filing evidence before tool E2E synthesis.",
-                "tool_name": "search_filing_sections",
-                "tool_input": {
-                    "sections": ["MD&A", "Risk Factors"],
-                    "query": "services revenue demand gross margin operating income risk",
-                },
-            }
-        else:
-            content = {
-                "decision": "finalize",
-                "summary": "SEC facts and RAG evidence are ready for synthesis.",
-            }
-        return LlmResponse(
-            provider=request.provider,
-            model=request.model,
-            content=content,
-        )
 
 
 def _agent_request(config: ProviderToolE2EConfig) -> AgentRequest:
@@ -276,6 +229,157 @@ def _base_url_for_provider(provider: LlmProvider) -> str:
     return base_urls[provider]
 
 
+def _smoke_transport(
+    config: ProviderToolE2EConfig,
+    final_transport: Callable[[str, dict[str, object], dict[str, str], int], dict[str, object]],
+) -> Callable[[str, dict[str, object], dict[str, str], int], dict[str, object]]:
+    def transport(
+        url: str,
+        payload: dict[str, object],
+        headers: dict[str, str],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        if "tools" not in payload:
+            return final_transport(url, payload, headers, timeout_seconds)
+        tool_messages = _tool_message_count(payload)
+        tool_call = _next_tool_call(config.task_type, tool_messages)
+        if tool_call is None:
+            return final_transport(url, payload, headers, timeout_seconds)
+        return _tool_call_response(tool_call)
+
+    return transport
+
+
+def _tool_message_count(payload: dict[str, object]) -> int:
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return 0
+    return sum(
+        1
+        for message in messages
+        if isinstance(message, dict) and message.get("role") == "tool"
+    )
+
+
+def _next_tool_call(
+    task_type: ResearchTaskType,
+    tool_message_count: int,
+) -> ToolCallSpec | None:
+    if task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+        business_calls: list[ToolCallSpec] = [
+            (
+                "call_filing",
+                "search_filing_sections",
+                {
+                    "sections": ["MD&A", "Risk Factors"],
+                    "query": (
+                        "services demand installed base engagement pricing "
+                        "supply constraints competition"
+                    ),
+                },
+            ),
+            (
+                "call_metrics",
+                "search_metric_evidence",
+                {
+                    "metrics": ["revenue", "segment revenue"],
+                    "period": "latest_quarter",
+                    "query": "revenue segment revenue services demand",
+                },
+            ),
+            (
+                "call_signals",
+                "get_business_signals",
+                {"signal_types": ["product", "demand", "pricing", "risk"]},
+            ),
+        ]
+        return (
+            business_calls[tool_message_count]
+            if tool_message_count < len(business_calls)
+            else None
+        )
+    if task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
+        cash_flow_calls: list[ToolCallSpec] = [
+            (
+                "call_facts",
+                "get_company_facts",
+                {
+                    "period": "latest_quarter",
+                    "metrics": ["operating cash flow", "capital expenditures", "buybacks"],
+                },
+            ),
+            (
+                "call_filing",
+                "search_filing_sections",
+                {
+                    "sections": ["Cash Flows", "MD&A"],
+                    "query": "operating cash flow capex buybacks liquidity working capital",
+                },
+            ),
+            (
+                "call_metrics",
+                "search_metric_evidence",
+                {
+                    "metrics": ["operating cash flow", "capital expenditures"],
+                    "period": "latest_quarter",
+                    "query": "operating cash flow capital expenditures buybacks liquidity",
+                },
+            ),
+        ]
+        return (
+            cash_flow_calls[tool_message_count]
+            if tool_message_count < len(cash_flow_calls)
+            else None
+        )
+    earnings_calls: list[ToolCallSpec] = [
+        (
+            "call_facts",
+            "get_company_facts",
+            {
+                "period": "latest_quarter",
+                "metrics": ["revenue", "gross margin", "operating income"],
+            },
+        ),
+        (
+            "call_metrics",
+            "search_metric_evidence",
+            {
+                "metrics": ["revenue", "gross margin", "operating income"],
+                "period": "latest_quarter",
+                "query": "revenue gross margin operating income",
+            },
+        ),
+    ]
+    return (
+        earnings_calls[tool_message_count]
+        if tool_message_count < len(earnings_calls)
+        else None
+    )
+
+
+def _tool_call_response(tool_call: ToolCallSpec) -> dict[str, object]:
+    call_id, name, arguments = tool_call
+    return {
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": _json_dumps(arguments),
+                            },
+                        }
+                    ],
+                }
+            }
+        ]
+    }
+
+
 def _artifact_payload(
     result_payload: dict[str, object],
     config: ProviderToolE2EConfig,
@@ -325,10 +429,10 @@ def assert_provider_tool_e2e_gate(payload: dict[str, object]) -> None:
         raise RuntimeError("provider tool E2E requires ok status")
     if payload.get("synthesis") != "llm":
         raise RuntimeError("provider tool E2E did not use llm final synthesis")
-    if int(payload.get("ragSourceRefCount", 0)) <= 0:
+    if _int_metric(payload, "ragSourceRefCount") <= 0:
         raise RuntimeError("provider tool E2E returned no RAG source refs")
     if payload.get("finalReportTaskType") == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE.value:
-        if int(payload.get("signalCount", 0)) <= 0:
+        if _int_metric(payload, "signalCount") <= 0:
             raise RuntimeError("provider tool E2E returned no business signals")
         tool_names = payload.get("toolNames")
         if not isinstance(tool_names, list) or "get_business_signals" not in tool_names:
@@ -337,9 +441,9 @@ def assert_provider_tool_e2e_gate(payload: dict[str, object]) -> None:
     if payload.get("finalReportTaskType") == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION.value:
         if payload.get("factSource") != "sec_companyfacts":
             raise RuntimeError("provider tool E2E did not use SEC company facts")
-        if int(payload.get("factMetricCount", 0)) <= 0:
+        if _int_metric(payload, "factMetricCount") <= 0:
             raise RuntimeError("provider tool E2E returned no SEC fact metrics")
-        if int(payload.get("metricEvidenceCount", 0)) <= 0:
+        if _int_metric(payload, "metricEvidenceCount") <= 0:
             raise RuntimeError("provider tool E2E returned no metric evidence")
         tool_names = payload.get("toolNames")
         if not isinstance(tool_names, list) or "search_metric_evidence" not in tool_names:
@@ -347,7 +451,7 @@ def assert_provider_tool_e2e_gate(payload: dict[str, object]) -> None:
         return
     if payload.get("factSource") != "sec_companyfacts":
         raise RuntimeError("provider tool E2E did not use SEC company facts")
-    if int(payload.get("factMetricCount", 0)) <= 0:
+    if _int_metric(payload, "factMetricCount") <= 0:
         raise RuntimeError("provider tool E2E returned no SEC fact metrics")
 
 
@@ -355,7 +459,7 @@ def _source_ref_count(retrieval_records: object) -> int:
     if not isinstance(retrieval_records, list):
         return 0
     return sum(
-        int(record.get("source_ref_count", 0))
+        _int_from_object(record.get("source_ref_count", 0))
         for record in retrieval_records
         if isinstance(record, dict)
     )
@@ -392,6 +496,9 @@ def _fact_metric_count(facts: dict[str, object], fact_record: dict[str, object])
     metrics = facts.get("metrics")
     if isinstance(metrics, list):
         return len(metrics)
+    record_count = fact_record.get("record_count")
+    if isinstance(record_count, int):
+        return record_count
     metric_count = fact_record.get("metric_count")
     if isinstance(metric_count, int):
         return metric_count
@@ -402,79 +509,31 @@ def _metric_evidence_count(metric_record: dict[str, object]) -> int:
     retrieved_nodes = metric_record.get("retrieved_nodes")
     if isinstance(retrieved_nodes, list):
         return len(retrieved_nodes)
-    return int(metric_record.get("source_ref_count", 0))
+    return _int_from_object(metric_record.get("source_ref_count", 0))
 
 
 def _signal_count(signal_record: dict[str, object]) -> int:
     signal_count = signal_record.get("signal_count")
     if isinstance(signal_count, int):
         return signal_count
+    record_count = signal_record.get("record_count")
+    if isinstance(record_count, int):
+        return record_count
     return 0
 
 
-def _business_driver_planner_decision(call_count: int) -> dict[str, object]:
-    if call_count == 1:
-        return {
-            "decision": "call_tool",
-            "summary": "Search RAG filing evidence before business signal extraction.",
-            "tool_name": "search_filing_sections",
-            "tool_input": {
-                "sections": ["MD&A", "Risk Factors"],
-                "query": (
-                    "services demand installed base engagement pricing "
-                    "supply constraints competition"
-                ),
-            },
-        }
-    if call_count == 2:
-        return {
-            "decision": "call_tool",
-            "summary": "Extract source-bound business signals before synthesis.",
-            "tool_name": "get_business_signals",
-            "tool_input": {"signal_types": ["product", "demand", "pricing", "risk"]},
-        }
-    return {
-        "decision": "finalize",
-        "summary": "RAG evidence and business signals are ready for synthesis.",
-    }
+def _int_metric(payload: dict[str, object], key: str) -> int:
+    return _int_from_object(payload.get(key, 0))
 
 
-def _cash_flow_planner_decision(call_count: int) -> dict[str, object]:
-    if call_count == 1:
-        return {
-            "decision": "call_tool",
-            "summary": "Collect SEC cash flow facts before synthesis.",
-            "tool_name": "get_company_facts",
-            "tool_input": {
-                "period": "latest_quarter",
-                "metrics": ["operating cash flow", "capex"],
-            },
-        }
-    if call_count == 2:
-        return {
-            "decision": "call_tool",
-            "summary": "Search RAG cash flow filing evidence before synthesis.",
-            "tool_name": "search_filing_sections",
-            "tool_input": {
-                "sections": ["Cash Flows", "MD&A"],
-                "query": "operating cash flow capex buybacks liquidity working capital",
-            },
-        }
-    if call_count == 3:
-        return {
-            "decision": "call_tool",
-            "summary": "Search metric evidence for cash quality synthesis.",
-            "tool_name": "search_metric_evidence",
-            "tool_input": {
-                "metrics": ["operating cash flow", "capital expenditures"],
-                "period": "latest_quarter",
-                "query": "operating cash flow capital expenditures buybacks liquidity",
-            },
-        }
-    return {
-        "decision": "finalize",
-        "summary": "SEC facts, RAG evidence, and metric evidence are ready for synthesis.",
-    }
+def _int_from_object(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return 0
 
 
 def _json_dumps(payload: dict[str, object]) -> str:

@@ -50,7 +50,7 @@ def test_stage0_baseline_eval_records_retrieval_metrics() -> None:
 
     assert isinstance(artifact, RagBaselineEvalArtifact)
     assert artifact.stage == "stage_0_baseline"
-    assert artifact.system_under_test == "bounded_workflow_placeholder"
+    assert artifact.system_under_test == "tool_calling_research_agent"
     assert artifact.baseline_label == "current_placeholder_retrieval"
     assert artifact.dataset_name == dataset.name
     assert len(artifact.records) == len(dataset.cases)
@@ -59,10 +59,10 @@ def test_stage0_baseline_eval_records_retrieval_metrics() -> None:
     assert _is_ratio(artifact.aggregate_metrics.faithfulness)
     assert _is_ratio(artifact.aggregate_metrics.answer_term_coverage)
     assert _is_ratio(artifact.aggregate_metrics.citation_coverage)
-    assert artifact.aggregate_metrics.fallback_rate == 0.0
+    assert artifact.aggregate_metrics.fallback_rate == 1.0
     assert artifact.aggregate_metrics.total_latency_ms == 0
     assert artifact.aggregate_metrics.cost_usd == 0.0
-    assert all(record.retrieved_node_ids for record in artifact.records)
+    assert all(record.retrieved_node_ids == [] for record in artifact.records)
     assert all(record.expected_terms for record in artifact.records)
     assert all(_is_ratio(record.metrics.faithfulness) for record in artifact.records)
 
@@ -78,7 +78,7 @@ def test_stage0_baseline_eval_artifact_is_json_safe() -> None:
         "business_driver_deep_dive",
         "cash_flow_capital_allocation",
     }
-    assert payload["system_under_test"] == "bounded_workflow_placeholder"
+    assert payload["system_under_test"] == "tool_calling_research_agent"
     assert "retrieval_recall_at_5" in payload["aggregate_metrics"]
     assert "faithfulness" in payload["aggregate_metrics"]
     assert "answer_term_coverage" in payload["aggregate_metrics"]
@@ -279,19 +279,15 @@ def test_release_readiness_artifact_combines_production_gate_summaries() -> None
         estimated_cost_usd=0.0,
         elapsed_ms=54946,
     ).model_copy(update={"stage": "stage_1_provider_sample_rag"})
-    planner_payload = {
-        "stage": "stage_1_provider_live_planner",
+    agent_payload = {
+        "stage": "stage_1_provider_tool_e2e",
         "provider": "siliconflow",
         "model": "Qwen/Qwen2.5-7B-Instruct",
-        "status": "degraded",
-        "providerDecisionCount": 2,
-        "fallbackCount": 2,
-        "stopReason": "coverage_stop",
-        "toolNames": ["get_company_facts", "search_filing_sections", "verify_citations"],
+        "status": "ok",
+        "synthesis": "llm",
+        "toolNames": ["get_company_facts", "search_metric_evidence"],
         "elapsedMs": 10371,
-        "degradedReasons": [
-            "Planner repeated tool get_company_facts before coverage was sufficient."
-        ],
+        "degradedReasons": [],
     }
     compose_payload = {
         "stage": "compose_full_e2e",
@@ -305,7 +301,7 @@ def test_release_readiness_artifact_combines_production_gate_summaries() -> None
     release = build_release_readiness_artifact(
         rag_hard=rag_artifact,
         provider_rag=provider_summary,
-        provider_planner=planner_payload,
+        provider_agent=agent_payload,
         compose_full_e2e=compose_payload,
     )
     payload = release.model_dump(mode="json", by_alias=True)
@@ -315,11 +311,11 @@ def test_release_readiness_artifact_combines_production_gate_summaries() -> None
     assert [gate["id"] for gate in payload["gates"]] == [
         "rag_hard_gate",
         "provider_rag_sample_gate",
-        "provider_live_planner_gate",
+        "provider_tool_calling_agent_gate",
         "compose_full_e2e",
     ]
     assert payload["gates"][1]["metrics"]["caseCount"] == 24
-    assert payload["gates"][2]["metrics"]["providerDecisionCount"] == 2
+    assert payload["gates"][2]["metrics"]["synthesis"] == "llm"
     assert payload["gates"][3]["metrics"]["retrievalRecords"] == 2
 
 

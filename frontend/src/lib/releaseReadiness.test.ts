@@ -12,7 +12,7 @@ describe("release readiness artifact", () => {
     expect(RELEASE_READINESS_ARTIFACT.gates.map((gate) => gate.id)).toEqual([
       "rag_hard_gate",
       "provider_rag_sample_gate",
-      "provider_live_planner_gate",
+      "provider_tool_calling_agent_gate",
       "provider_tool_e2e_gate",
       "compose_full_e2e",
     ]);

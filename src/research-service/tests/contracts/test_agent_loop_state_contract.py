@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.contracts.agent import (
+    MVP_TOOL_NAMES,
     AgentEvent,
     AgentPhase,
     AgentRequest,
@@ -72,8 +73,6 @@ def test_agent_state_is_json_serializable_and_replayable() -> None:
         "search_filing_sections",
         "search_metric_evidence",
         "get_business_signals",
-        "verify_citations",
-        "finalize_report",
     ]
     assert restored.evidence_memory.source_refs[0]["source_id"] == "src_001"
     assert "chain_of_thought" not in serialized
@@ -81,7 +80,7 @@ def test_agent_state_is_json_serializable_and_replayable() -> None:
     assert "api_key" not in serialized
 
 
-def test_agent_request_accepts_planner_provider_without_persisting_api_key() -> None:
+def test_agent_request_accepts_llm_provider_without_persisting_api_key() -> None:
     request = AgentRequest(
         run_id="run_provider_001",
         ticker="aapl",
@@ -142,16 +141,21 @@ def test_default_task_policies_encode_required_outputs(
 
     assert policy.task_type == task_type
     assert policy.required_outputs == required_outputs
-    assert policy.max_steps == 5
+    if task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+        assert policy.max_steps == 7
+        assert policy.max_tool_calls == 7
+    else:
+        assert policy.max_steps == 5
+        assert policy.max_tool_calls == 5
     assert policy.max_repair_loops == 2
-    assert "finalize_report" in policy.allowed_tools
+    assert set(policy.allowed_tools).issubset(MVP_TOOL_NAMES)
 
 
 def test_task_policy_rejects_unknown_tools() -> None:
     with pytest.raises(ValidationError):
         TaskPolicy(
             task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
-            allowed_tools=["finalize_report", "unknown_tool"],
+            allowed_tools=["search_metric_evidence", "unknown_tool"],
             required_outputs=["toplineVerdict"],
             max_steps=5,
             max_tool_calls=4,

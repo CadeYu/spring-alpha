@@ -1,5 +1,8 @@
 package com.springalpha.backend.service.provider;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -16,18 +19,32 @@ import java.util.Map;
 public class OpenAiCompatibleProviderCredentialValidator implements ProviderCredentialValidator {
 
     private static final Duration VALIDATION_TIMEOUT = Duration.ofSeconds(10);
+    private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleProviderCredentialValidator.class);
 
     private final WebClient.Builder webClientBuilder;
+    private final Duration validationTimeout;
     private final String defaultProvider;
     private final Map<String, ProviderConfig> providers;
 
+    @Autowired
     public OpenAiCompatibleProviderCredentialValidator(
             WebClient.Builder webClientBuilder,
             @Value("${app.ai-provider:siliconflow}") String defaultProvider,
             @Value("${app.siliconflow.base-url:https://api.siliconflow.cn/v1}") String siliconFlowBaseUrl,
             @Value("${app.openai.base-url:https://api.openai.com/v1}") String openAiBaseUrl,
             @Value("${app.gemini.base-url:https://generativelanguage.googleapis.com}") String geminiBaseUrl) {
+        this(webClientBuilder, defaultProvider, siliconFlowBaseUrl, openAiBaseUrl, geminiBaseUrl, VALIDATION_TIMEOUT);
+    }
+
+    OpenAiCompatibleProviderCredentialValidator(
+            WebClient.Builder webClientBuilder,
+            String defaultProvider,
+            String siliconFlowBaseUrl,
+            String openAiBaseUrl,
+            String geminiBaseUrl,
+            Duration validationTimeout) {
         this.webClientBuilder = webClientBuilder;
+        this.validationTimeout = validationTimeout;
         this.defaultProvider = normalizeProvider(defaultProvider);
         this.providers = Map.of(
                 "gemini", new ProviderConfig("gemini", "Gemini", geminiBaseUrl),
@@ -65,9 +82,9 @@ public class OpenAiCompatibleProviderCredentialValidator implements ProviderCred
                 .uri("/models")
                 .retrieve()
                 .bodyToMono(String.class)
-                .timeout(VALIDATION_TIMEOUT)
+                .timeout(validationTimeout)
                 .then()
-                .onErrorResume(error -> Mono.error(mapProviderException(config, error)));
+                .onErrorResume(error -> mapProviderException(config, error));
     }
 
     private ProviderConfig providerConfig(String provider) {
@@ -85,24 +102,22 @@ public class OpenAiCompatibleProviderCredentialValidator implements ProviderCred
                 : provider.trim().toLowerCase(Locale.ROOT);
     }
 
-    private ProviderAuthenticationException mapProviderException(ProviderConfig config, Throwable error) {
+    private Mono<Void> mapProviderException(ProviderConfig config, Throwable error) {
         if (error instanceof ProviderAuthenticationException providerAuthenticationException) {
-            return providerAuthenticationException;
+            return Mono.error(providerAuthenticationException);
         }
         if (error instanceof WebClientResponseException responseException
                 && (responseException.getStatusCode().value() == 401
                         || responseException.getStatusCode().value() == 403)) {
-            return new ProviderAuthenticationException(
-                    config.displayName() + " API key is invalid or unauthorized for this project",
-                    config.id(),
-                    config.id().toUpperCase(Locale.ROOT) + "_API_KEY_INVALID",
-                    HttpStatus.UNAUTHORIZED);
+            return Mono.error(new ProviderAuthenticationException(
+                            config.displayName() + " API key is invalid or unauthorized for this project",
+                            config.id(),
+                            config.id().toUpperCase(Locale.ROOT) + "_API_KEY_INVALID",
+                            HttpStatus.UNAUTHORIZED));
         }
-        return new ProviderAuthenticationException(
-                config.displayName() + " API key validation failed: " + error.getMessage(),
-                config.id(),
-                config.id().toUpperCase(Locale.ROOT) + "_API_KEY_VALIDATION_FAILED",
-                HttpStatus.BAD_GATEWAY);
+        log.warn("provider_key_validation_soft_failed provider={} error={}", config.id(),
+                error.getClass().getSimpleName());
+        return Mono.empty();
     }
 
     private record ProviderConfig(String id, String displayName, String baseUrl) {

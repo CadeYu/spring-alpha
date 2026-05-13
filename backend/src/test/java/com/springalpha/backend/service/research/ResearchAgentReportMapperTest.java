@@ -148,4 +148,79 @@ class ResearchAgentReportMapperTest {
         assertEquals("Buybacks remained self-funded", cashFlow.getRedFlags().get(0).getTitle());
         assertEquals("VERIFIED", report.getCitations().get(0).getVerificationStatus());
     }
+
+    @Test
+    void mapsLatestEarningsLlmSynthesisTaskSectionsIntoJavaContract() {
+        Map<String, Object> sourceRef = Map.of(
+                "section", "Management Discussion and Analysis",
+                "excerpt", "Revenue increased year over year while margins remained mixed.",
+                "filing_date", "2026-04-30",
+                "accession_number", "0000320193-26-000003",
+                "source_id", "latest_src_1");
+        Map<String, Object> point = Map.of(
+                "title", "Revenue improved",
+                "summary", "Revenue increased year over year.",
+                "evidence_refs", List.of(sourceRef),
+                "citation_status", "supported");
+        ResearchAgentResult result = new ResearchAgentResult(
+                "run_latest_001",
+                ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "ok",
+                List.of(),
+                List.of(),
+                Map.of(
+                        "company_name", "Apple Inc.",
+                        "period", "FY2026 Q2",
+                        "report_type", "quarterly",
+                        "sections", Map.of("summary", "Typed summary.", "synthesis", "llm"),
+                        "task_sections", Map.of(
+                                "schema_version", "task_sections.v1",
+                                "task_type", "latest_earnings_readout",
+                                "coverage", Map.of(
+                                "status", "complete",
+                                "missing_sections", List.of(),
+                                "evidence_count", 3),
+                                "company_profile", Map.of(
+                                        "summary", "Apple Inc. designs devices, software, and services for a global installed base.",
+                                        "evidence_refs", List.of(sourceRef),
+                                        "citation_status", "supported"),
+                                "topline_verdict", Map.of(
+                                        "headline", "Revenue growth with mixed margin signals",
+                                        "summary", "Revenue improved, but margin evidence was mixed.",
+                                        "verdict", "mixed"),
+                                "key_takeaways", List.of(point),
+                                "financial_dashboard", Map.of(
+                                        "metrics", List.of(Map.of(
+                                                "name", "Revenue",
+                                                "value", "higher year over year",
+                                                "period", "latest quarter",
+                                                "interpretation", "Topline improved.",
+                                                "evidence_refs", List.of(sourceRef),
+                                                "citation_status", "supported")),
+                                        "chart_focus", List.of("revenue")),
+                                "driver_snapshot", List.of(point),
+                                "risk_snapshot", List.of(point)),
+                        "claims", List.of(Map.of(
+                                "source_refs", List.of(Map.of(
+                                        "section", "Management Discussion and Analysis",
+                                        "snippet", "Revenue increased year over year.",
+                                        "citation_status", "supported"))))));
+
+        AnalysisReport report = mapper.toAnalysisReport(result, "en");
+
+        AnalysisReport.LatestEarningsSections latest = report.getTaskSections().getLatestEarnings();
+        assertNotNull(latest);
+        assertEquals("Apple Inc. designs devices, software, and services for a global installed base.",
+                latest.getCompanyProfile().getSummary());
+        assertEquals("supported", latest.getCompanyProfile().getCitationStatus());
+        assertEquals("Revenue growth with mixed margin signals", latest.getToplineVerdict().getHeadline());
+        assertEquals("Revenue improved", latest.getKeyTakeaways().get(0).getTitle());
+        assertEquals("Revenue", latest.getFinancialDashboard().getMetrics().get(0).getName());
+        assertEquals("Revenue improved", latest.getDriverSnapshot().get(0).getTitle());
+        assertEquals("Revenue improved", latest.getRiskSnapshot().get(0).getTitle());
+        assertNotNull(report.getMetadata().getGeneratedAt());
+        assertFalse(report.getMetadata().getGeneratedAt().isBlank());
+        assertEquals("2026-04-30", report.getFilingDate());
+        assertEquals("VERIFIED", report.getCitations().get(0).getVerificationStatus());
+    }
 }

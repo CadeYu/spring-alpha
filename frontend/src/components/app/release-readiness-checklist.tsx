@@ -18,11 +18,7 @@ const featuredMetricKeysByGate: Record<string, string[]> = {
     "expectedTermHitRate",
     "emptyRetrievalRate",
   ],
-  provider_live_planner_gate: [
-    "providerDecisionCount",
-    "fallbackCount",
-    "stopReason",
-  ],
+  provider_tool_calling_agent_gate: ["elapsedMs", "synthesis", "toolNames"],
   provider_tool_e2e_gate: [
     "latestEarningsPath",
     "businessDriverPath",
@@ -51,8 +47,8 @@ export function ReleaseReadinessChecklist() {
             </h2>
           </div>
           <p className="max-w-3xl text-sm leading-6 text-slate-400">
-            Unified checklist for the latest RAG, provider planner, provider
-            embedding, and compose E2E gates.
+            Unified checklist for the latest RAG, provider tool-calling,
+            provider embedding, and compose E2E gates.
           </p>
         </div>
         <span

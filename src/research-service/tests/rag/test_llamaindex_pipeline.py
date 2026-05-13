@@ -152,6 +152,142 @@ def test_pipeline_expands_financial_query_terms_for_metric_evidence() -> None:
     assert "repurchases of common stock" in result.source_refs[0].snippet
 
 
+def test_business_driver_retrieval_prefers_operating_drivers_over_market_risk() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000000000-26-000030",
+            text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Services revenue increased due to higher customer engagement, stronger installed base growth, and subscription demand.
+Product revenue benefited from iPhone demand and disciplined pricing.
+
+Quantitative and Qualitative Disclosures About Market Risk
+Derivative instruments may be used to hedge foreign exchange and interest rate risk.
+""",
+        )
+    )
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_business_quality",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        query="services product segment demand pricing customers strategy",
+        sections=["MD&A", "Business", "Segment Information"],
+        top_k=1,
+    )
+
+    assert result.source_refs
+    assert result.source_refs[0].section == "MD&A"
+    assert "Services revenue increased" in result.source_refs[0].snippet
+    assert "Derivative instruments" not in result.source_refs[0].snippet
+
+
+def test_business_driver_retrieval_prefers_sales_driver_window_over_compliance_window() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000000000-26-000032",
+            text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Services net sales increased because customer engagement, installed base growth, and subscription demand improved.
+iPhone net sales reflected stronger customer demand and disciplined pricing.
+Segment operating income improved as Services mix expanded.
+
+Item 1. Business
+Complying with emerging and changing requirements causes substantial costs and may require changes to product designs and services.
+""",
+        )
+    )
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_business_sales_window",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        query="product segment demand pricing customers strategy",
+        sections=["MD&A", "Business", "Segment Information"],
+        top_k=1,
+    )
+
+    assert result.source_refs
+    assert "Services net sales increased" in result.source_refs[0].snippet
+    assert "Complying with emerging" not in result.source_refs[0].snippet
+
+
+def test_cash_allocation_query_expands_to_repurchase_dividend_and_capex_terms() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000000000-26-000031",
+            text="""
+Liquidity and Capital Resources
+Net cash provided by operating activities funded capital expenditures, payments for dividends and dividend equivalents, and repurchases of common stock.
+The company also discussed liquidity and debt maturities.
+
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Revenue increased because product demand improved.
+""",
+        )
+    )
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_cash_allocation_quality",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        query="cash flow capex buybacks dividends debt liquidity",
+        sections=["Liquidity and Capital Resources", "Cash Flow Statement"],
+        top_k=1,
+    )
+
+    assert result.source_refs
+    assert result.source_refs[0].section == "Liquidity and Capital Resources"
+    assert "capital expenditures" in result.source_refs[0].snippet
+    assert "repurchases of common stock" in result.source_refs[0].snippet
+    assert "dividends" in result.source_refs[0].snippet
+
+
+def test_cash_allocation_snippet_keeps_capital_return_window() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000000000-26-000033",
+            text="""
+Liquidity and Capital Resources
+The Company believes its balances of cash, cash equivalents and marketable securities, along with cash generated by ongoing operations and continued access to debt markets, will be sufficient to satisfy its cash requirements and capital return program over the next 12 months and beyond.
+Cash used in investing activities included capital expenditures.
+Cash used in financing activities included repurchases of common stock and payments for dividends and dividend equivalents.
+""",
+        )
+    )
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_cash_window",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        query="operating cash flow capex buybacks dividends debt liquidity",
+        sections=["Liquidity and Capital Resources", "Cash Flow Statement"],
+        top_k=1,
+    )
+
+    assert result.source_refs
+    assert "capital return program" in result.source_refs[0].snippet
+    assert "capital expenditures" in result.source_refs[0].snippet
+    assert "repurchases of common stock" in result.source_refs[0].snippet
+    assert "dividends" in result.source_refs[0].snippet
+
+
 def test_hybrid_pipeline_recovers_semantic_matches_without_exact_lexical_overlap() -> None:
     pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
     pipeline.ingest_filing(

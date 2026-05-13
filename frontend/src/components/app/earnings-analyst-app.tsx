@@ -1,40 +1,49 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Search,
+  CandlestickSeries,
+  ColorType,
+  CrosshairMode,
+  HistogramSeries,
+  LineStyle,
+  createChart,
+  type CandlestickData,
+  type HistogramData,
+  type IChartApi,
+  type ISeriesApi,
+  type Time,
+} from "lightweight-charts";
+import {
   Loader2,
   TrendingUp,
+  ArrowRight,
   Bot,
   BriefcaseBusiness,
   ChartColumnIncreasing,
   WalletCards,
   AlertTriangle,
+  AlertCircle,
+  CheckCircle2,
+  CircleHelp,
+  FileText,
+  XCircle,
 } from "lucide-react";
-import { ExecutiveSummary } from "@/components/analysis/ExecutiveSummary";
-import { KeyMetrics } from "@/components/analysis/KeyMetrics";
-import { BusinessDrivers } from "@/components/analysis/BusinessDrivers";
-import { RiskFactors } from "@/components/analysis/RiskFactors";
-import { BullBearCase } from "@/components/analysis/BullBearCase";
 import {
   AnalysisReport,
   AnalysisMetadata,
-  BusinessEvidenceRef,
   BusinessDriverSections,
-  BusinessSignalItem,
   CashFlowCapitalAllocationSections,
   Citation,
   EvidenceBoundPoint,
   EvidenceBoundMetric,
-  MetricInsight,
+  LatestEarningsSections,
+  CompanyProfileSection,
 } from "@/types/AnalysisReport";
-import { DuPontChart } from "@/components/financial/dupont-chart";
-import { InsightCards } from "@/components/financial/insight-cards";
-import { FinancialHealthRadar } from "@/components/financial/financial-health-radar";
-import { TopicWordCloud } from "@/components/analysis/TopicWordCloud";
 import { RagEvalDashboard } from "@/components/app/rag-eval-dashboard";
 import { PdfDownloadButton } from "@/components/pdf/PdfDownloadButton";
 import {
@@ -43,12 +52,8 @@ import {
   getSourceStatusLabel,
   mergeSourceContexts,
 } from "@/lib/reportPresentation";
-import {
-  DEFAULT_RESEARCH_TASK_ID,
-  type ResearchTaskId,
-} from "@/lib/researchTasks";
+import { type ResearchTaskId } from "@/lib/researchTasks";
 import { cn } from "@/lib/utils";
-import type { HistoricalDataPoint } from "@/components/analysis/MarginAnalysisChart";
 
 const BYOK_PROVIDERS = [
   {
@@ -95,6 +100,92 @@ type AnalysisErrorState = {
   degraded?: boolean;
 };
 
+type AnalysisRunPhase = "submitted" | "streaming" | "received" | "failed";
+
+type AnalysisRunState = {
+  ticker: string;
+  taskTitle: string;
+  providerName: string;
+  phase: AnalysisRunPhase;
+  startedAt: number;
+};
+
+type AgentPipelineRun = {
+  taskId: ResearchTaskId;
+  taskTitle: string;
+  phase: AnalysisRunPhase | "pending";
+  startedAt?: number;
+  completedAt?: number;
+};
+
+type ReportsByTask = Partial<Record<ResearchTaskId, AnalysisReport>>;
+
+type TickerSuggestion = {
+  ticker: string;
+  companyName: string;
+};
+
+type MarketCandle = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+};
+
+type MarketChartHover = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+  changePercent: number;
+};
+
+type MarketChartInterval = "1d" | "1wk" | "1mo" | "1y";
+
+const MARKET_CHART_INTERVALS = [
+  { id: "1d", label: "1D", labelZh: "日" },
+  { id: "1wk", label: "1W", labelZh: "周" },
+  { id: "1mo", label: "1M", labelZh: "月" },
+  { id: "1y", label: "1Y", labelZh: "年" },
+] satisfies Array<{
+  id: MarketChartInterval;
+  label: string;
+  labelZh: string;
+}>;
+
+function mergeReportChunks(
+  previous: AnalysisReport | undefined,
+  reportData: Partial<AnalysisReport>,
+): AnalysisReport {
+  if (!previous) return reportData as AnalysisReport;
+
+  const filtered = Object.fromEntries(
+    Object.entries(reportData).filter(
+      ([, value]) => value !== null && value !== undefined,
+    ),
+  ) as Partial<AnalysisReport>;
+  const mergedCitations = [
+    ...(previous.citations || []),
+    ...(reportData.citations || []),
+  ];
+  const sourceContext = mergeSourceContexts(
+    previous.sourceContext,
+    reportData.sourceContext,
+  );
+
+  return {
+    ...previous,
+    ...filtered,
+    citations:
+      mergedCitations.length > 0 ? mergedCitations : previous.citations,
+    sourceContext,
+  };
+}
+
 const RESEARCH_TASKS = [
   {
     id: "latest_earnings_readout",
@@ -134,40 +225,45 @@ export default function EarningsAnalystApp() {
   const [activeTicker, setActiveTicker] = useState(""); // only set on submit
   const [lang, setLang] = useState("en");
   const [model, setModel] = useState<ByokProviderId>("siliconflow");
-  const [selectedTask, setSelectedTask] = useState<ResearchTaskId>(
-    DEFAULT_RESEARCH_TASK_ID,
-  );
-  const [activeTask, setActiveTask] = useState<ResearchTaskId>(
-    DEFAULT_RESEARCH_TASK_ID,
-  );
   const [providerApiKey, setProviderApiKey] = useState("");
   const [providerKeySaved, setProviderKeySaved] = useState(false);
-  const [report, setReport] = useState<AnalysisReport | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [reportsByTask, setReportsByTask] = useState<ReportsByTask>({});
+  const [activeReportTaskId, setActiveReportTaskId] =
+    useState<ResearchTaskId | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<AnalysisErrorState | null>(null);
-  const [historyData, setHistoryData] = useState<HistoricalDataPoint[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [runState, setRunState] = useState<AnalysisRunState | null>(null);
+  const [pipelineRuns, setPipelineRuns] = useState<AgentPipelineRun[]>([]);
+  const [tickerSuggestionsOpen, setTickerSuggestionsOpen] = useState(false);
+  const [tickerSuggestions, setTickerSuggestions] = useState<TickerSuggestion[]>([]);
+  const [runNow, setRunNow] = useState(0);
   const tickerInputRef = useRef<HTMLInputElement>(null);
   const analysisAbortRef = useRef<AbortController | null>(null);
-  const historyAbortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isZh = lang === "zh";
   const selectedProvider =
     BYOK_PROVIDERS.find((provider) => provider.id === model) ??
     BYOK_PROVIDERS[0];
-  const activeTaskConfig =
-    RESEARCH_TASKS.find((task) => task.id === activeTask) ?? RESEARCH_TASKS[0];
   const reportTitleTicker = activeTicker || ticker;
-  const reportCompanyName = report?.companyName?.trim();
-  const reportPeriod = report?.period?.trim();
-  const reportFilingDate = report?.filingDate?.trim();
+  const orderedReports = RESEARCH_TASKS.flatMap((task) => {
+    const taskReport = reportsByTask[task.id];
+    return taskReport ? [{ task, report: taskReport }] : [];
+  });
+  const primaryReport = orderedReports[0]?.report ?? null;
+  const reportCompanyName = primaryReport?.companyName?.trim();
+  const reportPeriod = primaryReport?.period?.trim();
+  const reportFilingDate = primaryReport?.filingDate?.trim();
   const displayPeriod = formatPeriodForDisplay(reportPeriod, lang);
-
+  const activeReportEntry =
+    activeReportTaskId === null
+      ? null
+      : orderedReports.find(({ task }) => task.id === activeReportTaskId) ?? null;
   useEffect(() => {
     const savedKey = window.localStorage.getItem(selectedProvider.storageKey);
     if (savedKey) {
-      setProviderApiKey(savedKey);
+      setProviderApiKey("");
       setProviderKeySaved(true);
     } else {
       setProviderApiKey("");
@@ -175,10 +271,42 @@ export default function EarningsAnalystApp() {
     }
   }, [selectedProvider.storageKey]);
 
-  // Backend URL: direct to backend in production, local rewrite proxy in dev.
-  const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL
-    ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api`
-    : "/api/java";
+  useEffect(() => {
+    const query = ticker.trim();
+    if (query.length < 2) {
+      setTickerSuggestions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `/api/tickers/search?q=${encodeURIComponent(query)}&limit=8`,
+          { signal: controller.signal },
+        );
+        if (!response.ok) {
+          setTickerSuggestions([]);
+          return;
+        }
+        const payload = (await response.json()) as {
+          suggestions?: TickerSuggestion[];
+        };
+        setTickerSuggestions(payload.suggestions ?? []);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        setTickerSuggestions([]);
+      }
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [ticker]);
+
   const analysisApiBase = process.env.NEXT_PUBLIC_BACKEND_URL
     ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api`
     : "/api";
@@ -186,49 +314,10 @@ export default function EarningsAnalystApp() {
   const normalizeTicker = (rawTicker: string | undefined | null) =>
     rawTicker?.toUpperCase().trim() ?? "";
 
-  // Fetch History Data with retry logic
-  const fetchHistory = async (tickerToFetch: string, requestId: number) => {
-    setHistoryLoading(true);
-    const maxRetries = 2;
-    historyAbortRef.current?.abort();
-    const controller = new AbortController();
-    historyAbortRef.current = controller;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const res = await fetch(`${apiBase}/sec/history/${tickerToFetch}`, {
-          signal: controller.signal,
-        });
-        if (res.ok) {
-          const data = (await res.json()) as HistoricalDataPoint[];
-          if (requestIdRef.current === requestId) {
-            setHistoryData(data);
-          }
-          setHistoryLoading(false);
-          return; // Success — exit
-        }
-        console.warn(`History fetch attempt ${attempt} returned ${res.status}`);
-      } catch (e) {
-        if (controller.signal.aborted) {
-          return;
-        }
-        console.warn(`History fetch attempt ${attempt} failed:`, e);
-      }
-
-      // Wait 1s before retrying
-      if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-
-    // All retries failed
-    console.error(
-      `Failed to fetch history for ${tickerToFetch} after ${maxRetries} attempts`,
-    );
-    if (requestIdRef.current === requestId) {
-      setHistoryData([]);
-      setHistoryLoading(false);
-    }
+  const selectTickerSuggestion = (suggestion: TickerSuggestion) => {
+    setTicker(suggestion.ticker);
+    setTickerSuggestionsOpen(false);
+    tickerInputRef.current?.focus();
   };
 
   const handleSearch = async (rawTicker?: string) => {
@@ -236,7 +325,11 @@ export default function EarningsAnalystApp() {
       rawTicker ?? tickerInputRef.current?.value ?? ticker,
     );
     if (!submittedTicker || isLoading) return;
-    if (!providerApiKey.trim()) {
+    const runtimeProviderKey =
+      providerApiKey.trim() ||
+      window.localStorage.getItem(selectedProvider.storageKey)?.trim() ||
+      "";
+    if (!runtimeProviderKey) {
       setError({
         message: isZh
           ? `请先输入并保存你的 ${selectedProvider.name} API Key。`
@@ -252,108 +345,77 @@ export default function EarningsAnalystApp() {
     analysisAbortRef.current = controller;
 
     setIsLoading(true);
-    setReport(null);
+    setReportsByTask({});
+    setActiveReportTaskId(null);
     setError(null);
-    setHistoryData([]);
     setTicker(submittedTicker);
     setActiveTicker(submittedTicker);
-    setActiveTask(selectedTask);
-
-    // Fetch history data in parallel with analysis (doesn't depend on AI)
-    fetchHistory(submittedTicker, requestId);
+    const startedAt = Date.now();
+    const initialPipelineRuns = RESEARCH_TASKS.map((task) => ({
+      taskId: task.id,
+      taskTitle: isZh ? task.titleZh : task.title,
+      phase: "pending" as const,
+    }));
+    setPipelineRuns(initialPipelineRuns);
+    setRunState({
+      ticker: submittedTicker,
+      taskTitle: isZh ? "全部研究 Agent" : "All research agents",
+      providerName: selectedProvider.name,
+      phase: "submitted",
+      startedAt,
+    });
+    setRunNow(startedAt);
 
     try {
-      console.log(
-        `Fetching ${selectedTask} analysis for ${submittedTicker} using ${model} in ${lang}...`,
-      );
-      const analysisParams = new URLSearchParams({
-        lang,
-        model,
-        taskType: selectedTask,
-      });
-      const response = await fetch(
-        `${analysisApiBase}/sec/analyze/${submittedTicker}?${analysisParams.toString()}`,
-        {
-          headers: { "X-Provider-API-Key": providerApiKey.trim() },
-          signal: controller.signal,
-        },
-      );
-      console.log("Response status:", response.status);
-
-      if (!response.ok || !response.body) {
-        const errorText = await response.text();
-        throw analysisErrorFromResponseText(errorText, response.statusText);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-
-        // Parse SSE format: data:{...}
-        const lines = buffer.split("\n");
-
-        for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i].trim();
-          if (line.startsWith("data:")) {
-            const jsonStr = line.substring(5).trim();
-            try {
-              const reportData = JSON.parse(jsonStr) as Partial<AnalysisReport>;
-              if (requestIdRef.current !== requestId) {
-                continue;
-              }
-              setReport((prev) => {
-                if (!prev) return reportData as AnalysisReport;
-
-                // Filter out null/undefined values from the incoming chunk
-                // to prevent overwriting already-received data from other agents
-                const filtered = Object.fromEntries(
-                  Object.entries(reportData).filter(
-                    ([, value]) => value !== null && value !== undefined,
-                  ),
-                ) as Partial<AnalysisReport>;
-
-                // Merge citations specifically since they are arrays from multiple agents
-                const mergedCitations = [
-                  ...(prev.citations || []),
-                  ...(reportData.citations || []),
-                ];
-                const sourceContext = mergeSourceContexts(
-                  prev.sourceContext,
-                  reportData.sourceContext,
-                );
-
-                return {
-                  ...prev,
-                  ...filtered,
-                  citations:
-                    mergedCitations.length > 0
-                      ? mergedCitations
-                      : prev.citations,
-                  sourceContext,
-                };
-              });
-              console.log("Received progressive report chunk");
-            } catch (e) {
-              console.warn("JSON parse error:", e);
-            }
-          }
+      for (const task of RESEARCH_TASKS) {
+        if (requestIdRef.current !== requestId || controller.signal.aborted) {
+          return;
         }
 
-        // Keep last incomplete line in buffer
-        buffer = lines[lines.length - 1];
+        const taskStartedAt = Date.now();
+        setPipelineRuns((current) =>
+          current.map((run) =>
+            run.taskId === task.id
+              ? { ...run, phase: "submitted", startedAt: taskStartedAt }
+              : run,
+          ),
+        );
+        setRunState((current) =>
+          current && current.ticker === submittedTicker
+            ? {
+                ...current,
+                taskTitle: isZh ? task.titleZh : task.title,
+                phase: "submitted",
+              }
+            : current,
+        );
+
+        await runResearchTask({
+          taskId: task.id,
+          requestId,
+          submittedTicker,
+          runtimeProviderKey,
+          controller,
+        });
+
+        setPipelineRuns((current) =>
+          current.map((run) =>
+            run.taskId === task.id
+              ? { ...run, phase: "received", completedAt: Date.now() }
+              : run,
+          ),
+        );
       }
     } catch (error) {
       if (controller.signal.aborted) {
         return;
       }
       console.error("Fetch Error:", error);
+      setRunState((current) =>
+        current && current.ticker === submittedTicker
+          ? { ...current, phase: "failed" }
+          : current,
+      );
       setError(normalizeAnalysisError(error));
     } finally {
       if (requestIdRef.current === requestId) {
@@ -362,12 +424,109 @@ export default function EarningsAnalystApp() {
     }
   };
 
+  const runResearchTask = async ({
+    taskId,
+    requestId,
+    submittedTicker,
+    runtimeProviderKey,
+    controller,
+  }: {
+    taskId: ResearchTaskId;
+    requestId: number;
+    submittedTicker: string;
+    runtimeProviderKey: string;
+    controller: AbortController;
+  }) => {
+    console.log(
+      `Fetching ${taskId} analysis for ${submittedTicker} using ${model} in ${lang}...`,
+    );
+    const analysisParams = new URLSearchParams({
+      lang,
+      model,
+      taskType: taskId,
+    });
+    const response = await fetch(
+      `${analysisApiBase}/sec/analyze/${submittedTicker}?${analysisParams.toString()}`,
+      {
+        headers: { "X-Provider-API-Key": runtimeProviderKey },
+        signal: controller.signal,
+      },
+    );
+    console.log("Response status:", response.status);
+
+    if (!response.ok || !response.body) {
+      const errorText = await response.text();
+      throw analysisErrorFromResponseText(errorText, response.statusText);
+    }
+
+    setRunState((current) =>
+      current && current.ticker === submittedTicker
+        ? { ...current, phase: "streaming" }
+        : current,
+    );
+    setPipelineRuns((current) =>
+      current.map((run) =>
+        run.taskId === taskId ? { ...run, phase: "streaming" } : run,
+      ),
+    );
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      buffer += chunk;
+
+      const lines = buffer.split("\n");
+
+      for (let i = 0; i < lines.length - 1; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith("data:")) {
+          const jsonStr = line.substring(5).trim();
+          try {
+            const reportData = JSON.parse(jsonStr) as Partial<AnalysisReport>;
+            if (requestIdRef.current !== requestId) {
+              continue;
+            }
+            setRunState((current) =>
+              current && current.ticker === submittedTicker
+                ? { ...current, phase: "received" }
+                : current,
+            );
+            setReportsByTask((current) => ({
+              ...current,
+              [taskId]: mergeReportChunks(current[taskId], reportData),
+            }));
+            console.log("Received progressive report chunk");
+          } catch (e) {
+            console.warn("JSON parse error:", e);
+          }
+        }
+      }
+
+      buffer = lines[lines.length - 1];
+    }
+  };
+
   useEffect(() => {
     return () => {
       analysisAbortRef.current?.abort();
-      historyAbortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isLoading || !runState) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setRunNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isLoading, runState]);
 
   const saveProviderKey = () => {
     const trimmedKey = providerApiKey.trim();
@@ -381,7 +540,7 @@ export default function EarningsAnalystApp() {
       return;
     }
     window.localStorage.setItem(selectedProvider.storageKey, trimmedKey);
-    setProviderApiKey(trimmedKey);
+    setProviderApiKey("");
     setProviderKeySaved(true);
     setError(null);
   };
@@ -397,7 +556,6 @@ export default function EarningsAnalystApp() {
     });
   };
 
-  // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
       const scrollElement = scrollRef.current.querySelector(
@@ -407,7 +565,7 @@ export default function EarningsAnalystApp() {
         scrollElement.scrollTop = scrollElement.scrollHeight;
       }
     }
-  }, [report]);
+  }, [reportsByTask]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-8 font-mono">
@@ -428,20 +586,73 @@ export default function EarningsAnalystApp() {
           <CardContent className="p-4 space-y-3">
             {/* Row 1: Ticker, Language, Button */}
             <div className="flex gap-2">
-              <Input
-                ref={tickerInputRef}
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && void handleSearch(e.currentTarget.value)
-                }
-                placeholder={
-                  isZh
-                    ? "输入股票代码 (如 AAPL, MSFT)"
-                    : "Enter Ticker (e.g., AAPL, MSFT, TSLA)"
-                }
-                className="bg-slate-950 border-slate-700 text-lg font-bold tracking-widest text-emerald-300 flex-1"
-              />
+              <div className="relative flex-1">
+                <Input
+                  ref={tickerInputRef}
+                  value={ticker}
+                  role="combobox"
+                  aria-expanded={tickerSuggestionsOpen && tickerSuggestions.length > 0}
+                  aria-controls="ticker-suggestion-list"
+                  autoComplete="off"
+                  onFocus={() => setTickerSuggestionsOpen(true)}
+                  onBlur={() => {
+                    window.setTimeout(() => setTickerSuggestionsOpen(false), 120);
+                  }}
+                  onChange={(e) => {
+                    setTicker(e.target.value.toUpperCase());
+                    setTickerSuggestionsOpen(true);
+                  }}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && void handleSearch(e.currentTarget.value)
+                  }
+                  placeholder={
+                    isZh
+                      ? "输入股票代码 (如 AAPL, MSFT)"
+                      : "Enter Ticker (e.g., AAPL, MSFT, TSLA)"
+                  }
+                  className="h-14 rounded-lg border-emerald-500/70 bg-slate-950 pr-16 text-xl font-bold tracking-widest text-emerald-200 shadow-[0_0_0_1px_rgba(16,185,129,0.2)] focus-visible:border-emerald-400 focus-visible:ring-emerald-500/30"
+                />
+                <Button
+                  type="button"
+                  aria-label={isZh ? "开始分析" : "Analyze ticker"}
+                  onClick={() => void handleSearch(tickerInputRef.current?.value)}
+                  disabled={isLoading}
+                  className="absolute right-2 top-1/2 h-10 w-10 -translate-y-1/2 rounded-lg bg-emerald-400 p-0 text-slate-950 shadow-lg shadow-emerald-950/40 hover:bg-emerald-300"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <ArrowRight className="h-5 w-5" />
+                  )}
+                </Button>
+                {tickerSuggestionsOpen && tickerSuggestions.length > 0 && (
+                  <div
+                    id="ticker-suggestion-list"
+                    role="listbox"
+                    className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 overflow-hidden rounded-lg border border-emerald-500/30 bg-slate-900 shadow-2xl shadow-slate-950/60"
+                  >
+                    {tickerSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion.ticker}
+                        type="button"
+                        role="option"
+                        aria-label={`${suggestion.ticker} ${suggestion.companyName}`}
+                        aria-selected={ticker === suggestion.ticker}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectTickerSuggestion(suggestion)}
+                        className="flex w-full flex-col items-start gap-1 border-b border-slate-800 px-4 py-3 text-left last:border-b-0 hover:bg-emerald-950/30 focus:bg-emerald-950/30 focus:outline-none"
+                      >
+                        <span className="text-sm font-bold tracking-widest text-emerald-300">
+                          {suggestion.ticker}
+                        </span>
+                        <span className="text-sm text-slate-400">
+                          {suggestion.companyName}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <select
                 value={lang}
@@ -451,69 +662,6 @@ export default function EarningsAnalystApp() {
                 <option value="en">🇺🇸 EN</option>
                 <option value="zh">🇨🇳 CN</option>
               </select>
-
-              <Button
-                onClick={() => void handleSearch(tickerInputRef.current?.value)}
-                disabled={isLoading}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[120px]"
-              >
-                {isLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <Search className="w-4 h-4 mr-2" />{" "}
-                    {isZh ? "开始分析" : "Analyze"}
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {/* Row 2: Task Cards */}
-            <div
-              aria-label={isZh ? "研究任务" : "Research tasks"}
-              role="radiogroup"
-              className="grid grid-cols-1 gap-2 md:grid-cols-3"
-            >
-              {RESEARCH_TASKS.map((task) => {
-                const isSelected = selectedTask === task.id;
-                const Icon = task.Icon;
-
-                return (
-                  <button
-                    key={task.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={isSelected}
-                    onClick={() => setSelectedTask(task.id)}
-                    disabled={isLoading}
-                    className={cn(
-                      "group flex min-h-[76px] items-start gap-3 rounded-md border px-3 py-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60",
-                      isSelected
-                        ? "border-emerald-500 bg-emerald-950/30 text-emerald-100 shadow-[0_0_0_1px_rgba(16,185,129,0.25)]"
-                        : "border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-700 hover:bg-slate-900",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border",
-                        isSelected
-                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                          : "border-slate-800 bg-slate-900 text-slate-500 group-hover:text-slate-300",
-                      )}
-                    >
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 space-y-1">
-                      <span className="block text-sm font-semibold leading-tight">
-                        {isZh ? task.titleZh : task.title}
-                      </span>
-                      <span className="block text-xs leading-snug text-slate-500">
-                        {isZh ? task.descriptionZh : task.description}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
             </div>
 
             {/* Row 3: BYOK Provider Selector */}
@@ -601,10 +749,34 @@ export default function EarningsAnalystApp() {
         {/* Error Display */}
         {error && <AnalysisErrorPanel error={error} isZh={isZh} />}
 
-        {/* Analysis Report */}
-        {report && (
-          <div id="pdf-report-root" className="space-y-6">
-            {/* Report Toolbar */}
+        {isLoading && runState && (
+          <AnalysisRunStatusPanel
+            runState={runState}
+            pipelineRuns={pipelineRuns}
+            isZh={isZh}
+            now={runNow}
+          />
+        )}
+
+        <section
+          id="pdf-report-root"
+          className="grid gap-4 lg:grid-cols-[300px,minmax(0,1fr)]"
+        >
+          <AgentPipelinePanel
+            runs={pipelineRuns}
+            reportsByTask={reportsByTask}
+            activeTaskId={activeReportTaskId}
+            onSelectTask={setActiveReportTaskId}
+            isZh={isZh}
+          />
+
+          <div className="min-w-0 space-y-6">
+            {!activeReportEntry && (
+              <MarketCandlestickPanel ticker={reportTitleTicker} lang={lang} />
+            )}
+
+            {activeReportEntry && (
+              <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div id="pdf-report-header" className="space-y-1">
                 <h2 className="text-lg font-bold text-emerald-400 flex items-center gap-2">
@@ -621,205 +793,76 @@ export default function EarningsAnalystApp() {
                   </p>
                 )}
                 <p className="text-xs uppercase tracking-widest text-slate-500">
-                  {isZh ? activeTaskConfig.titleZh : activeTaskConfig.title}
+                  {isZh ? "三段 Agent 研究流水线" : "Three-agent research pipeline"}
                 </p>
               </div>
-              <div data-pdf-exclude="true">
-                <PdfDownloadButton
-                  report={report}
-                  ticker={reportTitleTicker}
-                  lang={lang}
-                />
-              </div>
+              {primaryReport && (
+                <div data-pdf-exclude="true">
+                  <PdfDownloadButton
+                    report={activeReportEntry.report}
+                    ticker={reportTitleTicker}
+                    lang={lang}
+                  />
+                </div>
+              )}
             </div>
 
-            {activeTask === "business_driver_deep_dive" ? (
-              <BusinessDriverReportSections report={report} lang={lang} />
-            ) : activeTask === "cash_flow_capital_allocation" ? (
-              <CashFlowReportSections report={report} lang={lang} />
-            ) : (
-              <LatestEarningsReportSections
-                report={report}
-                activeTicker={activeTicker}
+              <AgentReportPanel
+                key={activeReportEntry.task.id}
+                task={activeReportEntry.task}
+                report={activeReportEntry.report}
                 lang={lang}
-                currency={report.currency}
-                historyData={historyData}
-                historyLoading={historyLoading}
-                apiBase={apiBase}
               />
-            )}
-
-            <AgentProgress metadata={report.metadata} lang={lang} />
-
-            {/* Citations with Verification Status */}
-            {((report.citations && report.citations.length > 0) ||
-              !!report.sourceContext?.message) && (
-              <Card
-                id="pdf-section-citations"
-                className="bg-slate-900/50 backdrop-blur-sm border-slate-800 hover:border-emerald-500/30 transition-all duration-300"
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-emerald-400 font-medium tracking-wide">
-                    <span className="w-1 h-6 bg-emerald-500 rounded-full inline-block mr-1"></span>
-                    {isZh
-                      ? "来源引用与验证"
-                      : "Source Citations & Verification"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {report.citations && report.citations.length > 0 ? (
-                    report.citations.map((citation, idx) => (
-                      <div
-                        key={idx}
-                        className="bg-slate-950/50 rounded-lg border border-slate-800 p-4 transition-all duration-300 hover:border-slate-700 hover:bg-slate-900/80 group"
-                      >
-                        <div className="flex gap-4 items-start">
-                          <div className="mt-0.5 shrink-0 bg-slate-900 p-1.5 rounded-full border border-slate-800 shadow-sm">
-                            {citation.verificationStatus === "VERIFIED" ? (
-                              <span
-                                title={
-                                  isZh ? "已验证" : "Verified in source text"
-                                }
-                                className="text-emerald-500 text-lg drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]"
-                              >
-                                ✅
-                              </span>
-                            ) : citation.verificationStatus === "UNVERIFIED" ? (
-                              <span
-                                title={
-                                  isZh
-                                    ? "未验证"
-                                    : "Unverified / Low confidence"
-                                }
-                                className="text-yellow-500 text-lg"
-                              >
-                                ⚠️
-                              </span>
-                            ) : citation.verificationStatus === "NOT_FOUND" ? (
-                              <span
-                                title={
-                                  isZh
-                                    ? "未找到 (可能包含幻觉)"
-                                    : "Not found in source text (Possible Hallucination)"
-                                }
-                                className="text-red-500 text-lg"
-                              >
-                                ❌
-                              </span>
-                            ) : (
-                              <span
-                                title={
-                                  isZh ? "无验证数据" : "No verification data"
-                                }
-                                className="text-slate-500 text-lg"
-                              >
-                                ❓
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex-1 space-y-3">
-                            <div className="relative">
-                              <span className="absolute -left-2 -top-2 text-3xl text-slate-800 font-serif select-none">
-                                “
-                              </span>
-                              <p className="text-sm text-slate-300 leading-relaxed italic relative z-10 pl-2">
-                                {isZh && citation.excerptZh
-                                  ? citation.excerptZh
-                                  : citation.excerpt}
-                              </p>
-                              <span className="absolute -bottom-4 right-0 text-3xl text-slate-800 font-serif select-none rotate-180">
-                                “
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/50 mt-2">
-                              <span className="text-[10px] font-bold text-emerald-500/70 uppercase tracking-wider bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30">
-                                {isZh ? "来源" : "SOURCE"}
-                              </span>
-                              <p className="text-xs font-medium text-slate-500 uppercase tracking-widest">
-                                {isZh
-                                  ? (citation.section || "")
-                                      .replace(
-                                        /MD&A/gi,
-                                        "SEC财报中的管理层讨论与分析",
-                                      )
-                                      .replace(/Risk Factors/gi, "风险因素")
-                                      .replace(
-                                        /Financial Statements/gi,
-                                        "财务报表",
-                                      )
-                                      .replace(/Notes/gi, "附注")
-                                  : citation.section}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="bg-slate-950/50 rounded-lg border border-slate-800 p-4">
-                      <div className="flex gap-4 items-start">
-                        <div className="mt-0.5 shrink-0 bg-slate-900 p-1.5 rounded-full border border-slate-800 shadow-sm">
-                          <span
-                            title={
-                              isZh
-                                ? "本次无可验证来源"
-                                : "No verifiable source for this run"
-                            }
-                            className="text-yellow-500 text-lg"
-                          >
-                            ⚠️
-                          </span>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-sm text-slate-200 leading-relaxed">
-                            {getSourceMessage(report.sourceContext, lang)}
-                          </p>
-                          <p className="text-xs uppercase tracking-widest text-slate-500">
-                            {isZh
-                              ? `当前状态：${getSourceStatusLabel(report.sourceContext, lang)}`
-                              : `Current status: ${getSourceStatusLabel(report.sourceContext, lang)}`}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              </div>
             )}
           </div>
-        )}
-
-        {/* Empty State */}
-        {!report && !isLoading && !error && (
-          <Card className="bg-slate-900 border-slate-800 min-h-[400px] flex items-center justify-center">
-            <CardContent className="text-center">
-              <TrendingUp className="w-16 h-16 text-slate-700 mx-auto mb-4" />
-              <p className="text-slate-500 text-lg">
-                {isZh
-                  ? "输入股票代码并点击“开始分析”"
-                  : "Enter a ticker symbol and click Analyze to get started"}
-              </p>
-            </CardContent>
-          </Card>
-        )}
+        </section>
 
         <section
           aria-labelledby="experiment-lab-title"
           className="space-y-3 border-t border-slate-800 pt-6"
         >
-          <div>
-            <p className="text-xs uppercase tracking-widest text-slate-500">
-              Experiment Lab
-            </p>
-            <h2
-              id="experiment-lab-title"
-              className="text-lg font-semibold text-slate-200"
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-slate-500">
+                {isZh ? "开发者诊断" : "Developer diagnostics"}
+              </p>
+              <h2
+                id="experiment-lab-title"
+                className="text-lg font-semibold text-slate-200"
+              >
+                {isZh ? "质量门禁与 RAG 评估" : "Quality gates and RAG evals"}
+              </h2>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDiagnosticsOpen((open) => !open)}
+              className="border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-900"
             >
-              RAG eval artifacts
-            </h2>
+              {diagnosticsOpen
+                ? isZh
+                  ? "隐藏诊断"
+                  : "Hide diagnostics"
+                : isZh
+                  ? "开发者诊断"
+                  : "Developer diagnostics"}
+            </Button>
           </div>
-          <RagEvalDashboard />
+          {diagnosticsOpen && (
+            <p className="text-xs uppercase tracking-widest text-slate-500">
+              {isZh ? "内部验证信息" : "Internal validation artifacts"}
+            </p>
+          )}
+          {diagnosticsOpen &&
+            orderedReports.map(({ task, report }) => (
+              <AgentProgress
+                key={task.id}
+                metadata={report.metadata}
+                lang={lang}
+              />
+            ))}
+          {diagnosticsOpen && <RagEvalDashboard />}
         </section>
       </div>
     </div>
@@ -828,12 +871,814 @@ export default function EarningsAnalystApp() {
 
 interface LatestEarningsReportSectionsProps {
   report: AnalysisReport;
-  activeTicker: string;
   lang: string;
-  currency?: string;
-  historyData: HistoricalDataPoint[];
-  historyLoading: boolean;
-  apiBase: string;
+}
+
+function AnalysisRunStatusPanel({
+  runState,
+  pipelineRuns,
+  isZh,
+  now,
+}: {
+  runState: AnalysisRunState;
+  pipelineRuns: AgentPipelineRun[];
+  isZh: boolean;
+  now: number;
+}) {
+  const elapsedSeconds = Math.max(
+    0,
+    Math.round((now - runState.startedAt) / 1000),
+  );
+  const phaseCopy = analysisRunPhaseCopy(runState.phase, isZh);
+
+  return (
+    <Card
+      role="status"
+      aria-live="polite"
+      className="border-emerald-500/30 bg-slate-900/80"
+    >
+      <CardContent className="space-y-4 p-4">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1 space-y-3">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-emerald-200">
+                {isZh ? "真实 Agent 运行中" : "Live agent run in progress"}
+              </p>
+              <p className="text-sm leading-relaxed text-slate-300">
+                {phaseCopy.detail}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              <RunStatusMetric label="Ticker" value={runState.ticker} />
+              <RunStatusMetric
+                label={isZh ? "任务" : "Task"}
+                value={runState.taskTitle}
+              />
+              <RunStatusMetric label="Provider" value={runState.providerName} />
+              <RunStatusMetric
+                label={isZh ? "耗时" : "Elapsed"}
+                value={`${elapsedSeconds}s`}
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="rounded border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 font-medium text-emerald-200">
+                {phaseCopy.label}
+              </span>
+              <span className="rounded border border-slate-700 bg-slate-950/60 px-2 py-1 text-slate-400">
+                {isZh
+                  ? "正在使用真实后端、SEC filing、Research Service 与 BYOK provider"
+                  : "Using the real backend, SEC filing, Research Service, and BYOK provider"}
+              </span>
+            </div>
+            {pipelineRuns.length > 0 && (
+              <div className="grid gap-2 md:grid-cols-3">
+                {pipelineRuns.map((run) => (
+                  <div
+                    key={run.taskId}
+                    className="rounded border border-slate-800 bg-slate-950/60 px-3 py-2"
+                  >
+                    <p className="truncate text-xs font-medium text-slate-300">
+                      {run.taskTitle}
+                    </p>
+                    <p className="mt-1 text-[10px] uppercase tracking-widest text-slate-500">
+                      {agentPipelinePhaseLabel(run.phase, isZh)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RunStatusMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-md border border-slate-800 bg-slate-950/70 px-3 py-2">
+      <p className="text-[10px] uppercase tracking-widest text-slate-500">
+        {label}
+      </p>
+      <p className="truncate text-sm font-semibold text-slate-200" title={value}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function AgentPipelinePanel({
+  runs,
+  reportsByTask,
+  activeTaskId,
+  onSelectTask,
+  isZh,
+}: {
+  runs: AgentPipelineRun[];
+  reportsByTask: ReportsByTask;
+  activeTaskId: ResearchTaskId | null;
+  onSelectTask: (taskId: ResearchTaskId | null) => void;
+  isZh: boolean;
+}) {
+  const activeRuns: AgentPipelineRun[] =
+    runs.length > 0
+      ? runs
+      : RESEARCH_TASKS.map((task) => ({
+          taskId: task.id,
+          taskTitle: isZh ? task.titleZh : task.title,
+          phase: reportsByTask[task.id] ? "received" : "pending",
+        }));
+
+  return (
+    <section
+      aria-label={isZh ? "Agent 流水线" : "Agent pipeline"}
+      className="rounded-md border border-slate-800 bg-slate-950/60 p-3"
+    >
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-widest text-slate-500">
+            {isZh ? "Agent 流水线" : "Agent Pipeline"}
+          </p>
+          <p className="text-sm text-slate-300">
+            {isZh
+              ? "一次提交，三个研究 Agent 按顺序生成报告。"
+              : "One submission runs all three research agents in order."}
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeTaskId === null}
+        onClick={() => onSelectTask(null)}
+        className={cn(
+          "mb-2 flex w-full items-center justify-between rounded-md border px-3 py-3 text-left transition-colors",
+          activeTaskId === null
+            ? "border-emerald-500/50 bg-emerald-950/30 text-emerald-200"
+            : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700",
+        )}
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-950">
+            <TrendingUp className="h-4 w-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold">
+              {isZh ? "行情图" : "Market Chart"}
+            </span>
+            <span className="block text-xs text-slate-500">
+              {isZh ? "默认视图" : "Default view"}
+            </span>
+          </span>
+        </span>
+      </button>
+      <div className="grid gap-2" role="tablist" aria-label={isZh ? "Agent 报告" : "Agent reports"}>
+        {activeRuns.map((run, index) => {
+          const task = RESEARCH_TASKS.find((item) => item.id === run.taskId);
+          const Icon = task?.Icon ?? Bot;
+          const phase = reportsByTask[run.taskId] ? "received" : run.phase;
+          const selected = activeTaskId === run.taskId;
+          return (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              key={run.taskId}
+              onClick={() => onSelectTask(run.taskId)}
+              className={cn(
+                "min-h-[86px] rounded-md border p-3 text-left transition-colors",
+                selected
+                  ? "border-emerald-500/60 bg-emerald-950/30"
+                  : phase === "received"
+                  ? "border-emerald-500/40 bg-emerald-950/20"
+                  : phase === "streaming" || phase === "submitted"
+                    ? "border-amber-400/40 bg-amber-950/10"
+                    : phase === "failed"
+                      ? "border-red-500/40 bg-red-950/10"
+                      : "border-slate-800 bg-slate-900/70",
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-950 text-slate-300">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] uppercase tracking-widest text-slate-500">
+                    {isZh ? `第 ${index + 1} 步` : `Step ${index + 1}`}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold leading-tight text-slate-100">
+                    {run.taskTitle}
+                  </p>
+                  <p
+                    className={cn(
+                      "mt-2 text-xs font-medium",
+                      phase === "received"
+                        ? "text-emerald-300"
+                        : phase === "streaming" || phase === "submitted"
+                          ? "text-amber-300"
+                          : phase === "failed"
+                            ? "text-red-300"
+                            : "text-slate-500",
+                    )}
+                  >
+                    {agentPipelinePhaseLabel(phase, isZh)}
+                  </p>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function agentPipelinePhaseLabel(
+  phase: AgentPipelineRun["phase"],
+  isZh: boolean,
+) {
+  if (phase === "received") return isZh ? "已完成" : "completed";
+  if (phase === "streaming") return isZh ? "生成中" : "generating";
+  if (phase === "submitted") return isZh ? "已提交" : "submitted";
+  if (phase === "failed") return isZh ? "失败" : "failed";
+  return isZh ? "等待中" : "pending";
+}
+
+function MarketCandlestickPanel({
+  ticker,
+  lang,
+}: {
+  ticker: string;
+  lang: string;
+}) {
+  const isZh = lang === "zh";
+  const [candles, setCandles] = useState<MarketCandle[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [hoveredCandle, setHoveredCandle] = useState<MarketChartHover | null>(
+    null,
+  );
+  const [interval, setInterval] = useState<MarketChartInterval>("1d");
+
+  useEffect(() => {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    if (!normalizedTicker) {
+      return;
+    }
+
+    const controller = new AbortController();
+    void Promise.resolve().then(async () => {
+      setLoading(true);
+      const request = fetch(
+        `/api/market/chart/${encodeURIComponent(normalizedTicker)}?interval=${interval}`,
+        {
+          signal: controller.signal,
+        },
+      );
+      if (!request || typeof request.then !== "function") {
+        setCandles([]);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await request;
+        if (!response.ok) {
+          setCandles([]);
+          return;
+        }
+        const payload = (await response.json()) as { candles?: MarketCandle[] };
+        setCandles(payload.candles ?? []);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        setCandles([]);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return () => controller.abort();
+  }, [ticker, interval]);
+
+  useEffect(() => {
+    setHoveredCandle(null);
+  }, [ticker, interval]);
+
+  const lastCandle = candles[candles.length - 1] ?? null;
+  const previousClose = candles[candles.length - 2]?.close ?? lastCandle?.open;
+  const lastChangePercent =
+    lastCandle && previousClose
+      ? ((lastCandle.close - previousClose) / previousClose) * 100
+      : 0;
+  const activeStats =
+    hoveredCandle ??
+    (lastCandle
+      ? {
+          date: lastCandle.date,
+          open: lastCandle.open,
+          high: lastCandle.high,
+          low: lastCandle.low,
+          close: lastCandle.close,
+          volume: lastCandle.volume,
+          changePercent: lastChangePercent,
+        }
+      : null);
+  const positiveMove = (activeStats?.changePercent ?? 0) >= 0;
+
+  return (
+    <Card className="min-h-[620px] overflow-hidden border-slate-800 bg-[#0b1118] shadow-2xl shadow-slate-950/40">
+      <CardHeader className="border-b border-slate-800 bg-[#0d141c] px-4 py-3">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2 text-emerald-400">
+              <TrendingUp className="h-5 w-5" />
+              {isZh ? `${ticker} K 线图` : `${ticker} Market Chart`}
+            </CardTitle>
+            <p className="mt-1 text-xs text-slate-500">
+              {isZh
+                ? "滚轮缩放，拖拽平移，移动鼠标查看十字光标 OHLC。"
+                : "Scroll to zoom, drag to pan, and move the cursor for crosshair OHLC."}
+            </p>
+          </div>
+          {activeStats && (
+            <div className="grid min-w-0 grid-cols-3 gap-2 text-xs md:grid-cols-6">
+              <MarketStat label="O" value={formatPrice(activeStats.open)} />
+              <MarketStat label="H" value={formatPrice(activeStats.high)} />
+              <MarketStat label="L" value={formatPrice(activeStats.low)} />
+              <MarketStat label="C" value={formatPrice(activeStats.close)} />
+              <MarketStat
+                label={isZh ? "涨跌" : "CHG"}
+                value={`${positiveMove ? "+" : ""}${activeStats.changePercent.toFixed(2)}%`}
+                tone={positiveMove ? "up" : "down"}
+              />
+              <MarketStat
+                label="VOL"
+                value={formatCompactNumber(activeStats.volume ?? 0)}
+              />
+            </div>
+          )}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-widest text-slate-500">
+          <div
+            role="tablist"
+            aria-label={isZh ? "K 线周期" : "Candlestick interval"}
+            className="flex overflow-hidden rounded-md border border-slate-700 bg-slate-950"
+          >
+            {MARKET_CHART_INTERVALS.map((option) => {
+              const selected = interval === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setInterval(option.id)}
+                  className={cn(
+                    "min-h-9 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest transition-colors",
+                    selected
+                      ? "bg-emerald-500/15 text-emerald-300"
+                      : "text-slate-500 hover:bg-slate-900 hover:text-slate-300",
+                  )}
+                >
+                  {isZh ? option.labelZh : option.label}
+                </button>
+              );
+            })}
+          </div>
+          <span className="rounded border border-slate-700 bg-slate-950 px-2 py-1">
+            {isZh ? "全历史" : "ALL"}
+          </span>
+          <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
+            {isZh ? "十字光标" : "Crosshair"}
+          </span>
+          <span className="rounded border border-slate-700 bg-slate-950 px-2 py-1">
+            {isZh ? "滚轮缩放" : "Scroll to zoom"}
+          </span>
+          <span className="rounded border border-slate-700 bg-slate-950 px-2 py-1">
+            {isZh ? "拖拽平移" : "Drag to pan"}
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="h-[520px] min-h-[520px] min-w-0 bg-[#070b11] p-0">
+        {loading ? (
+          <div className="flex h-full items-center justify-center text-sm text-slate-500">
+            {isZh ? "加载行情中..." : "Loading market chart..."}
+          </div>
+        ) : candles.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-sm text-slate-500">
+            {isZh ? "暂无可展示的行情 K 线。" : "No market candles available."}
+          </div>
+        ) : (
+          <TradingCandlestickChart
+            candles={candles}
+            interval={interval}
+            onHoverCandle={setHoveredCandle}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TradingCandlestickChart({
+  candles,
+  interval,
+  onHoverCandle,
+}: {
+  candles: MarketCandle[];
+  interval: MarketChartInterval;
+  onHoverCandle: (candle: MarketChartHover | null) => void;
+}) {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const candlesByTime = useMemo(
+    () => new Map(candles.map((candle) => [candle.date, candle])),
+    [candles],
+  );
+  const defaultVisibleRange = useMemo(
+    () => defaultVisibleLogicalRange(candles.length, interval),
+    [candles.length, interval],
+  );
+  const defaultVisibleFrom =
+    candles[Math.max(0, Math.floor(defaultVisibleRange.from))]?.date ?? "";
+  const defaultVisibleTo =
+    candles[Math.min(candles.length - 1, Math.floor(defaultVisibleRange.to))]
+      ?.date ?? "";
+
+  useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container) return;
+
+    const chart = createChart(container, {
+      autoSize: true,
+      height: 520,
+      layout: {
+        background: { type: ColorType.Solid, color: "#070b11" },
+        textColor: "#8b98a5",
+        fontFamily:
+          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        attributionLogo: false,
+      },
+      grid: {
+        vertLines: { color: "rgba(51, 65, 85, 0.35)" },
+        horzLines: { color: "rgba(51, 65, 85, 0.35)" },
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          color: "rgba(148, 163, 184, 0.55)",
+          labelBackgroundColor: "#111827",
+          style: LineStyle.Dashed,
+          visible: true,
+          labelVisible: true,
+        },
+        horzLine: {
+          color: "rgba(148, 163, 184, 0.55)",
+          labelBackgroundColor: "#111827",
+          style: LineStyle.Dashed,
+          visible: true,
+          labelVisible: true,
+        },
+      },
+      rightPriceScale: {
+        borderColor: "#1e293b",
+        scaleMargins: {
+          top: 0.08,
+          bottom: 0.22,
+        },
+      },
+      timeScale: {
+        borderColor: "#1e293b",
+        barSpacing: 9,
+        minBarSpacing: 3,
+        rightOffset: 8,
+        rightBarStaysOnScroll: true,
+        timeVisible: false,
+      },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: {
+          time: true,
+          price: true,
+        },
+        axisDoubleClickReset: true,
+      },
+      localization: {
+        priceFormatter: (price: number) => formatPrice(price),
+      },
+    });
+
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: "#00c076",
+      downColor: "#f84960",
+      borderUpColor: "#00c076",
+      borderDownColor: "#f84960",
+      wickUpColor: "#00c076",
+      wickDownColor: "#f84960",
+      priceLineColor: "#38bdf8",
+      priceLineWidth: 1,
+    });
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: "volume" },
+      priceScaleId: "",
+      base: 0,
+    });
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: {
+        top: 0.78,
+        bottom: 0,
+      },
+    });
+
+    chart.subscribeCrosshairMove((param) => {
+      const timeKey = String(param.time ?? "");
+      const candle = candlesByTime.get(timeKey);
+      if (!candle) {
+        onHoverCandle(null);
+        return;
+      }
+      const previousIndex = candles.findIndex((item) => item.date === timeKey) - 1;
+      const previousClose = candles[previousIndex]?.close ?? candle.open;
+      onHoverCandle({
+        date: candle.date,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume,
+        changePercent:
+          previousClose === 0
+            ? 0
+            : ((candle.close - previousClose) / previousClose) * 100,
+      });
+    });
+
+    chartRef.current = chart;
+    candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
+
+    return () => {
+      chart.remove();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+    };
+  }, [candles, candlesByTime, onHoverCandle]);
+
+  useEffect(() => {
+    if (!candleSeriesRef.current || !volumeSeriesRef.current || !chartRef.current) {
+      return;
+    }
+
+    const candleData: CandlestickData<Time>[] = candles.map((candle) => ({
+      time: candle.date,
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+    }));
+    const volumeData: HistogramData<Time>[] = candles.map((candle) => ({
+      time: candle.date,
+      value: candle.volume ?? 0,
+      color:
+        candle.close >= candle.open
+          ? "rgba(0, 192, 118, 0.35)"
+          : "rgba(248, 73, 96, 0.35)",
+    }));
+
+    candleSeriesRef.current.setData(candleData);
+    volumeSeriesRef.current.setData(volumeData);
+    chartRef.current.timeScale().setVisibleLogicalRange(defaultVisibleRange);
+  }, [candles, defaultVisibleRange, interval]);
+
+  return (
+    <div
+      ref={chartContainerRef}
+      data-testid="market-candlestick-chart"
+      data-candle-count={candles.length}
+      data-visible-from={defaultVisibleFrom}
+      data-visible-to={defaultVisibleTo}
+      data-interval={interval}
+      className="h-full w-full cursor-crosshair touch-pan-x select-none"
+      aria-label="Interactive candlestick chart with mouse wheel zoom and drag pan"
+    />
+  );
+}
+
+function defaultVisibleLogicalRange(
+  candleCount: number,
+  interval: MarketChartInterval,
+) {
+  const visibleBars = defaultVisibleBarsForInterval(interval);
+  const lastIndex = Math.max(candleCount - 1, 0);
+  const from = Math.max(0, lastIndex - visibleBars + 1);
+  return {
+    from,
+    to: lastIndex + 6,
+  };
+}
+
+function defaultVisibleBarsForInterval(interval: MarketChartInterval) {
+  if (interval === "1d") return 120;
+  if (interval === "1wk") return 104;
+  if (interval === "1mo") return 120;
+  return 60;
+}
+
+function MarketStat({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "up" | "down";
+}) {
+  return (
+    <div className="min-w-0 rounded border border-slate-800 bg-slate-950/70 px-2 py-1">
+      <p className="text-[10px] uppercase tracking-widest text-slate-500">
+        {label}
+      </p>
+      <p
+        className={cn(
+          "truncate text-sm font-semibold tabular-nums",
+          tone === "up"
+            ? "text-emerald-300"
+            : tone === "down"
+              ? "text-rose-300"
+              : "text-slate-200",
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function formatPrice(value: number) {
+  return `$${value.toLocaleString("en-US", {
+    maximumFractionDigits: value >= 100 ? 2 : 4,
+    minimumFractionDigits: 2,
+  })}`;
+}
+
+function formatCompactNumber(value: number) {
+  const absolute = Math.abs(value);
+  if (absolute >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+  if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  if (absolute >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
+  return value.toLocaleString("en-US");
+}
+
+function AgentReportPanel({
+  task,
+  report,
+  lang,
+}: {
+  task: (typeof RESEARCH_TASKS)[number];
+  report: AnalysisReport;
+  lang: string;
+}) {
+  const isZh = lang === "zh";
+  const Icon = task.Icon;
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+          <Icon className="h-4 w-4" />
+        </span>
+        <div>
+          <p className="text-xs uppercase tracking-widest text-slate-500">
+            {isZh ? "Agent 报告" : "Agent Report"}
+          </p>
+          <h3 className="text-lg font-semibold text-emerald-300">
+            {isZh ? task.titleZh : task.title}
+          </h3>
+        </div>
+      </div>
+
+      {task.id === "business_driver_deep_dive" ? (
+        <BusinessDriverReportSections report={report} lang={lang} />
+      ) : task.id === "cash_flow_capital_allocation" ? (
+        <CashFlowReportSections report={report} lang={lang} />
+      ) : (
+        <LatestEarningsReportSections report={report} lang={lang} />
+      )}
+
+      <ReportCitationPanel report={report} lang={lang} taskId={task.id} />
+    </section>
+  );
+}
+
+function ReportCitationPanel({
+  report,
+  lang,
+  taskId,
+}: {
+  report: AnalysisReport;
+  lang: string;
+  taskId: string;
+}) {
+  const isZh = lang === "zh";
+  if (!((report.citations && report.citations.length > 0) || report.sourceContext?.message)) {
+    return null;
+  }
+
+  return (
+    <Card
+      id={`pdf-section-citations-${taskId}`}
+      data-pdf-section="citations"
+      className="bg-slate-900/50 backdrop-blur-sm border-slate-800 hover:border-emerald-500/30 transition-all duration-300"
+    >
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-emerald-400 font-medium tracking-wide">
+          <span className="w-1 h-6 bg-emerald-500 rounded-full inline-block mr-1"></span>
+          {isZh ? "来源引用与验证" : "Source Citations & Verification"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {report.citations && report.citations.length > 0 ? (
+          <CitationEvidenceList citations={report.citations} isZh={isZh} />
+        ) : (
+          <div className="bg-slate-950/50 rounded-lg border border-slate-800 p-4">
+            <div className="flex gap-4 items-start">
+              <div className="mt-0.5 shrink-0 bg-slate-900 p-1.5 rounded-full border border-slate-800 shadow-sm">
+                <AlertTriangle
+                  className="h-4 w-4 text-yellow-500"
+                  aria-hidden="true"
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm text-slate-200 leading-relaxed">
+                  {getSourceMessage(report.sourceContext, lang)}
+                </p>
+                <p className="text-xs uppercase tracking-widest text-slate-500">
+                  {isZh
+                    ? `当前状态：${getSourceStatusLabel(report.sourceContext, lang)}`
+                    : `Current status: ${getSourceStatusLabel(report.sourceContext, lang)}`}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function analysisRunPhaseCopy(phase: AnalysisRunPhase, isZh: boolean) {
+  if (phase === "submitted") {
+    return {
+      label: isZh ? "后端与 Agent 运行中" : "Backend and agent running",
+      detail: isZh
+        ? "前端已提交分析请求；后端正在拉取 filing、调用 Research Service，并等待 provider 返回报告。"
+        : "The frontend submitted the request; the backend is fetching the filing, calling Research Service, and waiting for the provider-backed report.",
+    };
+  }
+  if (phase === "streaming") {
+    return {
+      label: isZh ? "等待 Agent 输出" : "Waiting for agent output",
+      detail: isZh
+        ? "后端已接受请求，Research Service 正在检索证据、合成报告并返回 typed sections。"
+        : "The backend accepted the request; Research Service is retrieving evidence, synthesizing the report, and returning typed sections.",
+    };
+  }
+  if (phase === "received") {
+    return {
+      label: isZh ? "收到报告片段" : "Report chunk received",
+      detail: isZh
+        ? "已收到至少一个报告片段，前端正在渲染任务专属组件。"
+        : "At least one report chunk arrived; the frontend is rendering the task-specific components.",
+    };
+  }
+  return {
+    label: isZh ? "运行失败" : "Run failed",
+    detail: isZh
+      ? "本次运行失败，错误原因会显示在上方错误卡片。"
+      : "This run failed; the error card above shows the failure reason.",
+  };
 }
 
 function AgentProgress({
@@ -878,92 +1723,115 @@ function AgentProgress({
 
 function LatestEarningsReportSections({
   report,
-  activeTicker,
   lang,
-  currency,
-  historyData,
-  historyLoading,
-  apiBase,
 }: LatestEarningsReportSectionsProps) {
+  const typedSections =
+    report.taskSections?.taskType === "latest_earnings_readout"
+      ? resolveLatestEarningsSections(report.taskSections)
+      : null;
+
+  if (typedSections) {
+    return <TypedLatestEarningsSections sections={typedSections} lang={lang} />;
+  }
+
+  return <MissingTaskSectionsCard lang={lang} taskTitle="Latest Earnings Readout" />;
+}
+
+function TypedLatestEarningsSections({
+  sections,
+  lang,
+}: {
+  sections: LatestEarningsSections;
+  lang: string;
+}) {
   const isZh = lang === "zh";
+  const toplineVerdict = sections.toplineVerdict ?? {
+    headline: isZh ? "财报观点待补充" : "Latest earnings thesis pending",
+    verdict: "mixed" as const,
+    summary: isZh
+      ? "当前 typed contract 没有提供完整财报观点。"
+      : "The typed contract did not provide a complete earnings thesis.",
+  };
 
   return (
     <>
-      <div id="pdf-section-summary">
+      <div
+        id="pdf-section-summary-latest-earnings-readout"
+        data-pdf-section="summary"
+        className="space-y-6"
+      >
         <ResearchViewCard
           lang={lang}
-          title={isZh ? "财报 Dashboard 视图" : "Earnings Dashboard View"}
+          title={isZh ? "财报速读视图" : "Earnings Readout View"}
           description={
             isZh
-              ? "这个视图保留完整 dashboard，用于快速读懂最新财报的核心表现。"
-              : "This view keeps the full dashboard for a fast readout of the latest earnings release."
+              ? "回答这次财报到底好不好、哪些指标最重要、发生了什么变化以及下一步该盯什么。"
+              : "Answers whether the quarter was good, which KPIs matter, what changed, and what to watch next."
           }
           labels={[
-            isZh ? "核心财务指标" : "Key Financial Metrics",
-            isZh ? "利润率与趋势图" : "Margin and Trend Charts",
-            isZh ? "证据引用" : "Evidence Trail",
+            isZh ? "财报判断" : "Earnings Verdict",
+            isZh ? "关键指标条" : "KPI Strip",
+            isZh ? "发生了什么变化" : "What Changed",
+            isZh ? "下一步观察" : "Watch Next",
           ]}
         />
-        <ExecutiveSummary
-          thesis={report.coreThesis}
-          businessSignals={report.businessSignals}
-          summary={report.executiveSummary}
-          metadata={report.metadata}
-          lang={lang}
+        {sections.companyProfile && (
+          <CompanyProfileCard profile={sections.companyProfile} lang={lang} />
+        )}
+        <AnalystVerdictCard
+          eyebrow={isZh ? "财报判断" : "Earnings Verdict"}
+          headline={toplineVerdict.headline}
+          status={toplineVerdict.verdict}
+          summary={toplineVerdict.summary}
         />
       </div>
 
-      <div id="pdf-section-metrics">
-        <KeyMetrics
-          metrics={report.keyMetrics}
-          ticker={activeTicker}
-          lang={lang}
-          currency={currency}
-          historyData={historyData}
-          historyLoading={historyLoading}
-          apiBase={apiBase}
-        />
-      </div>
+      <MetricStripCard
+        title={isZh ? "关键指标条" : "KPI Strip"}
+        metrics={sections.financialDashboard?.metrics ?? []}
+        emptyText={isZh ? "没有指标证据。" : "No KPI evidence provided."}
+      />
 
-      <div id="pdf-section-advanced" className="space-y-6">
-        <h2 className="text-xl font-bold flex items-center gap-2 text-emerald-400 border-b border-slate-800 pb-2">
-          <TrendingUp className="w-6 h-6" />
-          {isZh ? "深度洞察" : "Advanced Insights"}
-        </h2>
-        <div id="chart-dupont">
-          <DuPontChart data={report.dupontAnalysis!} lang={lang} />
-        </div>
-        <div id="chart-topics">
-          <TopicWordCloud trends={report.topicTrends || []} lang={lang} />
-        </div>
-        <div id="chart-insights">
-          <InsightCards data={report.insightEngine!} lang={lang} />
-        </div>
-        <div id="chart-radar">
-          <FinancialHealthRadar
-            ticker={activeTicker}
-            lang={lang}
-            apiBase={apiBase}
-          />
-        </div>
-      </div>
-
-      <div
-        id="pdf-section-drivers-risks"
-        className="grid grid-cols-1 md:grid-cols-2 gap-6"
-      >
-        <BusinessDrivers drivers={report.businessDrivers || []} lang={lang} />
-        <RiskFactors risks={report.riskFactors || []} lang={lang} />
-      </div>
-
-      <div id="pdf-section-bull-bear">
-        <BullBearCase
-          bullCase={report.bullCase}
-          bearCase={report.bearCase}
-          lang={lang}
-        />
-      </div>
+      <PointListCard
+        title={isZh ? "发生了什么变化" : "What Changed"}
+        points={[
+          ...(sections.keyTakeaways ?? []),
+          ...(sections.driverSnapshot ?? []),
+        ].slice(0, 5)}
+        emptyText={isZh ? "没有变化要点。" : "No change points provided."}
+      />
+      <PointListCard
+        title={isZh ? "下一步观察" : "Watch Next"}
+        points={sections.riskSnapshot ?? []}
+        emptyText={isZh ? "没有观察项。" : "No watch items provided."}
+      />
     </>
+  );
+}
+
+function CompanyProfileCard({
+  profile,
+  lang,
+}: {
+  profile: CompanyProfileSection;
+  lang: string;
+}) {
+  return (
+    <Card
+      aria-labelledby="company-profile-title"
+      className="bg-slate-900 border-slate-800"
+    >
+      <CardHeader className="border-b border-slate-800">
+        <CardTitle id="company-profile-title" className="text-emerald-400">
+          {lang === "zh" ? "公司画像" : "Company Profile"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-6">
+        <p className="max-w-5xl text-sm leading-7 text-slate-300">
+          {profile.summary}
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -974,101 +1842,16 @@ function BusinessDriverReportSections({
   report: AnalysisReport;
   lang: string;
 }) {
-  const isZh = lang === "zh";
   const typedSections =
     report.taskSections?.taskType === "business_driver_deep_dive"
       ? resolveBusinessDriverSections(report.taskSections)
       : null;
 
   if (typedSections) {
-    return (
-      <TypedBusinessDriverSections sections={typedSections} lang={lang} />
-    );
+    return <TypedBusinessDriverSections sections={typedSections} lang={lang} />;
   }
 
-  const driverGroups = buildBusinessDriverGroups(report, lang);
-  const evidence = buildBusinessEvidence(report);
-
-  return (
-    <>
-      <div id="pdf-section-summary" className="space-y-6">
-        <ResearchViewCard
-          lang={lang}
-          title={
-            isZh ? "业务驱动研究视图" : "Business Driver Research View"
-          }
-          description={
-            isZh
-              ? "这个视图优先解释产品、分部、需求、定价、客户和战略动作，而不是只重复财务指标。"
-              : "This view prioritizes products, segments, demand, pricing, customers, and strategic actions instead of repeating financial metrics."
-          }
-          labels={[
-            isZh ? "产品 / 分部信号" : "Product / Segment Signals",
-            isZh ? "需求与定价信号" : "Demand & Pricing Signals",
-            isZh ? "竞争与执行风险" : "Competitive / Execution Risks",
-          ]}
-        />
-        <ExecutiveSummary
-          thesis={report.coreThesis}
-          businessSignals={report.businessSignals}
-          summary={report.executiveSummary}
-          metadata={report.metadata}
-          lang={lang}
-        />
-      </div>
-
-      <Card className="bg-slate-900 border-slate-800">
-        <CardHeader className="border-b border-slate-800">
-          <CardTitle className="text-emerald-400">
-            {isZh ? "驱动因素地图" : "Driver Map"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 p-6 md:grid-cols-2">
-          {driverGroups.map((group) => (
-            <div
-              key={group.title}
-              className="rounded-md border border-slate-800 bg-slate-950/60 p-4"
-            >
-              <p className="text-sm font-semibold text-slate-200">
-                {group.title}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                {group.detail}
-              </p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card className="bg-slate-900 border-slate-800">
-        <CardHeader className="border-b border-slate-800">
-          <CardTitle className="text-emerald-400">
-            {isZh ? "驱动证据" : "Driver Evidence"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 p-6">
-          {evidence.length > 0 ? (
-            evidence.map((item, index) => (
-              <EvidenceRow
-                key={`${item.label}-${index}`}
-                label={item.label}
-                detail={item.detail}
-                meta={item.meta}
-              />
-            ))
-          ) : (
-            <p className="text-sm text-slate-500">
-              {isZh
-                ? "当前报告没有提供可拆分的驱动证据。"
-                : "This report did not provide separable driver evidence."}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <BusinessDrivers drivers={report.businessDrivers || []} lang={lang} />
-    </>
-  );
+  return <MissingTaskSectionsCard lang={lang} taskTitle="Business Driver Deep Dive" />;
 }
 
 function CashFlowReportSections({
@@ -1078,7 +1861,6 @@ function CashFlowReportSections({
   report: AnalysisReport;
   lang: string;
 }) {
-  const isZh = lang === "zh";
   const typedSections =
     report.taskSections?.taskType === "cash_flow_capital_allocation"
       ? resolveCashFlowSections(report.taskSections)
@@ -1088,86 +1870,11 @@ function CashFlowReportSections({
     return <TypedCashFlowSections sections={typedSections} lang={lang} />;
   }
 
-  const cashMetrics = filterCashMetrics(report.keyMetrics || []);
-  const allocationEvidence = buildCapitalAllocationEvidence(report);
-
   return (
-    <>
-      <div id="pdf-section-summary" className="space-y-6">
-        <ResearchViewCard
-          lang={lang}
-          title={isZh ? "资本配置视图" : "Capital Allocation View"}
-          description={
-            isZh
-              ? "这个视图优先解释经营现金流、自由现金流、资本开支、回购、债务和流动性。"
-              : "This view prioritizes operating cash flow, free cash flow, capex, buybacks, debt, and liquidity."
-          }
-          labels={[
-            isZh ? "现金转化质量" : "Cash Conversion Quality",
-            isZh ? "资本开支 / 投资强度" : "Capex / Investment Intensity",
-            isZh ? "回购 / 债务 / 流动性" : "Buybacks / Debt / Liquidity",
-          ]}
-        />
-        <ExecutiveSummary
-          thesis={report.coreThesis}
-          businessSignals={report.businessSignals}
-          summary={report.executiveSummary}
-          metadata={report.metadata}
-          lang={lang}
-        />
-      </div>
-
-      <Card className="bg-slate-900 border-slate-800">
-        <CardHeader className="border-b border-slate-800">
-          <CardTitle className="text-emerald-400">
-            {isZh ? "现金质量判断" : "Cash Quality Verdict"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 p-6 md:grid-cols-3">
-          {(cashMetrics.length > 0
-            ? cashMetrics
-            : [
-                {
-                  metricName: isZh ? "现金指标" : "Cash Metrics",
-                  value: isZh ? "待补充" : "Pending",
-                  interpretation: isZh
-                    ? "当前后端 contract 尚未提供专属现金流字段。"
-                    : "The current backend contract has not provided dedicated cash-flow fields yet.",
-                  sentiment: "neutral" as const,
-                },
-              ]
-          ).map((metric) => (
-            <MetricFocusBlock key={metric.metricName} metric={metric} />
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card className="bg-slate-900 border-slate-800">
-        <CardHeader className="border-b border-slate-800">
-          <CardTitle className="text-emerald-400">
-            {isZh ? "资本配置视角" : "Capital Allocation Lens"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 p-6">
-          {allocationEvidence.length > 0 ? (
-            allocationEvidence.map((item, index) => (
-              <EvidenceRow
-                key={`${item.label}-${index}`}
-                label={item.label}
-                detail={item.detail}
-                meta={item.meta}
-              />
-            ))
-          ) : (
-            <p className="text-sm text-slate-500">
-              {isZh
-                ? "当前报告没有提供回购、债务、资本开支或流动性相关证据。"
-                : "This report did not provide buyback, debt, capex, or liquidity evidence."}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    </>
+    <MissingTaskSectionsCard
+      lang={lang}
+      taskTitle="Cash Flow & Capital Allocation"
+    />
   );
 }
 
@@ -1199,41 +1906,32 @@ function TypedBusinessDriverSections({
 
   return (
     <>
-      <div id="pdf-section-summary" className="space-y-6">
+      <div
+        id="pdf-section-summary-business-driver-deep-dive"
+        data-pdf-section="summary"
+        className="space-y-6"
+      >
         <ResearchViewCard
           lang={lang}
-          title={
-            isZh ? "业务驱动研究视图" : "Business Driver Research View"
-          }
+          title={isZh ? "业务驱动研究视图" : "Business Driver Research View"}
           description={
             isZh
-              ? "这个视图由 typed task sections 驱动，优先展示业务驱动、信号和跟踪项。"
-              : "This view is powered by typed task sections and prioritizes drivers, signals, and watch items."
+              ? "回答增长由什么驱动、强度如何、能否持续，以及哪些信号支持或反驳。"
+              : "Answers what drives the business, how strong it is, whether it is durable, and which signals support or challenge it."
           }
           labels={[
-            isZh ? "产品 / 分部信号" : "Product / Segment Signals",
-            isZh ? "需求与定价信号" : "Demand & Pricing Signals",
-            isZh ? "竞争与执行风险" : "Competitive / Execution Risks",
+            isZh ? "论点" : "Thesis",
+            isZh ? "驱动地图" : "Driver Map",
+            isZh ? "影响表" : "Impact Table",
+            isZh ? "信号" : "Signals",
           ]}
         />
-        <Card className="bg-slate-900 border-slate-800">
-          <CardHeader className="border-b border-slate-800">
-            <CardTitle className="text-emerald-400">
-              {isZh ? "驱动论点" : "Driver Thesis"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            <p className="text-lg font-semibold text-slate-100">
-              {driverThesis.headline}
-            </p>
-            <p className="mt-2 text-sm uppercase tracking-widest text-slate-500">
-              {driverThesis.durability}
-            </p>
-            <p className="mt-3 text-sm leading-6 text-slate-400">
-              {driverThesis.summary}
-            </p>
-          </CardContent>
-        </Card>
+        <AnalystVerdictCard
+          eyebrow={isZh ? "论点" : "Thesis"}
+          headline={driverThesis.headline}
+          status={driverThesis.durability}
+          summary={driverThesis.summary}
+        />
       </div>
 
       <Card className="bg-slate-900 border-slate-800">
@@ -1254,7 +1952,10 @@ function TypedBusinessDriverSections({
               <div className="mt-3 space-y-3">
                 {group.items.length > 0 ? (
                   group.items.map((item, index) => (
-                    <EvidencePointBlock key={`${item.title}-${index}`} point={item} />
+                    <EvidencePointBlock
+                      key={`${item.title}-${index}`}
+                      point={item}
+                    />
                   ))
                 ) : (
                   <p className="text-sm text-slate-500">
@@ -1267,15 +1968,15 @@ function TypedBusinessDriverSections({
         </CardContent>
       </Card>
 
+      <ImpactTableCard groups={driverGroups} lang={lang} />
+
       <PointListCard
-        title={isZh ? "正向信号" : "Positive Signals"}
-        points={sections.positiveSignals ?? []}
-        emptyText={isZh ? "没有正向信号。" : "No positive signals provided."}
-      />
-      <PointListCard
-        title={isZh ? "负向信号" : "Negative Signals"}
-        points={sections.negativeSignals ?? []}
-        emptyText={isZh ? "没有负向信号。" : "No negative signals provided."}
+        title={isZh ? "信号" : "Signals"}
+        points={[
+          ...(sections.positiveSignals ?? []),
+          ...(sections.negativeSignals ?? []),
+        ]}
+        emptyText={isZh ? "没有信号。" : "No signals provided."}
       />
       <WatchlistCard items={sections.watchlist ?? []} lang={lang} />
     </>
@@ -1314,58 +2015,43 @@ function TypedCashFlowSections({
 
   return (
     <>
-      <div id="pdf-section-summary" className="space-y-6">
+      <div
+        id="pdf-section-summary-cash-flow-capital-allocation"
+        data-pdf-section="summary"
+        className="space-y-6"
+      >
         <ResearchViewCard
           lang={lang}
           title={isZh ? "资本配置视图" : "Capital Allocation View"}
           description={
             isZh
-              ? "这个视图由 typed task sections 驱动，优先展示现金质量和资本配置。"
-              : "This view is powered by typed task sections and prioritizes cash quality and capital allocation."
+              ? "回答利润是否由现金支撑、现金流如何转化，以及管理层如何配置资本。"
+              : "Answers whether earnings are backed by cash, how cash converts, and how management allocates capital."
           }
           labels={[
-            isZh ? "现金转化质量" : "Cash Conversion Quality",
-            isZh ? "资本开支 / 投资强度" : "Capex / Investment Intensity",
-            isZh ? "回购 / 债务 / 流动性" : "Buybacks / Debt / Liquidity",
+            isZh ? "现金质量" : "Cash Quality",
+            isZh ? "现金流桥" : "Cash Flow Bridge",
+            isZh ? "资本配置评分卡" : "Capital Allocation Scorecard",
           ]}
         />
-        <Card className="bg-slate-900 border-slate-800">
-          <CardHeader className="border-b border-slate-800">
-            <CardTitle className="text-emerald-400">
-              {isZh ? "现金质量判断" : "Cash Quality Verdict"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            <p className="text-lg font-semibold text-slate-100">
-              {cashQualityVerdict.headline}
-            </p>
-            <p className="mt-2 text-sm uppercase tracking-widest text-slate-500">
-              {cashQualityVerdict.earningsBackedByCash}
-            </p>
-            <p className="mt-3 text-sm leading-6 text-slate-400">
-              {cashQualityVerdict.summary}
-            </p>
-          </CardContent>
-        </Card>
+        <AnalystVerdictCard
+          eyebrow={isZh ? "现金质量" : "Cash Quality"}
+          headline={cashQualityVerdict.headline}
+          status={cashQualityVerdict.earningsBackedByCash}
+          summary={cashQualityVerdict.summary}
+        />
       </div>
 
-      <Card className="bg-slate-900 border-slate-800">
-        <CardHeader className="border-b border-slate-800">
-          <CardTitle className="text-emerald-400">
-            {isZh ? "现金指标" : "Cash Metrics"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 p-6 md:grid-cols-3">
-          {(sections.cashMetrics ?? []).map((metric) => (
-            <EvidenceMetricBlock key={metric.name} metric={metric} />
-          ))}
-        </CardContent>
-      </Card>
+      <MetricStripCard
+        title={isZh ? "现金流桥" : "Cash Flow Bridge"}
+        metrics={sections.cashMetrics ?? []}
+        emptyText={isZh ? "没有现金流指标。" : "No cash flow metrics provided."}
+      />
 
       <Card className="bg-slate-900 border-slate-800">
         <CardHeader className="border-b border-slate-800">
           <CardTitle className="text-emerald-400">
-            {isZh ? "资本配置视角" : "Capital Allocation Lens"}
+            {isZh ? "资本配置评分卡" : "Capital Allocation Scorecard"}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 p-6 md:grid-cols-2">
@@ -1380,7 +2066,10 @@ function TypedCashFlowSections({
               <div className="mt-3 space-y-3">
                 {group.items.length > 0 ? (
                   group.items.map((item, index) => (
-                    <EvidencePointBlock key={`${item.title}-${index}`} point={item} />
+                    <EvidencePointBlock
+                      key={`${item.title}-${index}`}
+                      point={item}
+                    />
                   ))
                 ) : (
                   <p className="text-sm text-slate-500">
@@ -1396,7 +2085,11 @@ function TypedCashFlowSections({
       <PointListCard
         title={isZh ? "配置纪律" : "Allocation Discipline"}
         points={sections.allocationDiscipline ?? []}
-        emptyText={isZh ? "没有配置纪律信号。" : "No allocation discipline points provided."}
+        emptyText={
+          isZh
+            ? "没有配置纪律信号。"
+            : "No allocation discipline points provided."
+        }
       />
       <PointListCard
         title={isZh ? "风险信号" : "Red Flags"}
@@ -1414,10 +2107,36 @@ function resolveBusinessDriverSections(
     businessDriver?: BusinessDriverSections | null;
   };
   if (envelope.businessDriver) {
-    return envelope.businessDriver;
+    return withTaskSectionEnvelopeFields(
+      envelope.businessDriver,
+      taskSections,
+      "business_driver_deep_dive",
+    );
   }
   if ("driverThesis" in taskSections || "driverMap" in taskSections) {
     return taskSections as BusinessDriverSections;
+  }
+  return null;
+}
+
+function resolveLatestEarningsSections(
+  taskSections: NonNullable<AnalysisReport["taskSections"]>,
+): LatestEarningsSections | null {
+  const envelope = taskSections as {
+    latestEarnings?: LatestEarningsSections | null;
+  };
+  if (envelope.latestEarnings) {
+    return withTaskSectionEnvelopeFields(
+      envelope.latestEarnings,
+      taskSections,
+      "latest_earnings_readout",
+    );
+  }
+  if (
+    "toplineVerdict" in taskSections ||
+    "financialDashboard" in taskSections
+  ) {
+    return taskSections as LatestEarningsSections;
   }
   return null;
 }
@@ -1429,12 +2148,37 @@ function resolveCashFlowSections(
     cashFlowCapitalAllocation?: CashFlowCapitalAllocationSections | null;
   };
   if (envelope.cashFlowCapitalAllocation) {
-    return envelope.cashFlowCapitalAllocation;
+    return withTaskSectionEnvelopeFields(
+      envelope.cashFlowCapitalAllocation,
+      taskSections,
+      "cash_flow_capital_allocation",
+    );
   }
-  if ("cashQualityVerdict" in taskSections || "capitalAllocation" in taskSections) {
+  if (
+    "cashQualityVerdict" in taskSections ||
+    "capitalAllocation" in taskSections
+  ) {
     return taskSections as CashFlowCapitalAllocationSections;
   }
   return null;
+}
+
+function withTaskSectionEnvelopeFields<
+  TSection extends
+    | LatestEarningsSections
+    | BusinessDriverSections
+    | CashFlowCapitalAllocationSections,
+>(
+  section: TSection,
+  envelope: NonNullable<AnalysisReport["taskSections"]>,
+  taskType: TSection["taskType"],
+): TSection {
+  return {
+    ...section,
+    schemaVersion: section.schemaVersion ?? envelope.schemaVersion,
+    taskType: section.taskType ?? taskType,
+    coverage: section.coverage ?? envelope.coverage,
+  };
 }
 
 function emptyDriverMap(): BusinessDriverSections["driverMap"] {
@@ -1491,51 +2235,470 @@ function ResearchViewCard({
   );
 }
 
-function MetricFocusBlock({ metric }: { metric: MetricInsight }) {
+function CitationEvidenceList({
+  citations,
+  isZh,
+}: {
+  citations: Citation[];
+  isZh: boolean;
+}) {
+  const evidenceItems = normalizeCitationEvidence(citations, isZh);
+
   return (
-    <div className="rounded-md border border-slate-800 bg-slate-950/60 p-4">
-      <p className="text-sm text-slate-400">{metric.metricName}</p>
-      <p className="mt-1 text-xl font-semibold text-emerald-300">
-        {metric.value}
-      </p>
-      <p className="mt-3 text-sm leading-6 text-slate-400">
-        {metric.interpretation}
-      </p>
+    <div className="space-y-3">
+      {evidenceItems.map((item) => {
+        const Icon = citationStatusIcon(item.status);
+        return (
+          <div
+            key={item.key}
+            className="rounded-lg border border-slate-800 bg-slate-950/60 p-4"
+          >
+            <div className="flex gap-3">
+              <div
+                className={cn(
+                  "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border",
+                  citationStatusIconClass(item.status),
+                )}
+                title={citationStatusLabel(item.status, isZh)}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    className={cn(
+                      "rounded border px-2 py-0.5 text-[10px] uppercase tracking-widest",
+                      citationStatusBadgeClass(item.status),
+                    )}
+                  >
+                    {citationStatusLabel(item.status, isZh)}
+                  </Badge>
+                  <span className="min-w-0 max-w-full break-words text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+                    {item.sourceLabel}
+                  </span>
+                  {item.duplicateCount > 1 && (
+                    <span className="rounded border border-slate-800 bg-slate-900 px-2 py-0.5 text-[10px] uppercase tracking-widest text-slate-500">
+                      {isZh
+                        ? `合并 ${item.duplicateCount} 条`
+                        : `${item.duplicateCount} merged`}
+                    </span>
+                  )}
+                </div>
+                <p className="max-w-3xl break-words text-sm leading-6 text-slate-200">
+                  {item.summary}
+                </p>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="break-words">{item.sectionLabel}</span>
+                </div>
+                {item.rawExcerpt && (
+                  <details className="group rounded-md border border-slate-800 bg-slate-950/70">
+                    <summary className="cursor-pointer px-3 py-2 text-xs font-medium uppercase tracking-widest text-slate-500 transition-colors hover:text-slate-300">
+                      {isZh ? "展开原文片段" : "Show source excerpt"}
+                    </summary>
+                    <p className="max-h-48 overflow-auto whitespace-pre-wrap break-words border-t border-slate-800 px-3 py-3 text-xs leading-5 text-slate-400">
+                      {item.rawExcerpt}
+                    </p>
+                  </details>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+type CitationEvidenceItem = {
+  key: string;
+  status?: Citation["verificationStatus"];
+  sourceLabel: string;
+  sectionLabel: string;
+  summary: string;
+  rawExcerpt?: string;
+  duplicateCount: number;
+};
+
+function normalizeCitationEvidence(
+  citations: Citation[],
+  isZh: boolean,
+): CitationEvidenceItem[] {
+  const grouped = new Map<string, CitationEvidenceItem>();
+  citations.forEach((citation) => {
+    const excerpt = normalizeCitationText(
+      isZh && citation.excerptZh ? citation.excerptZh : citation.excerpt,
+    );
+    const section = normalizeCitationText(citation.section || "Source");
+    const key = `${citation.verificationStatus || "UNKNOWN"}:${section}:${excerpt}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.duplicateCount += 1;
+      return;
+    }
+    grouped.set(key, {
+      key,
+      status: citation.verificationStatus,
+      sourceLabel: sourceLabelForCitation(section, excerpt, isZh),
+      sectionLabel: sectionLabelForCitation(section, isZh),
+      summary: summarizeCitationExcerpt(excerpt, section, isZh),
+      rawExcerpt: shouldHideRawCitation(excerpt) ? excerpt : undefined,
+      duplicateCount: 1,
+    });
+  });
+  return [...grouped.values()].slice(0, 8);
+}
+
+function normalizeCitationText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function sourceLabelForCitation(
+  section: string,
+  excerpt: string,
+  isZh: boolean,
+): string {
+  if (/sec companyfacts/i.test(section) || /sec companyfacts/i.test(excerpt)) {
+    return "SEC companyfacts";
+  }
+  if (/gross margin|form 10-q|10-k|10-q/i.test(excerpt)) {
+    return isZh ? "SEC filing" : "Full filing";
+  }
+  return sectionLabelForCitation(section, isZh);
+}
+
+function sectionLabelForCitation(section: string, isZh: boolean): string {
+  if (!isZh) return section || "Source";
+  return (section || "Source")
+    .replace(/MD&A/gi, "管理层讨论与分析")
+    .replace(/Risk Factors/gi, "风险因素")
+    .replace(/Financial Statements/gi, "财务报表")
+    .replace(/SEC companyfacts/gi, "SEC companyfacts")
+    .replace(/Notes/gi, "附注");
+}
+
+function summarizeCitationExcerpt(
+  excerpt: string,
+  section: string,
+  isZh: boolean,
+): string {
+  const secFact = summarizeSecCompanyFact(excerpt);
+  if (secFact) return secFact;
+  if (isNoisyTableExcerpt(excerpt)) {
+    return isZh
+      ? "财报包含相关表格证据，但原始表格文本过于碎片化，已折叠到原文片段中。"
+      : "The filing contains the relevant table evidence, but the extracted table text is too noisy to render inline.";
+  }
+  const cleaned = excerpt.replace(/[|]{2,}/g, " ").replace(/-{3,}/g, " ");
+  return clipSentence(cleaned || section, 260);
+}
+
+function summarizeSecCompanyFact(excerpt: string): string | null {
+  const match = excerpt.match(
+    /SEC companyfacts\s+(.+?)\s+reports\s+(.+?)\s+of\s+(-?\d+(?:\.\d+)?)\s+([A-Z]+)?\s+for\s+([A-Za-z0-9]+)\s+filed\s+([0-9-]+)/i,
+  );
+  if (!match) return null;
+  const [, concept, metric, rawValue, unit = "", period, filed] = match;
+  const value = Number(rawValue);
+  const formattedValue =
+    Number.isFinite(value) && unit === "USD"
+      ? `$${compactDisplayNumber(value)}`
+      : `${rawValue}${unit ? ` ${unit}` : ""}`;
+  return `${humanizeMetricName(metric)}: ${formattedValue} for ${period}; filed ${filed}. Concept: ${breakLongConcept(concept)}.`;
+}
+
+function isNoisyTableExcerpt(excerpt: string): boolean {
+  const pipeCount = (excerpt.match(/\|/g) || []).length;
+  const dashRunCount = (excerpt.match(/---/g) || []).length;
+  return pipeCount >= 8 || dashRunCount >= 4;
+}
+
+function shouldHideRawCitation(excerpt: string): boolean {
+  return isNoisyTableExcerpt(excerpt) || excerpt.length > 320;
+}
+
+function clipSentence(value: string, limit: number): string {
+  const cleaned = value.trim();
+  if (cleaned.length <= limit) return cleaned;
+  return `${cleaned.slice(0, limit).trim()}...`;
+}
+
+function humanizeMetricName(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function breakLongConcept(value: string): string {
+  return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+}
+
+function compactDisplayNumber(value: number): string {
+  const absolute = Math.abs(value);
+  if (absolute >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
+function citationStatusLabel(
+  status: Citation["verificationStatus"] | undefined,
+  isZh: boolean,
+) {
+  if (status === "VERIFIED") return isZh ? "已验证" : "Verified";
+  if (status === "UNVERIFIED") return isZh ? "待核验" : "Partial";
+  if (status === "NOT_FOUND") return isZh ? "未找到" : "Missing";
+  return isZh ? "未知" : "Unknown";
+}
+
+function citationStatusIcon(status: Citation["verificationStatus"] | undefined) {
+  if (status === "VERIFIED") return CheckCircle2;
+  if (status === "UNVERIFIED") return AlertCircle;
+  if (status === "NOT_FOUND") return XCircle;
+  return CircleHelp;
+}
+
+function citationStatusIconClass(
+  status: Citation["verificationStatus"] | undefined,
+) {
+  if (status === "VERIFIED") {
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+  }
+  if (status === "UNVERIFIED") {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+  }
+  if (status === "NOT_FOUND") {
+    return "border-rose-500/30 bg-rose-500/10 text-rose-300";
+  }
+  return "border-slate-700 bg-slate-900 text-slate-400";
+}
+
+function citationStatusBadgeClass(
+  status: Citation["verificationStatus"] | undefined,
+) {
+  if (status === "VERIFIED") {
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+  }
+  if (status === "UNVERIFIED") {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+  }
+  if (status === "NOT_FOUND") {
+    return "border-rose-500/30 bg-rose-500/10 text-rose-300";
+  }
+  return "border-slate-700 bg-slate-900 text-slate-400";
+}
+
+function AnalystVerdictCard({
+  eyebrow,
+  headline,
+  status,
+  summary,
+}: {
+  eyebrow: string;
+  headline: string;
+  status: string;
+  summary: string;
+}) {
+  return (
+    <Card className="bg-slate-900 border-slate-800">
+      <CardHeader className="border-b border-slate-800">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <CardTitle className="text-emerald-400">{eyebrow}</CardTitle>
+          <Badge className="w-fit border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+            {status}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="p-6">
+        <p className="text-xl font-semibold leading-8 text-slate-100">
+          {headline}
+        </p>
+        <p className="mt-3 text-sm leading-6 text-slate-400">{summary}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MetricStripCard({
+  title,
+  metrics,
+  emptyText,
+}: {
+  title: string;
+  metrics: EvidenceBoundMetric[];
+  emptyText: string;
+}) {
+  return (
+    <Card className="bg-slate-900 border-slate-800">
+      <CardHeader className="border-b border-slate-800">
+        <CardTitle className="text-emerald-400">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3 p-6 md:grid-cols-3">
+        {metrics.length > 0 ? (
+          metrics.map((metric) => (
+            <EvidenceMetricBlock key={metric.name} metric={metric} />
+          ))
+        ) : (
+          <p className="text-sm text-slate-500">{emptyText}</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
 function EvidencePointBlock({ point }: { point: EvidenceBoundPoint }) {
   return (
-    <div className="rounded-md border border-slate-800 bg-slate-950/60 p-3">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <p className="font-semibold text-slate-200">{point.title}</p>
-        <p className="text-xs uppercase tracking-widest text-slate-500">
+    <div className="min-w-0 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-3">
+      <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <p className="min-w-0 [overflow-wrap:anywhere] font-semibold text-slate-200">
+          {point.title}
+        </p>
+        <p className="shrink-0 text-xs uppercase tracking-widest text-slate-500">
           {point.citationStatus}
         </p>
       </div>
-      <p className="mt-2 text-sm leading-6 text-slate-400">{point.summary}</p>
+      <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400">
+        {point.summary}
+      </p>
     </div>
+  );
+}
+
+function ImpactTableCard({
+  groups,
+  lang,
+}: {
+  groups: { label: string; items: EvidenceBoundPoint[] }[];
+  lang: string;
+}) {
+  const isZh = lang === "zh";
+  const rows = groups.flatMap((group) =>
+    group.items.map((item) => ({
+      category: group.label,
+      title: item.title,
+      summary: item.summary,
+      status: item.citationStatus,
+    })),
+  );
+
+  return (
+    <Card className="bg-slate-900 border-slate-800">
+      <CardHeader className="border-b border-slate-800">
+        <CardTitle className="text-emerald-400">
+          {isZh ? "影响表" : "Impact Table"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 p-6">
+        {rows.length > 0 ? (
+          rows.slice(0, 8).map((row, index) => (
+            <div
+              key={`${row.category}-${row.title}-${index}`}
+              className="grid min-w-0 gap-3 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4 md:grid-cols-[140px,minmax(0,1fr),120px]"
+            >
+              <p className="min-w-0 [overflow-wrap:anywhere] text-sm font-semibold text-slate-200">
+                {row.category}
+              </p>
+              <div className="min-w-0">
+                <p className="min-w-0 [overflow-wrap:anywhere] text-sm font-semibold text-slate-100">
+                  {row.title}
+                </p>
+                <p className="mt-1 min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400">
+                  {row.summary}
+                </p>
+              </div>
+              <p className="shrink-0 text-xs uppercase tracking-widest text-slate-500">
+                {row.status}
+              </p>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-slate-500">
+            {isZh ? "没有可评分的驱动项。" : "No driver impact items provided."}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
 function EvidenceMetricBlock({ metric }: { metric: EvidenceBoundMetric }) {
   return (
-    <div className="rounded-md border border-slate-800 bg-slate-950/60 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm text-slate-400">{metric.name}</p>
-        <p className="text-xs uppercase tracking-widest text-slate-500">
+    <div className="min-w-0 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <p className="min-w-0 [overflow-wrap:anywhere] text-sm text-slate-400">
+          {metric.name}
+        </p>
+        <p className="shrink-0 text-xs uppercase tracking-widest text-slate-500">
           {metric.citationStatus}
         </p>
       </div>
-      <p className="mt-1 text-xl font-semibold text-emerald-300">
-        {metric.value}
+      <p className="mt-1 min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-emerald-300">
+        {formatMetricDisplayValue(metric.value)}
       </p>
-      <p className="mt-3 text-sm leading-6 text-slate-400">
+      <p className="mt-3 min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400">
         {metric.interpretation}
       </p>
     </div>
   );
+}
+
+function formatMetricDisplayValue(value: string) {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return value;
+
+  if (
+    /[%]|(?:\b|[0-9])(k|m|b|t|million|billion|trillion)\b/i.test(trimmedValue)
+  ) {
+    return value;
+  }
+
+  const numericMatch = trimmedValue.match(
+    /^([$€£¥])?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(USD|EUR|GBP|JPY|CNY)?$/i,
+  );
+  if (!numericMatch) return value;
+
+  const [, leadingCurrency, rawNumber, trailingCurrency] = numericMatch;
+  const numericValue = Number(rawNumber.replace(/,/g, ""));
+  if (!Number.isFinite(numericValue)) return value;
+
+  const absoluteValue = Math.abs(numericValue);
+  const compactUnit =
+    absoluteValue >= 1_000_000_000_000
+      ? { divisor: 1_000_000_000_000, suffix: "T" }
+      : absoluteValue >= 1_000_000_000
+        ? { divisor: 1_000_000_000, suffix: "B" }
+        : absoluteValue >= 1_000_000
+          ? { divisor: 1_000_000, suffix: "M" }
+          : absoluteValue >= 10_000
+            ? { divisor: 1_000, suffix: "K" }
+            : null;
+
+  if (!compactUnit) return value;
+
+  const currencySymbol =
+    leadingCurrency ?? currencyCodeToSymbol(trailingCurrency);
+  const compactNumber = (numericValue / compactUnit.divisor)
+    .toFixed(1)
+    .replace(/\.0$/, "");
+
+  return `${currencySymbol}${compactNumber}${compactUnit.suffix}`;
+}
+
+function currencyCodeToSymbol(currencyCode: string | undefined) {
+  switch (currencyCode?.toUpperCase()) {
+    case "USD":
+      return "$";
+    case "EUR":
+      return "€";
+    case "GBP":
+      return "£";
+    case "JPY":
+    case "CNY":
+      return "¥";
+    default:
+      return "";
+  }
 }
 
 function PointListCard({
@@ -1595,147 +2758,37 @@ function WatchlistCard({ items, lang }: { items: string[]; lang: string }) {
   );
 }
 
-function EvidenceRow({
-  label,
-  detail,
-  meta,
+function MissingTaskSectionsCard({
+  lang,
+  taskTitle,
 }: {
-  label: string;
-  detail: string;
-  meta?: string;
+  lang: string;
+  taskTitle: string;
 }) {
-  return (
-    <div className="rounded-md border border-slate-800 bg-slate-950/60 p-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <p className="font-semibold text-slate-200">{label}</p>
-        {meta && (
-          <p className="text-xs uppercase tracking-widest text-slate-500">
-            {meta}
-          </p>
-        )}
-      </div>
-      <p className="mt-2 text-sm leading-6 text-slate-400">{detail}</p>
-    </div>
-  );
-}
-
-function buildBusinessDriverGroups(report: AnalysisReport, lang: string) {
   const isZh = lang === "zh";
-  const signals = report.businessSignals;
-  const fallbackDrivers = report.businessDrivers || [];
-  const fallbackDetail =
-    fallbackDrivers
-      .map((driver) => `${driver.title}: ${driver.description}`)
-      .join(" ") ||
-    report.coreThesis?.summary ||
-    report.executiveSummary ||
-    (isZh ? "当前报告没有提供该维度。" : "No signal provided for this lens.");
 
-  return [
-    {
-      title: isZh ? "产品 / 服务" : "Product / Service",
-      detail: summarizeSignalItems(signals?.productServiceUpdates, fallbackDetail),
-    },
-    {
-      title: isZh ? "分部 / 地区" : "Segment / Geography",
-      detail: summarizeSignalItems(signals?.segmentPerformance, fallbackDetail),
-    },
-    {
-      title: isZh ? "管理层重点" : "Management Focus",
-      detail: summarizeSignalItems(signals?.managementFocus, fallbackDetail),
-    },
-    {
-      title: isZh ? "战略动作" : "Strategic Actions",
-      detail: summarizeSignalItems(signals?.strategicMoves, fallbackDetail),
-    },
-  ];
-}
-
-function summarizeSignalItems(
-  items: BusinessSignalItem[] | undefined,
-  fallback: string,
-) {
-  const summary = items
-    ?.map((item) => item.summary || item.evidenceSnippet || item.title)
-    .filter(Boolean)
-    .join(" ");
-
-  return summary || fallback;
-}
-
-function buildBusinessEvidence(report: AnalysisReport) {
-  const refs =
-    report.businessSignals?.evidenceRefs?.map((ref) =>
-      evidenceFromBusinessRef(ref),
-    ) ?? [];
-  const driverEvidence =
-    report.businessDrivers?.map((driver) => ({
-      label: driver.title,
-      detail: driver.description,
-      meta: `Impact: ${driver.impact}`,
-    })) ?? [];
-
-  return [...refs, ...driverEvidence].slice(0, 6);
-}
-
-function evidenceFromBusinessRef(ref: BusinessEvidenceRef) {
-  return {
-    label: ref.topic || "Evidence",
-    detail: ref.excerpt || "No excerpt provided.",
-    meta: ref.section,
-  };
-}
-
-const CASH_KEYWORDS = [
-  "cash",
-  "free cash flow",
-  "operating cash flow",
-  "ocf",
-  "fcf",
-  "capex",
-  "capital expenditure",
-  "buyback",
-  "repurchase",
-  "dividend",
-  "debt",
-  "liquidity",
-];
-
-function filterCashMetrics(metrics: MetricInsight[]) {
-  return metrics
-    .filter((metric) =>
-      CASH_KEYWORDS.some((keyword) =>
-        `${metric.metricName} ${metric.interpretation}`
-          .toLowerCase()
-          .includes(keyword),
-      ),
-    )
-    .slice(0, 6);
-}
-
-function buildCapitalAllocationEvidence(report: AnalysisReport) {
-  const citationEvidence =
-    report.citations
-      ?.filter((citation) => citationMatchesKeywords(citation, CASH_KEYWORDS))
-      .map((citation) => ({
-        label: citation.section || "SEC Evidence",
-        detail: "Source excerpt available in Evidence Trail.",
-        meta: citation.verificationStatus,
-      })) ?? [];
-  const metricEvidence = filterCashMetrics(report.keyMetrics || []).map(
-    (metric) => ({
-      label: metric.metricName,
-      detail: metric.interpretation,
-      meta: metric.value,
-    }),
+  return (
+    <Card className="border-amber-500/30 bg-slate-900">
+      <CardHeader className="border-b border-slate-800">
+        <CardTitle className="flex items-center gap-2 text-amber-300">
+          <AlertTriangle className="h-5 w-5" />
+          {isZh ? "缺少 typed taskSections" : "Missing typed taskSections"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 p-6">
+        <p className="text-sm leading-6 text-slate-300">
+          {isZh
+            ? `当前 ${taskTitle} 报告没有返回任务专属 typed contract。前端已移除旧 dashboard 兜底，避免展示过期的 legacy 字段。`
+            : `The ${taskTitle} report did not include its task-specific typed contract. The legacy dashboard fallback has been removed so stale legacy fields are not presented as a valid report.`}
+        </p>
+        <p className="text-xs uppercase tracking-widest text-slate-500">
+          {isZh
+            ? "请检查 Python Research Service final_report.task_sections。"
+            : "Check Python Research Service final_report.task_sections."}
+        </p>
+      </CardContent>
+    </Card>
   );
-
-  return [...metricEvidence, ...citationEvidence].slice(0, 6);
-}
-
-function citationMatchesKeywords(citation: Citation, keywords: string[]) {
-  const haystack = `${citation.section} ${citation.excerpt}`.toLowerCase();
-  return keywords.some((keyword) => haystack.includes(keyword));
 }
 
 function analysisErrorFromResponseText(
@@ -1745,19 +2798,47 @@ function analysisErrorFromResponseText(
   if (!errorText) {
     return { message: `Network response error: ${statusText}` };
   }
+  const normalizedErrorText = stripSseDataPrefix(errorText);
   try {
-    const parsed = JSON.parse(errorText) as Partial<AnalysisErrorState> & {
+    const parsed = JSON.parse(
+      normalizedErrorText,
+    ) as Partial<AnalysisErrorState> & {
       error?: string;
     };
     return {
-      message: parsed.error || parsed.message || `Network response error: ${statusText}`,
+      message: userFacingErrorMessage(
+        parsed.error ||
+          parsed.message ||
+          `Network response error: ${statusText}`,
+        parsed.code,
+      ),
       code: parsed.code,
       source: parsed.source,
       degraded: parsed.degraded,
     };
   } catch {
-    return { message: errorText };
+    return { message: userFacingErrorMessage(normalizedErrorText) };
   }
+}
+
+function stripSseDataPrefix(errorText: string): string {
+  const trimmed = errorText.trim();
+  return trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed;
+}
+
+function userFacingErrorMessage(message: string, code?: string): string {
+  const lowerMessage = message.toLowerCase();
+  const isResearchServiceTimeout =
+    code === "RESEARCH_SERVICE_UNAVAILABLE" &&
+    (message.includes("Did not observe any item or terminal signal") ||
+      message.includes("flatMap") ||
+      lowerMessage.includes("timeout") ||
+      lowerMessage.includes("timed out"));
+
+  if (isResearchServiceTimeout) {
+    return "The research agent took too long to finish. Please retry or choose a narrower task while we optimize live report generation.";
+  }
+  return message;
 }
 
 function normalizeAnalysisError(error: unknown): AnalysisErrorState {

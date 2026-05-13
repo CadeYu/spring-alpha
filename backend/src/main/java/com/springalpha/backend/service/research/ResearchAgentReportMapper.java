@@ -6,8 +6,10 @@ import com.springalpha.backend.financial.contract.AnalysisReport;
 import com.springalpha.backend.financial.contract.ResearchTaskType;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Component
 public class ResearchAgentReportMapper {
@@ -32,9 +34,11 @@ public class ResearchAgentReportMapper {
                 .companyName(stringValue(finalReport.get("company_name")))
                 .period(stringValue(finalReport.get("period")))
                 .reportType(stringValue(finalReport.get("report_type")))
+                .filingDate(filingDate(finalReport))
                 .sourceContext(sourceContext(result))
                 .metadata(AnalysisReport.AnalysisMetadata.builder()
                         .modelName("python-research-service")
+                        .generatedAt(Instant.now().toString())
                         .language(language)
                         .agentEvents(agentEvents(result))
                         .build())
@@ -86,6 +90,42 @@ public class ResearchAgentReportMapper {
                     .latestEarnings(convert(rawSections, AnalysisReport.LatestEarningsSections.class))
                     .build();
         };
+    }
+
+    private String filingDate(Map<String, Object> finalReport) {
+        String explicitFilingDate = firstNonBlank(
+                stringValue(finalReport.get("filing_date")),
+                stringValue(finalReport.get("filingDate")));
+        if (explicitFilingDate != null) {
+            return explicitFilingDate;
+        }
+        return findFilingDate(finalReport).orElse(null);
+    }
+
+    private Optional<String> findFilingDate(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            String filingDate = firstNonBlank(
+                    stringValue(map.get("filing_date")),
+                    stringValue(map.get("filingDate")));
+            if (filingDate != null) {
+                return Optional.of(filingDate);
+            }
+            for (Object nestedValue : map.values()) {
+                Optional<String> nestedFilingDate = findFilingDate(nestedValue);
+                if (nestedFilingDate.isPresent()) {
+                    return nestedFilingDate;
+                }
+            }
+        }
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                Optional<String> nestedFilingDate = findFilingDate(item);
+                if (nestedFilingDate.isPresent()) {
+                    return nestedFilingDate;
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     private ResearchTaskType taskType(ResearchAgentResult result, Map<String, Object> rawSections) {

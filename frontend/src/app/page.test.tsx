@@ -8,71 +8,40 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/components/app/earnings-analyst-app";
 
-vi.mock("@/components/analysis/ExecutiveSummary", () => ({
-  ExecutiveSummary: ({
-    summary,
-    thesis,
-  }: {
-    summary?: string;
-    thesis?: { summary?: string };
-  }) => (
-    <div data-testid="executive-summary">
-      {thesis?.summary || summary || "summary"}
-    </div>
-  ),
-}));
-
-vi.mock("@/components/analysis/KeyMetrics", () => ({
-  KeyMetrics: ({
-    ticker,
-    historyData,
-  }: {
-    ticker?: string;
-    historyData?: Array<{ period: string }>;
-  }) => (
-    <div data-testid="key-metrics">
-      key-metrics:{ticker || "none"}:
-      {historyData?.map((item) => item.period).join("|") || "none"}
-    </div>
-  ),
-}));
-
-vi.mock("@/components/analysis/BusinessDrivers", () => ({
-  BusinessDrivers: () => (
-    <div data-testid="business-drivers">business-drivers</div>
-  ),
-}));
-
-vi.mock("@/components/analysis/RiskFactors", () => ({
-  RiskFactors: () => <div data-testid="risk-factors">risk-factors</div>,
-}));
-
-vi.mock("@/components/analysis/BullBearCase", () => ({
-  BullBearCase: () => <div data-testid="bull-bear-case">bull-bear-case</div>,
-}));
-
-vi.mock("@/components/financial/dupont-chart", () => ({
-  DuPontChart: () => <div data-testid="dupont-chart">dupont-chart</div>,
-}));
-
-vi.mock("@/components/financial/insight-cards", () => ({
-  InsightCards: () => <div data-testid="insight-cards">insight-cards</div>,
-}));
-
-vi.mock("@/components/financial/financial-health-radar", () => ({
-  FinancialHealthRadar: () => (
-    <div data-testid="financial-health-radar">financial-health-radar</div>
-  ),
-}));
-
-vi.mock("@/components/analysis/TopicWordCloud", () => ({
-  TopicWordCloud: () => (
-    <div data-testid="topic-word-cloud">topic-word-cloud</div>
-  ),
-}));
-
 vi.mock("@/components/pdf/PdfDownloadButton", () => ({
   PdfDownloadButton: () => <button type="button">pdf</button>,
+}));
+
+const chartTimeScaleMock = {
+  fitContent: vi.fn(),
+  scrollToRealTime: vi.fn(),
+  setVisibleLogicalRange: vi.fn(),
+};
+
+vi.mock("lightweight-charts", () => ({
+  CandlestickSeries: "CandlestickSeries",
+  ColorType: {
+    Solid: "solid",
+  },
+  CrosshairMode: {
+    Normal: 0,
+  },
+  HistogramSeries: "HistogramSeries",
+  LineStyle: {
+    Dashed: 2,
+  },
+  createChart: vi.fn(() => ({
+    addSeries: vi.fn(() => ({
+      priceScale: vi.fn(() => ({
+        applyOptions: vi.fn(),
+      })),
+      setData: vi.fn(),
+    })),
+    applyOptions: vi.fn(),
+    remove: vi.fn(),
+    subscribeCrosshairMove: vi.fn(),
+    timeScale: vi.fn(() => chartTimeScaleMock),
+  })),
 }));
 
 function createSseResponse(payloads: unknown[]): Response {
@@ -97,9 +66,42 @@ function createDeferredResponse() {
   return { promise, resolve, reject };
 }
 
+function latestTaskSections(headline: string, summary = `${headline} summary.`) {
+  return {
+    schemaVersion: "task_sections.v1",
+    taskType: "latest_earnings_readout",
+    coverage: {
+      status: "complete",
+      missingSections: [],
+      evidenceCount: 1,
+    },
+    latestEarnings: {
+      toplineVerdict: {
+        headline,
+        verdict: "mixed",
+        summary,
+      },
+      keyTakeaways: [],
+      financialDashboard: {
+        metrics: [],
+        chartFocus: [],
+      },
+      driverSnapshot: [],
+      riskSnapshot: [],
+    },
+  };
+}
+
+function openAgentReport(name: RegExp) {
+  fireEvent.click(screen.getByRole("tab", { name }));
+}
+
 describe("Home page", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    chartTimeScaleMock.fitContent.mockClear();
+    chartTimeScaleMock.scrollToRealTime.mockClear();
+    chartTimeScaleMock.setVisibleLogicalRange.mockClear();
     window.localStorage.clear();
     window.localStorage.setItem("spring-alpha-siliconflow-key", "sk-test-123");
   });
@@ -134,6 +136,10 @@ describe("Home page", () => {
             message:
               "SEC filing was available, but semantic grounding was not ready yet.",
           },
+          taskSections: latestTaskSections(
+            "Typed degraded thesis",
+            "Tesla remained under pressure.",
+          ),
         },
       ]);
     });
@@ -143,28 +149,28 @@ describe("Home page", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
+    openAgentReport(/latest earnings readout/i);
+
     expect(
       await screen.findByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).toBeInTheDocument();
+    openAgentReport(/latest earnings readout/i);
+
     expect(
-      await screen.findByText(
-        "SEC filing was available, but semantic grounding was not ready yet.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByTestId("executive-summary")).toHaveTextContent(
-      "Tesla remained under pressure.",
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/sec/history/AAPL"),
-      expect.anything(),
-    );
+      (
+        await screen.findAllByText(
+          "SEC filing was available, but semantic grounding was not ready yet.",
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("Typed degraded thesis")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/sec/analyze/AAPL?lang=en&model=siliconflow"),
       expect.anything(),
     );
   });
 
-  it("routes analysis through the local SSE bridge while history still uses the java proxy", async () => {
+  it("routes analysis through the local SSE bridge", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -189,6 +195,7 @@ describe("Home page", () => {
             generatedAt: "2026-03-09T10:00:00",
             language: "en",
           },
+          taskSections: latestTaskSections("Typed route thesis"),
         },
       ]);
     });
@@ -198,20 +205,314 @@ describe("Home page", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
+    openAgentReport(/latest earnings readout/i);
+
+    openAgentReport(/latest earnings readout/i);
+
     expect(
       await screen.findByText("Apple Inc. · Q1 2026 · 2026-02-01"),
     ).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/java/sec/history/AAPL",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
-  it("renders MVP task cards and submits the selected task type", async () => {
+  it("runs all three research agents sequentially from one ticker submission", async () => {
+    const taskOrder: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const taskType = new URL(`http://test${url}`).searchParams.get(
+        "taskType",
+      );
+      if (taskType) taskOrder.push(taskType);
+
+      if (taskType === "business_driver_deep_dive") {
+        return createSseResponse([
+          {
+            executiveSummary: "Business driver report.",
+            companyName: "Apple Inc.",
+            period: "Q1 2026",
+            filingDate: "2026-02-01",
+            keyMetrics: [],
+            businessDrivers: [],
+            riskFactors: [],
+            citations: [],
+            taskSections: {
+              schemaVersion: "task_sections.v1",
+              taskType,
+              coverage: {
+                status: "complete",
+                missingSections: [],
+                evidenceCount: 1,
+              },
+              businessDriver: {
+                driverThesis: {
+                  headline: "Business driver agent thesis",
+                  durability: "durable",
+                  summary: "Business driver agent summary.",
+                },
+                driverMap: {
+                  product: [],
+                  segment: [],
+                  geography: [],
+                  demand: [],
+                  pricing: [],
+                  customer: [],
+                  strategy: [],
+                },
+                positiveSignals: [],
+                negativeSignals: [],
+                watchlist: [],
+              },
+            },
+          },
+        ]);
+      }
+
+      if (taskType === "cash_flow_capital_allocation") {
+        return createSseResponse([
+          {
+            executiveSummary: "Cash flow report.",
+            companyName: "Apple Inc.",
+            period: "Q1 2026",
+            filingDate: "2026-02-01",
+            keyMetrics: [],
+            businessDrivers: [],
+            riskFactors: [],
+            citations: [],
+            taskSections: {
+              schemaVersion: "task_sections.v1",
+              taskType,
+              coverage: {
+                status: "complete",
+                missingSections: [],
+                evidenceCount: 1,
+              },
+              cashFlowCapitalAllocation: {
+                cashQualityVerdict: {
+                  headline: "Cash flow agent verdict",
+                  earningsBackedByCash: "mixed",
+                  summary: "Cash flow agent summary.",
+                },
+                cashMetrics: [],
+                capitalAllocation: {
+                  capex: [],
+                  buybacks: [],
+                  dividends: [],
+                  debt: [],
+                  liquidity: [],
+                },
+                allocationDiscipline: [],
+                redFlags: [],
+              },
+            },
+          },
+        ]);
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Latest earnings report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          taskSections: latestTaskSections("Earnings agent verdict"),
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    openAgentReport(/latest earnings readout/i);
+    expect(await screen.findByText("Earnings agent verdict")).toBeInTheDocument();
+    openAgentReport(/business driver deep dive/i);
+    expect(await screen.findByText("Business driver agent thesis")).toBeInTheDocument();
+    openAgentReport(/cash flow & capital allocation/i);
+    expect(await screen.findByText("Cash flow agent verdict")).toBeInTheDocument();
+    expect(taskOrder).toEqual([
+      "latest_earnings_readout",
+      "business_driver_deep_dive",
+      "cash_flow_capital_allocation",
+    ]);
+  });
+
+  it("shows the market chart by default and opens an agent report from the sidebar", async () => {
+    const taskOrder: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/market/chart/")) {
+        return new Response(
+          JSON.stringify({
+            candles: Array.from({ length: 150 }, (_, index) => ({
+              date: `2026-05-${String((index % 28) + 1).padStart(2, "0")}`,
+              open: 100 + index,
+              high: 112 + index,
+              low: 98 + index,
+              close: 108 + index,
+              volume: 123456 + index,
+            })),
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (url.includes("/api/market/chart/")) {
+        return new Response(
+          JSON.stringify({
+            candles: Array.from({ length: 150 }, (_, index) => ({
+              date: `2026-05-${String((index % 28) + 1).padStart(2, "0")}`,
+              open: 100 + index,
+              high: 112 + index,
+              low: 98 + index,
+              close: 108 + index,
+              volume: 123456 + index,
+            })),
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const taskType = new URL(`http://test${url}`).searchParams.get(
+        "taskType",
+      );
+      if (taskType) taskOrder.push(taskType);
+
+      if (taskType === "business_driver_deep_dive") {
+        return createSseResponse([
+          {
+            companyName: "Apple Inc.",
+            period: "Q1 2026",
+            filingDate: "2026-02-01",
+            citations: [],
+            taskSections: {
+              schemaVersion: "task_sections.v1",
+              taskType,
+              coverage: {
+                status: "complete",
+                missingSections: [],
+                evidenceCount: 1,
+              },
+              businessDriver: {
+                driverThesis: {
+                  headline: "Business driver agent thesis",
+                  durability: "durable",
+                  summary: "Business driver agent summary.",
+                },
+                driverMap: {
+                  product: [],
+                  segment: [],
+                  geography: [],
+                  demand: [],
+                  pricing: [],
+                  customer: [],
+                  strategy: [],
+                },
+                positiveSignals: [],
+                negativeSignals: [],
+                watchlist: [],
+              },
+            },
+          },
+        ]);
+      }
+
+      return createSseResponse([
+        {
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          citations: [],
+          taskSections: latestTaskSections("Earnings agent verdict"),
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    expect(await screen.findByText(/AAPL market chart/i)).toBeInTheDocument();
+    expect(screen.getByTestId("market-candlestick-chart")).toBeInTheDocument();
+    expect(screen.getAllByText(/scroll to zoom/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/drag to pan/i).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/market/chart/AAPL?interval=1d",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    await waitFor(() =>
+      expect(chartTimeScaleMock.setVisibleLogicalRange).toHaveBeenCalledWith({
+        from: 30,
+        to: 155,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "1W" }));
+    fireEvent.click(screen.getByRole("tab", { name: "1M" }));
+    fireEvent.click(screen.getByRole("tab", { name: "1Y" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/market/chart/AAPL?interval=1y",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    expect(chartTimeScaleMock.fitContent).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    await waitFor(() =>
+      expect(taskOrder).toEqual([
+        "latest_earnings_readout",
+        "business_driver_deep_dive",
+        "cash_flow_capital_allocation",
+      ]),
+    );
+    expect(screen.getByText(/AAPL market chart/i)).toBeInTheDocument();
+    expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
+    expect(screen.queryByText("Business driver agent thesis")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("tab", { name: /latest earnings readout/i }),
+    );
+
+    expect(await screen.findByText("Earnings agent verdict")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("tab", { name: /business driver deep dive/i }),
+    );
+
+    expect(
+      await screen.findByText("Business driver agent thesis"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
+  });
+
+  it("renders the agent pipeline and submits all task types", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -245,32 +546,78 @@ describe("Home page", () => {
     render(<Home />);
 
     expect(
-      screen.getByRole("radiogroup", { name: /research tasks/i }),
+      screen.getByRole("region", { name: /agent pipeline/i }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("radio", { name: /latest earnings readout/i }),
-    ).toBeChecked();
-    expect(
-      screen.getByRole("radio", { name: /business driver deep dive/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("radio", {
-        name: /cash flow & capital allocation/i,
-      }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Latest Earnings Readout")).toBeInTheDocument();
+    expect(screen.getByText("Business Driver Deep Dive")).toBeInTheDocument();
+    expect(screen.getByText("Cash Flow & Capital Allocation")).toBeInTheDocument();
 
-    fireEvent.click(
-      screen.getByRole("radio", { name: /business driver deep dive/i }),
-    );
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    openAgentReport(/latest earnings readout/i);
 
     expect(
       await screen.findByText("Apple Inc. · Q1 2026 · 2026-02-01"),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=business_driver_deep_dive",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=cash_flow_capital_allocation",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("shows ticker suggestions from the server ticker catalog", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/tickers/search")) {
+        return new Response(
+          JSON.stringify({
+            suggestions: [
+              {
+                ticker: "LLY",
+                companyName: "Eli Lilly and Company",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+
+    fireEvent.change(screen.getByPlaceholderText(/enter ticker/i), {
+      target: { value: "lil" },
+    });
+
+    const option = await screen.findByRole("option", {
+      name: /LLY Eli Lilly and Company/i,
+    });
+    expect(option).toBeInTheDocument();
+    expect(screen.getByText("LLY")).toBeInTheDocument();
+    expect(screen.getByText("Eli Lilly and Company")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tickers/search?q=LIL&limit=8",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    fireEvent.click(option);
+
+    expect(screen.getByPlaceholderText(/enter ticker/i)).toHaveValue("LLY");
   });
 
   it("renders task-specific report sections after selecting different research tasks", async () => {
@@ -342,35 +689,28 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.click(
-      screen.getByRole("radio", { name: /business driver deep dive/i }),
-    );
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
+    openAgentReport(/business driver deep dive/i);
+
     expect(
-      await screen.findByText("Business Driver Research View"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Product / Segment Signals")).toBeInTheDocument();
-    expect(screen.getByText("Driver Map")).toBeInTheDocument();
-    expect(screen.getByText("Driver Evidence")).toBeInTheDocument();
-    expect(screen.getByTestId("business-drivers")).toBeInTheDocument();
+      (await screen.findAllByText("Missing typed taskSections")).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText(/Business Driver Deep Dive report did not include/i)).toBeInTheDocument();
+    expect(screen.queryByText("Business Driver Research View")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("business-drivers")).not.toBeInTheDocument();
     expect(screen.queryByTestId("key-metrics")).not.toBeInTheDocument();
     expect(screen.queryByTestId("dupont-chart")).not.toBeInTheDocument();
     expect(screen.queryByTestId("bull-bear-case")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Capital Allocation View"),
+    ).not.toBeInTheDocument();
+
+    openAgentReport(/cash flow & capital allocation/i);
+
+    expect(screen.getAllByText("Missing typed taskSections").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Cash Flow & Capital Allocation report did not include/i)).toBeInTheDocument();
     expect(screen.queryByText("Capital Allocation View")).not.toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getByRole("radio", {
-        name: /cash flow & capital allocation/i,
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
-
-    expect(await screen.findByText("Capital Allocation View")).toBeInTheDocument();
-    expect(screen.getByText("Cash Conversion Quality")).toBeInTheDocument();
-    expect(screen.getByText("Cash Quality Verdict")).toBeInTheDocument();
-    expect(screen.getByText("Capital Allocation Lens")).toBeInTheDocument();
-    expect(screen.getAllByText("Operating Cash Flow").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("business-drivers")).not.toBeInTheDocument();
     expect(screen.queryByTestId("key-metrics")).not.toBeInTheDocument();
     expect(screen.queryByTestId("dupont-chart")).not.toBeInTheDocument();
@@ -455,15 +795,225 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.click(
-      screen.getByRole("radio", { name: /business driver deep dive/i }),
-    );
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
+    openAgentReport(/business driver deep dive/i);
+
     expect(await screen.findByText("Typed driver thesis")).toBeInTheDocument();
-    expect(screen.getByText("Typed product signal")).toBeInTheDocument();
-    expect(screen.getByText("Track typed product adoption.")).toBeInTheDocument();
-    expect(screen.queryByText("Legacy services momentum")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Typed product signal").length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      screen.getByText("Track typed product adoption."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Legacy services momentum"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("prefers typed latest earnings synthesis over legacy dashboard placeholders", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Legacy latest earnings summary.",
+          companyName: "Apple Inc.",
+          period: "Q2 2026",
+          filingDate: "2026-05-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          bullCase: "Bull case.",
+          bearCase: "Bear case.",
+          taskSections: {
+            schemaVersion: "task_sections.v1",
+            taskType: "latest_earnings_readout",
+            coverage: {
+              status: "complete",
+              missingSections: [],
+              evidenceCount: 3,
+            },
+            latestEarnings: {
+              companyProfile: {
+                summary:
+                  "Apple Inc. designs consumer devices, software, and services across a global installed base.",
+                evidenceRefs: [],
+                citationStatus: "supported",
+              },
+              toplineVerdict: {
+                headline: "Typed latest earnings thesis",
+                verdict: "mixed",
+                summary: "Typed latest earnings summary.",
+              },
+              keyTakeaways: [
+                {
+                  title: "Typed revenue takeaway",
+                  summary: "Typed revenue evidence.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+              ],
+              financialDashboard: {
+                metrics: [
+                  {
+                    name: "Typed revenue metric",
+                    value: "$219,659,000,000",
+                    period: "latest quarter",
+                    interpretation: "Typed metric interpretation.",
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                ],
+                chartFocus: ["revenue"],
+              },
+              driverSnapshot: [
+                {
+                  title: "Typed services driver",
+                  summary: "Typed services evidence.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+              ],
+              riskSnapshot: [
+                {
+                  title: "Typed risk snapshot",
+                  summary: "Typed risk evidence.",
+                  evidenceRefs: [],
+                  citationStatus: "partial",
+                },
+              ],
+            },
+          },
+          metadata: {
+            modelName: "python-research-service",
+            language: "en",
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    openAgentReport(/latest earnings readout/i);
+
+    expect(
+      await screen.findByText("Typed latest earnings thesis"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Company Profile")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Apple Inc. designs consumer devices, software, and services across a global installed base.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Earnings Verdict").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("KPI Strip").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("What Changed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Watch Next").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Trust Summary")).not.toBeInTheDocument();
+    expect(screen.queryByText("Evidence Count")).not.toBeInTheDocument();
+    expect(screen.getByText("Typed revenue takeaway")).toBeInTheDocument();
+    expect(screen.getByText("Typed revenue metric")).toBeInTheDocument();
+    expect(screen.getByText("$219.7B")).toBeInTheDocument();
+    expect(screen.queryByText("$219,659,000,000")).not.toBeInTheDocument();
+    expect(screen.getByText("Typed services driver")).toBeInTheDocument();
+    expect(screen.getByText("Typed risk snapshot")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Waiting for the model/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/1970/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps agent trace out of the default user report and exposes it in diagnostics", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Agent completed.",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          taskSections: {
+            schemaVersion: "task_sections.v1",
+            taskType: "latest_earnings_readout",
+            coverage: {
+              status: "complete",
+              missingSections: [],
+              evidenceCount: 1,
+            },
+            latestEarnings: {
+              toplineVerdict: {
+                headline: "Typed thesis",
+                verdict: "mixed",
+                summary: "Typed summary.",
+              },
+              keyTakeaways: [],
+              financialDashboard: {
+                metrics: [],
+                chartFocus: [],
+              },
+              driverSnapshot: [],
+              riskSnapshot: [],
+            },
+          },
+          metadata: {
+            modelName: "python-research-service",
+            language: "en",
+            agentEvents: [
+              {
+                phase: "build_evidence_plan",
+                status: "ok",
+                summary: "Raw planner decision should stay in diagnostics.",
+                toolName: "search_filing_sections",
+                latencyMs: 10,
+              },
+            ],
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    openAgentReport(/latest earnings readout/i);
+
+    expect(await screen.findByText("Typed thesis")).toBeInTheDocument();
+    expect(screen.queryByText("Agent Progress")).not.toBeInTheDocument();
+    expect(
+      screen.queryAllByText("Raw planner decision should stay in diagnostics.")
+        .length,
+    ).toBe(0);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /developer diagnostics/i }),
+    );
+
+    expect(screen.getAllByText("Agent Progress").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Raw planner decision should stay in diagnostics.")
+        .length,
+    ).toBeGreaterThan(0);
   });
 
   it("renders typed cash flow synthesis fields from the spring mapper envelope", async () => {
@@ -578,12 +1128,24 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.click(
-      screen.getByRole("radio", { name: /cash flow & capital allocation/i }),
-    );
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
-    expect(await screen.findByText("Typed cash quality verdict")).toBeInTheDocument();
+    openAgentReport(/cash flow & capital allocation/i);
+
+    expect(
+      await screen.findByText("Typed cash quality verdict"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Cash Quality").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cash Flow Bridge").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Capital Allocation Scorecard").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("Allocation Discipline").length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.getAllByText("Red Flags").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Trust Summary")).not.toBeInTheDocument();
+    expect(screen.queryByText("Evidence Count")).not.toBeInTheDocument();
     expect(screen.getByText("Typed operating cash flow")).toBeInTheDocument();
     expect(screen.getByText("Typed capex signal")).toBeInTheDocument();
     expect(screen.getByText("Typed buyback signal")).toBeInTheDocument();
@@ -596,16 +1158,29 @@ describe("Home page", () => {
   it("renders the RAG eval dashboard with persisted stage 1 hard-suite comparisons", () => {
     render(<Home />);
 
-    expect(screen.getByText("Experiment Lab")).toBeInTheDocument();
+    expect(screen.queryByText("RAG Eval Dashboard")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /developer diagnostics/i }),
+    );
+
+    expect(screen.getByText("Developer diagnostics")).toBeInTheDocument();
     expect(screen.getByText("RAG Eval Dashboard")).toBeInTheDocument();
     expect(screen.getByText("Stage 1 Hard RAG")).toBeInTheDocument();
-    expect(screen.getAllByText("hybrid_semantic_lexical_retrieval")[0]).toBeInTheDocument();
-    expect(screen.getAllByText("Expected Term Hit Rate")[0]).toBeInTheDocument();
-    expect(screen.getAllByText("Top-1 Section Correctness")[0]).toBeInTheDocument();
+    expect(
+      screen.getAllByText("hybrid_semantic_lexical_retrieval")[0],
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Expected Term Hit Rate")[0],
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Top-1 Section Correctness")[0],
+    ).toBeInTheDocument();
     expect(screen.getAllByText("Bad Section Leak Rate")[0]).toBeInTheDocument();
     expect(screen.getByText("Context Precision")).toBeInTheDocument();
     expect(screen.getByText("stage1_hard_rag_eval")).toBeInTheDocument();
-    expect(screen.getByText("hard_msft_semantic_platform_driver")).toBeInTheDocument();
+    expect(
+      screen.getByText("hard_msft_semantic_platform_driver"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Section-Aware Lexical")).toBeInTheDocument();
     expect(screen.getByText("No Section Filter")).toBeInTheDocument();
     expect(screen.getByText("No Query Expansion")).toBeInTheDocument();
@@ -614,7 +1189,7 @@ describe("Home page", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Release Readiness")).toBeInTheDocument();
     expect(screen.getByText("Provider RAG sample gate")).toBeInTheDocument();
-    expect(screen.getByText("Provider live planner gate")).toBeInTheDocument();
+    expect(screen.getByText("Provider tool-calling agent gate")).toBeInTheDocument();
     expect(screen.getByText("Compose full E2E")).toBeInTheDocument();
   });
 
@@ -643,6 +1218,7 @@ describe("Home page", () => {
             generatedAt: "2026-03-09T10:00:00",
             language: "en",
           },
+          taskSections: latestTaskSections("Visa typed thesis"),
         },
       ]);
     });
@@ -662,20 +1238,17 @@ describe("Home page", () => {
 
     fireEvent.keyDown(tickerInput, { key: "Enter" });
 
+    openAgentReport(/latest earnings readout/i);
+
     expect(
       await screen.findByText("Visa Inc. · Q1 2026 · 2026-02-01"),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/java/sec/history/V",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
       "/api/sec/analyze/V?lang=en&model=siliconflow&taskType=latest_earnings_readout",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(screen.getByTestId("key-metrics")).toHaveTextContent(
-      "key-metrics:V:none",
-    );
+    expect(screen.getByText("Visa typed thesis")).toBeInTheDocument();
+    expect(screen.queryByTestId("key-metrics")).not.toBeInTheDocument();
   });
 
   it("requires a saved provider key before running BYOK mode", async () => {
@@ -691,7 +1264,98 @@ describe("Home page", () => {
         /requires you to enter and save your api key first/i,
       ),
     ).toBeInTheDocument();
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(global.fetch).mock.calls.some(([input]) =>
+        String(input).includes("/sec/analyze/"),
+      ),
+    ).toBe(false);
+  });
+
+  it("shows the live run status while the real analysis request is in flight", async () => {
+    const deferred = createDeferredResponse();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return Promise.resolve(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+
+      if (url.includes("taskType=latest_earnings_readout")) {
+        return deferred.promise;
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Visa follow-up report.",
+          companyName: "Visa Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          metadata: {
+            modelName: "python-research-service",
+            language: "en",
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+
+    fireEvent.change(screen.getByPlaceholderText(/enter ticker/i), {
+      target: { value: "V" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    expect(
+      await screen.findByText("Live agent run in progress"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("V")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Cash Flow & Capital Allocation").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("SiliconFlow").length).toBeGreaterThan(1);
+    expect(screen.getByText("Backend and agent running")).toBeInTheDocument();
+
+    act(() => {
+      deferred.resolve(
+        createSseResponse([
+          {
+            executiveSummary: "Visa cash flow report.",
+            companyName: "Visa Inc.",
+            period: "Q1 2026",
+            filingDate: "2026-02-01",
+            keyMetrics: [],
+            businessDrivers: [],
+            riskFactors: [],
+            citations: [],
+            metadata: {
+              modelName: "python-research-service",
+              language: "en",
+            },
+          },
+        ]),
+      );
+    });
+
+    openAgentReport(/latest earnings readout/i);
+
+    expect(
+      await screen.findByText("Visa Inc. · Q1 2026 · 2026-02-01"),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Live agent run in progress"),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("aborts in-flight requests on unmount without surfacing an error", async () => {
@@ -767,10 +1431,16 @@ describe("Home page", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
+    openAgentReport(/latest earnings readout/i);
+
     expect(
-      await screen.findByText("Revenue increased due to stronger deliveries."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("MD&A")).toBeInTheDocument();
+      (
+        await screen.findAllByText(
+          "Revenue increased due to stronger deliveries.",
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("MD&A").length).toBeGreaterThan(0);
     expect(
       screen.queryByText(/semantic grounding was not ready yet/i),
     ).not.toBeInTheDocument();
@@ -814,17 +1484,20 @@ describe("Home page", () => {
 
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    openAgentReport(/latest earnings readout/i);
 
     expect(
-      await screen.findByText(
-        /did not retain a display-ready high-confidence verbatim quote/i,
-      ),
-    ).toBeInTheDocument();
+      (
+        await screen.findAllByText(
+          /did not retain a display-ready high-confidence verbatim quote/i,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
     expect(
-      screen.getByText(
+      screen.getAllByText(
         /Current status: grounded evidence, citation display limited/i,
-      ),
-    ).toBeInTheDocument();
+      ).length,
+    ).toBeGreaterThan(0);
   });
 
   it("sends the saved provider key when BYOK mode is used", async () => {
@@ -857,10 +1530,19 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.change(screen.getByPlaceholderText(/enter your siliconflow key/i), {
-      target: { value: "sk-test-123" },
-    });
+    fireEvent.change(
+      screen.getByPlaceholderText(/enter your siliconflow key/i),
+      {
+        target: { value: "sk-test-123" },
+      },
+    );
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    expect(
+      screen.getByPlaceholderText(/enter your siliconflow key/i),
+    ).toHaveValue("");
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
     await waitFor(() => {
@@ -886,7 +1568,8 @@ describe("Home page", () => {
 
       return new Response(
         JSON.stringify({
-          error: "SiliconFlow API key is invalid or unauthorized for this project",
+          error:
+            "SiliconFlow API key is invalid or unauthorized for this project",
           code: "SILICONFLOW_API_KEY_INVALID",
           source: "siliconflow",
         }),
@@ -901,9 +1584,12 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.change(screen.getByPlaceholderText(/enter your siliconflow key/i), {
-      target: { value: "sk-invalid-test" },
-    });
+    fireEvent.change(
+      screen.getByPlaceholderText(/enter your siliconflow key/i),
+      {
+        target: { value: "sk-invalid-test" },
+      },
+    );
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
@@ -992,20 +1678,43 @@ describe("Home page", () => {
     expect(screen.queryByText(/Analysis Report/i)).not.toBeInTheDocument();
   });
 
-  it("ignores stale history responses after switching to a new ticker", async () => {
-    const firstHistory = createDeferredResponse();
-    const secondHistory = createDeferredResponse();
-    let historyCallCount = 0;
+  it("parses SSE-style proxy error bodies before rendering dependency errors", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
+      return new Response(
+        'data:{"error":"Python Research Service is unavailable: Did not observe any item or terminal signal within 180000ms in flatMap","source":"python-research-service","code":"RESEARCH_SERVICE_UNAVAILABLE","degraded":true}',
+        {
+          status: 503,
+          headers: { "Content-Type": "text/plain" },
+        },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+
+    expect(
+      await screen.findByText(/Python Research Service unavailable/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/The research agent took too long/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/data:\{/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/flatMap/i)).not.toBeInTheDocument();
+  });
+
+  it("does not request legacy history data for the removed dashboard fallback", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-
-      if (url.includes("/sec/history/")) {
-        historyCallCount += 1;
-        return historyCallCount === 1
-          ? firstHistory.promise
-          : secondHistory.promise;
-      }
 
       return Promise.resolve(
         createSseResponse([
@@ -1025,6 +1734,11 @@ describe("Home page", () => {
               generatedAt: "2026-03-09T10:00:00",
               language: "en",
             },
+            taskSections: latestTaskSections(
+              url.includes("/MSFT")
+                ? "Microsoft typed thesis"
+                : "Tesla typed thesis",
+            ),
           },
         ]),
       );
@@ -1039,72 +1753,30 @@ describe("Home page", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
+    openAgentReport(/latest earnings readout/i);
+
     expect(
       await screen.findByText("Tesla, Inc. · FY 2025 · 2026-01-29"),
     ).toBeInTheDocument();
+    expect(screen.getByText("Tesla typed thesis")).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText(/enter ticker/i), {
       target: { value: "MSFT" },
     });
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
+    openAgentReport(/latest earnings readout/i);
+
     expect(
       await screen.findByText("Microsoft Corporation · FY 2025 · 2026-01-29"),
     ).toBeInTheDocument();
-
-    await act(async () => {
-      secondHistory.resolve(
-        new Response(
-          JSON.stringify([
-            {
-              period: "FY 2025",
-              grossMargin: 0.4,
-              operatingMargin: 0.3,
-              netMargin: 0.2,
-              revenue: 10,
-              netIncome: 2,
-            },
-          ]),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-      );
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("key-metrics")).toHaveTextContent("FY 2025");
-    });
-
-    await act(async () => {
-      firstHistory.resolve(
-        new Response(
-          JSON.stringify([
-            {
-              period: "FY 2024",
-              grossMargin: 0.1,
-              operatingMargin: 0.1,
-              netMargin: 0.1,
-              revenue: 1,
-              netIncome: 1,
-            },
-          ]),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-      );
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(screen.getByTestId("key-metrics")).not.toHaveTextContent("FY 2024");
-    expect(screen.getByTestId("key-metrics")).toHaveTextContent("FY 2025");
-    expect(screen.getByTestId("key-metrics")).toHaveTextContent(
-      "key-metrics:MSFT",
-    );
+    expect(screen.getByText("Microsoft typed thesis")).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes("/sec/history/"),
+      ),
+    ).toBe(false);
+    expect(screen.queryByTestId("key-metrics")).not.toBeInTheDocument();
   });
 
   it("merges progressive SSE chunks without overwriting earlier good fields", async () => {
@@ -1135,6 +1807,10 @@ describe("Home page", () => {
               verificationStatus: "VERIFIED",
             },
           ],
+          taskSections: latestTaskSections(
+            "Initial typed thesis",
+            "Initial thesis from the first agent.",
+          ),
         },
         {
           executiveSummary: null,
@@ -1161,19 +1837,19 @@ describe("Home page", () => {
 
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    openAgentReport(/latest earnings readout/i);
 
     expect(
       await screen.findByText("Tesla, Inc. · FY 2025 · 2026-01-29"),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("executive-summary")).toHaveTextContent(
-      "Initial thesis from the first agent.",
-    );
-    expect(await screen.findByText("First citation.")).toBeInTheDocument();
-    expect(await screen.findByText("Second citation.")).toBeInTheDocument();
+    expect(screen.getByText("Initial typed thesis")).toBeInTheDocument();
+    expect((await screen.findAllByText("First citation.")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Second citation.")).length).toBeGreaterThan(0);
   });
 
   it("prevents overlapping analyses while an existing analysis is still loading", async () => {
     const firstAnalysis = createDeferredResponse();
+    let followUpResponses = 0;
 
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
@@ -1188,7 +1864,29 @@ describe("Home page", () => {
       }
 
       if (url.includes("/sec/analyze/")) {
-        return firstAnalysis.promise;
+        if (url.includes("taskType=latest_earnings_readout")) {
+          return firstAnalysis.promise;
+        }
+        followUpResponses += 1;
+        return Promise.resolve(
+          createSseResponse([
+            {
+              executiveSummary: `Tesla follow-up report ${followUpResponses}.`,
+              companyName: "Tesla, Inc.",
+              period: "FY 2025",
+              filingDate: "2026-01-29",
+              keyMetrics: [],
+              businessDrivers: [],
+              riskFactors: [],
+              citations: [],
+              metadata: {
+                modelName: "gpt-4o-mini",
+                generatedAt: "2026-03-09T10:00:00",
+                language: "en",
+              },
+            },
+          ]),
+        );
       }
 
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
@@ -1211,7 +1909,7 @@ describe("Home page", () => {
 
     expect(
       fetchMock.mock.calls.filter(([input]) =>
-        String(input).includes("/sec/analyze/"),
+        String(input).includes("taskType=latest_earnings_readout"),
       ),
     ).toHaveLength(1);
     expect(analyzeButton).toBeDisabled();
@@ -1233,16 +1931,20 @@ describe("Home page", () => {
               generatedAt: "2026-03-09T10:00:00",
               language: "en",
             },
+            taskSections: latestTaskSections(
+              "Tesla active typed thesis",
+              "Tesla thesis still owns the active run.",
+            ),
           },
         ]),
       );
     });
 
+    openAgentReport(/latest earnings readout/i);
+
     expect(
       await screen.findByText("Tesla, Inc. · FY 2025 · 2026-01-29"),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("executive-summary")).toHaveTextContent(
-      "Tesla thesis still owns the active run.",
-    );
+    expect(screen.getByText("Tesla active typed thesis")).toBeInTheDocument();
   });
 });

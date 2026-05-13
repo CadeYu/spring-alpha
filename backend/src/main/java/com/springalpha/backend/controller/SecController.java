@@ -95,6 +95,7 @@ public class SecController {
     public Mono<String> getFilingContent(@PathVariable String ticker) {
         log.info("REST request to get latest quarterly filing content for: {}", ticker);
         return secService.getLatest10KContent(ticker)
+                .subscribeOn(Schedulers.boundedElastic())
                 .map(content -> {
                     // 只返回前 10000 字符用于预览，防止浏览器卡死
                     if (content.length() > 10000) {

@@ -194,38 +194,39 @@ for (const [content, snippet] of requiredSnippets) {
 }
 NODE
 
-echo "Checking live planner production telemetry contract..."
+echo "Checking tool-calling agent production telemetry contract..."
 node - <<'NODE'
 const fs = require('fs');
 
 const agentContract = fs.readFileSync('src/research-service/app/contracts/agent.py', 'utf8');
-const workflow = fs.readFileSync('src/research-service/app/agents/deterministic_workflow.py', 'utf8');
-const livePlannerScript = fs.readFileSync('src/research-service/scripts/write_provider_live_planner_artifact.py', 'utf8');
-const livePlannerGate = fs.readFileSync('scripts/verify-provider-live-planner.sh', 'utf8');
+const workflow = fs.readFileSync('src/research-service/app/agents/research_workflow.py', 'utf8');
+const toolGraph = fs.readFileSync('src/research-service/app/agents/tool_calling_graph.py', 'utf8');
+const toolCallingScript = fs.readFileSync('src/research-service/scripts/write_provider_tool_calling_agent_artifact.py', 'utf8');
+const toolE2EGate = fs.readFileSync('scripts/verify-provider-tool-e2e.sh', 'utf8');
 const reportSynthesis = fs.readFileSync('src/research-service/app/agents/report_synthesizer.py', 'utf8');
 const reportSynthesisScript = fs.readFileSync('src/research-service/scripts/write_provider_report_synthesis_artifact.py', 'utf8');
 const reportSynthesisGate = fs.readFileSync('scripts/verify-provider-report-synthesis.sh', 'utf8');
 const verifyDocs = fs.readFileSync('VERIFY.md', 'utf8');
 
 const requiredSnippets = [
-  [agentContract, 'class PlannerContext'],
-  [agentContract, 'planner_context: PlannerContext | None = None'],
-  [workflow, 'def _planner_context(state: AgentState) -> PlannerContext:'],
-  [workflow, 'planner_context=_planner_context'],
-  [livePlannerScript, 'stage_1_provider_live_planner'],
-  [livePlannerScript, 'OpenAiCompatibleLlmClient'],
-  [livePlannerGate, 'write_provider_live_planner_artifact.py'],
+  [agentContract, 'class EvidenceMemory'],
+  [workflow, 'ResearchAgentWorkflow'],
+  [toolGraph, 'StateGraph'],
+  [toolGraph, 'planned_tool_calls'],
+  [toolCallingScript, 'stage_1_provider_tool_calling_agent'],
+  [toolCallingScript, 'OpenAiCompatibleLlmClient'],
+  [toolE2EGate, 'write_provider_tool_e2e_artifact.py'],
   [reportSynthesis, 'synthesize_latest_earnings_report'],
   [reportSynthesis, 'Unknown source_id in synthesized report'],
   [reportSynthesisScript, 'stage_1_provider_report_synthesis'],
   [reportSynthesisGate, 'write_provider_report_synthesis_artifact.py'],
-  [verifyDocs, './scripts/verify-provider-live-planner.sh'],
+  [verifyDocs, './scripts/verify-provider-tool-e2e.sh'],
   [verifyDocs, './scripts/verify-provider-report-synthesis.sh'],
 ];
 
 for (const [content, snippet] of requiredSnippets) {
   if (!content.includes(snippet)) {
-    throw new Error(`Missing live planner telemetry snippet: ${snippet}`);
+    throw new Error(`Missing tool-calling agent telemetry snippet: ${snippet}`);
   }
 }
 NODE

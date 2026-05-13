@@ -144,6 +144,34 @@ class SecServiceTest {
     }
 
     @Test
+    void cleanFilingDocumentRemovesInlineXbrlMetadataAndStartsAtOperatingDiscussion() {
+        Document doc = Jsoup.parse("""
+                <html>
+                  <body>
+                    <ix:header>
+                      <ix:hidden>
+                        false2026Q20000320193 xbrli:shares iso4217:USD us-gaap:LongTermDebtCurrent
+                      </ix:hidden>
+                      <ix:references>http://fasb.org/us-gaap/2025</ix:references>
+                    </ix:header>
+                    <div style="display:none">0000320193 hidden taxonomy payload</div>
+                    <h2>Item 2. Management’s Discussion and Analysis of Financial Condition and Results of Operations</h2>
+                    <p>Net sales increased because Services demand improved and iPhone demand remained resilient.</p>
+                    <h2>Quantitative and Qualitative Disclosures About Market Risk</h2>
+                    <p>Derivative instruments may be used to hedge foreign exchange risk.</p>
+                  </body>
+                </html>
+                """);
+
+        String text = secService.cleanFilingDocument(doc);
+
+        assertTrue(text.indexOf("Item 2. Management’s Discussion") < 80);
+        assertTrue(text.contains("Services demand improved"));
+        assertFalse(text.contains("xbrli:shares"));
+        assertFalse(text.contains("hidden taxonomy payload"));
+    }
+
+    @Test
     void extractPrimaryDocumentUrlSupportsQuarterlyTenQLink() {
         Document doc = Jsoup.parse("""
                 <html>

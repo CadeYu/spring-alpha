@@ -43,23 +43,21 @@
       ]
     },
     {
-      "id": "provider_live_planner_gate",
-      "label": "Provider live planner gate",
+      "id": "provider_tool_calling_agent_gate",
+      "label": "Provider tool-calling agent gate",
       "status": "passed",
-      "summary": "siliconflow / Qwen/Qwen2.5-7B-Instruct",
+      "summary": "siliconflow / Pro/moonshotai/Kimi-K2.6",
       "metrics": {
-        "providerDecisionCount": 2,
-        "fallbackCount": 2,
-        "elapsedMs": 10371,
-        "stopReason": "coverage_stop",
+        "elapsedMs": 12002,
+        "synthesis": "llm",
         "toolNames": [
           "get_company_facts",
-          "search_filing_sections",
-          "verify_citations"
+          "search_metric_evidence"
         ]
       },
       "details": [
-        "Planner repeated tool get_company_facts before coverage was sufficient."
+        "Manual live gate for provider-backed tool execution and final report synthesis.",
+        "Validated planned evidence collection with LLM typed synthesis."
       ]
     },
     {

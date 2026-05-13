@@ -5,19 +5,20 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.agents.deterministic_workflow import DeterministicAgentWorkflow
+from app.agents.domain_tools import LlamaIndexResearchToolService, SecCompanyFactsProvider
 from app.agents.llm_gateway import (
-    LlmRequest,
-    LlmResponse,
     LlmTransport,
     OpenAiCompatibleLlmClient,
     default_model_for_provider,
 )
-from app.contracts.agent import AgentRequest, LlmProvider
+from app.agents.research_workflow import ResearchAgentWorkflow
+from app.contracts.agent import AgentFilingDocument, AgentRequest, LlmProvider
 from app.contracts.research_task import ResearchTaskType
+from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline
 
 STAGE = "stage_1_provider_report_synthesis"
 
@@ -38,18 +39,33 @@ def write_provider_report_synthesis_artifact(
     strict: bool = True,
 ) -> Path:
     started_at = perf_counter()
-    synthesis_client = OpenAiCompatibleLlmClient(
+    llm_client = OpenAiCompatibleLlmClient(
         config.provider,
         config.api_key,
         base_url=_base_url_for_provider(config.provider),
-        transport=transport,
+        transport=_smoke_transport(config, transport) if transport is not None else None,
     )
-    workflow = DeterministicAgentWorkflow(
-        llm_client=_deterministic_planner_client(config.provider, config.task_type),
-        report_synthesis_client=synthesis_client,
-        enable_report_synthesis=True,
+    pipeline = LlamaIndexRagPipeline()
+    request = _agent_request(config)
+    for filing in request.filings:
+        pipeline.ingest_filing(
+            FilingDocument(
+                ticker=filing.ticker,
+                filing_type=filing.filing_type,
+                filing_date=filing.filing_date,
+                accession_number=filing.accession_number,
+                text=filing.text,
+            )
+        )
+    workflow = ResearchAgentWorkflow(
+        tool_service=LlamaIndexResearchToolService(
+            pipeline,
+            facts_provider=SecCompanyFactsProvider(),
+        ),
+        llm_client=llm_client,
+        rag_pipeline=pipeline,
     )
-    result = workflow.run(_agent_request(config))
+    result = workflow.run(request)
     elapsed_ms = int((perf_counter() - started_at) * 1000)
     payload = _artifact_payload(result, config=config, elapsed_ms=elapsed_ms)
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,57 +85,6 @@ def main() -> int:
     )
     print(written_path)
     return 0
-
-
-class _DeterministicPlannerClient:
-    def __init__(self, provider: LlmProvider, task_type: ResearchTaskType) -> None:
-        self.provider = provider
-        self.task_type = task_type
-        self._calls = 0
-
-    def complete_json(self, request: LlmRequest) -> LlmResponse:
-        self._calls += 1
-        if self._calls == 1:
-            content = _first_tool_decision(self.task_type)
-        else:
-            content = {
-                "decision": "finalize",
-                "summary": "Evidence is ready for provider report synthesis.",
-            }
-        return LlmResponse(
-            provider=request.provider,
-            model=request.model,
-            content=content,
-        )
-
-
-def _deterministic_planner_client(
-    provider: LlmProvider,
-    task_type: ResearchTaskType,
-) -> _DeterministicPlannerClient:
-    return _DeterministicPlannerClient(provider, task_type)
-
-
-def _first_tool_decision(task_type: ResearchTaskType) -> dict[str, object]:
-    if task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
-        return {
-            "decision": "call_tool",
-            "summary": "Search business driver evidence before provider report synthesis.",
-            "tool_name": "search_filing_sections",
-            "tool_input": {
-                "sections": ["MD&A", "Business"],
-                "query": "business drivers services demand segment product strategy",
-            },
-        }
-    return {
-        "decision": "call_tool",
-        "summary": "Search evidence before provider report synthesis.",
-        "tool_name": "search_filing_sections",
-        "tool_input": {
-            "sections": ["MD&A"],
-            "query": "latest earnings revenue gross margin demand risk",
-        },
-    }
 
 
 def _config_from_env() -> ProviderReportSynthesisConfig:
@@ -180,6 +145,20 @@ def _base_url_for_provider(provider: LlmProvider) -> str:
 
 
 def _agent_request(config: ProviderReportSynthesisConfig) -> AgentRequest:
+    if config.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+        filing_text = """
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Services demand improved as installed base engagement expanded.
+Gross margin benefited from favorable mix and pricing.
+"""
+        accession_number = "0000320193-26-000778"
+    else:
+        filing_text = """
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Revenue and gross margin improved as Services demand increased.
+Operating income reflected disciplined expenses and favorable mix.
+"""
+        accession_number = "0000320193-26-000777"
     return AgentRequest(
         run_id="provider_report_synthesis_smoke",
         ticker="AAPL",
@@ -188,11 +167,135 @@ def _agent_request(config: ProviderReportSynthesisConfig) -> AgentRequest:
         llm_provider=config.provider,
         llm_model=config.model,
         llm_api_key=config.api_key,
+        filings=[
+            AgentFilingDocument(
+                ticker="AAPL",
+                filing_type="10-Q",
+                filing_date="2026-04-30",
+                accession_number=accession_number,
+                text=filing_text,
+            )
+        ],
     )
 
 
+def _smoke_transport(
+    config: ProviderReportSynthesisConfig,
+    final_transport: LlmTransport,
+) -> LlmTransport:
+    def transport(
+        url: str,
+        payload: dict[str, object],
+        headers: dict[str, str],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        if "tools" not in payload:
+            return final_transport(url, payload, headers, timeout_seconds)
+        tool_messages = _tool_message_count(payload)
+        tool_call = _next_tool_call(config.task_type, tool_messages)
+        if tool_call is None:
+            return final_transport(url, payload, headers, timeout_seconds)
+        return _tool_call_response(tool_call)
+
+    return transport
+
+
+def _tool_message_count(payload: dict[str, object]) -> int:
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return 0
+    return sum(
+        1
+        for message in messages
+        if isinstance(message, dict) and message.get("role") == "tool"
+    )
+
+
+def _next_tool_call(
+    task_type: ResearchTaskType,
+    tool_message_count: int,
+) -> tuple[str, str, dict[str, object]] | None:
+    if task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+        business_calls: list[tuple[str, str, dict[str, object]]] = [
+            (
+                "call_filing",
+                "search_filing_sections",
+                {
+                    "sections": ["MD&A", "Business"],
+                    "query": "business drivers services demand segment product strategy",
+                },
+            ),
+            (
+                "call_metrics",
+                "search_metric_evidence",
+                {
+                    "metrics": ["revenue", "segment revenue"],
+                    "period": "latest_quarter",
+                    "query": "revenue segment revenue services demand",
+                },
+            ),
+            (
+                "call_signals",
+                "get_business_signals",
+                {"signal_types": ["product", "demand", "pricing", "risk"]},
+            ),
+        ]
+        return (
+            business_calls[tool_message_count]
+            if tool_message_count < len(business_calls)
+            else None
+        )
+    earnings_calls: list[tuple[str, str, dict[str, object]]] = [
+        (
+            "call_facts",
+            "get_company_facts",
+            {
+                "period": "latest_quarter",
+                "metrics": ["revenue", "gross margin", "operating income"],
+            },
+        ),
+        (
+            "call_metrics",
+            "search_metric_evidence",
+            {
+                "metrics": ["revenue", "gross margin", "operating income"],
+                "period": "latest_quarter",
+                "query": "latest earnings revenue gross margin operating income",
+            },
+        ),
+    ]
+    return (
+        earnings_calls[tool_message_count]
+        if tool_message_count < len(earnings_calls)
+        else None
+    )
+
+
+def _tool_call_response(tool_call: tuple[str, str, dict[str, object]]) -> dict[str, object]:
+    call_id, name, arguments = tool_call
+    return {
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": _json_dumps(arguments),
+                            },
+                        }
+                    ],
+                }
+            }
+        ]
+    }
+
+
 def _artifact_payload(
-    result: object,
+    result: Any,
     *,
     config: ProviderReportSynthesisConfig,
     elapsed_ms: int,
@@ -248,7 +351,7 @@ def assert_provider_report_synthesis_gate(
         raise RuntimeError("provider synthesis did not return supported task sections")
     if payload.get("synthesis") != "llm":
         raise RuntimeError("provider synthesis did not mark final report as llm synthesized")
-    if int(payload.get("claimCount", 0)) <= 0:
+    if _int_metric(payload, "claimCount") <= 0:
         raise RuntimeError("provider synthesis returned no claims")
     if not payload.get("citedSourceIds"):
         raise RuntimeError("provider synthesis returned no cited source ids")
@@ -260,6 +363,11 @@ def _json_dumps(payload: dict[str, object]) -> str:
     import json
 
     return json.dumps(payload, indent=2, sort_keys=True)
+
+
+def _int_metric(payload: dict[str, object], key: str) -> int:
+    value = payload.get(key, 0)
+    return value if isinstance(value, int) else 0
 
 
 if __name__ == "__main__":

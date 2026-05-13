@@ -13,8 +13,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -62,10 +64,12 @@ public class FinancialAnalysisService {
         ResearchTaskType effectiveTaskType = taskType != null ? taskType : ResearchTaskType.LATEST_EARNINGS_READOUT;
 
         return providerCredentialValidator.validate(provider, providerApiKey)
-                .thenMany(Flux.defer(() -> secService.getLatestFilingContent(normalizedTicker)
+                .thenMany(Mono.fromCallable(() -> agentFacts(normalizedTicker))
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .flatMapMany(facts -> secService.getLatestFilingContent(normalizedTicker)
                         .subscribeOn(Schedulers.boundedElastic())
                         .flatMapMany(filingText -> runResearchAgent(normalizedTicker, language, provider, providerApiKey,
-                                effectiveTaskType, filingText))));
+                                effectiveTaskType, filingText, facts))));
     }
 
     private Flux<AnalysisReport> runResearchAgent(
@@ -74,7 +78,8 @@ public class FinancialAnalysisService {
             String provider,
             String providerApiKey,
             ResearchTaskType taskType,
-            String filingText) {
+            String filingText,
+            Map<String, Object> facts) {
         String runId = "run_" + UUID.randomUUID();
         long startedAtNanos = System.nanoTime();
         ResearchAgentRequest request = new ResearchAgentRequest(
@@ -86,6 +91,7 @@ public class FinancialAnalysisService {
                 provider,
                 null,
                 providerApiKey,
+                facts,
                 List.of(new ResearchAgentRequest.FilingDocument(
                         ticker,
                         "10-Q",
@@ -102,13 +108,61 @@ public class FinancialAnalysisService {
                 .map(result -> researchAgentReportMapper.toAnalysisReport(result, request.language()))
                 .doOnNext(report -> log.info("research_agent_complete runId={} status=OK latencyMs={}",
                         runId, elapsedMillis(startedAtNanos)))
-                .doOnError(error -> log.warn("research_agent_failed runId={} status=ERROR latencyMs={} errorCode={}",
-                        runId, elapsedMillis(startedAtNanos), error.getClass().getSimpleName()))
+                .doOnError(error -> log.warn("research_agent_failed runId={} status=ERROR latencyMs={} errorCode={} message={}",
+                        runId, elapsedMillis(startedAtNanos), error.getClass().getSimpleName(),
+                        safeLogMessage(error.getMessage())))
                 .flux();
+    }
+
+    private Map<String, Object> agentFacts(String ticker) {
+        if (secService.getFinancialDataService() == null) {
+            return Map.of();
+        }
+        try {
+            var financialFacts = secService.getFinancialDataService().getFinancialFacts(ticker, "quarterly");
+            if (financialFacts == null) {
+                return Map.of();
+            }
+            Map<String, Object> facts = new LinkedHashMap<>();
+            putIfPresent(facts, "company_name", financialFacts.getCompanyName());
+            putIfPresent(facts, "companyName", financialFacts.getCompanyName());
+            putIfPresent(facts, "period", financialFacts.getPeriod());
+            putIfPresent(facts, "filing_date", financialFacts.getFilingDate());
+            putIfPresent(facts, "filingDate", financialFacts.getFilingDate());
+            putIfPresent(facts, "currency", financialFacts.getCurrency());
+            putIfPresent(facts, "market_sector", financialFacts.getMarketSector());
+            putIfPresent(facts, "marketSector", financialFacts.getMarketSector());
+            putIfPresent(facts, "market_industry", financialFacts.getMarketIndustry());
+            putIfPresent(facts, "marketIndustry", financialFacts.getMarketIndustry());
+            putIfPresent(facts, "market_security_type", financialFacts.getMarketSecurityType());
+            putIfPresent(facts, "marketSecurityType", financialFacts.getMarketSecurityType());
+            putIfPresent(facts, "business_summary", financialFacts.getMarketBusinessSummary());
+            putIfPresent(facts, "businessSummary", financialFacts.getMarketBusinessSummary());
+            putIfPresent(facts, "market_business_summary", financialFacts.getMarketBusinessSummary());
+            putIfPresent(facts, "marketBusinessSummary", financialFacts.getMarketBusinessSummary());
+            return facts;
+        } catch (RuntimeException error) {
+            log.warn("agent_facts_unavailable ticker={} errorCode={}", ticker, error.getClass().getSimpleName());
+            return Map.of();
+        }
+    }
+
+    private void putIfPresent(Map<String, Object> facts, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            facts.put(key, value);
+        }
     }
 
     private long elapsedMillis(long startedAtNanos) {
         return (System.nanoTime() - startedAtNanos) / 1_000_000;
+    }
+
+    private String safeLogMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return "";
+        }
+        String normalized = message.replaceAll("\\s+", " ").trim();
+        return normalized.length() > 240 ? normalized.substring(0, 240) : normalized;
     }
 
     private String resolveProvider(String model) {

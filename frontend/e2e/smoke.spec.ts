@@ -33,6 +33,50 @@ async function mockFinancialFactsRoute(
   await page.route("**/api/java/financial/**", handler);
 }
 
+async function mockTickerSearchRoute(
+  page: import("@playwright/test").Page,
+  handler: Parameters<import("@playwright/test").Page["route"]>[1],
+) {
+  await page.route("**/api/tickers/search**", handler);
+}
+
+async function mockMarketChartRoute(
+  page: import("@playwright/test").Page,
+  observedIntervals?: string[],
+) {
+  await page.route("**/api/market/chart/**", async (route) => {
+    const url = new URL(route.request().url());
+    observedIntervals?.push(url.searchParams.get("interval") ?? "1d");
+    const start = new Date("2020-01-01T00:00:00.000Z").getTime();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        candles: Array.from({ length: 220 }, (_, index) => {
+          const date = new Date(start + index * 86400 * 1000)
+            .toISOString()
+            .slice(0, 10);
+          return {
+            date,
+            open: 100 + index * 0.5,
+            high: 112 + index * 0.5,
+            low: 98 + index * 0.5,
+            close: 108 + index * 0.5,
+            volume: 123456 + index,
+          };
+        }),
+      }),
+    });
+  });
+}
+
+async function openAgentReport(
+  page: import("@playwright/test").Page,
+  name: RegExp,
+) {
+  await page.getByRole("tab", { name }).click();
+}
+
 const TASK_E2E_CASES = [
   {
     taskType: "latest_earnings_readout",
@@ -40,7 +84,16 @@ const TASK_E2E_CASES = [
     ticker: "AAPL",
     companyName: "Apple Inc.",
     summary: "Latest earnings readout mocked E2E summary.",
+    typedHeadline: "Typed latest earnings thesis",
     citation: "Latest earnings citation from MD&A.",
+    expectedSections: [
+      "Company Profile",
+      "Earnings Readout View",
+      "Earnings Verdict",
+      "KPI Strip",
+      "What Changed",
+      "Watch Next",
+    ],
   },
   {
     taskType: "business_driver_deep_dive",
@@ -48,7 +101,16 @@ const TASK_E2E_CASES = [
     ticker: "MSFT",
     companyName: "Microsoft Corporation",
     summary: "Business driver deep dive mocked E2E summary.",
+    typedHeadline: "Typed business driver thesis",
     citation: "Business drivers citation from the business section.",
+    expectedSections: [
+      "Business Driver Research View",
+      "Thesis",
+      "Driver Map",
+      "Impact Table",
+      "Signals",
+      "Watchlist",
+    ],
   },
   {
     taskType: "cash_flow_capital_allocation",
@@ -56,9 +118,130 @@ const TASK_E2E_CASES = [
     ticker: "NVDA",
     companyName: "NVIDIA Corporation",
     summary: "Cash flow capital allocation mocked E2E summary.",
+    typedHeadline: "Typed cash quality thesis",
     citation: "Cash flow citation from liquidity and capital resources.",
+    expectedSections: [
+      "Capital Allocation View",
+      "Cash Quality",
+      "Cash Flow Bridge",
+      "Capital Allocation Scorecard",
+      "Allocation Discipline",
+      "Red Flags",
+    ],
   },
 ] as const;
+
+const TASK_E2E_CASE_BY_TYPE = Object.fromEntries(
+  TASK_E2E_CASES.map((taskCase) => [taskCase.taskType, taskCase]),
+) as Record<(typeof TASK_E2E_CASES)[number]["taskType"], (typeof TASK_E2E_CASES)[number]>;
+
+function typedTaskSections(
+  taskType: (typeof TASK_E2E_CASES)[number]["taskType"],
+) {
+  const coverage = {
+    status: "complete",
+    missingSections: [],
+    evidenceCount: 3,
+  };
+  const supportedPoint = {
+    title: "Typed supported point",
+    summary: "Typed evidence-backed summary.",
+    evidenceRefs: [],
+    citationStatus: "supported",
+  };
+  const partialPoint = {
+    title: "Typed partial point",
+    summary: "Typed partial evidence summary.",
+    evidenceRefs: [],
+    citationStatus: "partial",
+  };
+  const supportedMetric = {
+    name: "Typed metric",
+    value: "Positive",
+    period: "latest quarter",
+    interpretation: "Typed metric interpretation.",
+    evidenceRefs: [],
+    citationStatus: "supported",
+  };
+
+  if (taskType === "business_driver_deep_dive") {
+    return {
+      schemaVersion: "task_sections.v1",
+      taskType,
+      coverage,
+      businessDriver: {
+        driverThesis: {
+          headline: "Typed business driver thesis",
+          durability: "durable",
+          summary: "Business driver typed summary.",
+        },
+        driverMap: {
+          product: [supportedPoint],
+          segment: [],
+          geography: [],
+          demand: [],
+          pricing: [],
+          customer: [],
+          strategy: [],
+        },
+        positiveSignals: [supportedPoint],
+        negativeSignals: [partialPoint],
+        watchlist: ["Track typed business driver watchlist."],
+      },
+    };
+  }
+
+  if (taskType === "cash_flow_capital_allocation") {
+    return {
+      schemaVersion: "task_sections.v1",
+      taskType,
+      coverage,
+      cashFlowCapitalAllocation: {
+        cashQualityVerdict: {
+          headline: "Typed cash quality thesis",
+          earningsBackedByCash: "mixed",
+          summary: "Cash flow typed summary.",
+        },
+        cashMetrics: [supportedMetric],
+        capitalAllocation: {
+          capex: [supportedPoint],
+          buybacks: [supportedPoint],
+          dividends: [],
+          debt: [],
+          liquidity: [supportedPoint],
+        },
+        allocationDiscipline: [supportedPoint],
+        redFlags: [partialPoint],
+      },
+    };
+  }
+
+  return {
+    schemaVersion: "task_sections.v1",
+    taskType,
+    coverage,
+    latestEarnings: {
+      companyProfile: {
+        summary:
+          "Apple Inc. designs consumer devices, software, and services for a global installed base.",
+        evidenceRefs: [],
+        citationStatus: "supported",
+      },
+      toplineVerdict: {
+        headline: "Typed latest earnings thesis",
+        verdict: "mixed",
+        summary: "Latest earnings typed summary.",
+      },
+      keyTakeaways: [supportedPoint],
+      financialDashboard: {
+        metrics: [supportedMetric],
+        chartFocus: ["revenue"],
+      },
+      driverSnapshot: [supportedPoint],
+      riskSnapshot: [partialPoint],
+    },
+  };
+}
 
 test.describe("Spring Alpha smoke", () => {
   test.beforeEach(async ({ page }) => {
@@ -68,12 +251,44 @@ test.describe("Spring Alpha smoke", () => {
         "test-skip-provider-validation",
       );
     });
+    await mockMarketChartRoute(page);
   });
 
-  for (const taskCase of TASK_E2E_CASES) {
-    test(`${taskCase.taskType} runs through the mocked analysis path`, async ({
-      page,
-    }) => {
+  test("ticker autocomplete uses the server ticker catalog", async ({ page }) => {
+    await mockTickerSearchRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          suggestions: [
+            {
+              ticker: "LLY",
+              companyName: "Eli Lilly and Company",
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto("/app");
+    await page
+      .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
+      .fill("lil");
+
+    const option = page.getByRole("option", {
+      name: /LLY Eli Lilly and Company/i,
+    });
+    await expect(option).toBeVisible();
+    await option.click();
+
+    await expect(
+      page.getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)"),
+    ).toHaveValue("LLY");
+  });
+
+  test("runs all research agents through the mocked analysis path", async ({
+    page,
+  }) => {
       const observedTaskTypes: string[] = [];
 
       await mockHistoryRoute(page, async (route) => {
@@ -94,10 +309,13 @@ test.describe("Spring Alpha smoke", () => {
 
       await mockAnalyzeRoute(page, async (route) => {
         const url = new URL(route.request().url());
-        const taskType = url.searchParams.get("taskType");
+        const taskType = url.searchParams.get(
+          "taskType",
+        ) as (typeof TASK_E2E_CASES)[number]["taskType"] | null;
         observedTaskTypes.push(taskType ?? "");
+        const taskCase = taskType ? TASK_E2E_CASE_BY_TYPE[taskType] : undefined;
 
-        if (taskType !== taskCase.taskType) {
+        if (!taskType || !taskCase) {
           await route.fulfill({
             status: 400,
             contentType: "application/json",
@@ -136,6 +354,7 @@ test.describe("Spring Alpha smoke", () => {
                 status: "GROUNDED",
                 message: "Grounded in SEC text evidence.",
               },
+              taskSections: typedTaskSections(taskCase.taskType),
             },
           ]),
         });
@@ -144,21 +363,86 @@ test.describe("Spring Alpha smoke", () => {
       await page.goto("/app");
       await page
         .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
-        .fill(taskCase.ticker);
-      await page.getByRole("radio", { name: taskCase.radioName }).click();
+        .fill("AAPL");
       await expect(
-        page.getByRole("radio", { name: taskCase.radioName }),
-      ).toBeChecked();
+        page.getByRole("region", { name: /agent pipeline/i }),
+      ).toBeVisible();
       await page.getByRole("button", { name: /analyze/i }).click();
 
-      await expect(
-        page.getByText(`${taskCase.companyName} · Q1 2026 · 2026-03-31`),
-      ).toBeVisible();
-      await expect(page.getByText(taskCase.summary).first()).toBeVisible();
-      await expect(page.getByText(taskCase.citation)).toBeVisible();
-      expect(observedTaskTypes).toEqual([taskCase.taskType]);
+      for (const taskCase of TASK_E2E_CASES) {
+        await openAgentReport(page, taskCase.radioName);
+        await expect(
+          page.getByText(taskCase.typedHeadline).first(),
+        ).toBeVisible();
+        await expect(page.getByText(taskCase.citation).first()).toBeVisible();
+        for (const section of taskCase.expectedSections) {
+          await expect(page.getByText(section).first()).toBeVisible();
+        }
+      }
+      await expect(page.getByText("Trust Summary")).toHaveCount(0);
+      await expect(page.getByText("Evidence Count")).toHaveCount(0);
+      expect(observedTaskTypes).toEqual([
+        "latest_earnings_readout",
+        "business_driver_deep_dive",
+        "cash_flow_capital_allocation",
+      ]);
     });
-  }
+
+  test("default market chart renders an interactive trading terminal canvas", async ({
+    page,
+  }) => {
+    const observedIntervals: string[] = [];
+    await page.unroute("**/api/market/chart/**");
+    await mockMarketChartRoute(page, observedIntervals);
+
+    await page.goto("/app");
+
+    const chart = page.getByTestId("market-candlestick-chart");
+    await expect(chart).toBeVisible();
+    await expect(page.getByText(/Scroll to zoom/i).first()).toBeVisible();
+    await expect(page.getByText(/Drag to pan/i).first()).toBeVisible();
+    await expect(chart).toHaveAttribute("data-candle-count", "220");
+    await expect(chart).toHaveAttribute("data-visible-from", "2020-04-10");
+    await expect(chart).toHaveAttribute("data-visible-to", "2020-08-07");
+    await expect.poll(async () => chart.locator("canvas").count()).toBeGreaterThan(0);
+
+    const pixelSample = await chart.locator("canvas").first().evaluate((canvas) => {
+      const context = canvas.getContext("2d");
+      if (!context) return { nonEmptyPixels: 0, width: canvas.width, height: canvas.height };
+      const width = canvas.width;
+      const height = canvas.height;
+      const image = context.getImageData(0, 0, width, height).data;
+      let nonEmptyPixels = 0;
+      for (let index = 3; index < image.length; index += 4) {
+        if (image[index] !== 0) nonEmptyPixels += 1;
+      }
+      return { nonEmptyPixels, width, height };
+    });
+
+    expect(pixelSample.width).toBeGreaterThan(300);
+    expect(pixelSample.height).toBeGreaterThan(300);
+    expect(pixelSample.nonEmptyPixels).toBeGreaterThan(1000);
+
+    await page.getByRole("tab", { name: "1W" }).click();
+    await page.getByRole("tab", { name: "1M" }).click();
+    await page.getByRole("tab", { name: "1Y" }).click();
+    await expect.poll(() => observedIntervals).toContain("1y");
+    expect(observedIntervals).toEqual(
+      expect.arrayContaining(["1d", "1wk", "1mo", "1y"]),
+    );
+
+    const box = await chart.boundingBox();
+    expect(box).not.toBeNull();
+    if (!box) return;
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -500);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 - 90, box.y + box.height / 2, {
+      steps: 8,
+    });
+    await page.mouse.up();
+  });
 
   test("BYOK analysis renders grounded report metadata and citations", async ({
     page,
@@ -214,6 +498,7 @@ test.describe("Spring Alpha smoke", () => {
               generatedAt: "2026-03-09T10:00:00Z",
               language: "en",
             },
+            taskSections: typedTaskSections("latest_earnings_readout"),
             sourceContext: {
               status: "GROUNDED",
               message: "Grounded in SEC text evidence.",
@@ -228,23 +513,262 @@ test.describe("Spring Alpha smoke", () => {
       .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
       .fill("TSLA");
     await page.getByRole("button", { name: /analyze/i }).click();
+    await openAgentReport(page, /latest earnings readout/i);
 
     await expect(
       page.getByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).toBeVisible();
     await expect(
-      page
-        .getByText(
-          "Tesla remains under margin pressure but keeps investing aggressively.",
-        )
-        .first(),
+      page.getByText("Typed latest earnings thesis").first(),
     ).toBeVisible();
     await expect(
-      page.getByText("Revenue increased due to stronger deliveries."),
+      page.getByText("Revenue increased due to stronger deliveries.").first(),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: /download pdf|下载 pdf 报告/i }),
     ).toBeVisible();
+  });
+
+  test("citation cards keep noisy SEC snippets inside the report column", async ({
+    page,
+  }) => {
+    const noisyTableExcerpt =
+      "/ Q2 2026 Form 10-Q / 15 Gross Margin Products and Services gross margin and gross margin percentage for the three- and six-month periods ended March 28, 2026 and March 29, 2025, were as follows (dollars in millions): | | | | | | | | | | | | | | | | | | | | |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---| | Three Months Ended | | Six Months Ended | | | | | | | | | | | | March 28, 2026 | | March 29, 2025 | | March 28, 2026 | | March 29, 2025 |";
+    const longConceptExcerpt =
+      "SEC companyfacts RevenueFromContractWithCustomerExcludingAssessedTax reports revenue of 219659000000 USD for 2026Q2 filed 2026-05-01.";
+
+    await mockFinancialFactsRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+    });
+
+    await mockHistoryRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+
+    await mockAnalyzeRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: sseBody([
+          {
+            executiveSummary: "Noisy citation layout regression.",
+            companyName: "Apple Inc.",
+            period: "Q2 2026",
+            filingDate: "2026-05-01",
+            keyMetrics: [],
+            businessDrivers: [],
+            riskFactors: [],
+            citations: [
+              {
+                section: "SEC companyfacts",
+                excerpt: longConceptExcerpt,
+                verificationStatus: "VERIFIED",
+              },
+              {
+                section: "Full filing",
+                excerpt: noisyTableExcerpt,
+                verificationStatus: "UNVERIFIED",
+              },
+            ],
+            metadata: {
+              modelName: "python-research-service",
+              generatedAt: "2026-05-01T10:00:00Z",
+              language: "en",
+            },
+            sourceContext: {
+              status: "GROUNDED",
+              message: "Grounded in SEC text evidence.",
+            },
+            taskSections: typedTaskSections("latest_earnings_readout"),
+          },
+        ]),
+      });
+    });
+
+    await page.goto("/app");
+    await page.getByRole("button", { name: /analyze/i }).click();
+    await openAgentReport(page, /latest earnings readout/i);
+
+    const citationSection = page.locator('[data-pdf-section="citations"]').first();
+    await expect(citationSection).toBeVisible();
+    await expect(
+      citationSection.getByText(/extracted table text is too noisy/i),
+    ).toBeVisible();
+    await expect(
+      citationSection.getByText(/Revenue From Contract With Customer Excluding Assessed Tax/i),
+    ).toBeVisible();
+
+    const layout = await citationSection.evaluate((element) => {
+      const sectionRect = element.getBoundingClientRect();
+      const body = document.documentElement;
+      const leakingElements = Array.from(element.querySelectorAll("*"))
+        .map((child) => {
+          const rect = child.getBoundingClientRect();
+          return {
+            tag: child.tagName,
+            text: (child.textContent || "").slice(0, 80),
+            right: rect.right,
+            left: rect.left,
+          };
+        })
+        .filter(
+          (rect) =>
+            rect.right > sectionRect.right + 1 || rect.left < sectionRect.left - 1,
+        );
+
+      return {
+        pageOverflows: body.scrollWidth > body.clientWidth + 1,
+        sectionOverflows: element.scrollWidth > element.clientWidth + 1,
+        leakingElements,
+      };
+    });
+
+    expect(layout).toEqual({
+      pageOverflows: false,
+      sectionOverflows: false,
+      leakingElements: [],
+    });
+  });
+
+  test("typed evidence cards wrap long SEC-derived text without horizontal overflow", async ({
+    page,
+  }) => {
+    const longConcept =
+      "RevenueFromContractWithCustomerExcludingAssessedTaxRevenueFromContractWithCustomerExcludingAssessedTax";
+    const noisySummary =
+      "/ Q2 2026 Form 10-Q / 15 Gross Margin Products and Services gross margin percentage | | | | | | | | | | | | |---|---|---|---|---|---|---|---|---|---|---|---|---|---| Three Months Ended March 28, 2026 March 29, 2025";
+
+    await mockFinancialFactsRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+    });
+
+    await mockHistoryRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+
+    await mockAnalyzeRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: sseBody([
+          {
+            executiveSummary: "Typed evidence layout regression.",
+            companyName: "Apple Inc.",
+            period: "Q2 2026",
+            filingDate: "2026-05-01",
+            keyMetrics: [],
+            businessDrivers: [],
+            riskFactors: [],
+            citations: [],
+            metadata: {
+              modelName: "python-research-service",
+              generatedAt: "2026-05-01T10:00:00Z",
+              language: "en",
+            },
+            sourceContext: {
+              status: "GROUNDED",
+              message: "Grounded in SEC text evidence.",
+            },
+            taskSections: {
+              schemaVersion: "task_sections.v1",
+              taskType: "latest_earnings_readout",
+              coverage: {
+                status: "complete",
+                missingSections: [],
+                evidenceCount: 2,
+              },
+              latestEarnings: {
+                toplineVerdict: {
+                  headline: "Typed latest earnings thesis",
+                  verdict: "mixed",
+                  summary: "Typed latest earnings summary.",
+                },
+                keyTakeaways: [
+                  {
+                    title: longConcept,
+                    summary: noisySummary,
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                ],
+                financialDashboard: {
+                  metrics: [
+                    {
+                      name: longConcept,
+                      value: "219659000000 USD",
+                      period: "2026Q2",
+                      interpretation: noisySummary,
+                      evidenceRefs: [],
+                      citationStatus: "supported",
+                    },
+                  ],
+                  chartFocus: ["gross margin"],
+                },
+                driverSnapshot: [],
+                riskSnapshot: [],
+              },
+            },
+          },
+        ]),
+      });
+    });
+
+    await page.goto("/app");
+    await page.getByRole("button", { name: /analyze/i }).click();
+    await openAgentReport(page, /latest earnings readout/i);
+
+    const report = page.locator("#pdf-report-root");
+    await expect(report).toBeVisible();
+    await expect(page.getByText(longConcept).first()).toBeVisible();
+    await expect(page.getByText("$219.7B")).toBeVisible();
+    await expect(page.getByText("219659000000 USD")).toHaveCount(0);
+
+    const layout = await report.evaluate((element) => {
+      const reportRect = element.getBoundingClientRect();
+      const body = document.documentElement;
+      const leakingElements = Array.from(element.querySelectorAll("*"))
+        .map((child) => {
+          const rect = child.getBoundingClientRect();
+          return {
+            tag: child.tagName,
+            text: (child.textContent || "").slice(0, 80),
+            right: rect.right,
+            left: rect.left,
+          };
+        })
+        .filter(
+          (rect) =>
+            rect.right > reportRect.right + 1 || rect.left < reportRect.left - 1,
+        );
+
+      return {
+        pageOverflows: body.scrollWidth > body.clientWidth + 1,
+        reportOverflows: element.scrollWidth > element.clientWidth + 1,
+        leakingElements,
+      };
+    });
+
+    expect(layout).toEqual({
+      pageOverflows: false,
+      reportOverflows: false,
+      leakingElements: [],
+    });
   });
 
   test("BYOK mode blocks submission when no key is saved", async ({ page }) => {
@@ -255,7 +779,9 @@ test.describe("Spring Alpha smoke", () => {
     await page.getByRole("button", { name: /analyze/i }).click();
 
     await expect(
-      page.getByText(/SiliconFlow BYOK mode requires you to enter and save your api key first/i),
+      page.getByText(
+        /SiliconFlow BYOK mode requires you to enter and save your api key first/i,
+      ),
     ).toBeVisible();
   });
 
@@ -308,16 +834,17 @@ test.describe("Spring Alpha smoke", () => {
     });
 
     await page.goto("/app");
-    await page.getByRole("combobox").selectOption("zh");
+    await page.locator("select").selectOption("zh");
     await page
       .locator('input[placeholder*="股票代码"], input[placeholder*="Ticker"]')
       .fill("TSLA");
     await page.getByRole("button", { name: /开始分析/i }).click();
+    await openAgentReport(page, /最新财报速读/i);
 
     await expect(
       page.getByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).toBeVisible();
-    await expect(page.getByText("当前状态：降级模式")).toBeVisible();
+    await expect(page.getByText("当前状态：降级模式").first()).toBeVisible();
   });
 
   test("TSLA second run in Chinese can recover grounded citations", async ({
@@ -388,22 +915,24 @@ test.describe("Spring Alpha smoke", () => {
     });
 
     await page.goto("/app");
-    await page.getByRole("combobox").selectOption("zh");
+    await page.locator("select").selectOption("zh");
     await page
       .locator('input[placeholder*="股票代码"], input[placeholder*="Ticker"]')
       .fill("TSLA");
 
     await page.getByRole("button", { name: /开始分析/i }).click();
-    await expect(page.getByText("当前状态：降级模式")).toBeVisible();
+    await openAgentReport(page, /最新财报速读/i);
+    await expect(page.getByText("当前状态：降级模式").first()).toBeVisible();
 
     await page.getByRole("button", { name: /开始分析/i }).click();
+    await openAgentReport(page, /最新财报速读/i);
     await expect(
-      page.getByText("Revenue increased due to stronger deliveries."),
+      page.getByText("Revenue increased due to stronger deliveries.").first(),
     ).toBeVisible();
-    await expect(page.getByText("当前状态：降级模式")).not.toBeVisible();
+    await expect(page.getByText("当前状态：降级模式")).toHaveCount(0);
   });
 
-  test("financial-sector tickers keep revenue but hide generic margin dashboards", async ({
+  test("financial-sector tickers require typed sections instead of generic margin dashboards", async ({
     page,
   }) => {
     await mockFinancialFactsRoute(page, async (route) => {
@@ -467,20 +996,22 @@ test.describe("Spring Alpha smoke", () => {
       .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
       .fill("JPM");
     await page.getByRole("button", { name: /analyze/i }).click();
+    await openAgentReport(page, /latest earnings readout/i);
 
     await expect(
       page.getByText("JPMorgan Chase & Co. · Q4 2025 · 2026-01-14"),
     ).toBeVisible();
-    await expect(page.getByText("Financial Sector Mode").first()).toBeVisible();
     await expect(
-      page.getByText("Revenue Trend (Last 1 Quarters)"),
+      page.getByText("Missing typed taskSections").first(),
     ).toBeVisible();
+    await expect(page.getByText("Financial Sector Mode").first()).not.toBeVisible();
+    await expect(page.getByText("Revenue Trend (Last 1 Quarters)")).not.toBeVisible();
     await expect(
       page.getByText("Margin Trend Analysis (Last 1 Quarters)"),
     ).not.toBeVisible();
   });
 
-  test("unsupported REIT tickers show notices and suppress generic charts", async ({
+  test("unsupported REIT tickers require typed sections and suppress generic charts", async ({
     page,
   }) => {
     await mockFinancialFactsRoute(page, async (route) => {
@@ -546,13 +1077,15 @@ test.describe("Spring Alpha smoke", () => {
       .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
       .fill("PLD");
     await page.getByRole("button", { name: /analyze/i }).click();
+    await openAgentReport(page, /latest earnings readout/i);
 
     await expect(
       page.getByText("Prologis, Inc. · Q4 2025 · 2026-01-28"),
     ).toBeVisible();
     await expect(
-      page.getByText("Unsupported Security Type").first(),
+      page.getByText("Missing typed taskSections").first(),
     ).toBeVisible();
+    await expect(page.getByText("Unsupported Security Type").first()).not.toBeVisible();
     await expect(
       page.getByText("Revenue Trend (Last 1 Quarters)"),
     ).not.toBeVisible();
@@ -645,6 +1178,19 @@ test.describe("Spring Alpha smoke", () => {
               generatedAt: "2026-03-09T10:00:00Z",
               language: "en",
             },
+            taskSections: {
+              ...typedTaskSections("latest_earnings_readout"),
+              latestEarnings: {
+                ...typedTaskSections("latest_earnings_readout").latestEarnings,
+                toplineVerdict: {
+                  headline: isMsft ? "Microsoft typed thesis." : "Tesla typed thesis.",
+                  verdict: "mixed",
+                  summary: isMsft
+                    ? "Microsoft revenue stayed strong."
+                    : "Tesla revenue stayed under pressure.",
+                },
+              },
+            },
           },
         ]),
       });
@@ -657,12 +1203,14 @@ test.describe("Spring Alpha smoke", () => {
 
     await tickerInput.fill("TSLA");
     await page.getByRole("button", { name: /analyze/i }).click();
+    await openAgentReport(page, /latest earnings readout/i);
     await expect(
       page.getByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).toBeVisible();
 
     await tickerInput.fill("MSFT");
     await page.getByRole("button", { name: /analyze/i }).click();
+    await openAgentReport(page, /latest earnings readout/i);
     await expect(
       page.getByText("Microsoft Corporation · Q2 2026 · 2026-07-30"),
     ).toBeVisible();
@@ -670,7 +1218,7 @@ test.describe("Spring Alpha smoke", () => {
     resolveFirstHistory();
     await page.waitForTimeout(300);
 
-    await expect(page.getByText("Microsoft thesis.").first()).toBeVisible();
+    await expect(page.getByText("Microsoft typed thesis.").first()).toBeVisible();
     await expect(
       page.getByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).not.toBeVisible();
@@ -717,29 +1265,43 @@ test.describe("Spring Alpha live Agent path", () => {
     await page.addInitScript((key) => {
       window.localStorage.setItem("spring-alpha-siliconflow-key", key);
     }, siliconFlowKey);
+    await mockMarketChartRoute(page);
 
     await page.goto("/app");
     await page
       .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
       .fill("AAPL");
-    await page
-      .getByRole("radio", { name: /business driver deep dive/i })
-      .click();
     await page.getByRole("button", { name: /analyze/i }).click();
+    await openAgentReport(page, /business driver deep dive/i);
 
     await expect(
-      page.getByText("Deterministic business driver deep dive generated").first(),
+      page.getByRole("heading", { name: /AAPL Analysis Report/i }),
     ).toBeVisible({ timeout: 120_000 });
+    await expect(
+      page.getByText(/Business Driver Research View/i).first(),
+    ).toBeVisible();
+    await expect(page.getByText(/Trust Summary/i)).toHaveCount(0);
     await expect(
       page.getByText(/Source Citations & Verification/i),
     ).toBeVisible();
-    await expect(page.getByText(/Agent Progress/i)).toBeVisible();
-    await expect(page.getByText(/search_filing_sections/i).first()).toBeVisible();
     await expect(
       page
-        .locator("#pdf-section-citations")
-        .getByText(/SOURCE/i)
+        .locator('[data-pdf-section="citations"]')
+        .first()
+        .getByText(/Verified|Partial|Missing|Unknown/i)
         .first(),
     ).toBeVisible();
+
+    const layout = await page.locator("#pdf-report-root").evaluate((element) => {
+      const body = document.documentElement;
+      return {
+        pageOverflows: body.scrollWidth > body.clientWidth + 1,
+        reportOverflows: element.scrollWidth > element.clientWidth + 1,
+      };
+    });
+    expect(layout).toEqual({
+      pageOverflows: false,
+      reportOverflows: false,
+    });
   });
 });

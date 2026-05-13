@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.agents.bounded_workflow import BoundedAgentWorkflow
+from app.agents.research_workflow import ResearchAgentWorkflow
 from app.contracts.agent import AgentRequest, AgentRunStatus
 from app.contracts.research_task import ResearchTaskType
 from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline
@@ -95,7 +95,7 @@ class RagBaselineEvalArtifact(BaseModel):
 
     schema_version: str = "0.1.0"
     stage: str = "stage_0_baseline"
-    system_under_test: str = "bounded_workflow_placeholder"
+    system_under_test: str = "tool_calling_research_agent"
     baseline_label: str = "current_placeholder_retrieval"
     dataset_name: str
     records: list[RagBaselineEvalRecord]
@@ -348,9 +348,9 @@ def load_live_rag_filing_corpus(
 def run_stage0_baseline_eval(
     dataset: RagEvalDataset,
     *,
-    workflow: BoundedAgentWorkflow | None = None,
+    workflow: ResearchAgentWorkflow | None = None,
 ) -> RagBaselineEvalArtifact:
-    agent = workflow or BoundedAgentWorkflow()
+    agent = workflow or ResearchAgentWorkflow()
     records = [_evaluate_case(agent, case) for case in dataset.cases]
     return RagBaselineEvalArtifact(
         dataset_name=dataset.name,
@@ -562,13 +562,13 @@ def build_release_readiness_artifact(
     *,
     rag_hard: RagDashboardArtifact,
     provider_rag: RagProviderMiniEvalSummary,
-    provider_planner: dict[str, Any],
+    provider_agent: dict[str, Any],
     compose_full_e2e: dict[str, Any],
 ) -> ReleaseReadinessArtifact:
     gates = [
         _rag_hard_gate(rag_hard),
         _provider_rag_gate(provider_rag),
-        _provider_planner_gate(provider_planner),
+        _provider_agent_gate(provider_agent),
         _compose_full_e2e_gate(compose_full_e2e),
     ]
     overall_status = "passed" if all(gate.status == "passed" for gate in gates) else "attention"
@@ -636,26 +636,22 @@ def _provider_rag_gate(summary: RagProviderMiniEvalSummary) -> ReleaseReadinessG
     )
 
 
-def _provider_planner_gate(payload: dict[str, Any]) -> ReleaseReadinessGate:
-    stop_reason = str(payload.get("stopReason", "unknown"))
+def _provider_agent_gate(payload: dict[str, Any]) -> ReleaseReadinessGate:
+    synthesis = str(payload.get("synthesis", "unknown"))
     tool_names = [str(tool_name) for tool_name in payload.get("toolNames", [])]
     degraded_reasons = [str(reason) for reason in payload.get("degradedReasons", [])]
-    provider_decision_count = int(payload.get("providerDecisionCount", 0))
     passed = (
-        provider_decision_count > 0
-        and stop_reason in {"planner_finalize", "coverage_stop"}
+        synthesis == "llm"
         and bool({"search_filing_sections", "search_metric_evidence"}.intersection(tool_names))
     )
     return ReleaseReadinessGate(
-        id="provider_live_planner_gate",
-        label="Provider live planner gate",
+        id="provider_tool_calling_agent_gate",
+        label="Provider tool-calling agent gate",
         status="passed" if passed else "attention",
         summary=f"{payload.get('provider', 'unknown')} / {payload.get('model', 'unknown')}",
         metrics={
-            "providerDecisionCount": provider_decision_count,
-            "fallbackCount": int(payload.get("fallbackCount", 0)),
             "elapsedMs": int(payload.get("elapsedMs", 0)),
-            "stopReason": stop_reason,
+            "synthesis": synthesis,
             "toolNames": tool_names,
         },
         details=degraded_reasons,
@@ -736,7 +732,7 @@ def assert_rag_production_readiness(
 
 
 def _evaluate_case(
-    workflow: BoundedAgentWorkflow,
+    workflow: ResearchAgentWorkflow,
     case: RagEvalCase,
 ) -> RagBaselineEvalRecord:
     result = workflow.run(

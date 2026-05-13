@@ -2,7 +2,7 @@
   "stage": "stage_0_baseline",
   "stageLabel": "Stage 0 Baseline",
   "datasetName": "stage0_mvp_retrieval_baseline",
-  "systemUnderTest": "bounded_workflow_placeholder",
+  "systemUnderTest": "tool_calling_research_agent",
   "baselineLabel": "current_placeholder_retrieval",
   "metrics": [
     {

@@ -11,8 +11,6 @@ MVP_TOOL_NAMES = frozenset(
         "search_filing_sections",
         "search_metric_evidence",
         "get_business_signals",
-        "verify_citations",
-        "finalize_report",
     }
 )
 
@@ -41,7 +39,6 @@ class AgentPhase(StrEnum):
     DRAFT_REPORT_SECTIONS = "draft_report_sections"
     VALIDATE_CLAIMS = "validate_claims"
     DEGRADED = "degraded"
-    FINALIZE_REPORT = "finalize_report"
 
 
 class RepairAction(StrEnum):
@@ -85,6 +82,7 @@ class AgentRequest(BaseModel):
     llm_provider: LlmProvider | None = None
     llm_model: str | None = Field(default=None, min_length=1, max_length=128)
     llm_api_key: str | None = Field(default=None, min_length=1, exclude=True, repr=False)
+    facts: dict[str, Any] = Field(default_factory=dict)
     filings: list[AgentFilingDocument] = Field(default_factory=list)
 
     @field_validator("ticker")
@@ -101,16 +99,6 @@ class AgentRequest(BaseModel):
         return normalized or None
 
 
-class PlannerContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    remaining_steps: int = Field(ge=0)
-    remaining_tool_calls: int = Field(ge=0)
-    coverage_status: Literal["complete", "partial", "degraded"]
-    evidence_count: int = Field(ge=0)
-    citation_coverage: Literal["complete", "partial", "missing"]
-
-
 class AgentEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -122,26 +110,6 @@ class AgentEvent(BaseModel):
     tool_name: str | None = None
     latency_ms: int = Field(default=0, ge=0)
     degraded_reason: str | None = None
-    planner_context: PlannerContext | None = None
-
-
-class ToolCall(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    run_id: str = Field(min_length=1)
-    task_type: ResearchTaskType
-    step_index: int = Field(ge=0)
-    tool_name: str = Field(min_length=1)
-    tool_input: dict[str, Any] = Field(default_factory=dict)
-    summary: str = Field(min_length=1)
-
-    @field_validator("tool_name")
-    @classmethod
-    def validate_tool_name(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("tool_name must not be blank")
-        return normalized
 
 
 class ToolResult(BaseModel):
@@ -300,6 +268,8 @@ class BoundedAgentResult(BaseModel):
     status: AgentRunStatus
     events: list[AgentEvent]
     degraded_reasons: list[str] = Field(default_factory=list)
+    retrieval_records: list[dict[str, Any]] = Field(default_factory=list)
+    retryable: bool = False
     final_report: dict[str, Any] | None = None
 
 
@@ -311,8 +281,6 @@ def default_task_policy(task_type: ResearchTaskType) -> TaskPolicy:
                 "get_company_facts",
                 "search_filing_sections",
                 "search_metric_evidence",
-                "verify_citations",
-                "finalize_report",
             ],
             required_outputs=[
                 "toplineVerdict",
@@ -331,8 +299,6 @@ def default_task_policy(task_type: ResearchTaskType) -> TaskPolicy:
                 "search_filing_sections",
                 "search_metric_evidence",
                 "get_business_signals",
-                "verify_citations",
-                "finalize_report",
             ],
             required_outputs=[
                 "driverThesis",
@@ -341,8 +307,8 @@ def default_task_policy(task_type: ResearchTaskType) -> TaskPolicy:
                 "negativeSignals",
                 "watchlist",
             ],
-            max_steps=5,
-            max_tool_calls=5,
+            max_steps=7,
+            max_tool_calls=7,
             max_repair_loops=2,
         ),
         ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION: TaskPolicy(
@@ -351,8 +317,6 @@ def default_task_policy(task_type: ResearchTaskType) -> TaskPolicy:
                 "get_company_facts",
                 "search_filing_sections",
                 "search_metric_evidence",
-                "verify_citations",
-                "finalize_report",
             ],
             required_outputs=[
                 "cashQualityVerdict",

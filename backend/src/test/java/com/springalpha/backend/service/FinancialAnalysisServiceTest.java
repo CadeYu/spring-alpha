@@ -2,6 +2,7 @@ package com.springalpha.backend.service;
 
 import com.springalpha.backend.financial.contract.AnalysisReport;
 import com.springalpha.backend.financial.contract.ResearchTaskType;
+import com.springalpha.backend.financial.model.FinancialFacts;
 import com.springalpha.backend.service.provider.ProviderAuthenticationException;
 import com.springalpha.backend.service.provider.ProviderCredentialValidator;
 import com.springalpha.backend.service.research.ResearchAgentClient;
@@ -51,6 +52,12 @@ class FinancialAnalysisServiceTest {
         assertEquals("en", researchAgentClient.lastRequest.language());
         assertEquals("siliconflow", researchAgentClient.lastRequest.llmProvider());
         assertEquals("secret", researchAgentClient.lastRequest.llmApiKey());
+        assertEquals(
+                "Tesla designs electric vehicles and energy systems.",
+                researchAgentClient.lastRequest.facts().get("business_summary"));
+        assertEquals(
+                "Tesla designs electric vehicles and energy systems.",
+                researchAgentClient.lastRequest.facts().get("marketBusinessSummary"));
         assertNotNull(researchAgentClient.lastRequest.filings());
         assertEquals(1, researchAgentClient.lastRequest.filings().size());
         assertEquals("TSLA", researchAgentClient.lastRequest.filings().getFirst().ticker());
@@ -281,6 +288,46 @@ class FinancialAnalysisServiceTest {
                     Earnings dashboard metrics include revenue, gross margin, and operating income.
                     """;
             });
+        }
+
+        @Override
+        public com.springalpha.backend.financial.service.FinancialDataService getFinancialDataService() {
+            return new com.springalpha.backend.financial.service.FinancialDataService() {
+                @Override
+                public FinancialFacts getFinancialFacts(String ticker) {
+                    return getFinancialFacts(ticker, "quarterly");
+                }
+
+                @Override
+                public FinancialFacts getFinancialFacts(String ticker, String reportType) {
+                    return FinancialFacts.builder()
+                            .ticker(ticker)
+                            .companyName("Tesla, Inc.")
+                            .period("2026Q2")
+                            .filingDate("2026-05-01")
+                            .currency("USD")
+                            .marketSector("Consumer Cyclical")
+                            .marketIndustry("Auto Manufacturers")
+                            .marketBusinessSummary("Tesla designs electric vehicles and energy systems.")
+                            .build();
+                }
+
+                @Override
+                public boolean isSupported(String ticker) {
+                    return true;
+                }
+
+                @Override
+                public java.util.List<com.springalpha.backend.financial.model.HistoricalDataPoint> getHistoricalData(
+                        String ticker) {
+                    return java.util.List.of();
+                }
+
+                @Override
+                public String[] getSupportedTickers() {
+                    return new String[] { "TSLA" };
+                }
+            };
         }
     }
 }

@@ -185,18 +185,6 @@ sample suite 会跑 18-24 个分层 cases，覆盖 ticker、task type 和 SEC se
 类型，并可通过 `RAG_PROVIDER_EVAL_TREND_PATH` 追加 JSONL trend record。它仍然是
 手动 gate，不属于默认 CI。
 
-Provider live planner smoke gate，手动/optional live gate：
-
-```bash
-PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" ./scripts/verify-provider-live-planner.sh
-```
-
-如果未显式设置 `PROVIDER`，脚本会按 `SILICONFLOW_API_KEY`、`GEMINI_API_KEY`、
-`OPENAI_API_KEY` 的顺序选择第一个可用 provider。该门禁验证真实 provider
-planner 可以通过统一 `complete_json` 边界进入 bounded loop，并检查 events 中
-保留 `planner_context`、tool execution、typed task sections 和 provider live
-planner artifact。它不属于默认 CI gate，避免 provider 成本、限流和输出波动影响基础验证。
-
 Provider report synthesis smoke gate，手动/optional live gate：
 
 ```bash
@@ -258,13 +246,13 @@ cd src/research-service
 uv run python scripts/write_release_readiness_artifact.py \
   ../../frontend/src/data/rag-eval/stage1-hard.json \
   /path/to/provider-rag-summary.json \
-  /path/to/provider-live-planner.json \
+  /path/to/provider-tool-calling-agent.json \
   /path/to/compose-full-e2e.json \
   ../../frontend/src/data/release-readiness.json
 ```
 
-该 artifact 把 RAG hard gate、provider RAG sample gate、provider live planner
-gate、provider tool E2E gate 和 compose full E2E summary 统一成 frontend checklist。
+该 artifact 把 RAG hard gate、provider RAG sample gate、provider tool-calling
+agent gate 和 compose full E2E summary 统一成 frontend checklist。
 它是 release readiness 快照，不会替代各 gate 本身。
 
 ## Full Local Verification

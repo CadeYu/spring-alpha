@@ -17,21 +17,21 @@ def main() -> int:
     if len(sys.argv) != 6:
         print(
             "Usage: write_release_readiness_artifact.py "
-            "<rag-hard-json> <provider-rag-json> <planner-json> <compose-json> <target-json>",
+            "<rag-hard-json> <provider-rag-json> <agent-json> <compose-json> <target-json>",
             file=sys.stderr,
         )
         return 2
 
     rag_hard_path = Path(sys.argv[1])
     provider_rag_path = Path(sys.argv[2])
-    planner_path = Path(sys.argv[3])
+    agent_path = Path(sys.argv[3])
     compose_path = Path(sys.argv[4])
     target_path = Path(sys.argv[5])
 
     artifact = build_release_readiness_artifact(
         rag_hard=RagDashboardArtifact.model_validate(_read_json(rag_hard_path)),
         provider_rag=RagProviderMiniEvalSummary.model_validate(_read_json(provider_rag_path)),
-        provider_planner=_read_json(planner_path),
+        provider_agent=_read_json(agent_path),
         compose_full_e2e=_read_json(compose_path),
     )
     target_path.parent.mkdir(parents=True, exist_ok=True)

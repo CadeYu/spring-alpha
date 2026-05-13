@@ -72,6 +72,14 @@ class EvidenceBoundMetric(BaseModel):
     citation_status: CitationStatus
 
 
+class CompanyProfileSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list)
+    citation_status: CitationStatus
+
+
 class BaseTaskSections(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -97,6 +105,7 @@ class LatestFinancialDashboard(BaseModel):
 
 class LatestEarningsSections(BaseTaskSections):
     task_type: Literal[ResearchTaskType.LATEST_EARNINGS_READOUT]
+    company_profile: CompanyProfileSection | None = None
     topline_verdict: ToplineVerdict
     key_takeaways: list[EvidenceBoundPoint] = Field(default_factory=list)
     financial_dashboard: LatestFinancialDashboard

@@ -3,14 +3,11 @@ from pathlib import Path
 
 from pytest import MonkeyPatch
 
-from app.agents.bounded_workflow import BoundedAgentWorkflow
 from app.contracts.agent import (
     AgentEvent,
     AgentPhase,
-    AgentRequest,
     AgentRunStatus,
     BoundedAgentResult,
-    LlmProvider,
     ToolStatus,
 )
 from app.contracts.archive import ReportArchiveArtifact
@@ -19,15 +16,7 @@ from app.persistence.report_archive import JsonReportArchiveWriter
 
 
 def test_archive_artifact_captures_agent_run_for_handoff() -> None:
-    workflow = BoundedAgentWorkflow()
-
-    result = workflow.run(
-        AgentRequest(
-            run_id="run_archive_001",
-            ticker="tsla",
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        )
-    )
+    result = _agent_result_with_final_report("run_archive_001")
 
     artifact = ReportArchiveArtifact.from_agent_result(result)
 
@@ -42,14 +31,7 @@ def test_archive_artifact_captures_agent_run_for_handoff() -> None:
 
 
 def test_json_report_archive_writer_persists_stable_artifact(tmp_path: Path) -> None:
-    workflow = BoundedAgentWorkflow()
-    result = workflow.run(
-        AgentRequest(
-            run_id="run_archive_002",
-            ticker="AAPL",
-            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
-        )
-    )
+    result = _agent_result_with_final_report("run_archive_002")
     artifact = ReportArchiveArtifact.from_agent_result(result)
     writer = JsonReportArchiveWriter(base_dir=tmp_path)
 
@@ -58,33 +40,22 @@ def test_json_report_archive_writer_persists_stable_artifact(tmp_path: Path) -> 
     assert path == tmp_path / "run_archive_002.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["run_id"] == "run_archive_002"
-    assert payload["ticker"] == "AAPL"
-    assert payload["task_type"] == "cash_flow_capital_allocation"
+    assert payload["ticker"] == "TSLA"
+    assert payload["task_type"] == "business_driver_deep_dive"
     assert payload["agent_events"]
     assert payload["retrieval_records"]
     assert payload["final_report"]["run_id"] == "run_archive_002"
 
 
-def test_archive_artifact_preserves_planner_context_for_handoff(tmp_path: Path) -> None:
-    result = _live_planner_result()
+def test_archive_artifact_persists_tool_calling_events(tmp_path: Path) -> None:
+    result = _agent_result_with_final_report("run_archive_tool_calling")
     artifact = ReportArchiveArtifact.from_agent_result(result)
     writer = JsonReportArchiveWriter(base_dir=tmp_path)
 
     path = writer.write(artifact)
 
     payload = json.loads(path.read_text(encoding="utf-8"))
-    planner_events = [
-        event for event in payload["agent_events"] if event.get("planner_context") is not None
-    ]
-    assert planner_events
-    assert planner_events[0]["planner_context"] == {
-        "remaining_steps": 5,
-        "remaining_tool_calls": 5,
-        "coverage_status": "degraded",
-        "evidence_count": 0,
-        "citation_coverage": "missing",
-    }
-    assert any("planner_context" in event["summary"] for event in planner_events)
+    assert payload["agent_events"][0]["tool_name"] == "search_filing_sections"
 
 
 def test_archive_artifact_preserves_review_data_without_final_report() -> None:
@@ -174,43 +145,48 @@ def _agent_result_without_final_report() -> BoundedAgentResult:
                 tool_name="retrieve_evidence",
             )
         ],
-        degraded_reasons=["finalize_report failed: provider unavailable"],
+        degraded_reasons=["Tool-calling research agent failed: provider unavailable"],
         final_report=None,
     )
 
 
-def _live_planner_result() -> BoundedAgentResult:
-    from app.agents.deterministic_workflow import DeterministicAgentWorkflow
-    from app.agents.llm_gateway import LlmRequest, LlmResponse
-
-    class SequencePlannerClient:
-        provider = LlmProvider.OPENAI
-
-        def __init__(self) -> None:
-            self.calls = 0
-
-        def complete_json(self, request: LlmRequest) -> LlmResponse:
-            self.calls += 1
-            if self.calls == 1:
-                content = {
-                    "decision": "call_tool",
-                    "summary": "Search filing evidence.",
-                    "tool_name": "search_filing_sections",
-                    "tool_input": {"sections": ["MD&A"], "query": "revenue margin"},
+def _agent_result_with_final_report(run_id: str) -> BoundedAgentResult:
+    retrieval_records = [
+        {
+            "tool_name": "search_filing_sections",
+            "status": "ok",
+            "source_ref_count": 1,
+            "retrieved_nodes": [
+                {
+                    "node_id": f"{run_id}:filing:1",
+                    "source_id": f"{run_id}:filing:1",
+                    "section": "MD&A",
+                    "snippet": "Services demand improved.",
                 }
-            else:
-                content = {"decision": "finalize", "summary": "Evidence is enough."}
-            return LlmResponse(
-                provider=request.provider,
-                model=request.model,
-                content=content,
+            ],
+        }
+    ]
+    return BoundedAgentResult(
+        run_id=run_id,
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        status=AgentRunStatus.OK,
+        events=[
+            AgentEvent(
+                run_id=run_id,
+                task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+                phase=AgentPhase.RETRIEVE_EVIDENCE,
+                status=ToolStatus.OK,
+                summary="Searched filing sections.",
+                tool_name="search_filing_sections",
             )
-
-    workflow = DeterministicAgentWorkflow(llm_client=SequencePlannerClient())
-    return workflow.run(
-        AgentRequest(
-            run_id="run_archive_live_planner",
-            ticker="AAPL",
-            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
-        )
+        ],
+        degraded_reasons=[],
+        final_report={
+            "run_id": run_id,
+            "ticker": "TSLA",
+            "task_type": "business_driver_deep_dive",
+            "sections": {"synthesis": "llm", "summary": "Services demand improved."},
+            "retrieval_records": retrieval_records,
+            "claims": [],
+        },
     )

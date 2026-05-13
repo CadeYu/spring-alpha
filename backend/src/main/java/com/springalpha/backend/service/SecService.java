@@ -176,7 +176,12 @@ public class SecService {
                 .maxBodySize(0)
                 .get();
 
+        return cleanFilingDocument(doc);
+    }
+
+    String cleanFilingDocument(Document doc) {
         doc.select("script, style, img, svg, iframe, noscript").remove();
+        removeInlineXbrlMetadata(doc);
 
         convertTablesToMarkdown(doc);
 
@@ -206,14 +211,26 @@ public class SecService {
     }
 
     int locateCoreSectionStart(String text) {
-        String keyword = "Management's Discussion and Analysis";
-        int startIndex = text.lastIndexOf(keyword);
-
-        if (startIndex == -1) {
-            startIndex = text.lastIndexOf("Item 7.");
+        String[] keywords = new String[] {
+                "Item 2. Management's Discussion and Analysis",
+                "Item 2. Management’s Discussion and Analysis",
+                "Management's Discussion and Analysis",
+                "Management’s Discussion and Analysis",
+                "Item 7."
+        };
+        int startIndex = -1;
+        for (String keyword : keywords) {
+            startIndex = Math.max(startIndex, text.lastIndexOf(keyword));
         }
 
         return startIndex;
+    }
+
+    private void removeInlineXbrlMetadata(Document doc) {
+        doc.select("ix|header, ix|hidden, ix|references, ix|resources").remove();
+        doc.select("header, hidden, references, resources").remove();
+        doc.select("[style~=(?i)display\\s*:\\s*none], [hidden]").remove();
+        doc.select("meta, link, title").remove();
     }
 
     /**

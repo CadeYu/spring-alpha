@@ -130,6 +130,12 @@ export interface EvidenceBoundMetric {
     citationStatus: TaskCitationStatus;
 }
 
+export interface CompanyProfileSection {
+    summary: string;
+    evidenceRefs: EvidenceRef[];
+    citationStatus: TaskCitationStatus;
+}
+
 export interface BaseTaskSections {
     schemaVersion: TaskSectionSchemaVersion;
     taskType: ResearchTaskType;
@@ -138,6 +144,7 @@ export interface BaseTaskSections {
 
 export interface LatestEarningsSections extends BaseTaskSections {
     taskType: 'latest_earnings_readout';
+    companyProfile?: CompanyProfileSection | null;
     toplineVerdict: {
         headline: string;
         summary: string;

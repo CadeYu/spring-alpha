@@ -1,42 +1,18 @@
 from app.agents.domain_tools import (
-    DeterministicResearchToolService,
     LlamaIndexResearchToolService,
+    ResearchToolService,
     SecCompanyFactsProvider,
+    YahooCompanyProfileProvider,
 )
-from app.agents.tool_registry import default_tool_registry
-from app.contracts.agent import AgentState, ToolCall, default_task_policy
+from app.contracts.agent import AgentState, default_task_policy
 from app.contracts.research_task import ResearchTaskType
-from app.contracts.tools import BusinessSignalsInput, CitationVerificationInput, CompanyFactsInput
+from app.contracts.tools import (
+    BusinessSignalsInput,
+    CompanyFactsInput,
+    FilingSectionSearchInput,
+    MetricEvidenceInput,
+)
 from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline
-
-
-def test_default_tool_registry_delegates_business_logic_to_domain_service() -> None:
-    service = DeterministicResearchToolService()
-    registry = default_tool_registry(service)
-    state = AgentState(
-        run_id="run_domain_001",
-        ticker="AAPL",
-        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
-        task_policy=default_task_policy(ResearchTaskType.LATEST_EARNINGS_READOUT),
-    )
-
-    updated = registry.execute(
-        state,
-        ToolCall(
-            run_id=state.run_id,
-            task_type=state.task_type,
-            step_index=0,
-            tool_name="search_filing_sections",
-            tool_input={
-                "sections": ["MD&A"],
-                "query": "revenue margin drivers",
-            },
-            summary="Search filing evidence.",
-        ),
-    )
-
-    assert updated.evidence_memory.source_refs[0]["source_id"] == "run_domain_001:filing:1"
-    assert updated.retrieval_records[0]["tool_name"] == "search_filing_sections"
 
 
 def test_llamaindex_domain_service_returns_live_section_evidence() -> None:
@@ -57,7 +33,6 @@ Supply constraints and competition could affect future results.
         )
     )
     service = LlamaIndexResearchToolService(pipeline)
-    registry = default_tool_registry(service)
     state = AgentState(
         run_id="run_domain_rag_001",
         ticker="AAPL",
@@ -65,23 +40,19 @@ Supply constraints and competition could affect future results.
         task_policy=default_task_policy(ResearchTaskType.LATEST_EARNINGS_READOUT),
     )
 
-    updated = registry.execute(
-        state,
-        ToolCall(
+    result = service.search_filing_sections(
+        FilingSectionSearchInput(
             run_id=state.run_id,
+            ticker=state.ticker,
             task_type=state.task_type,
-            step_index=0,
-            tool_name="search_filing_sections",
-            tool_input={
-                "sections": ["MD&A"],
-                "query": "services revenue demand installed base",
-            },
-            summary="Search live filing evidence.",
+            sections=["MD&A"],
+            query="services revenue demand installed base",
         ),
+        state,
     )
 
-    source_ref = updated.evidence_memory.source_refs[0]
-    retrieved_node = updated.retrieval_records[0]["retrieved_nodes"][0]
+    source_ref = result.source_refs[0]
+    retrieved_node = result.data["retrieved_nodes"][0]
 
     assert source_ref["section"] == "MD&A"
     assert "Services revenue increased" in source_ref["snippet"]
@@ -108,7 +79,6 @@ Revenue revenue revenue revenue could be affected by supply constraints.
         )
     )
     service = LlamaIndexResearchToolService(pipeline)
-    registry = default_tool_registry(service)
     state = AgentState(
         run_id="run_domain_section_filter",
         ticker="AAPL",
@@ -116,23 +86,328 @@ Revenue revenue revenue revenue could be affected by supply constraints.
         task_policy=default_task_policy(ResearchTaskType.LATEST_EARNINGS_READOUT),
     )
 
-    updated = registry.execute(
-        state,
-        ToolCall(
+    result = service.search_filing_sections(
+        FilingSectionSearchInput(
             run_id=state.run_id,
+            ticker=state.ticker,
             task_type=state.task_type,
-            step_index=0,
-            tool_name="search_filing_sections",
-            tool_input={
-                "sections": ["MD&A"],
-                "query": "revenue services demand",
-            },
-            summary="Search requested section evidence.",
+            sections=["MD&A"],
+            query="revenue services demand",
         ),
+        state,
     )
 
-    assert updated.evidence_memory.source_refs[0]["section"] == "MD&A"
-    assert "supply constraints" not in updated.evidence_memory.source_refs[0]["snippet"]
+    assert result.source_refs[0]["section"] == "MD&A"
+    assert "supply constraints" not in result.source_refs[0]["snippet"]
+
+
+def test_business_driver_domain_service_guards_against_market_risk_drift() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000320193-26-000007",
+            text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Services revenue increased because demand improved and installed base engagement expanded.
+Product revenue benefited from iPhone demand and disciplined pricing.
+
+Quantitative and Qualitative Disclosures About Market Risk
+Derivative instruments may be used to hedge foreign exchange and interest rate risk.
+""",
+        )
+    )
+    service = LlamaIndexResearchToolService(pipeline)
+    state = AgentState(
+        run_id="run_domain_business_guardrail",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        task_policy=default_task_policy(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE),
+    )
+
+    result = service.search_filing_sections(
+        tool_input=FilingSectionSearchInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            sections=["MD&A"],
+            query="derivative hedging market risk",
+            limit=1,
+        ),
+        state=state,
+    )
+
+    assert result.source_refs
+    assert result.source_refs[0]["section"] == "MD&A"
+    assert "Services revenue increased" in result.source_refs[0]["snippet"]
+    assert "Derivative instruments" not in result.source_refs[0]["snippet"]
+
+
+def test_business_driver_domain_service_prioritizes_operating_drivers_over_compliance() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000320193-26-000009",
+            text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Services net sales increased because customer engagement, installed base growth, and subscription demand improved.
+Products net sales benefited from iPhone demand, channel inventory normalization, and disciplined pricing.
+Segment operating income improved as Services mix expanded.
+
+Item 1. Business
+Complying with emerging and changing requirements causes substantial costs and may require product design changes.
+""",
+        )
+    )
+    service = LlamaIndexResearchToolService(pipeline)
+    state = AgentState(
+        run_id="run_domain_business_operating_priority",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        task_policy=default_task_policy(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE),
+    )
+
+    result = service.search_filing_sections(
+        tool_input=FilingSectionSearchInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            sections=["MD&A", "Business"],
+            query="product segment demand pricing customers strategy",
+            limit=1,
+        ),
+        state=state,
+    )
+
+    assert result.source_refs
+    snippet = str(result.source_refs[0]["snippet"])
+    assert "Services net sales increased" in snippet
+    assert "Complying with emerging" not in snippet
+
+
+def test_cash_flow_domain_service_expands_allocation_terms() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000320193-26-000008",
+            text="""
+Liquidity and Capital Resources
+Net cash provided by operating activities funded capital expenditures, payments for dividends and dividend equivalents, and repurchases of common stock.
+Debt maturities remain manageable and liquidity remains strong.
+""",
+        )
+    )
+    service = LlamaIndexResearchToolService(pipeline)
+    state = AgentState(
+        run_id="run_domain_cash_guardrail",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+    )
+
+    result = service.search_metric_evidence(
+        tool_input=MetricEvidenceInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            metrics=["operating cash flow"],
+            period="latest_quarter",
+            query="cash flow",
+        ),
+        state=state,
+    )
+
+    assert result.source_refs
+    snippet = str(result.source_refs[0]["snippet"])
+    assert "capital expenditures" in snippet
+    assert "repurchases of common stock" in snippet
+    assert "dividends" in snippet
+
+
+def test_metric_evidence_records_include_sec_companyfacts_values() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000320193-26-000021",
+            text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Net sales increased because services revenue improved.
+Gross margin expanded as Services mix improved.
+Operating income increased with disciplined expense management.
+""",
+        )
+    )
+    service = LlamaIndexResearchToolService(pipeline)
+    state = AgentState(
+        run_id="run_domain_metric_values",
+        ticker="AAPL",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        task_policy=default_task_policy(ResearchTaskType.LATEST_EARNINGS_READOUT),
+    )
+    state = state.model_copy(
+        update={
+            "evidence_memory": state.evidence_memory.model_copy(
+                update={
+                    "facts": {
+                        "period": "latest_quarter",
+                        "metrics": [
+                            {
+                                "name": "revenue",
+                                "value": 95359000000,
+                                "unit": "USD",
+                                "period": "2026Q2",
+                                "form": "10-Q",
+                                "filed": "2026-05-01",
+                                "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+                            },
+                            {
+                                "name": "gross margin",
+                                "value": 45000000000,
+                                "unit": "USD",
+                                "period": "2026Q2",
+                                "form": "10-Q",
+                                "filed": "2026-05-01",
+                                "concept": "GrossProfit",
+                            },
+                        ],
+                    }
+                }
+            )
+        }
+    )
+
+    result = service.search_metric_evidence(
+        tool_input=MetricEvidenceInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            metrics=["revenue", "gross margin"],
+            period="latest_quarter",
+            query="revenue gross margin operating income",
+        ),
+        state=state,
+    )
+
+    records = result.data["records"]
+    assert records[0]["metric"] == "revenue"
+    assert records[0]["value"] == 95359000000
+    assert records[0]["unit"] == "USD"
+    assert records[0]["source"] == "sec_companyfacts"
+    assert records[1]["metric"] == "gross margin"
+    assert records[1]["value"] == 45000000000
+    assert "snippet" in records[1]
+    assert records[0]["source_id"].endswith(":sec_companyfacts:revenue")
+    assert records[1]["source_id"].endswith(":sec_companyfacts:gross-margin")
+    fact_refs = [
+        ref
+        for ref in result.source_refs
+        if str(ref.get("section")) == "SEC companyfacts"
+    ]
+    assert len(fact_refs) == 2
+    assert str(fact_refs[0]["snippet"]).startswith(
+        "SEC companyfacts RevenueFromContractWithCustomerExcludingAssessedTax reports revenue of 95359000000 USD"
+    )
+
+
+def test_cash_flow_domain_service_collects_diverse_allocation_evidence() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000320193-26-000018",
+            text="""
+Liquidity and Capital Resources
+The Company believes cash, cash equivalents, marketable securities, and access to debt markets provide sufficient liquidity.
+Net cash provided by operating activities remained strong during the quarter.
+Capital expenditures reflected payments to acquire property, plant and equipment.
+The Company returned capital through repurchases of common stock and dividends.
+Debt maturities remain manageable.
+""",
+        )
+    )
+    service = LlamaIndexResearchToolService(pipeline)
+    state = AgentState(
+        run_id="run_domain_cash_diverse",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+    )
+
+    result = service.search_filing_sections(
+        tool_input=FilingSectionSearchInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            sections=["Liquidity and Capital Resources"],
+            query="cash flow capex buybacks dividends debt liquidity",
+            limit=5,
+        ),
+        state=state,
+    )
+
+    snippets = " ".join(str(ref["snippet"]).lower() for ref in result.source_refs)
+    assert "operating activities" in snippets
+    assert "capital expenditures" in snippets
+    assert "repurchases of common stock" in snippets
+    assert "dividends" in snippets
+    assert "debt" in snippets
+    assert len(result.source_refs) >= 2
+
+
+def test_latest_earnings_domain_service_prioritizes_operating_results_over_risk() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000320193-26-000019",
+            text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Net sales increased because services revenue, product demand, and gross margin improved.
+
+Item 1A. Risk Factors
+The Company expects these trends to intensify and materially adversely affect demand.
+""",
+        )
+    )
+    service = LlamaIndexResearchToolService(pipeline)
+    state = AgentState(
+        run_id="run_domain_latest_operating",
+        ticker="AAPL",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        task_policy=default_task_policy(ResearchTaskType.LATEST_EARNINGS_READOUT),
+    )
+
+    result = service.search_filing_sections(
+        tool_input=FilingSectionSearchInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            sections=["MD&A", "Risk Factors"],
+            query="latest earnings revenue margin drivers risks",
+            limit=1,
+        ),
+        state=state,
+    )
+
+    assert result.source_refs
+    assert result.source_refs[0]["section"] == "MD&A"
+    assert "Net sales increased" in result.source_refs[0]["snippet"]
+    assert "materially adversely affect demand" not in result.source_refs[0]["snippet"]
 
 
 def test_llamaindex_domain_service_returns_live_metric_evidence() -> None:
@@ -153,7 +428,6 @@ Operating cash flow funded capital expenditures and share repurchases.
         )
     )
     service = LlamaIndexResearchToolService(pipeline)
-    registry = default_tool_registry(service)
     state = AgentState(
         run_id="run_domain_rag_metric",
         ticker="AAPL",
@@ -161,40 +435,32 @@ Operating cash flow funded capital expenditures and share repurchases.
         task_policy=default_task_policy(ResearchTaskType.LATEST_EARNINGS_READOUT),
     )
 
-    updated = registry.execute(
-        state,
-        ToolCall(
+    result = service.search_metric_evidence(
+        MetricEvidenceInput(
             run_id=state.run_id,
+            ticker=state.ticker,
             task_type=state.task_type,
-            step_index=0,
-            tool_name="search_metric_evidence",
-            tool_input={
-                "metrics": ["revenue", "gross margin"],
-                "period": "latest_quarter",
-                "query": "revenue gross margin operating income",
-            },
-            summary="Search live metric evidence.",
+            metrics=["revenue", "gross margin"],
+            period="latest_quarter",
+            query="revenue gross margin operating income",
         ),
+        state,
     )
 
-    source_ref = updated.evidence_memory.source_refs[0]
-    metric_records = updated.evidence_memory.metric_evidence
-    retrieved_node = updated.retrieval_records[0]["retrieved_nodes"][0]
+    source_ref = result.source_refs[0]
+    metric_records = result.data["records"]
+    retrieved_node = result.data["retrieved_nodes"][0]
 
     assert source_ref["section"] == "MD&A"
     assert "Revenue grew" in source_ref["snippet"]
-    assert metric_records == [
-        {
-            "metric": "revenue",
-            "period": "latest_quarter",
-            "source_id": source_ref["source_id"],
-        },
-        {
-            "metric": "gross margin",
-            "period": "latest_quarter",
-            "source_id": source_ref["source_id"],
-        },
-    ]
+    assert metric_records[0]["metric"] == "revenue"
+    assert metric_records[0]["normalized_metric"] == "revenue"
+    assert metric_records[0]["period"] == "latest_quarter"
+    assert metric_records[0]["source_id"] == source_ref["source_id"]
+    assert "Revenue grew" in str(metric_records[0]["snippet"])
+    assert metric_records[1]["metric"] == "gross margin"
+    assert metric_records[1]["normalized_metric"] == "gross margin"
+    assert metric_records[1]["source_id"] == source_ref["source_id"]
     assert retrieved_node["metadata"]["filing_type"] == "10-Q"
 
 
@@ -217,7 +483,6 @@ Supply constraints and competitive pressure could affect future results.
         )
     )
     service = LlamaIndexResearchToolService(pipeline)
-    registry = default_tool_registry(service)
     state = AgentState(
         run_id="run_domain_business_signals",
         ticker="AAPL",
@@ -225,33 +490,34 @@ Supply constraints and competitive pressure could affect future results.
         task_policy=default_task_policy(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE),
     )
 
-    with_evidence = registry.execute(
+    evidence_result = service.search_filing_sections(
+        FilingSectionSearchInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            sections=["MD&A", "Risk Factors"],
+            query="services demand installed base pricing supply constraints competition",
+        ),
         state,
-        ToolCall(
-            run_id=state.run_id,
-            task_type=state.task_type,
-            step_index=0,
-            tool_name="search_filing_sections",
-            tool_input={
-                "sections": ["MD&A", "Risk Factors"],
-                "query": "services demand installed base pricing supply constraints competition",
-            },
-            summary="Search business driver evidence.",
-        ),
     )
-    updated = registry.execute(
-        with_evidence,
-        ToolCall(
+    with_evidence = state.model_copy(
+        update={
+            "evidence_memory": state.evidence_memory.model_copy(
+                update={"source_refs": evidence_result.source_refs}
+            )
+        }
+    )
+    result = service.get_business_signals(
+        BusinessSignalsInput(
             run_id=state.run_id,
+            ticker=state.ticker,
             task_type=state.task_type,
-            step_index=1,
-            tool_name="get_business_signals",
-            tool_input={"signal_types": ["product", "demand", "pricing", "risk"]},
-            summary="Extract business signals.",
+            signal_types=["product", "demand", "pricing", "risk"],
         ),
+        with_evidence,
     )
 
-    signal_records = updated.evidence_memory.business_signals
+    signal_records = result.data["records"]
     signal_types = {record["signal_type"] for record in signal_records}
 
     assert "business_driver_placeholder" not in str(signal_records)
@@ -261,13 +527,10 @@ Supply constraints and competitive pressure could affect future results.
     assert all(record["section"] in {"MD&A", "Risk Factors"} for record in signal_records)
     assert all(record["snippet"] for record in signal_records)
     assert all(record["citation_status"] == "unverified" for record in signal_records)
-    assert updated.retrieval_records[-1]["tool_name"] == "get_business_signals"
-    assert updated.retrieval_records[-1]["signal_count"] == len(signal_records)
-    assert updated.retrieval_records[-1]["signal_types"] == sorted(signal_types)
 
 
 def test_domain_service_does_not_invent_business_signals_without_evidence() -> None:
-    service = DeterministicResearchToolService()
+    service = ResearchToolService()
     state = AgentState(
         run_id="run_domain_no_business_signals",
         ticker="AAPL",
@@ -291,8 +554,11 @@ def test_domain_service_does_not_invent_business_signals_without_evidence() -> N
 
 
 def test_domain_service_returns_sec_company_facts() -> None:
-    service = DeterministicResearchToolService(
-        facts_provider=SecCompanyFactsProvider(transport=fake_sec_transport)
+    service = ResearchToolService(
+        facts_provider=SecCompanyFactsProvider(
+            transport=fake_sec_transport,
+            profile_provider=YahooCompanyProfileProvider(transport=fake_yahoo_transport),
+        )
     )
     state = AgentState(
         run_id="run_domain_facts",
@@ -314,6 +580,13 @@ def test_domain_service_returns_sec_company_facts() -> None:
 
     assert result.status == "ok"
     assert result.data["source"] == "sec_companyfacts"
+    assert result.data["business_summary"].startswith(
+        "Apple designs consumer electronics, software, and services"
+    )
+    assert result.data["marketBusinessSummary"] == result.data["business_summary"]
+    assert result.data["profile_source"] == "yahoo_quote_summary"
+    assert result.data["sector"] == "Technology"
+    assert result.data["industry"] == "Consumer Electronics"
     assert result.data["period"] == "latest_quarter"
     assert result.data["metrics"] == [
         {
@@ -362,7 +635,7 @@ def test_domain_service_returns_sec_company_facts() -> None:
 
 
 def test_domain_service_marks_company_facts_partial_when_metrics_are_missing() -> None:
-    service = DeterministicResearchToolService(
+    service = ResearchToolService(
         facts_provider=SecCompanyFactsProvider(transport=fake_sec_transport)
     )
     state = AgentState(
@@ -389,57 +662,35 @@ def test_domain_service_marks_company_facts_partial_when_metrics_are_missing() -
     assert result.degraded_reasons == ["SEC company facts missing metrics: free cash flow"]
 
 
-def test_domain_service_scores_claim_citation_support() -> None:
-    service = DeterministicResearchToolService()
+def test_domain_service_accepts_common_llm_metric_aliases() -> None:
+    service = ResearchToolService(
+        facts_provider=SecCompanyFactsProvider(transport=fake_sec_transport)
+    )
     state = AgentState(
-        run_id="run_citation_001",
+        run_id="run_domain_facts_aliases",
         ticker="AAPL",
         task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
         task_policy=default_task_policy(ResearchTaskType.LATEST_EARNINGS_READOUT),
     )
 
-    result = service.verify_citations(
-        CitationVerificationInput(
+    result = service.get_company_facts(
+        CompanyFactsInput(
             run_id=state.run_id,
             ticker=state.ticker,
             task_type=state.task_type,
-            claims=[
-                {
-                    "claim_id": "claim_supported",
-                    "text": "Services revenue increased because demand improved.",
-                },
-                {
-                    "claim_id": "claim_partial",
-                    "text": (
-                        "Services revenue increased because demand improved, margins expanded, "
-                        "and new hardware channels accelerated."
-                    ),
-                },
-                {
-                    "claim_id": "claim_missing",
-                    "text": "Hardware revenue declined because channel inventory rose.",
-                },
-            ],
-            source_refs=[
-                {
-                    "source_id": "src_1",
-                    "section": "MD&A",
-                    "snippet": (
-                        "Services revenue increased because demand improved and "
-                        "installed base engagement expanded."
-                    ),
-                }
-            ],
+            period="latest_quarter",
+            metrics=["totalRevenue", "grossProfit", "operatingIncome"],
         ),
         state,
     )
 
-    records = {record["claim_id"]: record for record in result.data["records"]}
-
-    assert records["claim_supported"]["status"] == "supported"
-    assert records["claim_partial"]["status"] == "partial"
-    assert records["claim_missing"]["status"] == "missing"
-    assert result.source_refs[0]["citation_status"] == "supported"
+    assert result.status == "ok"
+    assert [metric["name"] for metric in result.data["metrics"]] == [
+        "revenue",
+        "gross profit",
+        "operating income",
+    ]
+    assert result.data["missing_metrics"] == []
 
 
 def fake_sec_transport(url: str, timeout_seconds: float) -> dict[str, object]:
@@ -510,7 +761,48 @@ def fake_sec_transport(url: str, timeout_seconds: float) -> dict[str, object]:
                             ]
                         },
                     },
+                    "OperatingIncomeLoss": {
+                        "label": "Operating Income",
+                        "units": {
+                            "USD": [
+                                {
+                                    "val": 28000000000,
+                                    "fy": 2026,
+                                    "fp": "Q1",
+                                    "form": "10-Q",
+                                    "filed": "2026-02-01",
+                                    "accn": "0000320193-26-000001",
+                                    "frame": "CY2026Q1",
+                                }
+                            ]
+                        },
+                    },
                 }
             },
         }
     raise AssertionError(f"Unexpected SEC URL: {url}")
+
+
+def fake_yahoo_transport(url: str, timeout_seconds: float) -> dict[str, object]:
+    assert "quoteSummary/AAPL" in url
+    return {
+        "quoteSummary": {
+            "result": [
+                {
+                    "assetProfile": {
+                        "longBusinessSummary": (
+                            "Apple designs consumer electronics, software, and services "
+                            "for a global customer base."
+                        ),
+                        "sector": "Technology",
+                        "industry": "Consumer Electronics",
+                    },
+                    "price": {
+                        "longName": "Apple Inc.",
+                        "quoteType": "EQUITY",
+                    },
+                }
+            ],
+            "error": None,
+        }
+    }

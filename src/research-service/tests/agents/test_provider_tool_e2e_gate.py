@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 from app.contracts.agent import LlmProvider
@@ -260,11 +259,21 @@ def _first_allowed_source_id(payload: dict[str, object]) -> str:
     messages = payload.get("messages")
     if not isinstance(messages, list):
         raise AssertionError("LLM payload messages are required")
-    user_prompt = str(messages[-1].get("content") if isinstance(messages[-1], dict) else "")
-    match = re.search(r"Allowed source_ids: (\[[^\n]+\])", user_prompt)
-    if not match:
-        raise AssertionError("Allowed source_ids line is required")
-    source_ids = json.loads(match.group(1))
-    if not isinstance(source_ids, list) or not source_ids:
-        raise AssertionError("At least one allowed source id is required")
-    return str(source_ids[0])
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            continue
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        payload = json.loads(content)
+        for key in ("records", "retrieved_nodes"):
+            records = payload.get(key)
+            if not isinstance(records, list):
+                continue
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                source_id = record.get("source_id") or record.get("node_id")
+                if source_id:
+                    return str(source_id)
+    raise AssertionError("At least one source id is required")

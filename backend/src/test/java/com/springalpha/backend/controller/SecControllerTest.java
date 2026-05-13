@@ -142,6 +142,28 @@ class SecControllerTest {
     }
 
     @Test
+    void get10kContentRunsBlockingFetchOffEventLoop() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        secService.assertOffEventLoop = true;
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        SecController controller = new SecController(secService, analysisService);
+
+        WebTestClient client = WebTestClient.bindToController(controller).build();
+
+        String body = client.get()
+                .uri("/api/sec/10k/TSLA")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertEquals("Management Discussion and Analysis", body);
+        assertTrue(secService.lastThreadName.contains("boundedElastic"));
+    }
+
+    @Test
     void modelsEndpointReturnsConfiguredModels() {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
@@ -259,6 +281,8 @@ class SecControllerTest {
     private static final class FakeSecService extends SecService {
 
         private String content = "Management Discussion and Analysis";
+        private boolean assertOffEventLoop;
+        private String lastThreadName = "";
 
         private FakeSecService(FinancialDataService financialDataService) {
             super(financialDataService);
@@ -266,7 +290,13 @@ class SecControllerTest {
 
         @Override
         public Mono<String> getLatest10KContent(String ticker) {
-            return Mono.just(content);
+            return Mono.fromCallable(() -> {
+                lastThreadName = Thread.currentThread().getName();
+                if (assertOffEventLoop && lastThreadName.startsWith("reactor-http-nio")) {
+                    throw new IllegalStateException("Debug filing fetch ran on event loop");
+                }
+                return content;
+            });
         }
     }
 

@@ -289,11 +289,23 @@ public class AnalysisReport {
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class LatestEarningsSections {
+        private CompanyProfileSection companyProfile;
         private ToplineVerdict toplineVerdict;
         private List<EvidenceBoundPoint> keyTakeaways;
         private LatestFinancialDashboard financialDashboard;
         private List<EvidenceBoundPoint> driverSnapshot;
         private List<EvidenceBoundPoint> riskSnapshot;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class CompanyProfileSection {
+        private String summary;
+        private List<EvidenceRef> evidenceRefs;
+        private String citationStatus;
     }
 
     @Data

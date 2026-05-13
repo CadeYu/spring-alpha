@@ -1,14 +1,14 @@
 # Spring Alpha Research Service
 
-Spring Alpha 的 Python Research Service 负责 bounded Agent workflow、live
-planner provider adapter，以及请求级 filing evidence 的 LlamaIndex RAG tool
-execution。
+Spring Alpha 的 Python Research Service 负责 LangGraph tool-calling Agent
+workflow、provider-backed final synthesis，以及请求级 filing evidence 的
+LlamaIndex RAG tool execution。
 
 当前生产主链路由 Spring Boot 获取最新 SEC filing 文本，并在调用 `/agent/runs`
 时通过 `filings` 字段传给 Python。Python 会为本次请求构建
-`LlamaIndexRagPipeline`，再把 `search_filing_sections` 和
-`search_metric_evidence` 接到 live RAG tool registry。没有传入 filing 时，服务仍可运行本地
-deterministic workflow，便于 contract test 和降级验证。
+`LlamaIndexRagPipeline`，再把 `search_filing_sections`、`search_metric_evidence`
+和 domain tools 接到 agent tool runtime。没有传入 filing 时，服务仍会返回透明的
+degraded/error state，而不是生成旧 deterministic report fallback。
 
 本服务不直接抓取 SEC；SEC fetching 仍由 Spring Boot 的 `SecService` 负责。
 
@@ -113,14 +113,14 @@ embedding call count, and estimated cost in a JSON artifact. It is intentionally
 manual/optional so provider cost and availability do not affect default CI.
 
 The release readiness artifact writer combines the latest RAG hard dashboard,
-provider RAG summary, provider live planner smoke, provider tool E2E smoke, and
-compose full E2E summary into one frontend-safe checklist fixture:
+provider RAG summary, provider tool-calling agent smoke, and compose full E2E
+summary into one frontend-safe checklist fixture:
 
 ```bash
 uv run python scripts/write_release_readiness_artifact.py \
   ../../frontend/src/data/rag-eval/stage1-hard.json \
   /path/to/provider-rag-summary.json \
-  /path/to/provider-live-planner.json \
+  /path/to/provider-tool-calling-agent.json \
   /path/to/compose-full-e2e.json \
   ../../frontend/src/data/release-readiness.json
 ```
