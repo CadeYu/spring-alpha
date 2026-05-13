@@ -284,10 +284,6 @@ npm run test:e2e
 
 ---
 
-## ⭐ Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=CadeYu/spring-alpha&type=Date)](https://star-history.com/#CadeYu/spring-alpha&Date)
-
 ---
 
 ## 📄 开源协议 (License)
