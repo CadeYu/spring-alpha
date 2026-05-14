@@ -1,9 +1,14 @@
 import json
+from typing import Any, cast
 
-from app.agents.domain_tools import LlamaIndexResearchToolService, SecCompanyFactsProvider
+from app.agents.domain_tools import (
+    LlamaIndexResearchToolService,
+    SecCompanyFactsProvider,
+    YahooCompanyProfileProvider,
+)
 from app.agents.llm_gateway import OpenAiCompatibleLlmClient
 from app.agents.research_workflow import ResearchAgentWorkflow
-from app.contracts.agent import AgentRequest, LlmProvider
+from app.contracts.agent import AgentRequest, AgentState, LlmProvider, default_task_policy
 from app.contracts.research_task import ResearchTaskType
 from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline
 
@@ -63,7 +68,7 @@ def test_latest_earnings_workflow_uses_langchain_tool_calling_agent() -> None:
                     }
                 ]
             }
-        messages = payload["messages"]
+        messages = _messages_from_payload(payload)
         tool_messages = [
             message
             for message in messages
@@ -108,7 +113,10 @@ Revenue and gross margin improved as Services demand increased.
     workflow = ResearchAgentWorkflow(
         tool_service=LlamaIndexResearchToolService(
             pipeline,
-            facts_provider=SecCompanyFactsProvider(transport=_fake_sec_transport),
+            facts_provider=SecCompanyFactsProvider(
+                transport=_fake_sec_transport,
+                profile_provider=YahooCompanyProfileProvider(transport=_fake_yahoo_transport),
+            ),
         ),
         llm_client=llm_client,
         rag_pipeline=pipeline,
@@ -127,7 +135,7 @@ Revenue and gross margin improved as Services demand increased.
 
     assert len(calls) == 1
     assert "tools" not in calls[-1]
-    final_messages = calls[-1]["messages"]
+    final_messages = _messages_from_payload(calls[-1])
     assert [
         message["role"]
         for message in final_messages
@@ -138,7 +146,7 @@ Revenue and gross margin improved as Services demand increased.
         for message in final_messages
     )
     assert calls[-1]["response_format"] == {"type": "json_object"}
-    assert calls[-1]["max_tokens"] == 1280
+    assert calls[-1]["max_tokens"] == 2048
     assert result.final_report is not None
     task_sections = result.final_report["task_sections"]
     assert task_sections["topline_verdict"]["headline"] == (
@@ -146,8 +154,34 @@ Revenue and gross margin improved as Services demand increased.
     )
     assert task_sections["financial_dashboard"]["metrics"][0]["value"] == "$90.0B"
     assert result.final_report["sections"]["synthesis"] == "llm"
-    event_tool_names = [event.tool_name for event in result.events]
-    assert event_tool_names == ["get_company_facts", "search_metric_evidence"]
+    event_tool_names = [event.tool_name for event in result.events if event.tool_name]
+    assert event_tool_names == [
+        "get_company_facts",
+        "search_metric_evidence",
+        "build_evidence_pack",
+    ]
+    assert any(event.event_kind == "reasoning" for event in result.events)
+    evidence_context = _evidence_context_from_final_payload(calls[-1])
+    evidence_pack = _tool_content(evidence_context, "build_evidence_pack")["evidence_pack"]
+    metric_facts = evidence_pack["metric_facts"]
+    assert any(
+        fact["source_type"] == "sec_companyfacts"
+        and fact["metric"] == "revenue"
+        and fact["value"] == 90000000000
+        for fact in metric_facts
+    )
+    assert any(
+        fact["source_type"] == "metric_evidence"
+        and fact["metric"] == "revenue"
+        and fact["source_id"].endswith(":sec_companyfacts:revenue")
+        for fact in metric_facts
+    )
+    assert any(
+        fact["source_type"] == "yahoo_profile"
+        and fact["business_summary"].startswith("Apple designs consumer devices")
+        and fact["sector"] == "Technology"
+        for fact in metric_facts
+    )
 
 
 def test_latest_earnings_uses_planned_evidence_collection_not_llm_tool_planning() -> None:
@@ -214,10 +248,12 @@ def test_latest_earnings_uses_planned_evidence_collection_not_llm_tool_planning(
     assert len(calls) == 1
     assert "tools" not in calls[0]
     assert result.final_report is not None
-    assert [event.tool_name for event in result.events] == [
+    assert [event.tool_name for event in result.events if event.tool_name] == [
         "get_company_facts",
         "search_metric_evidence",
+        "build_evidence_pack",
     ]
+    assert any(event.event_kind == "reasoning" for event in result.events)
 
 
 def test_deepseek_flash_final_synthesis_uses_compact_budget() -> None:
@@ -274,10 +310,43 @@ def test_deepseek_flash_final_synthesis_uses_compact_budget() -> None:
     )
 
     assert result.final_report is not None
-    assert calls[-1]["max_tokens"] == 768
-    evidence_context = calls[-1]["messages"][-1]["content"]
+    assert calls[-1]["max_tokens"] == 1280
+    evidence_context = _messages_from_payload(calls[-1])[-1]["content"]
     assert isinstance(evidence_context, str)
-    assert len(evidence_context) < 2600
+    assert len(evidence_context) < 2800
+
+
+def test_latest_earnings_final_prompt_requires_research_memo_quality_structure() -> None:
+    from app.agents.earnings_agent import _final_earnings_instruction
+
+    instruction = _final_earnings_instruction(
+        AgentRequest(
+            run_id="run_earnings_prompt",
+            ticker="AAPL",
+            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+            llm_provider=LlmProvider.SILICONFLOW,
+            llm_model="test-model",
+            llm_api_key="secret",
+        ),
+        AgentState(
+            run_id="run_earnings_prompt",
+            ticker="AAPL",
+            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+            task_policy=default_task_policy(ResearchTaskType.LATEST_EARNINGS_READOUT),
+        ),
+    )
+    normalized_instruction = instruction.lower()
+
+    for expected in (
+        "investment memo",
+        "so what",
+        "counter-evidence",
+        "what changed",
+        "watch next",
+        "company_profile",
+    ):
+        assert expected in normalized_instruction
+    assert "debate" not in normalized_instruction
 
 
 def test_final_synthesis_retries_without_rerunning_tools() -> None:
@@ -343,9 +412,10 @@ def test_final_synthesis_retries_without_rerunning_tools() -> None:
         "Retry recovered final synthesis"
     )
     assert final_attempts == 2
-    assert [event.tool_name for event in result.events] == [
+    assert [event.tool_name for event in result.events if event.tool_name] == [
         "get_company_facts",
         "search_metric_evidence",
+        "build_evidence_pack",
     ]
 
 
@@ -401,7 +471,7 @@ def test_latest_earnings_metric_tool_defaults_missing_llm_arguments() -> None:
             }
         tool_messages = [
             message
-            for message in payload["messages"]
+            for message in _messages_from_payload(payload)
             if isinstance(message, dict) and message.get("role") == "tool"
         ]
         if not tool_messages:
@@ -442,9 +512,10 @@ def test_latest_earnings_metric_tool_defaults_missing_llm_arguments() -> None:
     )
 
     assert result.final_report is not None
-    assert [event.tool_name for event in result.events] == [
+    assert [event.tool_name for event in result.events if event.tool_name] == [
         "get_company_facts",
         "search_metric_evidence",
+        "build_evidence_pack",
     ]
 
 
@@ -457,7 +528,7 @@ def test_latest_earnings_failure_preserves_collected_tool_events() -> None:
     ) -> dict[str, object]:
         tool_messages = [
             message
-            for message in payload["messages"]
+            for message in _messages_from_payload(payload)
             if isinstance(message, dict) and message.get("role") == "tool"
         ]
         if not tool_messages:
@@ -498,6 +569,7 @@ def test_latest_earnings_failure_preserves_collected_tool_events() -> None:
     assert [event.tool_name for event in result.events if event.tool_name] == [
         "get_company_facts",
         "search_metric_evidence",
+        "build_evidence_pack",
     ]
     assert result.events[-1].degraded_reason is not None
 
@@ -557,6 +629,7 @@ def test_latest_earnings_mapping_failure_preserves_collected_tool_events() -> No
     assert [event.tool_name for event in result.events if event.tool_name] == [
         "get_company_facts",
         "search_metric_evidence",
+        "build_evidence_pack",
     ]
     assert result.events[-1].phase.value == "degraded"
 
@@ -581,6 +654,30 @@ def _tool_call_response(call_id: str, name: str, arguments: dict[str, object]) -
             }
         ]
     }
+
+
+def _messages_from_payload(payload: dict[str, object]) -> list[dict[str, Any]]:
+    messages = payload["messages"]
+    assert isinstance(messages, list)
+    return cast(list[dict[str, Any]], messages)
+
+
+def _evidence_context_from_final_payload(payload: dict[str, object]) -> list[dict[str, Any]]:
+    content = _messages_from_payload(payload)[-1]["content"]
+    assert isinstance(content, str)
+    return cast(
+        list[dict[str, Any]],
+        json.loads(content.split("Evidence context JSON:", 1)[1].strip()),
+    )
+
+
+def _tool_content(evidence_context: list[dict[str, Any]], tool_name: str) -> dict[str, Any]:
+    for payload in evidence_context:
+        if payload.get("tool_name") == tool_name:
+            content = payload.get("content")
+            assert isinstance(content, dict)
+            return content
+    raise AssertionError(f"Tool content not found: {tool_name}")
 
 
 def _content_response(payload: dict[str, object]) -> dict[str, object]:
@@ -611,4 +708,27 @@ def _fake_sec_transport(url: str, timeout_seconds: float) -> dict[str, object]:
                 }
             }
         },
+    }
+
+
+def _fake_yahoo_transport(url: str, timeout_seconds: float) -> dict[str, object]:
+    return {
+        "quoteSummary": {
+            "result": [
+                {
+                    "assetProfile": {
+                        "longBusinessSummary": (
+                            "Apple designs consumer devices, software, and services "
+                            "for a global installed base."
+                        ),
+                        "sector": "Technology",
+                        "industry": "Consumer Electronics",
+                    },
+                    "price": {
+                        "longName": "Apple Inc.",
+                        "quoteType": "EQUITY",
+                    },
+                }
+            ]
+        }
     }

@@ -12,6 +12,7 @@ from typing import Any, Protocol
 from urllib import parse as url_parse
 from urllib import request as url_request
 
+from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import NodeWithScore, TextNode
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -440,8 +441,12 @@ def build_production_rag_pipeline_from_env() -> "LlamaIndexRagPipeline":
 
 
 class SectionAwareFilingParser:
+    def __init__(self, text_preprocessor: "FilingTextPreprocessor | None" = None) -> None:
+        self.text_preprocessor = text_preprocessor or FilingTextPreprocessor()
+
     def parse(self, filing: FilingDocument) -> list[FilingSection]:
-        matches = _section_matches(filing.text)
+        cleaned_text = self.text_preprocessor.clean(filing.text)
+        matches = _section_matches(cleaned_text)
         if not matches:
             return [
                 FilingSection(
@@ -450,15 +455,15 @@ class SectionAwareFilingParser:
                     filing_date=filing.filing_date,
                     accession_number=filing.accession_number,
                     section="Full Filing",
-                    text=filing.text.strip(),
+                    text=cleaned_text,
                 )
             ]
 
         sections: list[FilingSection] = []
         for index, match in enumerate(matches):
             start = match.end
-            end = matches[index + 1].start if index + 1 < len(matches) else len(filing.text)
-            text = filing.text[start:end].strip()
+            end = matches[index + 1].start if index + 1 < len(matches) else len(cleaned_text)
+            text = cleaned_text[start:end].strip()
             if not text:
                 continue
             sections.append(
@@ -474,6 +479,16 @@ class SectionAwareFilingParser:
         return sections
 
 
+class FilingTextPreprocessor:
+    def clean(self, text: str) -> str:
+        normalized = text.replace("\u00a0", " ")
+        normalized = re.sub(r"\r\n?", "\n", normalized)
+        normalized = re.sub(r"[ \t]+", " ", normalized)
+        normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+        normalized = _dedupe_repeated_lines(normalized)
+        return normalized.strip()
+
+
 class LlamaIndexRagPipeline:
     def __init__(
         self,
@@ -484,11 +499,22 @@ class LlamaIndexRagPipeline:
         enable_hybrid_retrieval: bool = False,
         embedding_backend: EmbeddingBackend | None = None,
         vector_store: VectorStore | None = None,
+        section_chunk_max_chars: int = 1400,
+        section_chunk_overlap_sentences: int = 1,
     ) -> None:
         self.parser = parser or SectionAwareFilingParser()
         self.enable_section_filter = enable_section_filter
         self.enable_query_expansion = enable_query_expansion
         self.enable_hybrid_retrieval = enable_hybrid_retrieval
+        self.section_chunk_max_chars = section_chunk_max_chars
+        self.section_chunk_overlap_sentences = section_chunk_overlap_sentences
+        self.section_splitter = SentenceSplitter(
+            chunk_size=_chunk_token_budget(section_chunk_max_chars),
+            chunk_overlap=_chunk_overlap_token_budget(
+                section_chunk_max_chars,
+                section_chunk_overlap_sentences,
+            ),
+        )
         self.embedding_backend = embedding_backend or (
             build_embedding_backend_from_env()
             if enable_hybrid_retrieval
@@ -497,16 +523,31 @@ class LlamaIndexRagPipeline:
         self.vector_store = vector_store or build_vector_store_from_env(self.embedding_backend)
         self._nodes: list[TextNode] = []
         self._node_ids: set[str] = set()
+        self._hybrid_degraded_reason: str | None = None
 
     def ingest_filing(self, filing: FilingDocument) -> list[TextNode]:
         sections = self.parser.parse(filing)
-        nodes = [_section_to_node(section, index) for index, section in enumerate(sections)]
+        nodes = [
+            node
+            for section_index, section in enumerate(sections)
+            for node in _section_to_nodes(
+                section,
+                section_index,
+                self.section_splitter,
+                self.section_chunk_max_chars,
+                self.section_chunk_overlap_sentences,
+            )
+        ]
         new_nodes = [node for node in nodes if node.node_id not in self._node_ids]
         self._nodes.extend(new_nodes)
         self._node_ids.update(node.node_id for node in new_nodes)
-        if self.enable_hybrid_retrieval:
+        if self.enable_hybrid_retrieval and not self._hybrid_degraded_reason:
             for node in new_nodes:
-                self.vector_store.upsert(node)
+                try:
+                    self.vector_store.upsert(node)
+                except Exception as error:
+                    self._degrade_hybrid_retrieval(error)
+                    break
         return new_nodes
 
     def retrieve_evidence(
@@ -563,9 +604,7 @@ class LlamaIndexRagPipeline:
             retrieved_nodes=retrieved_nodes,
             source_refs=source_refs,
             latency_ms=int((perf_counter() - started_at) * 1000),
-            fallback_status=RetrievalFallbackStatus.NONE
-            if retrieved_nodes
-            else RetrievalFallbackStatus.EMPTY,
+            fallback_status=self._retrieval_fallback_status(retrieved_nodes),
         )
 
     def _retrieve_candidates(
@@ -596,12 +635,16 @@ class LlamaIndexRagPipeline:
             for score in [_score_node(query_terms, node)]
             if score > 0
         ]
-        if self.enable_hybrid_retrieval:
-            vector_candidates = self.vector_store.search(
-                query=query,
-                nodes=candidate_nodes,
-                top_k=top_k,
-            )
+        if self.enable_hybrid_retrieval and not self._hybrid_degraded_reason:
+            try:
+                vector_candidates = self.vector_store.search(
+                    query=query,
+                    nodes=candidate_nodes,
+                    top_k=top_k,
+                )
+            except Exception as error:
+                self._degrade_hybrid_retrieval(error)
+                vector_candidates = []
             scored_nodes = _merge_candidate_scores(lexical_candidates, vector_candidates)
         else:
             scored_nodes = lexical_candidates
@@ -637,6 +680,19 @@ class LlamaIndexRagPipeline:
         ]
         return sorted(reranked, key=lambda item: item[1], reverse=True)[:top_k]
 
+    def _degrade_hybrid_retrieval(self, error: Exception) -> None:
+        self._hybrid_degraded_reason = f"{type(error).__name__}: {error}"
+
+    def _retrieval_fallback_status(
+        self,
+        retrieved_nodes: list[RetrievedNode],
+    ) -> RetrievalFallbackStatus:
+        if self._hybrid_degraded_reason:
+            return RetrievalFallbackStatus.DEGRADED
+        if retrieved_nodes:
+            return RetrievalFallbackStatus.NONE
+        return RetrievalFallbackStatus.EMPTY
+
 
 def _section_matches(text: str) -> list[_SectionMatch]:
     matches: list[_SectionMatch] = []
@@ -650,6 +706,35 @@ def _section_matches(text: str) -> list[_SectionMatch]:
                 )
             )
     return sorted(matches, key=lambda match: match.start)
+
+
+def _dedupe_repeated_lines(text: str) -> str:
+    lines = text.split("\n")
+    counts = Counter(line.strip() for line in lines if line.strip())
+    noisy_lines = {
+        line
+        for line, count in counts.items()
+        if count >= 3 and _looks_like_filing_boilerplate_line(line)
+    }
+    if not noisy_lines:
+        return text
+    return "\n".join(line for line in lines if line.strip() not in noisy_lines)
+
+
+def _looks_like_filing_boilerplate_line(line: str) -> bool:
+    normalized = line.lower()
+    if len(normalized) > 120:
+        return False
+    return any(
+        marker in normalized
+        for marker in (
+            "table of contents",
+            "page ",
+            "form 10-q",
+            "form 10-k",
+            "commission file number",
+        )
+    )
 
 
 def _embedding_provider_from_name(name: str) -> EmbeddingProvider:
@@ -709,21 +794,119 @@ def _embedding_values_from_response(response: dict[str, object]) -> list[float]:
     return parsed_values
 
 
-def _section_to_node(section: FilingSection, index: int) -> TextNode:
-    content_hash = sha1(section.text.encode("utf-8")).hexdigest()[:12]
+def _chunk_token_budget(max_chars: int) -> int:
+    return max(64, max_chars // 4)
+
+
+def _chunk_overlap_token_budget(max_chars: int, overlap_sentences: int) -> int:
+    if overlap_sentences <= 0:
+        return 0
+    return min(max(12, overlap_sentences * 32), max(16, _chunk_token_budget(max_chars) // 3))
+
+
+def _section_to_nodes(
+    section: FilingSection,
+    section_index: int,
+    splitter: SentenceSplitter,
+    max_chars: int,
+    overlap_sentences: int,
+) -> list[TextNode]:
+    chunk_texts = _split_section_text(section.text, splitter, max_chars, overlap_sentences)
+    return [
+        _section_chunk_to_node(
+            section,
+            section_index=section_index,
+            chunk_index=chunk_index,
+            chunk_count=len(chunk_texts),
+            chunk_text=chunk_text,
+        )
+        for chunk_index, chunk_text in enumerate(chunk_texts)
+    ]
+
+
+def _split_section_text(
+    text: str,
+    splitter: SentenceSplitter,
+    max_chars: int,
+    overlap_sentences: int,
+) -> list[str]:
+    if len(text) <= max_chars:
+        return [text]
+    chunks = []
+    for chunk in splitter.split_text(text):
+        normalized_chunk = _normalize_snippet_whitespace(chunk)
+        if not normalized_chunk:
+            continue
+        if len(normalized_chunk) <= max_chars:
+            chunks.append(normalized_chunk)
+            continue
+        chunks.extend(_sentence_windows(normalized_chunk, max_chars, overlap_sentences))
+    if chunks:
+        return chunks
+    return [_normalize_snippet_whitespace(text)]
+
+
+def _sentence_windows(text: str, max_chars: int, overlap_sentences: int) -> list[str]:
+    sentences = _sentence_units(text)
+    if not sentences:
+        return [_normalize_snippet_whitespace(text[:max_chars])]
+    windows: list[str] = []
+    start = 0
+    while start < len(sentences):
+        selected: list[str] = []
+        cursor = start
+        while cursor < len(sentences):
+            candidate = _normalize_snippet_whitespace(" ".join([*selected, sentences[cursor]]))
+            if selected and len(candidate) > max_chars:
+                break
+            selected.append(sentences[cursor])
+            cursor += 1
+            if len(candidate) >= max_chars:
+                break
+        if not selected:
+            selected = [sentences[start][:max_chars]]
+            cursor = start + 1
+        windows.append(_normalize_snippet_whitespace(" ".join(selected)))
+        if cursor >= len(sentences):
+            break
+        next_start = cursor - overlap_sentences
+        start = max(start + 1, next_start)
+    return windows
+
+
+def _sentence_units(text: str) -> list[str]:
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", text.strip())
+        if sentence.strip()
+    ]
+
+
+def _section_chunk_to_node(
+    section: FilingSection,
+    *,
+    section_index: int,
+    chunk_index: int,
+    chunk_count: int,
+    chunk_text: str,
+) -> TextNode:
+    content_hash = sha1(chunk_text.encode("utf-8")).hexdigest()[:12]
     node_id = (
         f"{section.ticker}:{section.accession_number or 'unknown'}:"
-        f"{_slug(section.section)}:{index}:{content_hash}"
+        f"{_slug(section.section)}:{section_index}:{chunk_index}:{content_hash}"
     )
     return TextNode(
         id_=node_id,
-        text=section.text,
+        text=chunk_text,
         metadata={
             "ticker": section.ticker,
             "filing_type": section.filing_type,
             "filing_date": section.filing_date,
             "accession_number": section.accession_number,
             "section": section.section,
+            "section_index": section_index,
+            "section_chunk_index": chunk_index,
+            "section_chunk_count": chunk_count,
         },
     )
 

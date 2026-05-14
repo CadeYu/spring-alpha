@@ -290,6 +290,396 @@ def test_synthesizer_normalizes_deepseek_object_cash_metrics() -> None:
     assert report.task_sections.cash_metrics[0].value == "$32.0B"
 
 
+def test_latest_earnings_synthesizer_recovers_compact_topline_verdict() -> None:
+    state = state_with_evidence()
+
+    report = build_latest_earnings_report_from_payload(
+        request(),
+        state,
+        {
+            "topline_verdict": {
+                "summary": "Revenue grew, but margins made the setup mixed."
+            },
+            "key_takeaways": [],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "claims": [],
+        },
+    )
+
+    assert report.task_sections.topline_verdict.headline == (
+        "Revenue grew, but margins made the setup mixed."
+    )
+    assert report.task_sections.topline_verdict.verdict == "mixed"
+
+
+def test_cash_flow_synthesizer_normalizes_item_and_assessment_points() -> None:
+    state = state_with_cash_flow_evidence()
+
+    report = build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        {
+            "cash_quality_verdict": {
+                "summary": "Operating cash flow funded capital returns.",
+                "rating": "high_quality_with_caveats",
+            },
+            "cash_metrics": [],
+            "capital_allocation": {
+                "capex": [
+                    {
+                        "item": "Capex stayed funded by operating cash flow.",
+                        "source_id": "cash_src_1",
+                    }
+                ],
+                "buybacks": [],
+                "dividends": [],
+                "debt": [],
+                "liquidity": [],
+            },
+            "allocation_discipline": [
+                {
+                    "assessment": "Capital returns were funded by internal cash generation.",
+                    "source_id": "cash_src_1",
+                }
+            ],
+            "red_flags": [
+                {
+                    "flag": "Cash conversion would weaken if working capital reverses.",
+                    "source_id": "cash_src_1",
+                }
+            ],
+            "claims": [],
+        },
+    )
+
+    verdict = report.task_sections.cash_quality_verdict
+    assert verdict.headline == "Operating cash flow funded capital returns."
+    assert verdict.earnings_backed_by_cash == "yes"
+    assert report.task_sections.capital_allocation.capex[0].title == "Capex"
+    assert report.task_sections.allocation_discipline[0].title == "Allocation discipline"
+    assert report.task_sections.red_flags[0].title == "Red flag"
+
+
+def test_business_driver_synthesizer_recovers_compact_driver_thesis() -> None:
+    state = state_with_business_driver_evidence()
+
+    report = build_business_driver_report_from_payload(
+        business_driver_request(),
+        state,
+        {
+            "driver_thesis": {
+                "summary": "Cloud demand and AI platform pull-through are durable drivers."
+            },
+            "driver_map": {
+                "product": [],
+                "segment": [],
+                "geography": [],
+                "demand": [],
+                "pricing": [],
+                "customer": [],
+                "strategy": [],
+            },
+            "positive_signals": [],
+            "negative_signals": [],
+            "watchlist": [],
+            "claims": [],
+        },
+    )
+
+    assert report.task_sections.driver_thesis.headline == (
+        "Cloud demand and AI platform pull-through are durable drivers."
+    )
+    assert report.task_sections.driver_thesis.durability == "durable"
+
+
+def test_cash_flow_synthesizer_normalizes_object_and_point_lists() -> None:
+    state = state_with_cash_flow_evidence()
+
+    report = build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        {
+            "cash_quality_verdict": {
+                "headline": "Cash flow supports buybacks",
+                "earnings_backed_by_cash": "yes",
+                "summary": "Cash flow supports buybacks.",
+            },
+            "cash_metrics": [],
+            "capital_allocation": {
+                "capex": [
+                    {
+                        "insight": "Capex remains manageable.",
+                        "source_ids": ["cash_src_1"],
+                    }
+                ],
+                "buybacks": [],
+                "dividends": [],
+                "debt": [],
+                "liquidity": [],
+            },
+            "allocation_discipline": {
+                "summary": "Buybacks remain tied to cash generation.",
+                "source_ids": ["cash_src_1"],
+            },
+            "red_flags": [],
+            "claims": [],
+        },
+    )
+
+    assert report.task_sections.capital_allocation.capex[0].summary == (
+        "Capex remains manageable."
+    )
+    assert report.task_sections.allocation_discipline[0].summary == (
+        "Buybacks remain tied to cash generation."
+    )
+
+
+def test_cash_flow_synthesizer_recovers_malformed_cash_sections() -> None:
+    state = state_with_cash_flow_evidence()
+
+    report = build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        {
+            "cash_quality_verdict": {
+                "headline": "Cash flow is strong",
+                "earnings_backed_by_cash": "yes",
+                "summary": "Operating cash flow supports the earnings base.",
+            },
+            "cash_metrics": ": ",
+            "capital_allocation": ": ",
+            "allocation_discipline": [
+                {
+                    "strengths": "Disciplined capital return remains supported by cash.",
+                    "weaknesses": "Buyback intensity could reduce flexibility.",
+                    "investor_implication": "Monitor whether returns stay internally funded.",
+                    "source_id": "cash_src_1",
+                }
+            ],
+            "red_flags": [],
+            "claims": ": ",
+        },
+    )
+
+    assert report.task_sections.cash_metrics[0].name == "Operating Cash Flow"
+    assert report.task_sections.cash_metrics[0].value == "$29.0B"
+    assert report.task_sections.capital_allocation.liquidity[0].title == "Cash flow anchor"
+    point = report.task_sections.allocation_discipline[0]
+    assert point.title == "Allocation discipline"
+    assert "Strengths: Disciplined capital return" in point.summary
+    assert "Weaknesses: Buyback intensity" in point.summary
+    assert "Investor implication: Monitor whether" in point.summary
+
+
+def test_latest_earnings_synthesizer_filters_extra_company_profile_fields() -> None:
+    state = state_with_evidence()
+
+    report = build_latest_earnings_report_from_payload(
+        request(),
+        state,
+        {
+            "company_profile": {
+                "ticker": "AAPL",
+                "name": "Apple Inc.",
+                "summary": "Apple designs devices, software, and services.",
+                "source_ids": [],
+                "citation_status": "unverified",
+            },
+            "topline_verdict": {
+                "headline": "Earnings remain mixed",
+                "summary": "Earnings remain mixed.",
+                "verdict": "mixed",
+            },
+            "key_takeaways": [],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "claims": [],
+        },
+    )
+
+    assert report.task_sections.company_profile is not None
+    assert report.task_sections.company_profile.summary == (
+        "Apple designs devices, software, and services."
+    )
+
+
+def test_latest_earnings_synthesizer_drops_empty_company_profile_dict() -> None:
+    state = state_with_evidence()
+
+    report = build_latest_earnings_report_from_payload(
+        request(),
+        state,
+        {
+            "company_profile": {
+                "ticker": "AAPL",
+                "name": "Apple Inc.",
+                "source_ids": [],
+                "citation_status": "unverified",
+            },
+            "topline_verdict": {
+                "headline": "Earnings remain mixed",
+                "summary": "Earnings remain mixed.",
+                "verdict": "mixed",
+            },
+            "key_takeaways": [],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "claims": [],
+        },
+    )
+
+    assert report.task_sections.company_profile is None
+
+
+def test_business_driver_synthesizer_normalizes_claim_style_points_and_watchlist() -> None:
+    state = state_with_business_driver_evidence()
+
+    report = build_business_driver_report_from_payload(
+        business_driver_request(),
+        state,
+        {
+            "driver_thesis": {
+                "\nsummary": "Services demand is durable but margin pressure matters."
+            },
+            "driver_map": {
+                "product": [],
+                "segment": [],
+                "geography": [],
+                "demand": [],
+                "pricing": [],
+                "customer": [],
+                "strategy": [],
+            },
+            "positive_signals": [
+                {
+                    "claim": "Services demand remains a durable growth driver.",
+                    "investor_relevance": "It supports recurring revenue visibility.",
+                    "evidence_limit": "The evidence is limited to one filing period.",
+                    "source_id": "driver_src_1",
+                }
+            ],
+            "negative_signals": [],
+            "watchlist": [
+                {"item": "Watch whether services growth broadens.", "source_id": "driver_src_1"}
+            ],
+            "claims": [],
+        },
+    )
+
+    assert report.task_sections.driver_thesis.summary == (
+        "Services demand is durable but margin pressure matters."
+    )
+    signal = report.task_sections.positive_signals[0]
+    assert signal.title == "Services demand remains a durable growth driver."
+    assert "Investor relevance: It supports recurring revenue visibility." in signal.summary
+    assert "Evidence limit: The evidence is limited to one filing period." in signal.summary
+    assert report.task_sections.watchlist == ["Watch whether services growth broadens."]
+
+
+def test_business_driver_synthesizer_derives_titles_for_string_points() -> None:
+    state = state_with_business_driver_evidence()
+
+    report = build_business_driver_report_from_payload(
+        business_driver_request(),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Services are the core driver",
+                "durability": "durable",
+                "summary": "Services demand is durable.",
+            },
+            "driver_map": {
+                "product": [
+                    "Services demand improved as installed-base engagement deepened."
+                ],
+                "segment": [],
+                "geography": [],
+                "demand": [],
+                "pricing": [],
+                "customer": [],
+                "strategy": [],
+            },
+            "positive_signals": [],
+            "negative_signals": [],
+            "watchlist": [],
+            "claims": [{"text": "Services demand improved.", "source_ids": ["driver_src_1"]}],
+        },
+    )
+
+    point = report.task_sections.driver_map.product[0]
+    assert point.title == "Services demand improved as installed-base"
+    assert point.summary == "Services demand improved as installed-base engagement deepened."
+
+
+def test_business_driver_synthesizer_drops_empty_summary_points() -> None:
+    state = state_with_business_driver_evidence()
+
+    report = build_business_driver_report_from_payload(
+        business_driver_request(),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Services are the core driver",
+                "durability": "durable",
+                "summary": "Services demand is durable.",
+            },
+            "driver_map": {
+                "product": [{"title": "Valid", "summary": "Valid product driver."}],
+                "segment": [{"title": "Empty", "summary": ""}],
+                "geography": [],
+                "demand": [],
+                "pricing": [],
+                "customer": [],
+                "strategy": [],
+            },
+            "positive_signals": [{"title": "Empty", "summary": ""}],
+            "negative_signals": [],
+            "watchlist": [],
+            "claims": [{"text": "Services demand improved.", "source_ids": ["driver_src_1"]}],
+        },
+    )
+
+    assert len(report.task_sections.driver_map.product) == 1
+    assert report.task_sections.driver_map.segment == []
+    assert report.task_sections.positive_signals == []
+
+
+def test_business_driver_synthesizer_normalizes_dotted_summary_key() -> None:
+    state = state_with_business_driver_evidence()
+
+    report = build_business_driver_report_from_payload(
+        business_driver_request(),
+        state,
+        {
+            "driver_thesis": {
+                ".summary": "Cloud demand is durable but capex intensity matters."
+            },
+            "driver_map": {
+                "product": [{"title": "Cloud", "summary": "Cloud demand improved."}],
+                "segment": [],
+                "geography": [],
+                "demand": [],
+                "pricing": [],
+                "customer": [],
+                "strategy": [],
+            },
+            "positive_signals": [],
+            "negative_signals": [],
+            "watchlist": [],
+            "claims": [{"text": "Cloud demand improved.", "source_ids": ["driver_src_1"]}],
+        },
+    )
+
+    assert report.task_sections.driver_thesis.headline == (
+        "Cloud demand is durable but capex intensity matters."
+    )
+    assert report.task_sections.driver_thesis.durability == "durable"
+
+
 def test_synthesizer_normalizes_provider_signal_points() -> None:
     state = state_with_business_driver_evidence()
 
@@ -897,7 +1287,7 @@ def test_business_driver_synthesizer_normalizes_node_payload_points() -> None:
     )
 
     point = report.task_sections.driver_map.product[0]
-    assert point.title == "Evidence node"
+    assert point.title == "Services revenue was supported by"
     assert point.summary == "Services revenue was supported by subscriptions and engagement."
     assert point.evidence_refs[0].source_id == source_id
 
@@ -922,6 +1312,42 @@ def test_synthesizer_builds_cash_flow_sections_from_evidence() -> None:
         "synthesis": "llm",
     }
     assert report.claims[0].source_refs[0].source_id == "cash_src_1"
+
+
+def test_cash_flow_synthesizer_accepts_accession_number_source_alias() -> None:
+    state = state_with_cash_flow_evidence()
+    client = StaticJsonLlmClient(cash_flow_synthesis_payload("0000320193-26-000020"))
+
+    report = synthesize_cash_flow_report(cash_flow_request(), state, client)
+
+    assert report.task_sections.cash_metrics[0].evidence_refs[0].source_id == "cash_src_1"
+    assert report.claims[0].source_refs[0].source_id == "cash_src_1"
+
+
+def test_cash_flow_synthesizer_backfills_empty_metrics_from_facts() -> None:
+    state = state_with_cash_flow_evidence()
+
+    report = build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        {
+            "cash_quality_verdict": {
+                "headline": "Cash conversion remains strong",
+                "earnings_backed_by_cash": "yes",
+                "summary": "Cash conversion remains strong.",
+            },
+            "cash_metrics": ": ",
+            "capital_allocation": ": ",
+            "allocation_discipline": [],
+            "red_flags": [],
+            "claims": [],
+        },
+    )
+
+    assert report.task_sections.cash_metrics[0].name == "Operating Cash Flow"
+    assert report.task_sections.cash_metrics[0].value == "$29.0B"
+    assert report.task_sections.cash_metrics[0].evidence_refs[0].source_id == "cash_src_1"
+    assert report.task_sections.capital_allocation.liquidity[0].title == "Cash flow anchor"
 
 
 def test_cash_flow_prompt_requires_separate_capital_allocation_categories() -> None:

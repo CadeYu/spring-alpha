@@ -269,7 +269,7 @@ def _parse_json_text(text: str) -> dict[str, Any]:
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         cleaned = "\n".join(lines).strip()
-    parsed = json.loads(cleaned)
+    parsed = json.loads(cleaned, strict=False)
     if not isinstance(parsed, dict):
         raise ValueError("LLM JSON content must be an object")
     return parsed

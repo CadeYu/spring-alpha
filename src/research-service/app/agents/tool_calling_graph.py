@@ -9,7 +9,7 @@ from langchain_core.tools import StructuredTool
 from langgraph.graph import END, StateGraph
 
 from app.agents.llm_gateway import _parse_json_text
-from app.contracts.agent import AgentState
+from app.contracts.agent import AgentEvent, AgentPhase, AgentState, ToolStatus
 
 
 class ToolCallingAgentError(RuntimeError):
@@ -34,6 +34,7 @@ def run_tool_calling_graph_agent(
     *,
     agent_name: str,
     state_getter: Callable[[], AgentState],
+    state_setter: Callable[[AgentState], None],
     llm: BaseChatModel,
     tools: list[StructuredTool],
     required_tools: set[str],
@@ -48,6 +49,7 @@ def run_tool_calling_graph_agent(
     tools_by_name = {tool.name: tool for tool in tools}
     final_llm = _json_response_llm(llm)
     final_chain = final_prompt | final_llm
+    model_name = _model_name(llm)
 
     if planned_tool_calls is not None:
         return _run_planned_tool_graph(
@@ -55,10 +57,12 @@ def run_tool_calling_graph_agent(
             tools_by_name=tools_by_name,
             planned_tool_calls=planned_tool_calls,
             final_chain=final_chain,
+            model_name=model_name,
             compact_synthesis=bool(getattr(final_llm, "compact_synthesis", False)),
             initial_instruction=initial_instruction,
             final_instruction=final_instruction,
             state_getter=state_getter,
+            state_setter=state_setter,
             error_factory=error_factory,
         )
 
@@ -72,6 +76,15 @@ def run_tool_calling_graph_agent(
             _raise(f"{agent_name} tool planning failed: {exc}")
         if not isinstance(result, AIMessage):
             _raise(f"{agent_name} LLM did not return an AIMessage")
+        _append_reasoning_event(
+            state_getter=state_getter,
+            state_setter=state_setter,
+            agent_name=agent_name,
+            model_name=model_name,
+            message=result,
+            phase=AgentPhase.BUILD_EVIDENCE_PLAN,
+            summary=f"{agent_name} planned the next evidence step.",
+        )
         messages = [*graph_state["messages"], result]
         if result.tool_calls:
             return {**graph_state, "messages": messages, "next_step": "execute_tools"}
@@ -147,6 +160,15 @@ def run_tool_calling_graph_agent(
             _raise(f"{agent_name} final synthesis failed: {exc}")
         if not isinstance(final_result, AIMessage):
             _raise(f"{agent_name} final LLM did not return an AIMessage")
+        _append_reasoning_event(
+            state_getter=state_getter,
+            state_setter=state_setter,
+            agent_name=agent_name,
+            model_name=model_name,
+            message=final_result,
+            phase=AgentPhase.DRAFT_REPORT_SECTIONS,
+            summary=f"{agent_name} synthesized the final report sections.",
+        )
         try:
             payload = _parse_json_text(_message_content_to_text(final_result.content))
         except Exception as exc:
@@ -208,10 +230,12 @@ def _run_planned_tool_graph(
     tools_by_name: dict[str, StructuredTool],
     planned_tool_calls: list[PlannedToolCall],
     final_chain: Any,
+    model_name: str | None,
     compact_synthesis: bool,
     initial_instruction: str,
     final_instruction: str | None,
     state_getter: Callable[[], AgentState],
+    state_setter: Callable[[AgentState], None],
     error_factory: Callable[[str, AgentState], Exception],
 ) -> dict[str, Any]:
     def execute_plan(graph_state: ToolCallingGraphState) -> ToolCallingGraphState:
@@ -261,6 +285,15 @@ def _run_planned_tool_graph(
             _raise(f"{agent_name} final synthesis failed: {exc}")
         if not isinstance(final_result, AIMessage):
             _raise(f"{agent_name} final LLM did not return an AIMessage")
+        _append_reasoning_event(
+            state_getter=state_getter,
+            state_setter=state_setter,
+            agent_name=agent_name,
+            model_name=model_name,
+            message=final_result,
+            phase=AgentPhase.DRAFT_REPORT_SECTIONS,
+            summary=f"{agent_name} synthesized the final report sections.",
+        )
         try:
             payload = _parse_json_text(_message_content_to_text(final_result.content))
         except Exception as exc:
@@ -294,6 +327,47 @@ def _run_planned_tool_graph(
     return payload
 
 
+def _append_reasoning_event(
+    *,
+    state_getter: Callable[[], AgentState],
+    state_setter: Callable[[AgentState], None],
+    agent_name: str,
+    model_name: str | None,
+    message: AIMessage,
+    phase: AgentPhase,
+    summary: str,
+) -> None:
+    metadata = message.response_metadata if isinstance(message.response_metadata, dict) else {}
+    state = state_getter()
+    event = AgentEvent(
+        run_id=state.run_id,
+        task_type=state.task_type,
+        phase=phase,
+        status=ToolStatus.OK,
+        summary=summary,
+        event_kind="reasoning",
+        agent_name=agent_name,
+        model_name=model_name,
+        latency_ms=_int_value(metadata.get("latency_ms")),
+        usage=_dict_value(metadata.get("usage")),
+    )
+    next_state = state.model_copy(update={"tool_events": [*state.tool_events, event]})
+    state_setter(next_state)
+
+
+def _model_name(llm: Any) -> str | None:
+    model = getattr(llm, "model", None)
+    return str(model) if model else None
+
+
+def _int_value(value: object) -> int:
+    return value if isinstance(value, int) else 0
+
+
+def _dict_value(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _message_content_to_text(content: object) -> str:
     if isinstance(content, str):
         return content.strip()
@@ -307,9 +381,9 @@ def _json_response_llm(llm: BaseChatModel) -> BaseChatModel:
             update={
                 "tools": [],
                 "tool_choice": None,
-                "max_tokens": 768 if compact_synthesis else 1280,
+                "max_tokens": 1280 if compact_synthesis else 2048,
                 "response_format": {"type": "json_object"},
-                "timeout_seconds": 45,
+                "timeout_seconds": 75,
             }
         )
     return llm

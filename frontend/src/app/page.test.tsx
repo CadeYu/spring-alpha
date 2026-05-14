@@ -106,7 +106,7 @@ describe("Home page", () => {
     window.localStorage.setItem("spring-alpha-siliconflow-key", "sk-test-123");
   });
 
-  it("renders degraded source metadata from the quarterly-only analysis stream", async () => {
+  it("keeps degraded source metadata hidden from the quarterly-only analysis stream", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -154,15 +154,11 @@ describe("Home page", () => {
     expect(
       await screen.findByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).toBeInTheDocument();
-    openAgentReport(/latest earnings readout/i);
-
     expect(
-      (
-        await screen.findAllByText(
-          "SEC filing was available, but semantic grounding was not ready yet.",
-        )
-      ).length,
-    ).toBeGreaterThan(0);
+      screen.queryByText(
+        "SEC filing was available, but semantic grounding was not ready yet.",
+      ),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Typed degraded thesis")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/sec/analyze/AAPL?lang=en&model=siliconflow"),
@@ -934,7 +930,7 @@ describe("Home page", () => {
     expect(screen.queryByText(/1970/i)).not.toBeInTheDocument();
   });
 
-  it("keeps agent trace out of the default user report and exposes it in diagnostics", async () => {
+  it("renders agent messages and tools in the side timeline", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -981,9 +977,28 @@ describe("Home page", () => {
               {
                 phase: "build_evidence_plan",
                 status: "ok",
-                summary: "Raw planner decision should stay in diagnostics.",
+                summary: "The analyst planned the next evidence step.",
+                eventKind: "reasoning",
+                agentName: "Earnings Analyst",
+                modelName: "test-model",
+                usage: {
+                  prompt_tokens: 1416,
+                  completion_tokens: 53,
+                },
+                latencyMs: 1000,
+              },
+              {
+                phase: "retrieve_evidence",
+                status: "ok",
+                summary: "Searched SEC filing sections.",
+                eventKind: "tool",
+                agentName: "Earnings Analyst",
                 toolName: "search_filing_sections",
-                latencyMs: 10,
+                toolInput: {
+                  sections: ["MD&A"],
+                  query: "revenue margin",
+                },
+                latencyMs: 2000,
               },
             ],
           },
@@ -999,21 +1014,15 @@ describe("Home page", () => {
     openAgentReport(/latest earnings readout/i);
 
     expect(await screen.findByText("Typed thesis")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /messages and tools/i })).toBeInTheDocument();
+    expect(screen.getAllByText("Messages & Tools").length).toBeGreaterThan(0);
+    expect(screen.getByText("test-model: 1416 in, 53 out")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'search_filing_sections: {"sections":["MD&A"],"query":"revenue margin"}',
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Agent Progress")).not.toBeInTheDocument();
-    expect(
-      screen.queryAllByText("Raw planner decision should stay in diagnostics.")
-        .length,
-    ).toBe(0);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /developer diagnostics/i }),
-    );
-
-    expect(screen.getAllByText("Agent Progress").length).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText("Raw planner decision should stay in diagnostics.")
-        .length,
-    ).toBeGreaterThan(0);
   });
 
   it("renders typed cash flow synthesis fields from the spring mapper envelope", async () => {
@@ -1387,7 +1396,7 @@ describe("Home page", () => {
     );
   });
 
-  it("renders grounded citations instead of degraded fallback when citations exist", async () => {
+  it("does not render source citations even when grounded citations exist", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -1433,20 +1442,20 @@ describe("Home page", () => {
 
     openAgentReport(/latest earnings readout/i);
 
+    await screen.findByText("Tesla, Inc. · FY 2025 · 2026-01-29");
     expect(
-      (
-        await screen.findAllByText(
-          "Revenue increased due to stronger deliveries.",
-        )
-      ).length,
-    ).toBeGreaterThan(0);
-    expect(screen.getAllByText("MD&A").length).toBeGreaterThan(0);
+      screen.queryByText("Revenue increased due to stronger deliveries."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("MD&A")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Source Citations & Verification/i),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/semantic grounding was not ready yet/i),
     ).not.toBeInTheDocument();
   });
 
-  it("renders a grounded no-citation explanation when all citations were filtered out", async () => {
+  it("does not render source-context fallback messaging when citations are absent", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -1486,18 +1495,17 @@ describe("Home page", () => {
     fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
     openAgentReport(/latest earnings readout/i);
 
+    await screen.findByText("Microsoft Corporation · Q2 2026 · 2026-01-31");
     expect(
-      (
-        await screen.findAllByText(
-          /did not retain a display-ready high-confidence verbatim quote/i,
-        )
-      ).length,
-    ).toBeGreaterThan(0);
+      screen.queryByText(
+        /did not retain a display-ready high-confidence verbatim quote/i,
+      ),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getAllByText(
+      screen.queryByText(
         /Current status: grounded evidence, citation display limited/i,
-      ).length,
-    ).toBeGreaterThan(0);
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("sends the saved provider key when BYOK mode is used", async () => {
@@ -1843,8 +1851,8 @@ describe("Home page", () => {
       await screen.findByText("Tesla, Inc. · FY 2025 · 2026-01-29"),
     ).toBeInTheDocument();
     expect(screen.getByText("Initial typed thesis")).toBeInTheDocument();
-    expect((await screen.findAllByText("First citation.")).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText("Second citation.")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("First citation.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Second citation.")).not.toBeInTheDocument();
   });
 
   it("prevents overlapping analyses while an existing analysis is still loading", async () => {

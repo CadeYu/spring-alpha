@@ -12,12 +12,11 @@ import type {
   AnalysisReport,
   BusinessSignalItem,
   BusinessSignals,
-  Citation,
   CoreThesis,
   MetricInsight,
   SupportingEvidence,
 } from '@/types/AnalysisReport';
-import { formatPeriodForDisplay, getSourceMessage, getSourceStatusLabel } from '@/lib/reportPresentation';
+import { formatPeriodForDisplay } from '@/lib/reportPresentation';
 
 function resolveArialUnicodeFontSrc(): string {
   if (typeof window === 'undefined' && typeof process !== 'undefined') {
@@ -441,22 +440,6 @@ const styles = StyleSheet.create({
     fontSize: 10.1,
     lineHeight: 1.32,
   },
-  footerStrip: {
-    width: '100%',
-  },
-  footerCard: {
-    borderRadius: 22,
-    padding: 12,
-    backgroundColor: '#071121',
-    border: '1 solid #12384b',
-  },
-  footerTitle: {
-    fontSize: 11,
-    color: '#2dd4bf',
-    textTransform: 'uppercase',
-    letterSpacing: 1.9,
-    marginBottom: 8,
-  },
   watchPill: {
     borderRadius: 16,
     padding: 12,
@@ -467,33 +450,6 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 1.42,
     color: '#dbeafe',
-  },
-  sourceTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  sourceStatus: {
-    fontSize: 10,
-    color: '#5eead4',
-    textTransform: 'uppercase',
-    letterSpacing: 1.6,
-  },
-  sourceText: {
-    fontSize: 10.8,
-    lineHeight: 1.32,
-    color: '#e2e8f0',
-    marginBottom: 5,
-  },
-  sourceTextZh: {
-    fontSize: 10.1,
-    lineHeight: 1.34,
-  },
-  sourceHint: {
-    fontSize: 9.2,
-    lineHeight: 1.24,
-    color: '#64748b',
   },
 });
 
@@ -911,22 +867,6 @@ function buildQuestionSections(report: AnalysisReport, lang: string, density: Po
   ];
 }
 
-function compactCitation(citations: Citation[], lang: string, density: PosterDensity): string | null {
-  const candidate =
-    lang === 'zh'
-      ? citations.find((citation) => citation.excerptZh)
-      : citations.find((citation) => citation.excerptZh || citation.excerpt);
-  if (!candidate) return null;
-
-  const body = lang === 'zh' && candidate.excerptZh ? candidate.excerptZh : candidate.excerpt;
-  return shortenText(
-    body,
-    density === 'tight'
-      ? (lang === 'zh' ? 52 : 88)
-      : (lang === 'zh' ? 74 : 112)
-  );
-}
-
 function compactMetric(metric: MetricInsight, lang: string): MetricInsight {
   return {
     ...metric,
@@ -1052,10 +992,6 @@ export function AnalysisReportPDF({ report, ticker, lang }: AnalysisReportPDFPro
   const growthMetric = pickMetric(metrics, (name) => name === 'revenue_yoy');
   const profitMetric = pickMetric(metrics, (name) => name === 'net_income');
   const questionSections = buildQuestionSections(report, lang, density);
-  const citation = compactCitation(report.citations || [], lang, density);
-  const fallbackSourceContext = report.sourceContext || { status: citation ? 'GROUNDED' : 'UNAVAILABLE' as const };
-  const sourceStatus = getSourceStatusLabel(fallbackSourceContext, lang);
-  const sourceMessage = getSourceMessage(fallbackSourceContext, lang);
   const heroGridStyle = isZh ? [styles.heroGrid, styles.heroGridZh] : [styles.heroGrid];
   const heroMainStyle = isZh ? [styles.heroMain, styles.heroMainZh] : [styles.heroMain];
   const heroAsideStyle = isZh ? [styles.heroAside, styles.heroAsideZh] : [styles.heroAside];
@@ -1076,7 +1012,6 @@ export function AnalysisReportPDF({ report, ticker, lang }: AnalysisReportPDFPro
     ? [styles.debateCard, styles.debateBear, styles.debateCardZh]
     : [styles.debateCard, styles.debateBear];
   const debateBodyStyle = isZh ? [styles.debateBody, styles.debateBodyZh] : [styles.debateBody];
-  const sourceTextStyle = isZh ? [styles.sourceText, styles.sourceTextZh] : [styles.sourceText];
 
   const heroSummary = shortenText(
     report.coreThesis?.summary ||
@@ -1235,15 +1170,6 @@ export function AnalysisReportPDF({ report, ticker, lang }: AnalysisReportPDFPro
           </View>
         </View>
 
-        <View style={styles.footerStrip}>
-          <View style={styles.footerCard}>
-            <View style={styles.sourceTop}>
-              <Text style={styles.footerTitle}>{t(lang, 'Source check', '来源校验')}</Text>
-              <Text style={styles.sourceStatus}>{sourceStatus}</Text>
-            </View>
-            <Text style={sourceTextStyle}>{citation || sourceMessage}</Text>
-          </View>
-        </View>
       </Page>
     </Document>
   );

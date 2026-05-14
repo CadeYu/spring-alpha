@@ -11,12 +11,12 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.domain_tools import ResearchToolService
+from app.agents.evidence_pack_tool import create_agent_evidence_pack_tool
 from app.agents.report_synthesizer import synthesize_latest_earnings_payload
 from app.agents.tool_calling_graph import run_tool_calling_graph_agent
 from app.contracts.agent import AgentEvent, AgentPhase, AgentRequest, AgentState
 from app.contracts.research_task import ResearchTaskType
 from app.contracts.tools import CompanyFactsInput, MetricEvidenceInput
-from app.rag.langchain_tools import create_sec_evidence_search_tool
 from app.rag.llamaindex_pipeline import LlamaIndexRagPipeline
 
 
@@ -72,6 +72,7 @@ def run_latest_earnings_agent(
     payload = run_tool_calling_graph_agent(
         agent_name="Earnings agent",
         state_getter=lambda: runtime_state,
+        state_setter=_set_runtime_state,
         llm=llm,
         tools=tools,
         required_tools={"get_company_facts", "search_metric_evidence"},
@@ -82,6 +83,7 @@ def run_latest_earnings_agent(
         planned_tool_calls=[
             {"name": "get_company_facts", "args": {}},
             {"name": "search_metric_evidence", "args": {}},
+            {"name": "build_evidence_pack", "args": {}},
         ],
         error_factory=lambda message, error_state: EarningsAgentError(
             message,
@@ -116,6 +118,7 @@ def _latest_earnings_tools(
             "get_company_facts",
             "Collected company facts for latest earnings.",
             tool_service.get_company_facts(tool_input, state_getter()),
+            tool_input.model_dump(mode="json"),
         )
         state_setter(next_state)
         return payload
@@ -139,6 +142,7 @@ def _latest_earnings_tools(
             "search_metric_evidence",
             "Searched KPI evidence for latest earnings.",
             tool_service.search_metric_evidence(tool_input, state_getter()),
+            tool_input.model_dump(mode="json"),
         )
         state_setter(next_state)
         return payload
@@ -156,16 +160,15 @@ def _latest_earnings_tools(
             description="Return KPI evidence records and related source snippets.",
             args_schema=MetricEvidenceSearchInput,
         ),
+        create_agent_evidence_pack_tool(
+            request=request,
+            state_getter=state_getter,
+            state_setter=state_setter,
+            rag_pipeline=rag_pipeline,
+            summary="Built SEC filing evidence pack for latest earnings.",
+            run_domain_tool=_run_domain_tool,
+        ),
     ]
-    if rag_pipeline is not None:
-        tools.append(
-            create_sec_evidence_search_tool(
-                rag_pipeline=rag_pipeline,
-                run_id=request.run_id,
-                ticker=request.ticker,
-                task_type=request.task_type,
-            )
-        )
     return tools
 
 
@@ -174,6 +177,7 @@ def _run_domain_tool(
     tool_name: str,
     summary: str,
     result: Any,
+    tool_input: dict[str, Any] | None = None,
 ) -> tuple[AgentState, str]:
     started_at = perf_counter()
     event = AgentEvent(
@@ -183,6 +187,10 @@ def _run_domain_tool(
         status=result.status,
         summary=summary,
         tool_name=tool_name,
+        event_kind="tool",
+        agent_name="Earnings agent",
+        model_name=state.model,
+        tool_input=tool_input or {},
         latency_ms=result.latency_ms or int((perf_counter() - started_at) * 1000),
         degraded_reason=result.degraded_reasons[0] if result.degraded_reasons else None,
     )
@@ -236,15 +244,38 @@ def _retrieval_payload(data: dict[str, Any]) -> dict[str, Any]:
     records = data.get("records")
     if isinstance(records, list):
         return {"record_count": len(records)}
+    evidence_pack = data.get("evidence_pack")
+    if isinstance(evidence_pack, dict):
+        return {"evidence_pack": _evidence_pack_summary(evidence_pack)}
     return {}
+
+
+def _evidence_pack_summary(evidence_pack: dict[str, Any]) -> dict[str, Any]:
+    filing_evidence = evidence_pack.get("filing_evidence")
+    metric_facts = evidence_pack.get("metric_facts")
+    filing_items = filing_evidence if isinstance(filing_evidence, list) else []
+    metric_items = metric_facts if isinstance(metric_facts, list) else []
+    source_types: dict[str, int] = {}
+    for item in metric_items:
+        if not isinstance(item, dict):
+            continue
+        source_type = str(item.get("source_type") or "unknown")
+        source_types[source_type] = source_types.get(source_type, 0) + 1
+    return {
+        "retrieval_status": evidence_pack.get("retrieval_status"),
+        "filing_evidence_count": len(filing_items),
+        "metric_fact_count": len(metric_items),
+        "metric_fact_source_types": source_types,
+        "serialized_length": len(json.dumps(evidence_pack, sort_keys=True)),
+    }
 
 
 def _initial_earnings_instruction(request: AgentRequest, state: AgentState) -> str:
     return (
         f"Analyze latest earnings for {state.ticker}.\n"
         "First call get_company_facts. Then call search_metric_evidence for revenue, "
-        "gross margin, and operating income. If search_sec_evidence is available, call it "
-        "once for operating result drivers. After tool results, return final JSON only.\n"
+        "gross margin, and operating income. Then call build_evidence_pack once for "
+        "operating result drivers. After tool results, return final JSON only.\n"
         "Final JSON must match this shape exactly:\n"
         f"{json.dumps(synthesize_latest_earnings_payload(), ensure_ascii=True)}\n"
         "Use only source_ids returned by tools. Company Profile should be concise and "
@@ -258,8 +289,18 @@ def _final_earnings_instruction(request: AgentRequest, state: AgentState) -> str
         f"Write the latest earnings report JSON for {state.ticker} from the evidence context.\n"
         "Return exactly these top-level keys: company_profile, topline_verdict, "
         "key_takeaways, financial_dashboard, driver_snapshot, risk_snapshot, claims.\n"
-        "Use concise one-sentence prose. Use only source_ids present in evidence context; "
-        "use [] when no citation is needed. Keep arrays to at most 2 items each.\n"
+        "Write it as an investment memo, not a metric recap. topline_verdict.summary "
+        "must state the earnings conclusion, the so what for investors, and the strongest "
+        "counter-evidence if the evidence is mixed. key_takeaways must answer what changed; "
+        "risk_snapshot must answer watch next with what would change the conclusion next "
+        "quarter.\n"
+        "company_profile must be a concise business identity based on company facts or "
+        "market profile facts, never filing risk snippets. Use concise one-sentence prose. "
+        "Do not use schema labels or placeholders as prose, including Evidence point, "
+        "Company profile unavailable, KPI Strip, What Changed, Watch Next, or N/A. "
+        "Every array item must use title and summary fields, not headline/body/item. "
+        "Use only source_ids present in evidence context; use [] when no citation is needed. "
+        "Keep arrays to at most 2 items each.\n"
         "financial_dashboard.metrics should include Revenue, Gross Margin, and Operating Income "
         "when evidence exists.\n"
         f"Language: {request.language}"
@@ -285,8 +326,11 @@ def _final_prompt() -> ChatPromptTemplate:
         [
             (
                 "system",
-                "You are an earnings analyst. Return compact JSON only. Do not call tools. "
-                "Do not invent source_ids. Keep every prose field to one concise sentence.",
+                "You are the research manager for the earnings desk. Return compact JSON "
+                "only. Do not call tools. Do not invent source_ids. Write like a concise "
+                "investment memo: give a verdict, explain the so what, include "
+                "counter-evidence, and make the next watch item actionable. Keep every "
+                "prose field investor-facing.",
             ),
             MessagesPlaceholder(variable_name="messages"),
         ]

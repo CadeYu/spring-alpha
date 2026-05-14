@@ -10,6 +10,7 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 分析报告 (The Output)
@@ -205,6 +206,11 @@ public class AnalysisReport {
         private String status;
         private String summary;
         private String toolName;
+        private String eventKind;
+        private String agentName;
+        private String modelName;
+        private Map<String, Object> toolInput;
+        private Map<String, Object> usage;
         private long latencyMs;
         private String degradedReason;
     }

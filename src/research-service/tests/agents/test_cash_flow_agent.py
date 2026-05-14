@@ -1,10 +1,20 @@
 import json
 from typing import Any
 
-from app.agents.domain_tools import LlamaIndexResearchToolService, SecCompanyFactsProvider
+from app.agents.domain_tools import (
+    LlamaIndexResearchToolService,
+    SecCompanyFactsProvider,
+    YahooCompanyProfileProvider,
+)
 from app.agents.llm_gateway import OpenAiCompatibleLlmClient
 from app.agents.research_workflow import ResearchAgentWorkflow
-from app.contracts.agent import AgentRequest, AgentRunStatus, LlmProvider
+from app.contracts.agent import (
+    AgentRequest,
+    AgentRunStatus,
+    AgentState,
+    LlmProvider,
+    default_task_policy,
+)
 from app.contracts.research_task import ResearchTaskType
 from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline
 
@@ -102,11 +112,105 @@ def test_cash_flow_agent_uses_langgraph_tool_workflow() -> None:
     assert result.final_report["task_sections"]["cash_quality_verdict"]["headline"] == (
         "Cash generation supports the earnings base"
     )
-    assert [event.tool_name for event in result.events] == [
+    assert [event.tool_name for event in result.events if event.tool_name] == [
         "get_company_facts",
-        "search_filing_sections",
         "search_metric_evidence",
+        "build_evidence_pack",
     ]
+    assert any(event.event_kind == "reasoning" for event in result.events)
+    evidence_context = _evidence_context_from_final_payload(calls[-1])
+    evidence_pack = _tool_content(evidence_context, "build_evidence_pack")["evidence_pack"]
+    metric_facts = evidence_pack["metric_facts"]
+    assert any(
+        fact["source_type"] == "sec_companyfacts"
+        and fact["metric"] == "operating cash flow"
+        and fact["value"] == 32000000000
+        for fact in metric_facts
+    )
+    assert any(
+        fact["source_type"] == "sec_companyfacts"
+        and fact["metric"] == "capital expenditures"
+        and fact["value"] == 3000000000
+        for fact in metric_facts
+    )
+    assert any(
+        fact["source_type"] == "metric_evidence"
+        and fact["metric"] == "buybacks"
+        and fact["source_id"].endswith(":sec_companyfacts:buybacks")
+        for fact in metric_facts
+    )
+    assert any(
+        fact["source_type"] == "yahoo_profile"
+        and fact["business_summary"].startswith("Apple designs consumer devices")
+        and fact["sector"] == "Technology"
+        for fact in metric_facts
+    )
+
+
+def test_cash_flow_agent_uses_standard_timeout_for_final_synthesis() -> None:
+    calls: list[dict[str, object]] = []
+    final_timeouts: list[int] = []
+
+    def transport(
+        url: str,
+        payload: dict[str, object],
+        headers: dict[str, str],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        calls.append(payload)
+        tool_messages = _tool_messages(payload)
+        if "tools" not in payload:
+            final_timeouts.append(timeout_seconds)
+            source_id = _first_source_id_from_calls(calls)
+            return _content_response(
+                {
+                    "cash_quality_verdict": {
+                        "headline": "Cash conversion is durable",
+                        "earnings_backed_by_cash": "yes",
+                        "summary": "Cash conversion supports the investment case.",
+                    },
+                    "cash_metrics": [
+                        {
+                            "name": "Operating Cash Flow",
+                            "value": "$32.0B",
+                            "period": "latest_quarter",
+                            "interpretation": "Operating cash flow remained resilient.",
+                            "source_ids": [source_id],
+                            "citation_status": "supported",
+                        }
+                    ],
+                    "capital_allocation": {
+                        "capex": [],
+                        "buybacks": [],
+                        "dividends": [],
+                        "debt": [],
+                        "liquidity": [],
+                    },
+                    "allocation_discipline": [],
+                    "red_flags": [],
+                    "claims": [],
+                }
+            )
+        if not tool_messages:
+            return _tool_call_response("call_facts", "get_company_facts", {})
+        if len(tool_messages) == 1:
+            return _tool_call_response(
+                "call_filing",
+                "search_filing_sections",
+                {
+                    "sections": ["Liquidity and Capital Resources"],
+                    "query": "operating cash flow capex buybacks liquidity",
+                },
+            )
+        if len(tool_messages) == 2:
+            return _tool_call_response("call_metrics", "search_metric_evidence", {})
+        raise AssertionError("unexpected tool planning request")
+
+    result = _workflow(transport).run(_cash_flow_request("run_cash_standard_timeout"))
+
+    assert result.status == AgentRunStatus.OK
+    assert final_timeouts == [75]
+    assert calls[-1]["max_tokens"] == 2048
 
 
 def test_cash_flow_agent_returns_transparent_partial_state_when_final_llm_fails() -> None:
@@ -153,12 +257,37 @@ def test_cash_flow_agent_returns_transparent_partial_state_when_final_llm_fails(
     assert "provider timed out during final cash flow synthesis" in result.degraded_reasons[0]
     assert result.retryable is True
     assert len(result.retrieval_records) == 3
-    assert [event.tool_name for event in result.events[:-1]] == [
+    assert [event.tool_name for event in result.events if event.tool_name] == [
         "get_company_facts",
-        "search_filing_sections",
         "search_metric_evidence",
+        "build_evidence_pack",
     ]
     assert result.events[-1].phase == "degraded"
+
+
+def test_cash_flow_final_prompt_requires_investment_memo_quality_structure() -> None:
+    from app.agents.cash_flow_agent import _final_cash_flow_instruction
+
+    instruction = _final_cash_flow_instruction(
+        _cash_flow_request("run_cash_prompt"),
+        AgentState(
+            run_id="run_cash_prompt",
+            ticker="AAPL",
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        ),
+    )
+    normalized_instruction = instruction.lower()
+
+    for expected in (
+        "investment memo",
+        "counter-evidence",
+        "what would change the conclusion",
+        "so what",
+        "source_ids",
+    ):
+        assert expected in normalized_instruction
+    assert "debate" not in normalized_instruction
 
 
 def _workflow(transport: Any) -> ResearchAgentWorkflow:
@@ -180,7 +309,10 @@ Capital expenditures and share repurchases were managed within the capital retur
     return ResearchAgentWorkflow(
         tool_service=LlamaIndexResearchToolService(
             pipeline,
-            facts_provider=SecCompanyFactsProvider(transport=_fake_sec_transport),
+            facts_provider=SecCompanyFactsProvider(
+                transport=_fake_sec_transport,
+                profile_provider=YahooCompanyProfileProvider(transport=_fake_yahoo_transport),
+            ),
         ),
         llm_client=OpenAiCompatibleLlmClient(
             LlmProvider.SILICONFLOW,
@@ -192,13 +324,13 @@ Capital expenditures and share repurchases were managed within the capital retur
     )
 
 
-def _cash_flow_request(run_id: str) -> AgentRequest:
+def _cash_flow_request(run_id: str, model: str = "test-model") -> AgentRequest:
     return AgentRequest(
         run_id=run_id,
         ticker="AAPL",
         task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
         llm_provider=LlmProvider.SILICONFLOW,
-        llm_model="test-model",
+        llm_model=model,
         llm_api_key="secret",
     )
 
@@ -238,6 +370,23 @@ def _first_source_id_from_calls(calls: list[dict[str, object]]) -> str:
         except AssertionError:
             continue
     return "sec_companyfacts"
+
+
+def _evidence_context_from_final_payload(payload: dict[str, object]) -> list[dict[str, Any]]:
+    messages = payload["messages"]
+    assert isinstance(messages, list)
+    content = messages[-1]["content"]
+    assert isinstance(content, str)
+    return json.loads(content.split("Evidence context JSON:", 1)[1].strip())
+
+
+def _tool_content(evidence_context: list[dict[str, Any]], tool_name: str) -> dict[str, Any]:
+    for payload in evidence_context:
+        if payload.get("tool_name") == tool_name:
+            content = payload.get("content")
+            assert isinstance(content, dict)
+            return content
+    raise AssertionError(f"Tool content not found: {tool_name}")
 
 
 def _tool_call_response(call_id: str, name: str, arguments: dict[str, object]) -> dict[str, object]:
@@ -320,4 +469,27 @@ def _fake_sec_transport(url: str, timeout_seconds: float) -> dict[str, object]:
                 },
             }
         },
+    }
+
+
+def _fake_yahoo_transport(url: str, timeout_seconds: float) -> dict[str, object]:
+    return {
+        "quoteSummary": {
+            "result": [
+                {
+                    "assetProfile": {
+                        "longBusinessSummary": (
+                            "Apple designs consumer devices, software, and services "
+                            "for a global installed base."
+                        ),
+                        "sector": "Technology",
+                        "industry": "Consumer Electronics",
+                    },
+                    "price": {
+                        "longName": "Apple Inc.",
+                        "quoteType": "EQUITY",
+                    },
+                }
+            ]
+        }
     }

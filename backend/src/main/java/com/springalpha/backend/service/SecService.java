@@ -213,9 +213,7 @@ public class SecService {
     int locateCoreSectionStart(String text) {
         String[] keywords = new String[] {
                 "Item 2. Management's Discussion and Analysis",
-                "Item 2. Management’s Discussion and Analysis",
                 "Management's Discussion and Analysis",
-                "Management’s Discussion and Analysis",
                 "Item 7."
         };
         int startIndex = -1;

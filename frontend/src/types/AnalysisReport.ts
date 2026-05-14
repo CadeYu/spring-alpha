@@ -36,6 +36,11 @@ export interface AgentEventMetadata {
     status: string;
     summary: string;
     toolName?: string | null;
+    eventKind?: 'reasoning' | 'tool' | string | null;
+    agentName?: string | null;
+    modelName?: string | null;
+    toolInput?: Record<string, unknown> | null;
+    usage?: Record<string, unknown> | null;
     latencyMs?: number;
     degradedReason?: string | null;
 }

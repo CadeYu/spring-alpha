@@ -1,3 +1,4 @@
+import re
 from os import getenv
 from typing import Any
 
@@ -318,7 +319,7 @@ def synthesize_latest_earnings_payload() -> dict[str, Any]:
 
 
 def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(payload_data)
+    normalized = _clean_mapping_keys(payload_data)
     company_profile = normalized.get("company_profile")
     if isinstance(company_profile, str):
         normalized["company_profile"] = {
@@ -326,19 +327,23 @@ def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str
             "source_ids": [],
             "citation_status": "unverified",
         }
-    elif isinstance(company_profile, dict) and "summary" not in company_profile:
-        summary = (
-            company_profile.get("business_summary")
-            or company_profile.get("businessSummary")
-            or company_profile.get("description")
+    elif isinstance(company_profile, dict):
+        clean_profile = _clean_mapping_keys(company_profile)
+        summary = clean_profile.get("summary") or (
+            clean_profile.get("business_summary")
+            or clean_profile.get("businessSummary")
+            or clean_profile.get("description")
         )
-        normalized["company_profile"] = {
-            "summary": str(
-                summary or company_profile.get("name") or "Company profile unavailable."
-            ),
-            "source_ids": _list_of_strings(company_profile.get("source_ids")),
-            "citation_status": str(company_profile.get("citation_status") or "unverified"),
-        }
+        if summary:
+            normalized["company_profile"] = {
+                "summary": str(summary),
+                "source_ids": _list_of_strings(clean_profile.get("source_ids")),
+                "citation_status": str(
+                    clean_profile.get("citation_status") or "unverified"
+                ),
+            }
+        else:
+            normalized["company_profile"] = None
     topline_verdict = normalized.get("topline_verdict")
     if isinstance(topline_verdict, str):
         normalized["topline_verdict"] = {
@@ -346,6 +351,18 @@ def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str
             "summary": topline_verdict,
             "verdict": "mixed",
         }
+    elif isinstance(topline_verdict, dict):
+        summary = str(topline_verdict.get("summary") or topline_verdict.get("text") or "")
+        if summary and (
+            "headline" not in topline_verdict or "verdict" not in topline_verdict
+        ):
+            normalized["topline_verdict"] = {
+                "headline": str(topline_verdict.get("headline") or summary[:120]),
+                "summary": summary,
+                "verdict": _earnings_verdict_from_text(
+                    str(topline_verdict.get("verdict") or summary)
+                ),
+            }
     normalized["key_takeaways"] = _normalize_synthesized_points(
         normalized.get("key_takeaways", [])
     )
@@ -459,7 +476,7 @@ def build_business_driver_report_from_payload(
 
 
 def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(payload_data)
+    normalized = _clean_mapping_keys(payload_data)
     driver_thesis = normalized.get("driver_thesis")
     if isinstance(driver_thesis, str):
         normalized["driver_thesis"] = {
@@ -467,6 +484,19 @@ def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str
             "durability": "unclear",
             "summary": driver_thesis,
         }
+    elif isinstance(driver_thesis, dict):
+        driver_thesis = _clean_mapping_keys(driver_thesis)
+        summary = str(driver_thesis.get("summary") or driver_thesis.get("text") or "")
+        if summary and (
+            "headline" not in driver_thesis or "durability" not in driver_thesis
+        ):
+            normalized["driver_thesis"] = {
+                "headline": str(driver_thesis.get("headline") or summary[:120]),
+                "durability": _driver_durability_from_text(
+                    str(driver_thesis.get("durability") or summary)
+                ),
+                "summary": summary,
+            }
     driver_map = payload_data.get("driver_map")
     if not isinstance(driver_map, dict):
         normalized["driver_map"] = {
@@ -490,6 +520,7 @@ def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str
         normalized.get("negative_signals", [])
     )
     normalized["claims"] = _normalize_synthesized_claims(normalized.get("claims", []))
+    normalized["watchlist"] = _normalize_watchlist(normalized.get("watchlist", []))
     return normalized
 
 
@@ -497,15 +528,19 @@ def _normalize_synthesized_points(value: object) -> object:
     if isinstance(value, str):
         return [
             {
-                "title": "Evidence point",
+                "title": _title_from_text(value),
                 "summary": value,
                 "source_ids": [],
                 "citation_status": "unverified",
             }
         ]
+    if isinstance(value, dict):
+        point = _normalize_synthesized_point(value)
+        return [point] if _has_point_summary(point) else []
     if not isinstance(value, list):
         return value
-    return [_normalize_synthesized_point(point) for point in value]
+    normalized_points = [_normalize_synthesized_point(point) for point in value]
+    return [point for point in normalized_points if _has_point_summary(point)]
 
 
 def _normalize_synthesized_metrics(value: object) -> object:
@@ -590,12 +625,14 @@ def _source_ids_from_value(value: dict[str, object]) -> list[str]:
 
 def _normalize_synthesized_point(point: object) -> object:
     if not isinstance(point, dict):
+        summary = str(point)
         return {
-            "title": "Evidence point",
-            "summary": str(point),
+            "title": _title_from_text(summary),
+            "summary": summary,
             "source_ids": [],
             "citation_status": "unverified",
         }
+    point = _clean_mapping_keys(point)
     if "title" in point and "summary" in point:
         return {
             **point,
@@ -610,22 +647,50 @@ def _normalize_synthesized_point(point: object) -> object:
             "source_ids": _source_ids_from_value(point),
             "citation_status": str(point.get("citation_status") or "unverified"),
         }
-    text = point.get("summary") or point.get("text") or point.get("snippet")
-    title = point.get("title") or point.get("driver") or point.get("label")
+    text = (
+        point.get("summary")
+        or point.get("text")
+        or point.get("snippet")
+        or point.get("point")
+        or point.get("description")
+        or point.get("insight")
+        or point.get("item")
+        or point.get("assessment")
+        or point.get("flag")
+        or point.get("claim")
+    )
+    title = (
+        point.get("title")
+        or point.get("driver")
+        or point.get("label")
+        or point.get("claim")
+        or _title_from_provider_point(point)
+    )
     if not text and "value" in point:
         value = point.get("value")
         period = point.get("period")
         text = f"Value was {value}" + (f" for {period}." if period else ".")
+    if not text and {"strengths", "weaknesses", "investor_implication"}.intersection(point):
+        text = "Capital allocation discipline."
     if not text:
         return point
     return {
         "title": str(
-            title or ("Capital allocation item" if "value" in point else "Evidence node")
+            title
+            or (
+                "Capital allocation item"
+                if "value" in point
+                else _title_from_text(str(text))
+            )
         ),
-        "summary": str(text),
+        "summary": _summary_from_provider_point(point, str(text)),
         "source_ids": _source_ids_from_value(point),
         "citation_status": str(point.get("citation_status") or "supported"),
     }
+
+
+def _has_point_summary(point: object) -> bool:
+    return isinstance(point, dict) and bool(str(point.get("summary") or "").strip())
 
 
 def synthesize_cash_flow_report(
@@ -664,6 +729,11 @@ def build_cash_flow_report_from_payload(
     payload_data = _normalize_cash_flow_payload(payload_data)
     payload = _CashFlowSynthesis.model_validate(payload_data)
     _validate_cash_flow_source_ids(payload, source_refs_by_id)
+    cash_metrics = _cash_metrics_with_fact_backfill(payload.cash_metrics, state)
+    capital_allocation = _capital_allocation_with_fact_backfill(
+        payload.capital_allocation,
+        cash_metrics,
+    )
     task_sections = CashFlowCapitalAllocationSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
@@ -671,28 +741,28 @@ def build_cash_flow_report_from_payload(
         cash_quality_verdict=payload.cash_quality_verdict,
         cash_metrics=[
             _metric_with_evidence_guardrail(metric, state, source_refs_by_id)
-            for metric in payload.cash_metrics
+            for metric in cash_metrics
         ],
         capital_allocation=CapitalAllocation(
             capex=[
                 _point_from_payload(point, source_refs_by_id)
-                for point in payload.capital_allocation.capex
+                for point in capital_allocation.capex
             ],
             buybacks=[
                 _point_from_payload(point, source_refs_by_id)
-                for point in payload.capital_allocation.buybacks
+                for point in capital_allocation.buybacks
             ],
             dividends=[
                 _point_from_payload(point, source_refs_by_id)
-                for point in payload.capital_allocation.dividends
+                for point in capital_allocation.dividends
             ],
             debt=[
                 _point_from_payload(point, source_refs_by_id)
-                for point in payload.capital_allocation.debt
+                for point in capital_allocation.debt
             ],
             liquidity=[
                 _point_from_payload(point, source_refs_by_id)
-                for point in payload.capital_allocation.liquidity
+                for point in capital_allocation.liquidity
             ],
         ),
         allocation_discipline=[
@@ -712,7 +782,7 @@ def build_cash_flow_report_from_payload(
 
 
 def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(payload_data)
+    normalized = _clean_mapping_keys(payload_data)
     verdict = normalized.get("cash_quality_verdict")
     if isinstance(verdict, str):
         normalized["cash_quality_verdict"] = {
@@ -720,21 +790,233 @@ def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]
             "earnings_backed_by_cash": "unclear",
             "summary": verdict,
         }
+    elif isinstance(verdict, dict):
+        summary = str(verdict.get("summary") or verdict.get("text") or "")
+        if summary and (
+            "headline" not in verdict or "earnings_backed_by_cash" not in verdict
+        ):
+            normalized["cash_quality_verdict"] = {
+                "headline": str(verdict.get("headline") or summary[:120]),
+                "earnings_backed_by_cash": _cash_quality_from_text(
+                    str(verdict.get("earnings_backed_by_cash") or verdict.get("rating") or summary)
+                ),
+                "summary": summary,
+            }
+    cash_metrics = normalized.get("cash_metrics", [])
     normalized["cash_metrics"] = _normalize_synthesized_metrics(
-        normalized.get("cash_metrics", [])
+        cash_metrics if isinstance(cash_metrics, list | dict) else []
     )
-    capital_allocation = payload_data.get("capital_allocation")
+    capital_allocation = normalized.get("capital_allocation")
     if isinstance(capital_allocation, dict):
         normalized["capital_allocation"] = {
             key: _normalize_synthesized_points(value)
             for key, value in capital_allocation.items()
         }
+    else:
+        normalized["capital_allocation"] = {
+            "capex": [],
+            "buybacks": [],
+            "dividends": [],
+            "debt": [],
+            "liquidity": [],
+        }
     normalized["allocation_discipline"] = _normalize_synthesized_points(
         normalized.get("allocation_discipline", [])
     )
     normalized["red_flags"] = _normalize_synthesized_points(normalized.get("red_flags", []))
-    normalized["claims"] = _normalize_synthesized_claims(normalized.get("claims", []))
+    claims = normalized.get("claims", [])
+    normalized["claims"] = _normalize_synthesized_claims(
+        claims if isinstance(claims, list) else []
+    )
     return normalized
+
+
+def _normalize_watchlist(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            clean_item = _clean_mapping_keys(item)
+            text = clean_item.get("item") or clean_item.get("summary") or clean_item.get("text")
+            if text:
+                normalized.append(str(text))
+            continue
+        if str(item):
+            normalized.append(str(item))
+    return normalized
+
+
+def _cash_metrics_with_fact_backfill(
+    metrics: list[_SynthesizedMetric],
+    state: AgentState,
+) -> list[_SynthesizedMetric]:
+    if metrics:
+        return metrics
+    synthesized_metrics = []
+    for record in state.evidence_memory.metric_evidence:
+        if not _has_fact_value(record):
+            continue
+        name = str(record.get("metric") or record.get("normalized_metric") or "").strip()
+        if not name:
+            continue
+        synthesized_metrics.append(
+            _SynthesizedMetric(
+                name=name.title(),
+                value=_metric_evidence_value(record),
+                period=_metric_evidence_period(record),
+                interpretation=(
+                    f"{name.title()} was reported in SEC companyfacts and used as "
+                    "the cash-flow KPI anchor."
+                ),
+                source_ids=_source_ids_from_value(record),
+                citation_status=CitationStatus.SUPPORTED,
+            )
+        )
+    if not synthesized_metrics:
+        source_id = _first_source_id(state)
+        for record in _facts_metric_records(state):
+            name = str(record.get("name") or "").strip()
+            if not name or record.get("value") is None:
+                continue
+            synthesized_metrics.append(
+                _SynthesizedMetric(
+                    name=name.title(),
+                    value=_metric_evidence_value(record),
+                    period=_metric_evidence_period(record),
+                    interpretation=(
+                        f"{name.title()} was reported in SEC companyfacts and used as "
+                        "the cash-flow KPI anchor."
+                    ),
+                    source_ids=[source_id] if source_id else [],
+                    citation_status=CitationStatus.SUPPORTED
+                    if source_id
+                    else CitationStatus.UNVERIFIED,
+                )
+            )
+    return synthesized_metrics[:3]
+
+
+def _capital_allocation_with_fact_backfill(
+    capital_allocation: _SynthesizedCapitalAllocation,
+    metrics: list[_SynthesizedMetric],
+) -> _SynthesizedCapitalAllocation:
+    if any(_capital_allocation_points(capital_allocation)):
+        return capital_allocation
+    if not metrics:
+        return capital_allocation
+    metric = metrics[0]
+    point = _SynthesizedPoint(
+        title="Cash flow anchor",
+        summary=(
+            f"{metric.name} of {metric.value} is the core allocation capacity signal; "
+            "use buybacks, dividends, capex, debt, and liquidity evidence to refine "
+            "the conclusion."
+        ),
+        source_ids=metric.source_ids,
+        citation_status=metric.citation_status,
+    )
+    return _SynthesizedCapitalAllocation(liquidity=[point])
+
+
+def _facts_metric_records(state: AgentState) -> list[dict[str, Any]]:
+    metrics = state.evidence_memory.facts.get("metrics")
+    if not isinstance(metrics, list):
+        return []
+    return [metric for metric in metrics if isinstance(metric, dict)]
+
+
+def _first_source_id(state: AgentState) -> str:
+    for source_ref in state.evidence_memory.source_refs:
+        source_id = source_ref.get("source_id")
+        if source_id:
+            return str(source_id)
+    return ""
+
+
+def _summary_from_provider_point(point: dict[str, object], text: str) -> str:
+    parts = [text]
+    investor_relevance = point.get("investor_relevance")
+    evidence_limit = point.get("evidence_limit")
+    strengths = point.get("strengths")
+    weaknesses = point.get("weaknesses")
+    investor_implication = point.get("investor_implication")
+    if investor_relevance:
+        parts.append(f"Investor relevance: {investor_relevance}")
+    if evidence_limit:
+        parts.append(f"Evidence limit: {evidence_limit}")
+    if strengths:
+        parts.append(f"Strengths: {strengths}")
+    if weaknesses:
+        parts.append(f"Weaknesses: {weaknesses}")
+    if investor_implication:
+        parts.append(f"Investor implication: {investor_implication}")
+    return " ".join(str(part).strip() for part in parts if str(part).strip())
+
+
+def _clean_mapping_keys(value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        _clean_key(key): item
+        for key, item in value.items()
+    }
+
+
+def _clean_key(value: object) -> str:
+    normalized = " ".join(str(value).strip().strip(".:").split())
+    return normalized.replace(" ", "_")
+
+
+def _title_from_provider_point(point: dict[str, object]) -> str | None:
+    if {"strengths", "weaknesses", "investor_implication"}.intersection(point):
+        return "Allocation discipline"
+    if "item" in point:
+        return "Capex"
+    if "assessment" in point:
+        return "Allocation discipline"
+    if "flag" in point:
+        return "Red flag"
+    return None
+
+
+def _title_from_text(value: str, *, max_words: int = 5) -> str:
+    words = re.findall(r"[A-Za-z0-9$%]+(?:[-'][A-Za-z0-9$%]+)?", value)
+    if not words:
+        return "Analytical point"
+    return " ".join(words[:max_words]).capitalize()
+
+
+def _earnings_verdict_from_text(value: str) -> str:
+    normalized = value.lower()
+    if "negative" in normalized or "bearish" in normalized or "pressure" in normalized:
+        return "negative"
+    if "positive" in normalized or "strong" in normalized or "grew" in normalized:
+        if "mixed" not in normalized and "but" not in normalized:
+            return "positive"
+    return "mixed"
+
+
+def _cash_quality_from_text(value: str) -> str:
+    normalized = value.lower()
+    if "no" in normalized or "weak" in normalized:
+        return "no"
+    if "high_quality" in normalized:
+        return "yes"
+    if "mixed" in normalized or "caveat" in normalized:
+        return "mixed"
+    if "yes" in normalized or "funded" in normalized:
+        return "yes"
+    return "unclear"
+
+
+def _driver_durability_from_text(value: str) -> str:
+    normalized = value.lower()
+    if "temporary" in normalized or "transient" in normalized:
+        return "temporary"
+    if "mixed" in normalized:
+        return "mixed"
+    if "durable" in normalized or "structural" in normalized or "platform" in normalized:
+        return "durable"
+    return "unclear"
 
 
 def synthesize_company_profile(
@@ -1046,6 +1328,8 @@ def _alias_source_refs_by_id(source_refs: list[SourceRef]) -> dict[str, SourceRe
     for index, source_ref in enumerate(source_refs, start=1):
         refs_by_id[f"src_{index}"] = source_ref
         refs_by_id[source_ref.source_id] = source_ref
+        if source_ref.accession_number:
+            refs_by_id.setdefault(source_ref.accession_number, source_ref)
         if source_ref.source_id and ":sec_companyfacts:" in source_ref.source_id:
             refs_by_id.setdefault("sec_companyfacts", source_ref)
         if source_ref.section.strip().lower() == "sec companyfacts":
@@ -1403,6 +1687,8 @@ def _metric_evidence_value(record: dict[str, Any]) -> str:
     unit = str(record.get("unit") or "").strip()
     if isinstance(value, int | float):
         formatted = _compact_number(value)
+    elif isinstance(value, str) and value.strip().replace(".", "", 1).isdigit():
+        formatted = _compact_number(float(value))
     else:
         formatted = str(value)
     if unit == "USD" and not formatted.startswith("$"):

@@ -260,6 +260,9 @@ def _first_allowed_source_id(payload: dict[str, object]) -> str:
     if not isinstance(messages, list):
         raise AssertionError("LLM payload messages are required")
     for message in reversed(messages):
+        source_id = _source_id_from_evidence_context_message(message)
+        if source_id:
+            return source_id
         if not isinstance(message, dict) or message.get("role") != "tool":
             continue
         content = message.get("content")
@@ -277,3 +280,34 @@ def _first_allowed_source_id(payload: dict[str, object]) -> str:
                 if source_id:
                     return str(source_id)
     raise AssertionError("At least one source id is required")
+
+
+def _source_id_from_evidence_context_message(message: object) -> str | None:
+    if not isinstance(message, dict) or message.get("role") != "user":
+        return None
+    content = message.get("content")
+    if not isinstance(content, str) or "Evidence context JSON:" not in content:
+        return None
+    raw_json = content.split("Evidence context JSON:", maxsplit=1)[1].strip()
+    try:
+        evidence_context = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return None
+    return _first_source_id_in_value(evidence_context)
+
+
+def _first_source_id_in_value(value: object) -> str | None:
+    if isinstance(value, dict):
+        source_id = value.get("source_id") or value.get("node_id")
+        if source_id:
+            return str(source_id)
+        for nested_value in value.values():
+            nested_source_id = _first_source_id_in_value(nested_value)
+            if nested_source_id:
+                return nested_source_id
+    if isinstance(value, list):
+        for item in value:
+            nested_source_id = _first_source_id_in_value(item)
+            if nested_source_id:
+                return nested_source_id
+    return None

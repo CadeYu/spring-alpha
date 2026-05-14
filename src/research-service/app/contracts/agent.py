@@ -108,6 +108,11 @@ class AgentEvent(BaseModel):
     status: ToolStatus
     summary: str
     tool_name: str | None = None
+    event_kind: Literal["reasoning", "tool"] = "tool"
+    agent_name: str | None = None
+    model_name: str | None = None
+    tool_input: dict[str, Any] = Field(default_factory=dict)
+    usage: dict[str, Any] = Field(default_factory=dict)
     latency_ms: int = Field(default=0, ge=0)
     degraded_reason: str | None = None
 

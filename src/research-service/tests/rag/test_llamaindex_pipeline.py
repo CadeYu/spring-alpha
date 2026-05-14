@@ -1,4 +1,4 @@
-from llama_index.core.schema import TextNode
+from llama_index.core.schema import NodeWithScore, TextNode
 from pytest import MonkeyPatch
 
 from app.contracts.research_task import ResearchTaskType
@@ -72,6 +72,73 @@ def test_pipeline_ingests_sections_as_llamaindex_text_nodes() -> None:
     assert nodes[0].metadata["section"] == "MD&A"
     assert nodes[0].metadata["filing_type"] == "10-Q"
     assert nodes[0].metadata["accession_number"] == "0000000000-26-000001"
+
+
+def test_pipeline_splits_long_sections_into_overlapping_windows() -> None:
+    pipeline = LlamaIndexRagPipeline(
+        section_chunk_max_chars=180,
+        section_chunk_overlap_sentences=1,
+    )
+    filing = FilingDocument(
+        ticker="AAPL",
+        filing_type="10-Q",
+        filing_date="2026-04-30",
+        accession_number="0000000000-26-000040",
+        text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Revenue commentary was broad and included product demand context.
+Services net sales increased because installed base engagement improved.
+Segment operating income benefited from services mix and pricing discipline.
+Liquidity commentary was not the focus of this operating section.
+""",
+    )
+
+    nodes = pipeline.ingest_filing(filing)
+
+    assert len(nodes) > 1
+    assert {node.metadata["section"] for node in nodes} == {"MD&A"}
+    assert all(node.metadata["section_chunk_count"] == len(nodes) for node in nodes)
+    assert [node.metadata["section_chunk_index"] for node in nodes] == list(range(len(nodes)))
+    assert any(
+        "Services net sales increased" in nodes[index].get_content()
+        and "Services net sales increased" in nodes[index + 1].get_content()
+        for index in range(len(nodes) - 1)
+    )
+
+
+def test_pipeline_retrieves_relevant_window_not_entire_long_section() -> None:
+    pipeline = LlamaIndexRagPipeline(
+        section_chunk_max_chars=190,
+        section_chunk_overlap_sentences=1,
+    )
+    filing = FilingDocument(
+        ticker="AAPL",
+        filing_type="10-Q",
+        filing_date="2026-04-30",
+        accession_number="0000000000-26-000041",
+        text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Risk-style macro commentary mentioned regulation and supply uncertainty.
+Services net sales increased because installed base engagement and subscriptions improved.
+iPhone net sales reflected disciplined pricing and resilient demand.
+Capital allocation commentary belonged elsewhere and should not dominate this window.
+""",
+    )
+    pipeline.ingest_filing(filing)
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_window_retrieval",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        query="services subscriptions installed base demand pricing",
+        sections=["MD&A"],
+        top_k=1,
+    )
+
+    assert result.source_refs
+    assert "Services net sales increased" in result.source_refs[0].snippet
+    assert "Capital allocation commentary" not in result.source_refs[0].snippet
+    assert len(result.retrieved_nodes[0].text) < len(filing.text)
 
 
 def test_pipeline_retrieves_task_relevant_source_refs() -> None:
@@ -162,7 +229,8 @@ def test_business_driver_retrieval_prefers_operating_drivers_over_market_risk() 
             accession_number="0000000000-26-000030",
             text="""
 Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
-Services revenue increased due to higher customer engagement, stronger installed base growth, and subscription demand.
+Services revenue increased due to higher customer engagement, stronger installed base
+growth, and subscription demand.
 Product revenue benefited from iPhone demand and disciplined pricing.
 
 Quantitative and Qualitative Disclosures About Market Risk
@@ -196,12 +264,14 @@ def test_business_driver_retrieval_prefers_sales_driver_window_over_compliance_w
             accession_number="0000000000-26-000032",
             text="""
 Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
-Services net sales increased because customer engagement, installed base growth, and subscription demand improved.
+Services net sales increased because customer engagement, installed base growth, and
+subscription demand improved.
 iPhone net sales reflected stronger customer demand and disciplined pricing.
 Segment operating income improved as Services mix expanded.
 
 Item 1. Business
-Complying with emerging and changing requirements causes substantial costs and may require changes to product designs and services.
+Complying with emerging and changing requirements causes substantial costs and may
+require changes to product designs and services.
 """,
         )
     )
@@ -230,7 +300,8 @@ def test_cash_allocation_query_expands_to_repurchase_dividend_and_capex_terms() 
             accession_number="0000000000-26-000031",
             text="""
 Liquidity and Capital Resources
-Net cash provided by operating activities funded capital expenditures, payments for dividends and dividend equivalents, and repurchases of common stock.
+Net cash provided by operating activities funded capital expenditures, payments for
+dividends and dividend equivalents, and repurchases of common stock.
 The company also discussed liquidity and debt maturities.
 
 Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
@@ -265,9 +336,13 @@ def test_cash_allocation_snippet_keeps_capital_return_window() -> None:
             accession_number="0000000000-26-000033",
             text="""
 Liquidity and Capital Resources
-The Company believes its balances of cash, cash equivalents and marketable securities, along with cash generated by ongoing operations and continued access to debt markets, will be sufficient to satisfy its cash requirements and capital return program over the next 12 months and beyond.
+The Company believes its balances of cash, cash equivalents and marketable securities,
+along with cash generated by ongoing operations and continued access to debt markets,
+will be sufficient to satisfy its cash requirements and capital return program over the
+next 12 months and beyond.
 Cash used in investing activities included capital expenditures.
-Cash used in financing activities included repurchases of common stock and payments for dividends and dividend equivalents.
+Cash used in financing activities included repurchases of common stock and payments for
+dividends and dividend equivalents.
 """,
         )
     )
@@ -524,6 +599,71 @@ Azure, server products, and enterprise services drove Intelligent Cloud growth.
     assert pipeline.vector_store is store
 
 
+def test_hybrid_pipeline_degrades_when_embedding_provider_fails_during_ingest() -> None:
+    pipeline = LlamaIndexRagPipeline(
+        enable_hybrid_retrieval=True,
+        embedding_backend=FailingEmbeddingBackend(),
+    )
+
+    nodes = pipeline.ingest_filing(
+        FilingDocument(
+            ticker="MSFT",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000000000-26-000027",
+            text="""
+Segment Information
+Azure, server products, and enterprise services drove Intelligent Cloud growth.
+""",
+        )
+    )
+    result = pipeline.retrieve_evidence(
+        run_id="run_vector_provider_failure",
+        ticker="MSFT",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        query="Azure cloud growth",
+        sections=["Segment Information"],
+        top_k=1,
+    )
+
+    assert nodes
+    assert result.fallback_status == RetrievalFallbackStatus.DEGRADED
+    assert result.source_refs
+    assert result.source_refs[0].section == "Segment Information"
+
+
+def test_hybrid_pipeline_degrades_when_vector_search_fails() -> None:
+    pipeline = LlamaIndexRagPipeline(
+        enable_hybrid_retrieval=True,
+        vector_store=FailingVectorSearchStore(),
+    )
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="MSFT",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000000000-26-000028",
+            text="""
+Segment Information
+Azure cloud demand improved as enterprise customers adopted platform services.
+""",
+        )
+    )
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_vector_search_failure",
+        ticker="MSFT",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        query="Azure cloud demand platform",
+        sections=["Segment Information"],
+        top_k=1,
+    )
+
+    assert result.fallback_status == RetrievalFallbackStatus.DEGRADED
+    assert result.source_refs
+    assert "Azure cloud demand" in result.source_refs[0].snippet
+
+
 def test_pgvector_store_config_normalizes_table_and_dimension() -> None:
     config = PgVectorStoreConfig(
         database_url="postgresql://example",
@@ -717,6 +857,25 @@ class FixedEmbeddingBackend:
 
     def embed(self, text: str) -> dict[str, float]:
         return self.vector
+
+
+class FailingEmbeddingBackend:
+    def embed(self, text: str) -> dict[str, float]:
+        raise RuntimeError("embedding provider rate limited")
+
+
+class FailingVectorSearchStore:
+    def upsert(self, node: TextNode) -> None:
+        pass
+
+    def search(
+        self,
+        *,
+        query: str,
+        nodes: list[TextNode],
+        top_k: int,
+    ) -> list[NodeWithScore]:
+        raise RuntimeError("embedding provider rate limited")
 
 
 def _assert_database_connection_shape(connection: DatabaseConnection) -> None:

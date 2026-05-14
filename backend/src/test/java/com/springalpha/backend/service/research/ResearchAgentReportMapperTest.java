@@ -26,6 +26,11 @@ class ResearchAgentReportMapperTest {
                         "ok",
                         "Plan next step.",
                         "search_filing_sections",
+                        "tool",
+                        "Business Analyst",
+                        "test-model",
+                        Map.of("query", "services demand"),
+                        Map.of(),
                         0,
                         null)),
                 List.of(),
@@ -74,6 +79,11 @@ class ResearchAgentReportMapperTest {
         assertNotNull(report.getMetadata().getAgentEvents());
         assertEquals("build_evidence_plan", report.getMetadata().getAgentEvents().get(0).getPhase());
         assertEquals("Plan next step.", report.getMetadata().getAgentEvents().get(0).getSummary());
+        assertEquals("tool", report.getMetadata().getAgentEvents().get(0).getEventKind());
+        assertEquals("Business Analyst", report.getMetadata().getAgentEvents().get(0).getAgentName());
+        assertEquals("test-model", report.getMetadata().getAgentEvents().get(0).getModelName());
+        assertEquals("services demand",
+                report.getMetadata().getAgentEvents().get(0).getToolInput().get("query"));
     }
 
     @Test

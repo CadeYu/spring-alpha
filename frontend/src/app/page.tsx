@@ -210,7 +210,7 @@ const copy = {
       signalValue: "+15.65%",
       signalBody: "Revenue YoY growth",
       groundedTitle: "Grounded mode",
-      groundedValue: "Citations + charts",
+      groundedValue: "Facts + charts",
       groundedBody: "Keep numbers, charts, and claims in the same reading path.",
       whatYouGetLabel: "What you get",
       whatYouGetTitle: "From raw disclosure to a research surface ready for judgment",
@@ -250,7 +250,7 @@ const copy = {
     ],
     heroStats: [
       { label: "Data stack", value: "SEC + Yahoo + AI" },
-      { label: "Outputs", value: "Dashboard / PDF / Citations" },
+      { label: "Outputs", value: "Dashboard / PDF / Charts" },
       { label: "Use cases", value: "Research, demos, content creation" },
     ],
     flowNodes: [
@@ -273,7 +273,7 @@ const copy = {
         {
           title: "More than chat, closer to a workflow",
           body:
-            "Citations, verification, mode switching, health radar, and PDF export make this feel like a research workstation instead of a chat demo.",
+            "Mode switching, health radar, structured facts, and PDF export make this feel like a research workstation instead of a chat demo.",
         },
       ],
     },
@@ -287,7 +287,7 @@ const copy = {
           label: "Analysis surface",
           title: "The modules you use most while reading filings open together",
           body:
-            "Executive summary, drivers, risks, citations, and charts are not split into separate tools. They are part of one continuous analysis journey.",
+            "Executive summary, drivers, risks, facts, and charts are not split into separate tools. They are part of one continuous analysis journey.",
         },
         {
           label: "Research discipline",

@@ -9,15 +9,16 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.domain_tools import ResearchToolService
+from app.agents.evidence_pack_tool import create_agent_evidence_pack_tool
 from app.agents.tool_calling_graph import run_tool_calling_graph_agent
 from app.contracts.agent import AgentEvent, AgentPhase, AgentRequest, AgentState
 from app.contracts.research_task import ResearchTaskType
 from app.contracts.tools import (
     BusinessSignalsInput,
+    CompanyFactsInput,
     FilingSectionSearchInput,
     MetricEvidenceInput,
 )
-from app.rag.langchain_tools import create_sec_evidence_search_tool
 from app.rag.llamaindex_pipeline import LlamaIndexRagPipeline
 
 
@@ -47,6 +48,13 @@ class BusinessSignalsSearchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     signal_types: list[str] = Field(default_factory=list)
+
+
+class CompanyFactsSearchInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    period: str | None = Field(default="latest_quarter")
+    metrics: list[str] = Field(default_factory=list)
 
 
 def run_business_driver_agent(
@@ -80,6 +88,7 @@ def run_business_driver_agent(
     payload = run_tool_calling_graph_agent(
         agent_name="Business driver agent",
         state_getter=lambda: runtime_state,
+        state_setter=set_runtime_state,
         llm=llm,
         tools=tools,
         required_tools={
@@ -93,17 +102,17 @@ def run_business_driver_agent(
         final_instruction=_final_business_driver_instruction(request, state),
         planned_tool_calls=[
             {
-                "name": "search_filing_sections",
+                "name": "get_company_facts",
                 "args": {
-                    "sections": ["MD&A", "Segment Information", "Business"],
-                    "query": (
-                        "product segment geography demand pricing customer strategy "
-                        "services revenue drivers"
-                    ),
-                    "limit": 5,
+                    "metrics": ["revenue"],
+                    "period": "latest_quarter",
                 },
             },
             {"name": "search_metric_evidence", "args": {}},
+            {
+                "name": "build_evidence_pack",
+                "args": {"focus": "product segment demand pricing strategy", "top_k": 5},
+            },
             {"name": "get_business_signals", "args": {}},
         ],
         error_factory=lambda message, error_state: BusinessDriverAgentError(
@@ -123,6 +132,27 @@ def _business_driver_tools(
     tool_service: ResearchToolService,
     rag_pipeline: LlamaIndexRagPipeline | None,
 ) -> list[StructuredTool]:
+    def get_company_facts(
+        period: str | None = "latest_quarter",
+        metrics: list[str] | None = None,
+    ) -> str:
+        tool_input = CompanyFactsInput(
+            run_id=request.run_id,
+            ticker=request.ticker,
+            task_type=request.task_type,
+            period=period,
+            metrics=metrics or ["revenue"],
+        )
+        next_state, payload = _run_domain_tool(
+            state_getter(),
+            "get_company_facts",
+            "Collected company facts for business drivers.",
+            tool_service.get_company_facts(tool_input, state_getter()),
+            tool_input.model_dump(mode="json"),
+        )
+        state_setter(next_state)
+        return payload
+
     def search_filing_sections(sections: list[str], query: str, limit: int = 5) -> str:
         tool_input = FilingSectionSearchInput(
             run_id=request.run_id,
@@ -137,6 +167,7 @@ def _business_driver_tools(
             "search_filing_sections",
             "Searched filing sections for business drivers.",
             tool_service.search_filing_sections(tool_input, state_getter()),
+            tool_input.model_dump(mode="json"),
         )
         state_setter(next_state)
         return payload
@@ -160,6 +191,7 @@ def _business_driver_tools(
             "search_metric_evidence",
             "Searched metric evidence for business drivers.",
             tool_service.search_metric_evidence(tool_input, state_getter()),
+            tool_input.model_dump(mode="json"),
         )
         state_setter(next_state)
         return payload
@@ -176,11 +208,18 @@ def _business_driver_tools(
             "get_business_signals",
             "Extracted business driver signals.",
             tool_service.get_business_signals(tool_input, state_getter()),
+            tool_input.model_dump(mode="json"),
         )
         state_setter(next_state)
         return payload
 
     tools = [
+        StructuredTool.from_function(
+            get_company_facts,
+            name="get_company_facts",
+            description="Return company profile and core revenue facts for business drivers.",
+            args_schema=CompanyFactsSearchInput,
+        ),
         StructuredTool.from_function(
             search_filing_sections,
             name="search_filing_sections",
@@ -205,16 +244,15 @@ def _business_driver_tools(
             ),
             args_schema=BusinessSignalsSearchInput,
         ),
+        create_agent_evidence_pack_tool(
+            request=request,
+            state_getter=state_getter,
+            state_setter=state_setter,
+            rag_pipeline=rag_pipeline,
+            summary="Built SEC filing evidence pack for business drivers.",
+            run_domain_tool=_run_domain_tool,
+        ),
     ]
-    if rag_pipeline is not None:
-        tools.append(
-            create_sec_evidence_search_tool(
-                rag_pipeline=rag_pipeline,
-                run_id=request.run_id,
-                ticker=request.ticker,
-                task_type=request.task_type,
-            )
-        )
     return tools
 
 
@@ -223,6 +261,7 @@ def _run_domain_tool(
     tool_name: str,
     summary: str,
     result: Any,
+    tool_input: dict[str, Any] | None = None,
 ) -> tuple[AgentState, str]:
     started_at = perf_counter()
     event = AgentEvent(
@@ -232,12 +271,18 @@ def _run_domain_tool(
         status=result.status,
         summary=summary,
         tool_name=tool_name,
+        event_kind="tool",
+        agent_name="Business driver agent",
+        model_name=state.model,
+        tool_input=tool_input or {},
         latency_ms=result.latency_ms or int((perf_counter() - started_at) * 1000),
         degraded_reason=result.degraded_reasons[0] if result.degraded_reasons else None,
     )
     evidence_memory = state.evidence_memory.model_copy(deep=True)
     if result.source_refs:
         evidence_memory.source_refs.extend(result.source_refs)
+    if tool_name == "get_company_facts":
+        evidence_memory.facts.update(result.data)
     if tool_name == "search_metric_evidence":
         evidence_memory.metric_evidence.extend(_records_from_result(result.data))
     if tool_name == "get_business_signals":
@@ -266,6 +311,8 @@ def _run_domain_tool(
 
 
 def _phase_for_tool(tool_name: str) -> AgentPhase:
+    if tool_name == "get_company_facts":
+        return AgentPhase.COLLECT_FINANCIAL_FACTS
     if tool_name == "get_business_signals":
         return AgentPhase.EXTRACT_SIGNALS
     return AgentPhase.RETRIEVE_EVIDENCE
@@ -279,13 +326,39 @@ def _records_from_result(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _retrieval_payload(data: dict[str, Any]) -> dict[str, Any]:
+    metrics = data.get("metrics")
+    if isinstance(metrics, list):
+        return {"fact_source": data.get("source"), "record_count": len(metrics)}
     retrieved_nodes = data.get("retrieved_nodes")
     if isinstance(retrieved_nodes, list):
         return {"retrieved_nodes": retrieved_nodes}
     records = data.get("records")
     if isinstance(records, list):
         return {"record_count": len(records)}
+    evidence_pack = data.get("evidence_pack")
+    if isinstance(evidence_pack, dict):
+        return {"evidence_pack": _evidence_pack_summary(evidence_pack)}
     return {}
+
+
+def _evidence_pack_summary(evidence_pack: dict[str, Any]) -> dict[str, Any]:
+    filing_evidence = evidence_pack.get("filing_evidence")
+    metric_facts = evidence_pack.get("metric_facts")
+    filing_items = filing_evidence if isinstance(filing_evidence, list) else []
+    metric_items = metric_facts if isinstance(metric_facts, list) else []
+    source_types: dict[str, int] = {}
+    for item in metric_items:
+        if not isinstance(item, dict):
+            continue
+        source_type = str(item.get("source_type") or "unknown")
+        source_types[source_type] = source_types.get(source_type, 0) + 1
+    return {
+        "retrieval_status": evidence_pack.get("retrieval_status"),
+        "filing_evidence_count": len(filing_items),
+        "metric_fact_count": len(metric_items),
+        "metric_fact_source_types": source_types,
+        "serialized_length": len(json.dumps(evidence_pack, sort_keys=True)),
+    }
 
 
 def _tool_prompt() -> ChatPromptTemplate:
@@ -294,11 +367,11 @@ def _tool_prompt() -> ChatPromptTemplate:
             (
                 "system",
                 "You are a business analyst in a multi-agent financial research team. "
-                "Work like a TradingAgents analyst: gather evidence with tools first, "
-                "then hand off a compact evidence-bound view. Focus on operating drivers: "
-                "product, segment, geography, demand, pricing, customer behavior, and "
-                "strategy. Do not over-index on generic risk or compliance language. "
-                "Call one useful tool at a time.",
+                "Work like a TradingAgents fundamentals analyst: gather enough tool "
+                "evidence to explain what actually moved the business and why it matters "
+                "to investors. Focus on product, segment, geography, demand, pricing, "
+                "customer behavior, competitive position, and strategy. Do not over-index "
+                "on generic risk or compliance language. Call one useful tool at a time.",
             ),
             MessagesPlaceholder(variable_name="messages"),
         ]
@@ -310,8 +383,11 @@ def _final_prompt() -> ChatPromptTemplate:
         [
             (
                 "system",
-                "You are a business analyst. Return one compact JSON object only. "
-                "Do not call tools. Do not invent source_ids. Keep prose concise and "
+                "You are the research manager for the business driver desk. Return one "
+                "JSON object only. Do not call tools. Do not invent source_ids. Write like "
+                "a concise investment memo: make the operating thesis explicit, explain "
+                "the so what for investors, include counter-evidence where the evidence is "
+                "mixed, and make uncertainty actionable through the watchlist. Keep prose "
                 "investor-facing.",
             ),
             MessagesPlaceholder(variable_name="messages"),
@@ -323,11 +399,12 @@ def _business_driver_instruction(request: AgentRequest, state: AgentState) -> st
     return (
         f"Analyze business drivers for {state.ticker}.\n"
         "Required workflow:\n"
-        "1. Call search_filing_sections for product, segment, geography, demand, pricing, "
-        "customer, and strategy evidence.\n"
+        "1. Call get_company_facts for company profile and core revenue facts.\n"
         "2. Call search_metric_evidence for revenue, segment revenue, and any available "
         "driver KPIs.\n"
-        "3. Call get_business_signals after filing or metric evidence exists.\n"
+        "3. Call build_evidence_pack for product, segment, geography, demand, pricing, "
+        "customer, and strategy evidence.\n"
+        "4. Call get_business_signals after filing or metric evidence exists.\n"
         "Final JSON shape:\n"
         "{"
         '"driver_thesis":{"headline":"...","durability":"durable|mixed|temporary|unclear",'
@@ -351,8 +428,20 @@ def _final_business_driver_instruction(request: AgentRequest, state: AgentState)
     return (
         f"Write the business driver report JSON for {state.ticker} from the evidence context.\n"
         "Return exactly these top-level keys: driver_thesis, driver_map, positive_signals, "
-        "negative_signals, watchlist, claims. driver_map must contain product, segment, "
-        "geography, demand, pricing, customer, strategy arrays. Keep each array to at most "
-        "2 concise items. Use only source_ids present in evidence context.\n"
+        "negative_signals, watchlist, claims.\n"
+        "Write it as an investment memo, not a recap. driver_thesis.summary must state "
+        "the operating conclusion, the so what for investors, and the strongest "
+        "counter-evidence if the evidence is mixed. The watchlist must include what would "
+        "change the conclusion next quarter.\n"
+        "driver_map must contain product, segment, geography, demand, pricing, customer, "
+        "strategy arrays. Cover at least four driver_map lenses when evidence exists, "
+        "and leave unsupported lenses empty rather than inventing facts. positive_signals "
+        "should be bullish evidence; negative_signals should be bearish evidence or "
+        "counter-evidence. Do not use schema labels or placeholders as prose, including "
+        "Evidence point, Business driver thesis, driver_map, positive_signals, or N/A. "
+        "Every section should explain conclusion, investor relevance, and the evidence "
+        "limit or counter-evidence when material. Keep each array to at most 2 concise "
+        "items. Every analytical point that cites evidence must use only source_ids "
+        "present in evidence context.\n"
         f"Language: {request.language}"
     )

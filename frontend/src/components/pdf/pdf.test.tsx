@@ -287,11 +287,14 @@ describe('PDF reporting', () => {
     expect(screen.getByText('What Is The Bet')).toBeInTheDocument();
     expect(screen.getByText('What To Watch')).toBeInTheDocument();
     expect(screen.getByText('Bull case')).toBeInTheDocument();
-    expect(screen.getByText('Source check')).toBeInTheDocument();
     expect(screen.getAllByText('$94.8B').length).toBeGreaterThan(0);
     expect(screen.getByText('Demand mix')).toBeInTheDocument();
     expect(screen.getByText('AI build-out')).toBeInTheDocument();
-    expect(screen.getByText('Revenue declined year over year due to weaker demand in core markets.')).toBeInTheDocument();
+    expect(screen.queryByText('Source check')).not.toBeInTheDocument();
+    expect(screen.queryByText('Grounded SEC evidence was retrieved for this run.')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Revenue declined year over year due to weaker demand in core markets.'),
+    ).not.toBeInTheDocument();
   });
 
   it('renders chinese poster metrics and four-question content without dropping the headline numbers', () => {

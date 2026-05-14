@@ -1,10 +1,20 @@
 import json
 from typing import Any
 
-from app.agents.domain_tools import LlamaIndexResearchToolService
+from app.agents.domain_tools import (
+    LlamaIndexResearchToolService,
+    SecCompanyFactsProvider,
+    YahooCompanyProfileProvider,
+)
 from app.agents.llm_gateway import OpenAiCompatibleLlmClient
 from app.agents.research_workflow import ResearchAgentWorkflow
-from app.contracts.agent import AgentRequest, AgentRunStatus, LlmProvider
+from app.contracts.agent import (
+    AgentRequest,
+    AgentRunStatus,
+    AgentState,
+    LlmProvider,
+    default_task_policy,
+)
 from app.contracts.research_task import ResearchTaskType
 from app.rag.llamaindex_pipeline import FilingDocument, LlamaIndexRagPipeline
 
@@ -102,11 +112,28 @@ def test_business_driver_agent_uses_langgraph_tool_workflow() -> None:
     assert result.final_report["task_sections"]["driver_thesis"]["headline"] == (
         "Services demand is the durable driver"
     )
-    assert [event.tool_name for event in result.events] == [
-        "search_filing_sections",
+    assert [event.tool_name for event in result.events if event.tool_name] == [
+        "get_company_facts",
         "search_metric_evidence",
+        "build_evidence_pack",
         "get_business_signals",
     ]
+    assert any(event.event_kind == "reasoning" for event in result.events)
+    evidence_context = _evidence_context_from_final_payload(calls[-1])
+    evidence_pack = _tool_content(evidence_context, "build_evidence_pack")["evidence_pack"]
+    metric_facts = evidence_pack["metric_facts"]
+    assert any(
+        fact["source_type"] == "yahoo_profile"
+        and fact["business_summary"].startswith("Apple designs consumer devices")
+        and fact["sector"] == "Technology"
+        for fact in metric_facts
+    )
+    assert any(
+        fact["source_type"] == "metric_evidence"
+        and fact["metric"] == "revenue"
+        and fact["source_id"].endswith(":sec_companyfacts:revenue")
+        for fact in metric_facts
+    )
 
 
 def test_business_driver_agent_returns_transparent_partial_state_when_final_llm_fails() -> None:
@@ -152,14 +179,46 @@ def test_business_driver_agent_returns_transparent_partial_state_when_final_llm_
     assert result.final_report is None
     assert "provider timed out during final business synthesis" in result.degraded_reasons[0]
     assert result.retryable is True
-    assert len(result.retrieval_records) == 3
-    assert [event.tool_name for event in result.events[:-1]] == [
-        "search_filing_sections",
+    assert len(result.retrieval_records) == 4
+    assert [event.tool_name for event in result.events if event.tool_name] == [
+        "get_company_facts",
         "search_metric_evidence",
+        "build_evidence_pack",
         "get_business_signals",
     ]
     assert result.events[-1].phase == "degraded"
-    assert result.events[0].summary == "Searched filing sections for business drivers."
+    assert any(
+        event.summary == "Built SEC filing evidence pack for business drivers."
+        for event in result.events
+    )
+
+
+def test_business_driver_final_prompt_requires_investment_memo_quality_structure() -> None:
+    from app.agents.business_driver_agent import _final_business_driver_instruction
+
+    instruction = _final_business_driver_instruction(
+        _business_request("run_business_prompt"),
+        AgentState(
+            run_id="run_business_prompt",
+            ticker="AAPL",
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            task_policy=default_task_policy(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE),
+        ),
+    )
+    normalized_instruction = instruction.lower()
+
+    for expected in (
+        "investment memo",
+        "counter-evidence",
+        "what would change the conclusion",
+        "so what",
+        "at least four driver_map lenses",
+        "bullish",
+        "bearish",
+        "source_ids",
+    ):
+        assert expected in normalized_instruction
+    assert "debate" not in normalized_instruction
 
 
 def _workflow(transport: Any) -> ResearchAgentWorkflow:
@@ -180,7 +239,13 @@ Services revenue was supported by subscriptions and customer engagement across m
         )
     )
     return ResearchAgentWorkflow(
-        tool_service=LlamaIndexResearchToolService(pipeline),
+        tool_service=LlamaIndexResearchToolService(
+            pipeline,
+            facts_provider=SecCompanyFactsProvider(
+                transport=_fake_sec_transport,
+                profile_provider=YahooCompanyProfileProvider(transport=_fake_yahoo_transport),
+            ),
+        ),
         llm_client=OpenAiCompatibleLlmClient(
             LlmProvider.SILICONFLOW,
             api_key="secret",
@@ -256,6 +321,23 @@ def _first_source_id_from_final_payload(payload: dict[str, object]) -> str:
     raise AssertionError("No source id found in final payload")
 
 
+def _evidence_context_from_final_payload(payload: dict[str, object]) -> list[dict[str, Any]]:
+    messages = payload["messages"]
+    assert isinstance(messages, list)
+    content = messages[-1]["content"]
+    assert isinstance(content, str)
+    return json.loads(content.split("Evidence context JSON:", 1)[1].strip())
+
+
+def _tool_content(evidence_context: list[dict[str, Any]], tool_name: str) -> dict[str, Any]:
+    for payload in evidence_context:
+        if payload.get("tool_name") == tool_name:
+            content = payload.get("content")
+            assert isinstance(content, dict)
+            return content
+    raise AssertionError(f"Tool content not found: {tool_name}")
+
+
 def _source_id_from_value(value: object) -> str | None:
     if isinstance(value, dict):
         raw_source_id = value.get("source_id") or value.get("node_id")
@@ -297,3 +379,53 @@ def _tool_call_response(call_id: str, name: str, arguments: dict[str, object]) -
 
 def _content_response(payload: dict[str, object]) -> dict[str, object]:
     return {"choices": [{"message": {"content": json.dumps(payload)}}]}
+
+
+def _fake_sec_transport(url: str, timeout_seconds: float) -> dict[str, object]:
+    if url.endswith("/company_tickers.json"):
+        return {"0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}}
+    return {
+        "entityName": "Apple Inc.",
+        "facts": {
+            "us-gaap": {
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "label": "Revenue",
+                    "units": {
+                        "USD": [
+                            {
+                                "val": 90000000000,
+                                "fy": 2026,
+                                "fp": "Q1",
+                                "form": "10-Q",
+                                "filed": "2026-02-01",
+                                "accn": "0000320193-26-000001",
+                            }
+                        ]
+                    },
+                }
+            }
+        },
+    }
+
+
+def _fake_yahoo_transport(url: str, timeout_seconds: float) -> dict[str, object]:
+    return {
+        "quoteSummary": {
+            "result": [
+                {
+                    "assetProfile": {
+                        "longBusinessSummary": (
+                            "Apple designs consumer devices, software, and services "
+                            "for a global installed base."
+                        ),
+                        "sector": "Technology",
+                        "industry": "Consumer Electronics",
+                    },
+                    "price": {
+                        "longName": "Apple Inc.",
+                        "quoteType": "EQUITY",
+                    },
+                }
+            ]
+        }
+    }

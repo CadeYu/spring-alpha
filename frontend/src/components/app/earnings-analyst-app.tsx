@@ -27,18 +27,14 @@ import {
   ChartColumnIncreasing,
   WalletCards,
   AlertTriangle,
-  AlertCircle,
-  CheckCircle2,
-  CircleHelp,
-  FileText,
-  XCircle,
+  MessageSquareText,
+  Wrench,
 } from "lucide-react";
 import {
   AnalysisReport,
   AnalysisMetadata,
   BusinessDriverSections,
   CashFlowCapitalAllocationSections,
-  Citation,
   EvidenceBoundPoint,
   EvidenceBoundMetric,
   LatestEarningsSections,
@@ -46,12 +42,7 @@ import {
 } from "@/types/AnalysisReport";
 import { RagEvalDashboard } from "@/components/app/rag-eval-dashboard";
 import { PdfDownloadButton } from "@/components/pdf/PdfDownloadButton";
-import {
-  formatPeriodForDisplay,
-  getSourceMessage,
-  getSourceStatusLabel,
-  mergeSourceContexts,
-} from "@/lib/reportPresentation";
+import { formatPeriodForDisplay } from "@/lib/reportPresentation";
 import { type ResearchTaskId } from "@/lib/researchTasks";
 import { cn } from "@/lib/utils";
 
@@ -168,21 +159,9 @@ function mergeReportChunks(
       ([, value]) => value !== null && value !== undefined,
     ),
   ) as Partial<AnalysisReport>;
-  const mergedCitations = [
-    ...(previous.citations || []),
-    ...(reportData.citations || []),
-  ];
-  const sourceContext = mergeSourceContexts(
-    previous.sourceContext,
-    reportData.sourceContext,
-  );
-
   return {
     ...previous,
     ...filtered,
-    citations:
-      mergedCitations.length > 0 ? mergedCitations : previous.citations,
-    sourceContext,
   };
 }
 
@@ -260,6 +239,9 @@ export default function EarningsAnalystApp() {
     activeReportTaskId === null
       ? null
       : orderedReports.find(({ task }) => task.id === activeReportTaskId) ?? null;
+  const timelineReport =
+    activeReportEntry?.report ?? orderedReports[orderedReports.length - 1]?.report ?? null;
+  const timelineTask = activeReportEntry?.task ?? orderedReports[orderedReports.length - 1]?.task;
   useEffect(() => {
     const savedKey = window.localStorage.getItem(selectedProvider.storageKey);
     if (savedKey) {
@@ -768,6 +750,8 @@ export default function EarningsAnalystApp() {
             activeTaskId={activeReportTaskId}
             onSelectTask={setActiveReportTaskId}
             isZh={isZh}
+            timelineMetadata={timelineReport?.metadata}
+            timelineTaskTitle={timelineTask ? (isZh ? timelineTask.titleZh : timelineTask.title) : undefined}
           />
 
           <div className="min-w-0 space-y-6">
@@ -854,14 +838,6 @@ export default function EarningsAnalystApp() {
               {isZh ? "内部验证信息" : "Internal validation artifacts"}
             </p>
           )}
-          {diagnosticsOpen &&
-            orderedReports.map(({ task, report }) => (
-              <AgentProgress
-                key={task.id}
-                metadata={report.metadata}
-                lang={lang}
-              />
-            ))}
           {diagnosticsOpen && <RagEvalDashboard />}
         </section>
       </div>
@@ -984,12 +960,16 @@ function AgentPipelinePanel({
   activeTaskId,
   onSelectTask,
   isZh,
+  timelineMetadata,
+  timelineTaskTitle,
 }: {
   runs: AgentPipelineRun[];
   reportsByTask: ReportsByTask;
   activeTaskId: ResearchTaskId | null;
   onSelectTask: (taskId: ResearchTaskId | null) => void;
   isZh: boolean;
+  timelineMetadata?: AnalysisMetadata;
+  timelineTaskTitle?: string;
 }) {
   const activeRuns: AgentPipelineRun[] =
     runs.length > 0
@@ -1001,106 +981,117 @@ function AgentPipelinePanel({
         }));
 
   return (
-    <section
-      aria-label={isZh ? "Agent 流水线" : "Agent pipeline"}
-      className="rounded-md border border-slate-800 bg-slate-950/60 p-3"
-    >
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-slate-500">
-            {isZh ? "Agent 流水线" : "Agent Pipeline"}
-          </p>
-          <p className="text-sm text-slate-300">
-            {isZh
-              ? "一次提交，三个研究 Agent 按顺序生成报告。"
-              : "One submission runs all three research agents in order."}
-          </p>
-        </div>
-      </div>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activeTaskId === null}
-        onClick={() => onSelectTask(null)}
-        className={cn(
-          "mb-2 flex w-full items-center justify-between rounded-md border px-3 py-3 text-left transition-colors",
-          activeTaskId === null
-            ? "border-emerald-500/50 bg-emerald-950/30 text-emerald-200"
-            : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700",
-        )}
+    <aside className="space-y-3">
+      <section
+        aria-label={isZh ? "Agent 流水线" : "Agent pipeline"}
+        className="rounded-md border border-slate-800 bg-slate-950/60 p-3"
       >
-        <span className="flex min-w-0 items-center gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-950">
-            <TrendingUp className="h-4 w-4" />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold">
-              {isZh ? "行情图" : "Market Chart"}
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-widest text-slate-500">
+              {isZh ? "Agent 流水线" : "Agent Pipeline"}
+            </p>
+            <p className="text-sm text-slate-300">
+              {isZh
+                ? "一次提交，三个研究 Agent 按顺序生成报告。"
+                : "One submission runs all three research agents in order."}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTaskId === null}
+          onClick={() => onSelectTask(null)}
+          className={cn(
+            "mb-2 flex w-full items-center justify-between rounded-md border px-3 py-3 text-left transition-colors",
+            activeTaskId === null
+              ? "border-emerald-500/50 bg-emerald-950/30 text-emerald-200"
+              : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700",
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-950">
+              <TrendingUp className="h-4 w-4" />
             </span>
-            <span className="block text-xs text-slate-500">
-              {isZh ? "默认视图" : "Default view"}
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">
+                {isZh ? "行情图" : "Market Chart"}
+              </span>
+              <span className="block text-xs text-slate-500">
+                {isZh ? "默认视图" : "Default view"}
+              </span>
             </span>
           </span>
-        </span>
-      </button>
-      <div className="grid gap-2" role="tablist" aria-label={isZh ? "Agent 报告" : "Agent reports"}>
-        {activeRuns.map((run, index) => {
-          const task = RESEARCH_TASKS.find((item) => item.id === run.taskId);
-          const Icon = task?.Icon ?? Bot;
-          const phase = reportsByTask[run.taskId] ? "received" : run.phase;
-          const selected = activeTaskId === run.taskId;
-          return (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              key={run.taskId}
-              onClick={() => onSelectTask(run.taskId)}
-              className={cn(
-                "min-h-[86px] rounded-md border p-3 text-left transition-colors",
-                selected
-                  ? "border-emerald-500/60 bg-emerald-950/30"
-                  : phase === "received"
-                  ? "border-emerald-500/40 bg-emerald-950/20"
-                  : phase === "streaming" || phase === "submitted"
-                    ? "border-amber-400/40 bg-amber-950/10"
-                    : phase === "failed"
-                      ? "border-red-500/40 bg-red-950/10"
-                      : "border-slate-800 bg-slate-900/70",
-              )}
-            >
-              <div className="flex items-start gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-950 text-slate-300">
-                  <Icon className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] uppercase tracking-widest text-slate-500">
-                    {isZh ? `第 ${index + 1} 步` : `Step ${index + 1}`}
-                  </p>
-                  <p className="mt-1 text-sm font-semibold leading-tight text-slate-100">
-                    {run.taskTitle}
-                  </p>
-                  <p
-                    className={cn(
-                      "mt-2 text-xs font-medium",
-                      phase === "received"
-                        ? "text-emerald-300"
-                        : phase === "streaming" || phase === "submitted"
-                          ? "text-amber-300"
-                          : phase === "failed"
-                            ? "text-red-300"
-                            : "text-slate-500",
-                    )}
-                  >
-                    {agentPipelinePhaseLabel(phase, isZh)}
-                  </p>
+        </button>
+        <div
+          className="grid gap-2"
+          role="tablist"
+          aria-label={isZh ? "Agent 报告" : "Agent reports"}
+        >
+          {activeRuns.map((run, index) => {
+            const task = RESEARCH_TASKS.find((item) => item.id === run.taskId);
+            const Icon = task?.Icon ?? Bot;
+            const phase = reportsByTask[run.taskId] ? "received" : run.phase;
+            const selected = activeTaskId === run.taskId;
+            return (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                key={run.taskId}
+                onClick={() => onSelectTask(run.taskId)}
+                className={cn(
+                  "min-h-[86px] rounded-md border p-3 text-left transition-colors",
+                  selected
+                    ? "border-emerald-500/60 bg-emerald-950/30"
+                    : phase === "received"
+                      ? "border-emerald-500/40 bg-emerald-950/20"
+                      : phase === "streaming" || phase === "submitted"
+                        ? "border-amber-400/40 bg-amber-950/10"
+                        : phase === "failed"
+                          ? "border-red-500/40 bg-red-950/10"
+                          : "border-slate-800 bg-slate-900/70",
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-950 text-slate-300">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] uppercase tracking-widest text-slate-500">
+                      {isZh ? `第 ${index + 1} 步` : `Step ${index + 1}`}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold leading-tight text-slate-100">
+                      {run.taskTitle}
+                    </p>
+                    <p
+                      className={cn(
+                        "mt-2 text-xs font-medium",
+                        phase === "received"
+                          ? "text-emerald-300"
+                          : phase === "streaming" || phase === "submitted"
+                            ? "text-amber-300"
+                            : phase === "failed"
+                              ? "text-red-300"
+                              : "text-slate-500",
+                      )}
+                    >
+                      {agentPipelinePhaseLabel(phase, isZh)}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </section>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+      <AgentMessagesTimeline
+        metadata={timelineMetadata}
+        taskTitle={timelineTaskTitle}
+        isZh={isZh}
+      />
+    </aside>
   );
 }
 
@@ -1113,6 +1104,156 @@ function agentPipelinePhaseLabel(
   if (phase === "submitted") return isZh ? "已提交" : "submitted";
   if (phase === "failed") return isZh ? "失败" : "failed";
   return isZh ? "等待中" : "pending";
+}
+
+function AgentMessagesTimeline({
+  metadata,
+  taskTitle,
+  isZh,
+}: {
+  metadata?: AnalysisMetadata;
+  taskTitle?: string;
+  isZh: boolean;
+}) {
+  const events = metadata?.agentEvents?.filter((event) => event.summary) ?? [];
+
+  return (
+    <section
+      aria-label={isZh ? "Agent 消息和工具" : "Messages and tools"}
+      className="rounded-md border border-emerald-500/20 bg-[#111716] p-4 shadow-xl shadow-slate-950/30"
+    >
+      <div className="flex items-center gap-2 border-b border-emerald-500/25 pb-4">
+        <MessageSquareText className="h-4 w-4 text-emerald-300" />
+        <div>
+          <p className="text-lg font-bold text-emerald-300">
+            {isZh ? "Messages & Tools" : "Messages & Tools"}
+          </p>
+          {taskTitle && (
+            <p className="mt-1 text-xs uppercase tracking-widest text-slate-500">
+              {taskTitle}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {events.length === 0 ? (
+        <div className="py-6 text-sm leading-6 text-slate-500">
+          {isZh
+            ? "运行完成后，这里会展示 reasoning 与 tool 调用时间线。"
+            : "Reasoning and tool-call timeline appears here after an agent finishes."}
+        </div>
+      ) : (
+        <div className="max-h-[640px] overflow-y-auto pr-1">
+          {events.map((event, index) => {
+            const kind = event.eventKind ?? (event.toolName ? "tool" : "reasoning");
+            const isTool = kind === "tool" || Boolean(event.toolName);
+            const elapsedMs = cumulativeEventLatency(events, index);
+            const agentName =
+              event.agentName || agentNameFromTaskTitle(taskTitle, isZh);
+            const detail = isTool
+              ? toolEventDetail(event)
+              : reasoningEventDetail(event);
+            return (
+              <article
+                key={`${event.phase}-${event.toolName ?? kind}-${index}`}
+                className="border-b border-emerald-500/15 py-4 last:border-b-0"
+              >
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="font-mono text-xl font-bold text-emerald-300 tabular-nums">
+                    {formatTimelineTime(elapsedMs)}
+                  </span>
+                  <span
+                    className={cn(
+                      "inline-flex min-h-8 items-center gap-1 rounded-md px-3 text-sm font-semibold",
+                      isTool
+                        ? "bg-yellow-400/15 text-yellow-300"
+                        : event.status === "degraded" || event.degradedReason
+                          ? "bg-red-500/15 text-red-300"
+                          : "bg-emerald-400/15 text-emerald-300",
+                    )}
+                  >
+                    {isTool ? (
+                      <Wrench className="h-3.5 w-3.5" />
+                    ) : (
+                      <Bot className="h-3.5 w-3.5" />
+                    )}
+                    {isTool ? "Tool" : "Reasoning"}
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-slate-400">
+                  {agentName}
+                </p>
+                <p className="mt-2 break-words font-mono text-sm leading-6 text-slate-100">
+                  {detail}
+                </p>
+                {event.degradedReason && (
+                  <p className="mt-2 rounded border border-red-500/30 bg-red-950/20 px-2 py-1 text-xs leading-5 text-red-200">
+                    {event.degradedReason}
+                  </p>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function cumulativeEventLatency(
+  events: NonNullable<AnalysisMetadata["agentEvents"]>,
+  index: number,
+) {
+  return events
+    .slice(0, index + 1)
+    .reduce((total, event) => total + Math.max(0, event.latencyMs ?? 0), 0);
+}
+
+function formatTimelineTime(milliseconds: number) {
+  const seconds = Math.max(0, Math.round(milliseconds / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function reasoningEventDetail(event: NonNullable<AnalysisMetadata["agentEvents"]>[number]) {
+  const model = event.modelName || "provider model";
+  const usage = event.usage ?? {};
+  const inputTokens = numberFromUnknown(
+    usage.prompt_tokens ?? usage.input_tokens ?? usage.total_prompt_tokens,
+  );
+  const outputTokens = numberFromUnknown(
+    usage.completion_tokens ?? usage.output_tokens ?? usage.total_completion_tokens,
+  );
+  if (inputTokens !== null || outputTokens !== null) {
+    return `${model}: ${inputTokens ?? "?"} in, ${outputTokens ?? "?"} out`;
+  }
+  return `${model}: ${event.summary}`;
+}
+
+function toolEventDetail(event: NonNullable<AnalysisMetadata["agentEvents"]>[number]) {
+  const toolName = event.toolName || event.phase || "tool";
+  const input = event.toolInput && Object.keys(event.toolInput).length > 0
+    ? `: ${JSON.stringify(event.toolInput)}`
+    : event.summary
+      ? `: ${event.summary}`
+      : "";
+  return `${toolName}${input}`;
+}
+
+function numberFromUnknown(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function agentNameFromTaskTitle(taskTitle: string | undefined, isZh: boolean) {
+  if (!taskTitle) return isZh ? "研究 Agent" : "Research Agent";
+  if (/cash/i.test(taskTitle) || taskTitle.includes("现金")) {
+    return isZh ? "现金流分析师" : "Cash Flow Analyst";
+  }
+  if (/business/i.test(taskTitle) || taskTitle.includes("业务")) {
+    return isZh ? "业务分析师" : "Business Analyst";
+  }
+  return isZh ? "财报分析师" : "Earnings Analyst";
 }
 
 function MarketCandlestickPanel({
@@ -1587,64 +1728,7 @@ function AgentReportPanel({
         <LatestEarningsReportSections report={report} lang={lang} />
       )}
 
-      <ReportCitationPanel report={report} lang={lang} taskId={task.id} />
     </section>
-  );
-}
-
-function ReportCitationPanel({
-  report,
-  lang,
-  taskId,
-}: {
-  report: AnalysisReport;
-  lang: string;
-  taskId: string;
-}) {
-  const isZh = lang === "zh";
-  if (!((report.citations && report.citations.length > 0) || report.sourceContext?.message)) {
-    return null;
-  }
-
-  return (
-    <Card
-      id={`pdf-section-citations-${taskId}`}
-      data-pdf-section="citations"
-      className="bg-slate-900/50 backdrop-blur-sm border-slate-800 hover:border-emerald-500/30 transition-all duration-300"
-    >
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-emerald-400 font-medium tracking-wide">
-          <span className="w-1 h-6 bg-emerald-500 rounded-full inline-block mr-1"></span>
-          {isZh ? "来源引用与验证" : "Source Citations & Verification"}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {report.citations && report.citations.length > 0 ? (
-          <CitationEvidenceList citations={report.citations} isZh={isZh} />
-        ) : (
-          <div className="bg-slate-950/50 rounded-lg border border-slate-800 p-4">
-            <div className="flex gap-4 items-start">
-              <div className="mt-0.5 shrink-0 bg-slate-900 p-1.5 rounded-full border border-slate-800 shadow-sm">
-                <AlertTriangle
-                  className="h-4 w-4 text-yellow-500"
-                  aria-hidden="true"
-                />
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm text-slate-200 leading-relaxed">
-                  {getSourceMessage(report.sourceContext, lang)}
-                </p>
-                <p className="text-xs uppercase tracking-widest text-slate-500">
-                  {isZh
-                    ? `当前状态：${getSourceStatusLabel(report.sourceContext, lang)}`
-                    : `Current status: ${getSourceStatusLabel(report.sourceContext, lang)}`}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -1679,46 +1763,6 @@ function analysisRunPhaseCopy(phase: AnalysisRunPhase, isZh: boolean) {
       ? "本次运行失败，错误原因会显示在上方错误卡片。"
       : "This run failed; the error card above shows the failure reason.",
   };
-}
-
-function AgentProgress({
-  metadata,
-  lang,
-}: {
-  metadata?: AnalysisMetadata;
-  lang: string;
-}) {
-  const isZh = lang === "zh";
-  const events = metadata?.agentEvents?.filter((event) => event.summary) ?? [];
-  if (events.length === 0) {
-    return null;
-  }
-
-  return (
-    <Card className="bg-slate-900/50 border-slate-800">
-      <CardHeader>
-        <CardTitle className="text-emerald-400">
-          {isZh ? "Agent 执行轨迹" : "Agent Progress"}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {events.slice(0, 8).map((event, index) => (
-          <div
-            key={`${event.phase}-${event.toolName ?? "decision"}-${index}`}
-            className="grid gap-2 rounded-md border border-slate-800 bg-slate-950/60 p-3 text-sm md:grid-cols-[160px,1fr]"
-          >
-            <div className="space-y-1">
-              <p className="font-semibold text-slate-200">{event.phase}</p>
-              {event.toolName && (
-                <p className="text-xs text-emerald-300">{event.toolName}</p>
-              )}
-            </div>
-            <p className="leading-6 text-slate-400">{event.summary}</p>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
 }
 
 function LatestEarningsReportSections({
@@ -2235,260 +2279,6 @@ function ResearchViewCard({
   );
 }
 
-function CitationEvidenceList({
-  citations,
-  isZh,
-}: {
-  citations: Citation[];
-  isZh: boolean;
-}) {
-  const evidenceItems = normalizeCitationEvidence(citations, isZh);
-
-  return (
-    <div className="space-y-3">
-      {evidenceItems.map((item) => {
-        const Icon = citationStatusIcon(item.status);
-        return (
-          <div
-            key={item.key}
-            className="rounded-lg border border-slate-800 bg-slate-950/60 p-4"
-          >
-            <div className="flex gap-3">
-              <div
-                className={cn(
-                  "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border",
-                  citationStatusIconClass(item.status),
-                )}
-                title={citationStatusLabel(item.status, isZh)}
-              >
-                <Icon className="h-4 w-4" aria-hidden="true" />
-              </div>
-              <div className="min-w-0 flex-1 space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    className={cn(
-                      "rounded border px-2 py-0.5 text-[10px] uppercase tracking-widest",
-                      citationStatusBadgeClass(item.status),
-                    )}
-                  >
-                    {citationStatusLabel(item.status, isZh)}
-                  </Badge>
-                  <span className="min-w-0 max-w-full break-words text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
-                    {item.sourceLabel}
-                  </span>
-                  {item.duplicateCount > 1 && (
-                    <span className="rounded border border-slate-800 bg-slate-900 px-2 py-0.5 text-[10px] uppercase tracking-widest text-slate-500">
-                      {isZh
-                        ? `合并 ${item.duplicateCount} 条`
-                        : `${item.duplicateCount} merged`}
-                    </span>
-                  )}
-                </div>
-                <p className="max-w-3xl break-words text-sm leading-6 text-slate-200">
-                  {item.summary}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                  <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span className="break-words">{item.sectionLabel}</span>
-                </div>
-                {item.rawExcerpt && (
-                  <details className="group rounded-md border border-slate-800 bg-slate-950/70">
-                    <summary className="cursor-pointer px-3 py-2 text-xs font-medium uppercase tracking-widest text-slate-500 transition-colors hover:text-slate-300">
-                      {isZh ? "展开原文片段" : "Show source excerpt"}
-                    </summary>
-                    <p className="max-h-48 overflow-auto whitespace-pre-wrap break-words border-t border-slate-800 px-3 py-3 text-xs leading-5 text-slate-400">
-                      {item.rawExcerpt}
-                    </p>
-                  </details>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-type CitationEvidenceItem = {
-  key: string;
-  status?: Citation["verificationStatus"];
-  sourceLabel: string;
-  sectionLabel: string;
-  summary: string;
-  rawExcerpt?: string;
-  duplicateCount: number;
-};
-
-function normalizeCitationEvidence(
-  citations: Citation[],
-  isZh: boolean,
-): CitationEvidenceItem[] {
-  const grouped = new Map<string, CitationEvidenceItem>();
-  citations.forEach((citation) => {
-    const excerpt = normalizeCitationText(
-      isZh && citation.excerptZh ? citation.excerptZh : citation.excerpt,
-    );
-    const section = normalizeCitationText(citation.section || "Source");
-    const key = `${citation.verificationStatus || "UNKNOWN"}:${section}:${excerpt}`;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.duplicateCount += 1;
-      return;
-    }
-    grouped.set(key, {
-      key,
-      status: citation.verificationStatus,
-      sourceLabel: sourceLabelForCitation(section, excerpt, isZh),
-      sectionLabel: sectionLabelForCitation(section, isZh),
-      summary: summarizeCitationExcerpt(excerpt, section, isZh),
-      rawExcerpt: shouldHideRawCitation(excerpt) ? excerpt : undefined,
-      duplicateCount: 1,
-    });
-  });
-  return [...grouped.values()].slice(0, 8);
-}
-
-function normalizeCitationText(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function sourceLabelForCitation(
-  section: string,
-  excerpt: string,
-  isZh: boolean,
-): string {
-  if (/sec companyfacts/i.test(section) || /sec companyfacts/i.test(excerpt)) {
-    return "SEC companyfacts";
-  }
-  if (/gross margin|form 10-q|10-k|10-q/i.test(excerpt)) {
-    return isZh ? "SEC filing" : "Full filing";
-  }
-  return sectionLabelForCitation(section, isZh);
-}
-
-function sectionLabelForCitation(section: string, isZh: boolean): string {
-  if (!isZh) return section || "Source";
-  return (section || "Source")
-    .replace(/MD&A/gi, "管理层讨论与分析")
-    .replace(/Risk Factors/gi, "风险因素")
-    .replace(/Financial Statements/gi, "财务报表")
-    .replace(/SEC companyfacts/gi, "SEC companyfacts")
-    .replace(/Notes/gi, "附注");
-}
-
-function summarizeCitationExcerpt(
-  excerpt: string,
-  section: string,
-  isZh: boolean,
-): string {
-  const secFact = summarizeSecCompanyFact(excerpt);
-  if (secFact) return secFact;
-  if (isNoisyTableExcerpt(excerpt)) {
-    return isZh
-      ? "财报包含相关表格证据，但原始表格文本过于碎片化，已折叠到原文片段中。"
-      : "The filing contains the relevant table evidence, but the extracted table text is too noisy to render inline.";
-  }
-  const cleaned = excerpt.replace(/[|]{2,}/g, " ").replace(/-{3,}/g, " ");
-  return clipSentence(cleaned || section, 260);
-}
-
-function summarizeSecCompanyFact(excerpt: string): string | null {
-  const match = excerpt.match(
-    /SEC companyfacts\s+(.+?)\s+reports\s+(.+?)\s+of\s+(-?\d+(?:\.\d+)?)\s+([A-Z]+)?\s+for\s+([A-Za-z0-9]+)\s+filed\s+([0-9-]+)/i,
-  );
-  if (!match) return null;
-  const [, concept, metric, rawValue, unit = "", period, filed] = match;
-  const value = Number(rawValue);
-  const formattedValue =
-    Number.isFinite(value) && unit === "USD"
-      ? `$${compactDisplayNumber(value)}`
-      : `${rawValue}${unit ? ` ${unit}` : ""}`;
-  return `${humanizeMetricName(metric)}: ${formattedValue} for ${period}; filed ${filed}. Concept: ${breakLongConcept(concept)}.`;
-}
-
-function isNoisyTableExcerpt(excerpt: string): boolean {
-  const pipeCount = (excerpt.match(/\|/g) || []).length;
-  const dashRunCount = (excerpt.match(/---/g) || []).length;
-  return pipeCount >= 8 || dashRunCount >= 4;
-}
-
-function shouldHideRawCitation(excerpt: string): boolean {
-  return isNoisyTableExcerpt(excerpt) || excerpt.length > 320;
-}
-
-function clipSentence(value: string, limit: number): string {
-  const cleaned = value.trim();
-  if (cleaned.length <= limit) return cleaned;
-  return `${cleaned.slice(0, limit).trim()}...`;
-}
-
-function humanizeMetricName(value: string): string {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function breakLongConcept(value: string): string {
-  return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
-}
-
-function compactDisplayNumber(value: number): string {
-  const absolute = Math.abs(value);
-  if (absolute >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
-}
-
-function citationStatusLabel(
-  status: Citation["verificationStatus"] | undefined,
-  isZh: boolean,
-) {
-  if (status === "VERIFIED") return isZh ? "已验证" : "Verified";
-  if (status === "UNVERIFIED") return isZh ? "待核验" : "Partial";
-  if (status === "NOT_FOUND") return isZh ? "未找到" : "Missing";
-  return isZh ? "未知" : "Unknown";
-}
-
-function citationStatusIcon(status: Citation["verificationStatus"] | undefined) {
-  if (status === "VERIFIED") return CheckCircle2;
-  if (status === "UNVERIFIED") return AlertCircle;
-  if (status === "NOT_FOUND") return XCircle;
-  return CircleHelp;
-}
-
-function citationStatusIconClass(
-  status: Citation["verificationStatus"] | undefined,
-) {
-  if (status === "VERIFIED") {
-    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
-  }
-  if (status === "UNVERIFIED") {
-    return "border-amber-500/30 bg-amber-500/10 text-amber-300";
-  }
-  if (status === "NOT_FOUND") {
-    return "border-rose-500/30 bg-rose-500/10 text-rose-300";
-  }
-  return "border-slate-700 bg-slate-900 text-slate-400";
-}
-
-function citationStatusBadgeClass(
-  status: Citation["verificationStatus"] | undefined,
-) {
-  if (status === "VERIFIED") {
-    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
-  }
-  if (status === "UNVERIFIED") {
-    return "border-amber-500/30 bg-amber-500/10 text-amber-300";
-  }
-  if (status === "NOT_FOUND") {
-    return "border-rose-500/30 bg-rose-500/10 text-rose-300";
-  }
-  return "border-slate-700 bg-slate-900 text-slate-400";
-}
-
 function AnalystVerdictCard({
   eyebrow,
   headline,
@@ -2550,14 +2340,9 @@ function MetricStripCard({
 function EvidencePointBlock({ point }: { point: EvidenceBoundPoint }) {
   return (
     <div className="min-w-0 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-3">
-      <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <p className="min-w-0 [overflow-wrap:anywhere] font-semibold text-slate-200">
-          {point.title}
-        </p>
-        <p className="shrink-0 text-xs uppercase tracking-widest text-slate-500">
-          {point.citationStatus}
-        </p>
-      </div>
+      <p className="min-w-0 [overflow-wrap:anywhere] font-semibold text-slate-200">
+        {point.title}
+      </p>
       <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400">
         {point.summary}
       </p>
@@ -2578,7 +2363,6 @@ function ImpactTableCard({
       category: group.label,
       title: item.title,
       summary: item.summary,
-      status: item.citationStatus,
     })),
   );
 
@@ -2594,7 +2378,7 @@ function ImpactTableCard({
           rows.slice(0, 8).map((row, index) => (
             <div
               key={`${row.category}-${row.title}-${index}`}
-              className="grid min-w-0 gap-3 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4 md:grid-cols-[140px,minmax(0,1fr),120px]"
+              className="grid min-w-0 gap-3 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4 md:grid-cols-[140px,minmax(0,1fr)]"
             >
               <p className="min-w-0 [overflow-wrap:anywhere] text-sm font-semibold text-slate-200">
                 {row.category}
@@ -2607,9 +2391,6 @@ function ImpactTableCard({
                   {row.summary}
                 </p>
               </div>
-              <p className="shrink-0 text-xs uppercase tracking-widest text-slate-500">
-                {row.status}
-              </p>
             </div>
           ))
         ) : (
@@ -2625,14 +2406,9 @@ function ImpactTableCard({
 function EvidenceMetricBlock({ metric }: { metric: EvidenceBoundMetric }) {
   return (
     <div className="min-w-0 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <p className="min-w-0 [overflow-wrap:anywhere] text-sm text-slate-400">
-          {metric.name}
-        </p>
-        <p className="shrink-0 text-xs uppercase tracking-widest text-slate-500">
-          {metric.citationStatus}
-        </p>
-      </div>
+      <p className="min-w-0 [overflow-wrap:anywhere] text-sm text-slate-400">
+        {metric.name}
+      </p>
       <p className="mt-1 min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-emerald-300">
         {formatMetricDisplayValue(metric.value)}
       </p>
