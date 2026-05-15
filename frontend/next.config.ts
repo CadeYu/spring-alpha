@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8081';
+const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8082';
 
 const nextConfig: NextConfig = {
   // standalone only for Docker, Vercel handles this automatically

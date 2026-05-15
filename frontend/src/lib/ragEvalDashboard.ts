@@ -62,3 +62,14 @@ export function formatRagEvalMetric(
 
   return `$${value.toFixed(2)}`;
 }
+
+export function findRagEvalMetric(
+  metrics: RagEvalMetric[],
+  ...keys: RagEvalMetricKey[]
+): RagEvalMetric | undefined {
+  for (const key of keys) {
+    const metric = metrics.find((item) => item.key === key);
+    if (metric) return metric;
+  }
+  return undefined;
+}

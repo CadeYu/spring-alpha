@@ -260,3 +260,18 @@ def test_openai_compatible_chat_model_marks_deepseek_flash_for_compact_synthesis
     chat_model = client.as_chat_model(model="deepseek-ai/DeepSeek-V4-Flash")
 
     assert getattr(chat_model, "compact_synthesis", False) is True
+
+
+def test_openai_compatible_chat_model_marks_kimi_for_compact_synthesis() -> None:
+    client = OpenAiCompatibleLlmClient(
+        provider=LlmProvider.SILICONFLOW,
+        api_key="secret",
+        base_url="https://example.test/v1",
+        transport=lambda url, payload, headers, timeout_seconds: {
+            "choices": [{"message": {"content": '{"headline":"Done"}'}}]
+        },
+    )
+
+    chat_model = client.as_chat_model(model="Pro/moonshotai/Kimi-K2.6")
+
+    assert getattr(chat_model, "compact_synthesis", False) is True

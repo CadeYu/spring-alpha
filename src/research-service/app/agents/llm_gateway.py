@@ -378,4 +378,4 @@ def _should_use_compact_synthesis(provider: LlmProvider, model: str | None) -> b
     if provider != LlmProvider.SILICONFLOW or model is None:
         return False
     normalized = model.lower()
-    return "deepseek-v4-flash" in normalized
+    return "deepseek-v4-flash" in normalized or "moonshotai/kimi-k2.6" in normalized

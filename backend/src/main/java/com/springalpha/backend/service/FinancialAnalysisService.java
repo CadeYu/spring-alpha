@@ -105,9 +105,18 @@ public class FinancialAnalysisService {
         return researchAgentClient.run(request)
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "Python Research Service is required for analysis but returned no report")))
+                .doOnNext(result -> log.info(
+                        "research_agent_result runId={} status={} degradedReasons={} latencyMs={}",
+                        runId,
+                        result.status(),
+                        safeLogMessage(String.join("; ",
+                                result.degradedReasons() == null ? List.of() : result.degradedReasons())),
+                        elapsedMillis(startedAtNanos)))
                 .map(result -> researchAgentReportMapper.toAnalysisReport(result, request.language()))
-                .doOnNext(report -> log.info("research_agent_complete runId={} status=OK latencyMs={}",
-                        runId, elapsedMillis(startedAtNanos)))
+                .doOnNext(report -> log.info("research_agent_complete runId={} sourceStatus={} latencyMs={}",
+                        runId,
+                        report.getSourceContext() == null ? "UNKNOWN" : report.getSourceContext().getStatus(),
+                        elapsedMillis(startedAtNanos)))
                 .doOnError(error -> log.warn("research_agent_failed runId={} status=ERROR latencyMs={} errorCode={} message={}",
                         runId, elapsedMillis(startedAtNanos), error.getClass().getSimpleName(),
                         safeLogMessage(error.getMessage())))

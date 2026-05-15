@@ -256,6 +256,13 @@ def _evidence_pack_summary(evidence_pack: dict[str, Any]) -> dict[str, Any]:
     filing_items = filing_evidence if isinstance(filing_evidence, list) else []
     metric_items = metric_facts if isinstance(metric_facts, list) else []
     source_types: dict[str, int] = {}
+    sections: set[str] = set()
+    for item in filing_items:
+        if not isinstance(item, dict):
+            continue
+        section = item.get("section")
+        if section:
+            sections.add(str(section))
     for item in metric_items:
         if not isinstance(item, dict):
             continue
@@ -266,6 +273,7 @@ def _evidence_pack_summary(evidence_pack: dict[str, Any]) -> dict[str, Any]:
         "filing_evidence_count": len(filing_items),
         "metric_fact_count": len(metric_items),
         "metric_fact_source_types": source_types,
+        "sections": sorted(sections),
         "serialized_length": len(json.dumps(evidence_pack, sort_keys=True)),
     }
 

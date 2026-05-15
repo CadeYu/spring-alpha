@@ -1,176 +1,182 @@
-import { Activity, BarChart3, Database, Timer } from "lucide-react";
+import { Activity, Boxes, Gauge, SearchCheck } from "lucide-react";
 
-import {
-  formatRagEvalMetric,
-  STAGE1_HARD_RAG_EVAL_ARTIFACT,
-} from "@/lib/ragEvalDashboard";
+import type { AnalysisReport, RagTelemetry } from "@/types/AnalysisReport";
 import { cn } from "@/lib/utils";
-import { ReleaseReadinessChecklist } from "@/components/app/release-readiness-checklist";
 
-const metricToneByIndex = [
-  "border-emerald-500/30 bg-emerald-950/20 text-emerald-200",
-  "border-cyan-500/30 bg-cyan-950/20 text-cyan-200",
-  "border-amber-500/30 bg-amber-950/20 text-amber-200",
-  "border-slate-600 bg-slate-900 text-slate-200",
-] as const;
+type LiveRagMetric = {
+  label: string;
+  value: string;
+  detail: string;
+  tone: string;
+};
 
-export function RagEvalDashboard() {
-  const artifact = STAGE1_HARD_RAG_EVAL_ARTIFACT;
+const metricTone = {
+  strong: "border-emerald-500/30 bg-emerald-950/20 text-emerald-200",
+  stable: "border-cyan-500/30 bg-cyan-950/20 text-cyan-200",
+  caution: "border-amber-500/30 bg-amber-950/20 text-amber-200",
+  muted: "border-slate-700 bg-slate-950/70 text-slate-200",
+} as const;
+
+export function RagEvalDashboard({
+  reports,
+}: {
+  reports?: AnalysisReport[];
+}) {
+  const telemetry = aggregateRagTelemetry(reports ?? []);
+  const metrics = buildLiveRagMetrics(telemetry);
 
   return (
-    <div className="space-y-4">
-      <section
-        aria-labelledby="rag-eval-dashboard-title"
-        className="rounded-md border border-slate-800 bg-slate-900/70 p-4"
-      >
+    <section
+      aria-labelledby="rag-live-telemetry-title"
+      className="rounded-md border border-slate-800 bg-slate-900/70 p-4"
+    >
       <div className="flex flex-col gap-3 border-b border-slate-800 pb-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-emerald-400" />
+            <SearchCheck className="h-5 w-5 text-emerald-300" />
             <h2
-              id="rag-eval-dashboard-title"
+              id="rag-live-telemetry-title"
               className="text-lg font-semibold text-emerald-300"
             >
-              RAG Eval Dashboard
+              Live RAG Telemetry
             </h2>
           </div>
-          <p className="max-w-3xl text-sm leading-6 text-slate-400">
-            Read-only experiment view for the current RAG professionalization
-            report. The dashboard now displays the persisted hard-suite
-            retrieval artifact and strategy comparisons.
+          <p className="max-w-2xl text-sm leading-6 text-slate-400">
+            Current run evidence telemetry from retrieval records. No offline benchmark
+            scores are shown here.
           </p>
         </div>
 
-        <div className="grid min-w-[260px] grid-cols-1 gap-2 text-xs text-slate-400">
-          <span className="inline-flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2">
-            <Database className="h-3.5 w-3.5 text-cyan-300" />
-            {artifact.datasetName}
+        <div className="grid min-w-[240px] grid-cols-1 gap-2 text-xs text-slate-400">
+          <span className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2">
+            <Activity className="h-3.5 w-3.5 text-cyan-300" />
+            {telemetry ? `${telemetry.reportCount} reports` : "Not reported"}
           </span>
-          <span className="inline-flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2">
-            <Activity className="h-3.5 w-3.5 text-emerald-300" />
-            {artifact.baselineLabel}
+          <span className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2">
+            <Boxes className="h-3.5 w-3.5 text-emerald-300" />
+            {telemetry ? "Live run data" : "Waiting for retrieval records"}
           </span>
         </div>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-widest text-slate-500">
-                {artifact.stage}
-              </p>
-              <h3 className="text-base font-semibold text-slate-100">
-                {artifact.stageLabel}
-              </h3>
-            </div>
-            <span className="rounded-md border border-slate-800 bg-slate-950 px-3 py-1 text-xs text-slate-400">
-              {artifact.systemUnderTest}
-            </span>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+        {metrics.map((metric) => (
+          <div
+            key={metric.label}
+            className={cn("min-h-[112px] rounded-md border p-3", metric.tone)}
+          >
+            <p className="text-[11px] uppercase leading-tight tracking-widest opacity-75">
+              {metric.label}
+            </p>
+            <p className="mt-3 text-2xl font-semibold tabular-nums">
+              {metric.value}
+            </p>
+            <p className="mt-2 text-xs leading-5 opacity-70">{metric.detail}</p>
           </div>
-
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            {artifact.metrics.map((metric, index) => (
-              <div
-                key={metric.key}
-                className={cn(
-                  "min-h-[86px] rounded-md border p-3",
-                  metricToneByIndex[index % metricToneByIndex.length],
-                )}
-              >
-                <p className="text-[11px] uppercase leading-tight tracking-widest opacity-75">
-                  {metric.label}
-                </p>
-                <p className="mt-3 text-xl font-semibold">
-                  {formatRagEvalMetric(metric.value, metric.format)}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-md border border-slate-800 bg-slate-950/60">
-          <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2 text-sm font-semibold text-slate-200">
-            <Timer className="h-4 w-4 text-amber-300" />
-            Eval Cases
-          </div>
-          <div className="divide-y divide-slate-800">
-            {artifact.cases.map((evalCase) => (
-              <div key={evalCase.caseId} className="grid gap-2 px-3 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-md bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-200">
-                      {evalCase.ticker}
-                    </span>
-                    <span className="text-xs text-slate-500">
-                      {evalCase.taskType}
-                    </span>
-                  </div>
-                  <span className="text-xs text-slate-500">
-                    {evalCase.caseId}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400">
-                  Sections: {evalCase.retrievedSections.join(", ")}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
+        ))}
       </div>
-
-      <div className="mt-4 rounded-md border border-slate-800 bg-slate-950/70 p-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-          Stage Comparison
-        </p>
-        {artifact.stageComparisons.length > 0 ? (
-          <div className="mt-2 grid gap-2 text-xs text-slate-400 md:grid-cols-3">
-            {artifact.stageComparisons.map((comparison) => (
-              <div
-                key={comparison.baselineLabel}
-                className="rounded-md border border-slate-800 bg-slate-900/80 p-3"
-              >
-                <p className="font-semibold text-slate-200">
-                  {comparison.stageLabel}
-                </p>
-                <p className="mt-1 text-slate-500">
-                  {comparison.baselineLabel}
-                </p>
-                <div className="mt-3 grid gap-1">
-                  {comparison.metrics.slice(0, 3).map((metric) => (
-                    <div
-                      key={metric.key}
-                      className="flex items-center justify-between gap-2"
-                    >
-                      <span>{metric.label}</span>
-                      <span className="font-semibold text-slate-200">
-                        {formatRagEvalMetric(metric.value, metric.format)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-2 text-xs leading-5 text-slate-400">
-            No later-stage comparison artifacts yet.
-          </p>
-        )}
-      </div>
-
-      <div className="mt-4 rounded-md border border-slate-800 bg-slate-950/70 p-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-          Current Limits
-        </p>
-        <ul className="mt-2 grid gap-1 text-xs leading-5 text-slate-400 md:grid-cols-3">
-          {artifact.limitations.map((limitation) => (
-            <li key={limitation}>{limitation}</li>
-          ))}
-        </ul>
-      </div>
-      </section>
-      <ReleaseReadinessChecklist />
-    </div>
+    </section>
   );
+}
+
+type AggregatedRagTelemetry = RagTelemetry & {
+  reportCount: number;
+};
+
+export function aggregateRagTelemetry(
+  reports: AnalysisReport[],
+): AggregatedRagTelemetry | null {
+  const telemetryReports = reports
+    .map((report) => report.ragTelemetry)
+    .filter((item): item is RagTelemetry => Boolean(item));
+  if (telemetryReports.length === 0) return null;
+
+  return telemetryReports.reduce<AggregatedRagTelemetry>(
+    (total, item) => ({
+      reportCount: total.reportCount + 1,
+      evidenceRetrieved: total.evidenceRetrieved + item.evidenceRetrieved,
+      evidenceUsed: total.evidenceUsed + item.evidenceUsed,
+      metricFacts: total.metricFacts + item.metricFacts,
+      sectionsCovered: total.sectionsCovered + item.sectionsCovered,
+      retrievalLatencyMs: total.retrievalLatencyMs + item.retrievalLatencyMs,
+      emptyRetrieval: total.emptyRetrieval || item.emptyRetrieval,
+      evidencePackBytes: total.evidencePackBytes + item.evidencePackBytes,
+    }),
+    {
+      reportCount: 0,
+      evidenceRetrieved: 0,
+      evidenceUsed: 0,
+      metricFacts: 0,
+      sectionsCovered: 0,
+      retrievalLatencyMs: 0,
+      emptyRetrieval: false,
+      evidencePackBytes: 0,
+    },
+  );
+}
+
+function buildLiveRagMetrics(
+  telemetry: AggregatedRagTelemetry | null,
+): LiveRagMetric[] {
+  return [
+    {
+      label: "Evidence Retrieved",
+      value: telemetry ? String(telemetry.evidenceRetrieved) : "N/A",
+      tone: metricTone.strong,
+      detail: "Filing evidence chunks returned by retrieval.",
+    },
+    {
+      label: "Evidence Used",
+      value: telemetry ? String(telemetry.evidenceUsed) : "N/A",
+      tone: metricTone.stable,
+      detail: "Filing chunks kept in the evidence pack.",
+    },
+    {
+      label: "Metric Facts",
+      value: telemetry ? String(telemetry.metricFacts) : "N/A",
+      tone: metricTone.stable,
+      detail: "SEC or market facts available to the agent.",
+    },
+    {
+      label: "Sections Covered",
+      value: telemetry ? String(telemetry.sectionsCovered) : "N/A",
+      tone: metricTone.muted,
+      detail: "Distinct filing sections represented.",
+    },
+    {
+      label: "Retrieval Latency",
+      value: telemetry ? formatLatency(telemetry.retrievalLatencyMs) : "N/A",
+      tone: metricTone.muted,
+      detail: "Total retrieval tool latency.",
+    },
+    {
+      label: "Empty Retrieval",
+      value: telemetry ? (telemetry.emptyRetrieval ? "Yes" : "No") : "N/A",
+      tone: telemetry?.emptyRetrieval ? metricTone.caution : metricTone.strong,
+      detail: "Whether any retrieval step returned no evidence.",
+    },
+    {
+      label: "Evidence Pack Size",
+      value: telemetry ? formatBytes(telemetry.evidencePackBytes) : "N/A",
+      tone: metricTone.muted,
+      detail: "Serialized evidence payload size.",
+    },
+  ];
+}
+
+function formatLatency(value: number) {
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1).replace(/\.0$/, "")}s`;
+  }
+  return `${value} ms`;
+}
+
+function formatBytes(value: number) {
+  if (value >= 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
+  }
+  if (value >= 1024) {
+    return `${(value / 1024).toFixed(1).replace(/\.0$/, "")} KB`;
+  }
+  return `${value} B`;
 }

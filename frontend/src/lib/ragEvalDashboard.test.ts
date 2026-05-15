@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  findRagEvalMetric,
   formatRagEvalMetric,
   STAGE0_RAG_EVAL_ARTIFACT,
   STAGE1_HARD_RAG_EVAL_ARTIFACT,
@@ -22,6 +23,22 @@ describe("rag eval dashboard artifact", () => {
     expect(formatRagEvalMetric(1, "ratio")).toBe("100.0%");
     expect(formatRagEvalMetric(12, "milliseconds")).toBe("12 ms");
     expect(formatRagEvalMetric(0, "usd")).toBe("$0.00");
+  });
+
+  it("finds the first available metric from preferred fallback keys", () => {
+    expect(
+      findRagEvalMetric(
+        STAGE1_HARD_RAG_EVAL_ARTIFACT.metrics,
+        "retrievalRecallAt5",
+        "expectedTermHitRate",
+      )?.label,
+    ).toBe("Expected Term Hit Rate");
+    expect(
+      findRagEvalMetric(
+        STAGE1_HARD_RAG_EVAL_ARTIFACT.metrics,
+        "contextPrecision",
+      )?.label,
+    ).toBe("Context Precision");
   });
 
   it("loads the persisted stage 1 hard RAG experiment artifact", () => {

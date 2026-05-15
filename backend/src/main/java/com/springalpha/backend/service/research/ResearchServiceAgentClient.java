@@ -40,7 +40,6 @@ public class ResearchServiceAgentClient implements ResearchAgentClient {
                 .retrieve()
                 .bodyToMono(ResearchAgentResult.class)
                 .timeout(timeout)
-                .filter(result -> result.finalReport() != null)
                 .onErrorMap(this::mapUnavailable);
     }
 

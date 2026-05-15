@@ -1,3 +1,4 @@
+from app.agents import domain_tools
 from app.agents.domain_tools import (
     LlamaIndexResearchToolService,
     ResearchToolService,
@@ -318,6 +319,49 @@ Operating income increased with disciplined expense management.
     assert str(fact_refs[0]["snippet"]).startswith(
         "SEC companyfacts RevenueFromContractWithCustomerExcludingAssessedTax reports revenue of 95359000000 USD"
     )
+
+
+def test_latest_quarter_companyfacts_prefers_instant_quarter_frame_over_ytd_fact() -> None:
+    companyfacts = {
+        "facts": {
+            "us-gaap": {
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "label": "Revenue",
+                    "units": {
+                        "USD": [
+                            {
+                                "val": 219659000000,
+                                "fy": 2026,
+                                "fp": "Q2",
+                                "form": "10-Q",
+                                "filed": "2026-05-01",
+                                "accn": "0000320193-26-000002",
+                            },
+                            {
+                                "val": 111184000000,
+                                "fy": 2026,
+                                "fp": "Q2",
+                                "form": "10-Q",
+                                "filed": "2026-05-01",
+                                "accn": "0000320193-26-000002",
+                                "frame": "CY2026Q1",
+                            },
+                        ]
+                    },
+                }
+            }
+        }
+    }
+
+    record = domain_tools._latest_metric_record(
+        companyfacts,
+        "revenue",
+        "latest_quarter",
+    )
+
+    assert record is not None
+    assert record["value"] == 111184000000
+    assert record["period"] == "2026Q2"
 
 
 def test_cash_flow_domain_service_collects_diverse_allocation_evidence() -> None:
@@ -662,6 +706,36 @@ def test_domain_service_marks_company_facts_partial_when_metrics_are_missing() -
     assert result.degraded_reasons == ["SEC company facts missing metrics: free cash flow"]
 
 
+def test_domain_service_drops_stale_metrics_outside_latest_reporting_cohort() -> None:
+    service = ResearchToolService(
+        facts_provider=SecCompanyFactsProvider(transport=fake_stale_metric_sec_transport)
+    )
+    state = AgentState(
+        run_id="run_domain_stale_metric",
+        ticker="AAPL",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        task_policy=default_task_policy(ResearchTaskType.LATEST_EARNINGS_READOUT),
+    )
+
+    result = service.get_company_facts(
+        CompanyFactsInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            period="latest_quarter",
+            metrics=["revenue", "gross margin", "operating income"],
+        ),
+        state,
+    )
+
+    assert result.status == "partial"
+    assert [metric["name"] for metric in result.data["metrics"]] == [
+        "revenue",
+        "operating income",
+    ]
+    assert result.data["missing_metrics"] == ["gross margin"]
+
+
 def test_domain_service_accepts_common_llm_metric_aliases() -> None:
     service = ResearchToolService(
         facts_provider=SecCompanyFactsProvider(transport=fake_sec_transport)
@@ -781,6 +855,30 @@ def fake_sec_transport(url: str, timeout_seconds: float) -> dict[str, object]:
             },
         }
     raise AssertionError(f"Unexpected SEC URL: {url}")
+
+
+def fake_stale_metric_sec_transport(url: str, timeout_seconds: float) -> dict[str, object]:
+    payload = fake_sec_transport(url, timeout_seconds)
+    if not url.endswith("/CIK0000320193.json"):
+        return payload
+    facts = payload["facts"]["us-gaap"]
+    facts["GrossProfit"] = {
+        "label": "Gross Profit",
+        "units": {
+            "USD": [
+                {
+                    "val": 999000000,
+                    "fy": 2009,
+                    "fp": "Q3",
+                    "form": "10-Q",
+                    "filed": "2009-10-23",
+                    "accn": "0001193125-09-212134",
+                    "frame": "CY2009Q3",
+                }
+            ]
+        },
+    }
+    return payload
 
 
 def fake_yahoo_transport(url: str, timeout_seconds: float) -> dict[str, object]:

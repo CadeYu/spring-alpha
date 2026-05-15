@@ -83,6 +83,7 @@ docs/*
 /tmp/
 /frontend/tmp/
 /frontend/test-results/
+/src/research-service/artifacts/
 
 # --- Local Font Assets ---
 /frontend/public/fonts/

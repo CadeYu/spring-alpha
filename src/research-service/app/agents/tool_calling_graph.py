@@ -150,16 +150,13 @@ def run_tool_calling_graph_agent(
                 )
             ),
         ]
-        try:
-            final_result = _invoke_final_chain_with_retry(
-                final_chain,
-                final_messages,
-                attempts=2 if bool(getattr(final_llm, "compact_synthesis", False)) else 1,
-            )
-        except Exception as exc:
-            _raise(f"{agent_name} final synthesis failed: {exc}")
-        if not isinstance(final_result, AIMessage):
-            _raise(f"{agent_name} final LLM did not return an AIMessage")
+        final_result, payload = _invoke_and_parse_final_payload(
+            final_chain=final_chain,
+            final_messages=final_messages,
+            attempts=2,
+            agent_name=agent_name,
+            raise_error=_raise,
+        )
         _append_reasoning_event(
             state_getter=state_getter,
             state_setter=state_setter,
@@ -169,10 +166,6 @@ def run_tool_calling_graph_agent(
             phase=AgentPhase.DRAFT_REPORT_SECTIONS,
             summary=f"{agent_name} synthesized the final report sections.",
         )
-        try:
-            payload = _parse_json_text(_message_content_to_text(final_result.content))
-        except Exception as exc:
-            _raise(f"{agent_name} final JSON was invalid: {exc}")
         return {
             **graph_state,
             "messages": [*graph_state["messages"], final_result],
@@ -241,6 +234,14 @@ def _run_planned_tool_graph(
     def execute_plan(graph_state: ToolCallingGraphState) -> ToolCallingGraphState:
         messages = list(graph_state["messages"])
         called_tool_names = set(graph_state["called_tool_names"])
+        _append_runtime_reasoning_event(
+            state_getter=state_getter,
+            state_setter=state_setter,
+            agent_name=agent_name,
+            model_name=model_name,
+            phase=AgentPhase.BUILD_EVIDENCE_PLAN,
+            summary=f"{agent_name} selected the required evidence tools.",
+        )
         for index, tool_call in enumerate(planned_tool_calls, start=1):
             tool_name = tool_call["name"]
             tool = tools_by_name.get(tool_name)
@@ -275,16 +276,13 @@ def _run_planned_tool_graph(
                 )
             ),
         ]
-        try:
-            final_result = _invoke_final_chain_with_retry(
-                final_chain,
-                final_messages,
-                attempts=2 if compact_synthesis else 1,
-            )
-        except Exception as exc:
-            _raise(f"{agent_name} final synthesis failed: {exc}")
-        if not isinstance(final_result, AIMessage):
-            _raise(f"{agent_name} final LLM did not return an AIMessage")
+        final_result, payload = _invoke_and_parse_final_payload(
+            final_chain=final_chain,
+            final_messages=final_messages,
+            attempts=2,
+            agent_name=agent_name,
+            raise_error=_raise,
+        )
         _append_reasoning_event(
             state_getter=state_getter,
             state_setter=state_setter,
@@ -294,10 +292,6 @@ def _run_planned_tool_graph(
             phase=AgentPhase.DRAFT_REPORT_SECTIONS,
             summary=f"{agent_name} synthesized the final report sections.",
         )
-        try:
-            payload = _parse_json_text(_message_content_to_text(final_result.content))
-        except Exception as exc:
-            _raise(f"{agent_name} final JSON was invalid: {exc}")
         return {
             **graph_state,
             "messages": [*graph_state["messages"], final_result],
@@ -325,6 +319,32 @@ def _run_planned_tool_graph(
     if not isinstance(payload, dict):
         _raise(f"{agent_name} did not produce a final payload")
     return payload
+
+
+def _append_runtime_reasoning_event(
+    *,
+    state_getter: Callable[[], AgentState],
+    state_setter: Callable[[AgentState], None],
+    agent_name: str,
+    model_name: str | None,
+    phase: AgentPhase,
+    summary: str,
+) -> None:
+    state = state_getter()
+    event = AgentEvent(
+        run_id=state.run_id,
+        task_type=state.task_type,
+        phase=phase,
+        status=ToolStatus.OK,
+        summary=summary,
+        event_kind="reasoning",
+        agent_name=agent_name,
+        model_name=model_name,
+        latency_ms=0,
+        usage={},
+    )
+    next_state = state.model_copy(update={"tool_events": [*state.tool_events, event]})
+    state_setter(next_state)
 
 
 def _append_reasoning_event(
@@ -381,7 +401,7 @@ def _json_response_llm(llm: BaseChatModel) -> BaseChatModel:
             update={
                 "tools": [],
                 "tool_choice": None,
-                "max_tokens": 1280 if compact_synthesis else 2048,
+                "max_tokens": 3072 if compact_synthesis else 4096,
                 "response_format": {"type": "json_object"},
                 "timeout_seconds": 75,
             }
@@ -402,6 +422,36 @@ def _invoke_final_chain_with_retry(
         except Exception as exc:
             last_error = exc
     raise last_error or RuntimeError("Final synthesis failed")
+
+
+def _invoke_and_parse_final_payload(
+    *,
+    final_chain: Any,
+    final_messages: list[HumanMessage],
+    attempts: int,
+    agent_name: str,
+    raise_error: Callable[[str], NoReturn],
+) -> tuple[AIMessage, dict[str, Any]]:
+    last_error: Exception | None = None
+    for _ in range(max(1, attempts)):
+        try:
+            final_result = final_chain.invoke({"messages": final_messages})
+        except Exception as exc:
+            last_error = exc
+            continue
+        if not isinstance(final_result, AIMessage):
+            raise_error(f"{agent_name} final LLM did not return an AIMessage")
+        try:
+            payload = _parse_json_text(_message_content_to_text(final_result.content))
+        except Exception as exc:
+            last_error = exc
+            continue
+        return final_result, payload
+    if last_error is None:
+        raise_error(f"{agent_name} final synthesis failed")
+    if isinstance(last_error, json.JSONDecodeError):
+        raise_error(f"{agent_name} final JSON was invalid: {last_error}")
+    raise_error(f"{agent_name} final synthesis failed: {last_error}")
 
 
 def _evidence_context(messages: list[BaseMessage], *, compact: bool = False) -> str:

@@ -51,7 +51,7 @@ describe("analysis SSE bridge", () => {
     );
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(
-        "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
+        "http://127.0.0.1:8082/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
       ),
       expect.objectContaining({
         headers: expect.objectContaining({

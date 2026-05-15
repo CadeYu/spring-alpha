@@ -12,5 +12,6 @@ public record ResearchAgentResult(
         String status,
         List<ResearchAgentEvent> events,
         @JsonProperty("degraded_reasons") List<String> degradedReasons,
+        @JsonProperty("retrieval_records") List<Map<String, Object>> retrievalRecords,
         @JsonProperty("final_report") Map<String, Object> finalReport) {
 }

@@ -213,20 +213,45 @@ def _first_source_id_from_tool_messages(payload: dict[str, object]) -> str:
     if not isinstance(messages, list):
         raise AssertionError("LLM payload messages are required")
     for message in reversed(messages):
-        if not isinstance(message, dict) or message.get("role") != "tool":
+        if not isinstance(message, dict):
             continue
         content = message.get("content")
         if not isinstance(content, str) or not content.strip():
             continue
-        tool_payload = json.loads(content)
-        for key in ("records", "retrieved_nodes"):
-            records = tool_payload.get(key)
-            if not isinstance(records, list):
-                continue
-            for record in records:
-                if not isinstance(record, dict):
-                    continue
-                source_id = record.get("source_id") or record.get("node_id")
-                if source_id:
-                    return str(source_id)
+        if message.get("role") == "tool":
+            source_id = _first_source_id_from_tool_payload(json.loads(content))
+            if source_id:
+                return source_id
+        if message.get("role") == "user" and content.startswith("Evidence context JSON:"):
+            evidence_context = json.loads(content.split("Evidence context JSON:", 1)[1])
+            if isinstance(evidence_context, list):
+                for item in evidence_context:
+                    if not isinstance(item, dict):
+                        continue
+                    tool_content = item.get("content")
+                    if isinstance(tool_content, dict):
+                        source_id = _first_source_id_from_tool_payload(tool_content)
+                        if source_id:
+                            return source_id
     raise AssertionError("At least one source id is required")
+
+
+def _first_source_id_from_tool_payload(tool_payload: dict[str, object]) -> str | None:
+    for key in ("records", "retrieved_nodes", "source_refs"):
+        records = tool_payload.get(key)
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            source_id = record.get("source_id") or record.get("node_id")
+            if source_id:
+                return str(source_id)
+    evidence_pack = tool_payload.get("evidence_pack")
+    if isinstance(evidence_pack, dict):
+        filing_evidence = evidence_pack.get("filing_evidence")
+        if isinstance(filing_evidence, list):
+            for record in filing_evidence:
+                if isinstance(record, dict) and record.get("source_id"):
+                    return str(record["source_id"])
+    return None

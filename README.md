@@ -1,294 +1,315 @@
 <div align="center">
 
-# 📈 Spring Alpha (Financial AI Agent)
+# Spring Alpha: Multi-Agent Earnings Research Workbench
 
-**Build Your Own Bloomberg Terminal with Java & AI.**
+**一个面向美股财报研究的全栈 AI Agent 系统。**
 
-一个基于 **Spring AI** 与 **Next.js** 构建的企业级美股智能分析 Agent。
-专为开发者设计的“白盒”金融分析工具，支持 BYOK (Bring Your Own Key) 模式。
+Spring Alpha 将 **Spring Boot**, **Next.js**, **Python FastAPI Research Service**, **LangGraph/LangChain**, **LlamaIndex RAG** 和 **PGVector** 组合成一个 ticker-first 的研究工作台：输入股票代码，系统按顺序运行三个专业研究 Agent，拉取 SEC filing、财务事实和市场补充数据，最终输出可审计、结构化、可交互的财报研究报告。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-6DB33F?logo=spring&logoColor=white)](https://spring.io/projects/spring-boot)
-[![Next.js](https://img.shields.io/badge/Next.js-14-000000?logo=next.js&logoColor=white)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://reactjs.org/)
-[![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2-6DB33F?logo=spring&logoColor=white)](https://spring.io/projects/spring-boot)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Research%20Service-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)](https://nextjs.org/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Agent%20Runtime-1f6feb)](https://www.langchain.com/langgraph)
+[![PGVector](https://img.shields.io/badge/PGVector-RAG-4169E1?logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
 
-[**English**](./README_EN.md) | [**中文**](./README.md)
-
-🌟 **[Live Demo 立即体验](https://spring-alpha-two.vercel.app/)** 🌟 <br>
-*(基于 LLaMA 3.3 70B 模型驱动)*
+[English](./README_EN.md) | [中文](./README.md)
 
 </div>
 
 ---
 
-## 🎯 为什么需要 Spring Alpha？
+## 最新状态
 
-散户投资者面临的核心痛点是：**SEC 财报 (10-K/10-Q) 晦涩难懂且篇幅冗长**，而市面上的金融终端（如 Bloomberg）昂贵且封闭。
+- 三条核心研究链路已经完成：Latest Earnings Readout、Business Driver Deep Dive、Cash Flow & Capital Allocation。
+- Agent runtime 已升级为 LangChain/LangGraph 风格的 tool-calling graph，不再依赖旧 deterministic report fallback。
+- RAG 已收缩为可控 tool：SEC filing evidence 与 SEC/Yahoo metric facts 会被组装成 EvidencePack 后交给 LLM。
+- 前端已改为 ticker-first 工作台：默认展示 K 线图，用户点击左侧不同 Agent 报告后切换内容。
+- `Messages & Tools` 侧边栏会按时间线展示每个 Agent 的 reasoning/tool events、模型名、token usage 和 tool input。
+- RAG UI 只展示当前 run 可证明的 live telemetry，不展示离线 benchmark 分数。
+- 最近一次 30 ticker 真实前后端 E2E：`30 passed (57.7m)`。
 
-不同于传统的“聊天机器人”，Spring Alpha 是一套**完整的全栈 AI 金融应用**。它不仅是你的个人金融分析师，更是一个展示 **Java 在 AI 时代依然能打**的绝佳开源范例。
+> Spring Alpha 是研究与工程演示项目，不构成投资建议。LLM 输出会受 provider、数据可用性、filing 质量和检索结果影响。
 
-**核心价值**：让每位开发者都能零成本部署一个私有、免费、且强大的 AI 财富研究助手。
+## Spring Alpha 架构
 
-## ✨ 核心特性 (Features)
+Spring Alpha 的设计借鉴真实投研团队的分工，但不做 debate，也不做自动交易。系统将一个复杂的财报研究任务拆成三个专业 Agent，每个 Agent 都有自己的问题定义、工具集合、证据上下文和 typed report schema。
 
-### 🚀 企业级 AI 架构 (Production-Ready)
-*   **双通道模型支持**：默认提供免费模型（Groq / ChatAnywhere），同时支持用户自带 **OpenAI API Key** 切换到官方 OpenAI 模型。
-*   **WebFlux 异步流**：全链路非阻塞 IO 处理高并发请求，结合 **SSE (Server-Sent Events)** 实现打字机级别的流式渲染体验。
+<p align="center">
+  <img src="assets/readme/spring-alpha-framework.svg" width="100%" alt="Spring Alpha Framework">
+</p>
 
-### 📊 生成式金融 UI (Generative UI)
-*   **AI 不止会说话，还会画图**：抛弃枯燥的纯文本 Markdown 报告，自动将大模型的数据输出渲染为 **交互式分析图表**。
-*   **核心分析首屏**：首屏以结构化 **Core Thesis** 呈现 verdict、headline、论据支撑与后续跟踪点，而不是单段式摘要。
-*   **深度商业洞察**：内置杜邦分析法 (DuPont Analysis)、利润与营收驱动瀑布图 (Waterfall Chart) 以及财报高频词云 (Topic Word Cloud)。
-*   **PDF 一键导出**：集成 `@react-pdf/renderer`，支持秒级生成「高盛研报级」精美 PDF 报告。
+### Agent 团队
 
-### 🧠 智能 RAG 与防幻觉 (Anti-Hallucination)
-*   **混合数据引擎**：以 **SEC company facts** 作为财报口径事实源，以 **Yahoo enrichment** 补充行业标签、估值与季度快照，再用 **SEC filing 原文** 提供 narrative evidence。
-*   **向量检索**：集成 **PGVector** 与 Embedding 流水线，优先检索 *MD&A*（管理层讨论）和 *Risk Factors*（风险因素）；首次未命中时自动降级到 raw filing，再后台补向量。
-*   **引用校验与降级模式**：前端明确标识 citation 状态与 source context，避免把未经验证的 LLM 输出伪装成“确定事实”。
+<p align="center">
+  <img src="assets/readme/spring-alpha-agent-team.svg" width="100%" alt="Spring Alpha Agent Team">
+</p>
 
-### 🐳 一键极速部署 (One-Click Deploy)
-*   提供开箱即用的 `docker-compose.yml`，一键拉起后端 Spring Boot、前端 Next.js 及 PGVector 向量数据库。
+#### 1. Latest Earnings Readout
 
----
+回答“这家公司最新一季到底好不好”。它关注公司简介、财报判断、关键 KPI、季度变化和下一步观察项。
 
-## 🏗️ 系统架构图 (Architecture)
+主要输出：
 
-```mermaid
-graph TD
-    User([👨‍💻 User]) -->|Visit / or /app| NextJS[⚛️ Next.js Frontend]
-    NextJS -->|SSE Proxy / REST Proxy| ApiRoutes[🔀 Next Route Handlers]
-    ApiRoutes -->|Analyze / History| SpringBoot[🍃 Spring Boot Backend]
+- Company Profile
+- Earnings Verdict
+- KPI Strip
+- What Changed
+- Watch Next
 
-    subgraph Financial Facts Layer
-        SpringBoot --> Hybrid[🧩 HybridFinancialDataService]
-        Hybrid --> SecFacts[🏛️ SEC Company Facts]
-        Hybrid --> Yahoo[🐍 Yahoo Python Enrichment]
-    end
+#### 2. Business Driver Deep Dive
 
-    subgraph Filing & RAG Layer
-        SpringBoot --> SecFiling[📄 SEC Filing HTML]
-        SecFiling --> Cleaner[🧹 Jsoup Cleaner]
-        Cleaner --> Vector[🧠 PGVector / Embedding]
-    end
+回答“业务表现由什么驱动，以及这些驱动是否可持续”。它把证据拆到 product、segment、geography、demand、pricing、customer、strategy 等视角。
 
-    subgraph AI Orchestration Layer
-        SpringBoot --> Orchestrator[🎯 FinancialAnalysisService]
-        Orchestrator --> Strategy[⚙️ AI Strategy + Validation]
-        Strategy --> Providers[🤖 OpenAI / ChatAnywhere / Groq]
-    end
+主要输出：
 
-    Providers --> SpringBoot
-    SpringBoot -->|SSE AnalysisReport| NextJS
-```
+- Thesis
+- Driver Map
+- Impact Table
+- Signals
+- Watchlist
 
----
+#### 3. Cash Flow & Capital Allocation
 
-## 🔄 请求流与代码入口 (Request Flow)
+回答“利润是否有现金支持，资本配置是否健康”。它关注 operating cash flow、capex、buybacks、dividends、debt、liquidity 和 red flags。
 
-当用户在前端输入一个 ticker 并点击 `Analyze` 时，核心代码流程如下：
+主要输出：
 
-1. **前端工作台入口**
-   * `/app` 页面渲染 `frontend/src/components/app/earnings-analyst-app.tsx`
-   * `handleSearch()` 同时发起分析 SSE 和历史图表请求
+- Cash Quality
+- Cash Flow Bridge
+- Capital Allocation Scorecard
+- Allocation Discipline
+- Red Flags
 
-2. **Next.js 代理层**
-   * `frontend/src/app/api/sec/analyze/[ticker]/route.ts` 负责把浏览器请求桥接到后端 SSE
-   * 这样前端不需要直连后端地址，也能保留 `text/event-stream` 流式能力
+## 证据与 RAG 设计
 
-3. **Spring Boot 控制层**
-   * `backend/src/main/java/com/springalpha/backend/controller/SecController.java`
-   * `/api/sec/analyze/{ticker}` 返回 `Flux<AnalysisReport>`，把分析结果持续流给前端
+Spring Alpha 不把 RAG 做成一个沉重的黑盒。RAG 是 Agent 可以调用的工具，负责把 SEC filing 中的相关段落整理成 EvidencePack。
 
-4. **编排与数据融合**
-   * `backend/src/main/java/com/springalpha/backend/service/FinancialAnalysisService.java`
-   * 先拉季度财务事实，再抓最新 SEC filing，再命中 RAG 或降级原文，最后组装 `AnalysisContract`
+<p align="center">
+  <img src="assets/readme/spring-alpha-rag-flow.svg" width="100%" alt="Spring Alpha EvidencePack RAG Flow">
+</p>
 
-5. **混合财务数据服务**
-   * `backend/src/main/java/com/springalpha/backend/financial/service/HybridFinancialDataService.java`
-   * 以 SEC facts 作为主事实源，再用 Yahoo enrichment 补 `profile / quote / valuation / quarterly snapshots`
+当前证据链路如上图所示：SEC filing 经过清洗、section parsing、LlamaIndex node 构建和 PGVector 检索后，与 SEC/Yahoo metric facts 一起进入 EvidencePack，再交给 LLM 做最终结构化合成。
 
-6. **RAG 与引用**
-   * `backend/src/main/java/com/springalpha/backend/service/rag/VectorRagService.java`
-   * 有向量就做语义检索，没有向量就先降级分析并后台补 embedding
+前端 RAG 面板只展示当前 run 的真实 telemetry：
 
-7. **策略模式驱动 LLM**
-   * `backend/src/main/java/com/springalpha/backend/service/strategy/BaseAiStrategy.java`
-   * 顺序执行 `SummaryAgent / InsightsAgent / FactorsAgent / DriversAgent`
-   * 输出不是 markdown dump，而是面向 dashboard 的结构化 `AnalysisReport`
+- Evidence Retrieved
+- Evidence Used
+- Metric Facts
+- Sections Covered
+- Retrieval Latency
+- Empty Retrieval
+- Evidence Pack Size
 
-8. **前端渐进式展示**
-   * SSE 到达后，摘要、指标、驱动因素、风险、图表逐步点亮
-   * 历史数据走独立接口，不阻塞 AI 首屏
+离线评测指标，如 Recall@5、Context Precision、Section Accuracy，属于 regression suite，不会伪装成当前 ticker 的实时质量分数。
 
+## 产品体验
 
+用户只需要输入 ticker，然后点击 Analyze。系统会：
 
-## 🧩 模块分层 (Module Map)
+1. 拉取 K 线图并默认展示 Market Chart。
+2. 按顺序运行三个 Agent。
+3. 左侧显示每个 Agent 的完成状态。
+4. `Messages & Tools` 展示 Agent 时间线。
+5. 用户点击任意 Agent 报告查看对应研究内容。
+6. Developer diagnostics 中显示当前 run 的 RAG telemetry。
 
-### 前端
+<p align="center">
+  <img src="assets/readme/spring-alpha-product-workbench.svg" width="100%" alt="Spring Alpha Product Workbench">
+</p>
 
-*   `frontend/src/app/page.tsx`：品牌 landing page
-*   `frontend/src/app/app/page.tsx`：真实分析工作台入口
-*   `frontend/src/components/app/earnings-analyst-app.tsx`：搜索、模型切换、SSE 消费、整体 dashboard 编排
-*   `frontend/src/components/analysis/*`：摘要、关键指标、驱动因素、风险等研究模块
-*   `frontend/src/components/financial/*`：杜邦、雷达图、洞察卡片等金融可视化模块
+## 安装与本地开发
 
-### 后端
+### 前置依赖
 
-*   `controller`：HTTP / SSE 入口
-*   `financial/service`：SEC facts、Yahoo enrichment、混合事实服务
-*   `service`：编排层
-*   `service/rag`：embedding、向量检索、citation context
-*   `service/strategy`：多 provider LLM 策略与模板方法
-*   `service/signals`、`service/profile`：商业信号和公司画像快照
-*   `service/validation`：结构化输出与 citation 校验
+- Java 21+
+- Node.js 20+
+- Maven 或 `backend/mvnw`
+- Docker Desktop 或 OrbStack
+- Python 研究服务使用 `uv`
 
----
+### 克隆项目
 
-
-## 🛠️ 技术栈 (Tech Stack)
-
-| 模块 | 技术选型 | 备注 |
-| :--- | :--- | :--- |
-| **Backend** | **Java 21**, Spring Boot 3.3, WebFlux | 使用虚拟线程与响应式编程 |
-| **AI Framework** | **Spring AI** | Java 生态最主流 AI 抽象框架 |
-| **Vector DB** | **PostgreSQL** + PGVector | 高性能向量近似搜索 |
-| **Frontend** | **Next.js 14**, React 19, TypeScript | Server Actions 与 App Router |
-| **UI Components**| **Tailwind CSS**, Shadcn UI, Recharts | 极简专业的金融终端视觉设计 |
-
----
-
-## 🚀 快速开始 (Quick Start)
-
-### 选项 A：Docker Compose 一键启动（🔥 推荐）
-
-这是最快体验 Spring Alpha 的方式。
-
-1. **克隆代码**
-    ```bash
-    git clone https://github.com/your-username/spring-alpha.git
-    cd spring-alpha
-    ```
-
-2. **配置环境变量**
-    复制配置文件并填入您的 API Keys：
-    ```bash
-    cp .env.example .env
-    ```
-    请在 `.env` 文件中填写：
-    *   `GROQ_API_KEY`: 去 [Groq Cloud](https://console.groq.com) 免费申请。
-
-3. **一键启动**
-    ```bash
-    docker-compose up -d --build
-    ```
-    浏览器访问 `http://localhost:3000` 即可开始分析！
-
-### 选项 B：本地源码开发
-
-#### 前置要求
-*   Java 21+
-*   Node.js 18+
-*   Maven
-
-#### 启动后端
 ```bash
-cd backend
-cp .env.example .env # 填入环境变量
-./mvnw spring-boot:run
+git clone https://github.com/your-org/spring-alpha.git
+cd spring-alpha
 ```
 
-#### 启动前端
+### 环境变量
+
+复制示例环境文件，并填入你自己的 provider key：
+
+```bash
+cp .env.example .env
+```
+
+常用变量：
+
+```bash
+SILICONFLOW_API_KEY=sk-...
+SILICONFLOW_MODEL=Pro/moonshotai/Kimi-K2.6
+OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=...
+RAG_EMBEDDING_PROVIDER=deterministic
+RAG_VECTOR_TABLE_NAME=rag_chunks
+```
+
+本地手动测试时，前端也支持 BYOK。你可以直接在浏览器里粘贴 provider key；它会存到 localStorage，并随分析请求转发给后端。
+
+### 启动后端栈
+
+推荐使用本地脚本启动：
+
+```bash
+/usr/bin/env bash scripts/start-backend-stack.sh
+```
+
+它会启动：
+
+- PGVector：`127.0.0.1:5433`
+- Python Research Service：`127.0.0.1:8090`
+- Spring Boot backend：`127.0.0.1:8082`
+
+### 启动前端
+
 ```bash
 cd frontend
 npm install
-npm run dev
+BACKEND_URL=http://127.0.0.1:8082 npm run dev -- --hostname 127.0.0.1 --port 3001
 ```
 
-启动后：
+打开：
 
-*   `http://localhost:3000/` 是产品 landing page
-*   `http://localhost:3000/app` 是真实财报分析工作台
-
----
-
-## 🗺️ 项目状态与 Roadmap
-
-我们已经完成了所有的核心商业分析功能闭环。
-
-- [x] **MVP 阶段**：跑通 Spring WebFlux + SSE + Next.js 全栈渲染链路。
-- [x] **Generative UI**：基于结构化 JSON 控制前端图表（杜邦分析、瀑布桥、词云）。
-- [x] **Vector RAG 注入**：PGVector 语义检索防幻觉。
-- [x] **生产级部署**：Docker Compose 一键编排 & 研报 PDF 导出。
-- [x] **多策略切换**：支持免费模型（Groq / ChatAnywhere）与用户自带 OpenAI Key 两种使用方式。
-- [x] **Core Thesis 升级**：首屏分析升级为结构化 thesis 层，突出研究结论、证据与跟踪点。
-- [wt] **Earnings Call 接入**（计划中）：分析高管 Q&A 会议音频情感分析。
-- [wt] **竞争对手分析**（计划中）：横向对比多只同赛道股票指标。
-
-### 当前边界
-
-本次升级主要增强 **首屏输出契约与展示层**，让摘要更像研究笔记，而不是泛化 recap。
-如果后续仍希望显著提升洞见质量，下一阶段应补充更丰富的上游研究输入，例如 guidance、segment KPI、资本配置信号以及管理层 commentary 结构化抽取。
-
-## ✅ 测试与发布流程
-
-当前仓库已经接入分层测试，覆盖：
-
-- 后端 deterministic tests
-- 前端 unit / component tests
-- 前端 E2E smoke
-- PDF 渲染与下载路径
-
-### 本地一键执行
-
-```bash
-./run_checks.sh
+```text
+http://127.0.0.1:3001/app
 ```
 
-### 分步执行
+### Docker Compose
 
 ```bash
-cd backend
-mvn -Dtest=SecControllerTest,SecServiceTest,FinancialAnalysisServiceTest,AnalysisReportValidatorTest,HybridFinancialDataServiceTest,YahooFinanceMarketDataServiceTest test
+cp .env.example .env
+docker compose up -d --build
+```
 
-cd ../frontend
-npm run lint
-npx tsc --noEmit
+Compose 会启动 PGVector、Research Service、Spring Boot backend 和 Next.js frontend。Compose 模式下 backend 在 Docker 网络内使用 `8081`；本地脚本模式使用 `8082`，避免和其他服务冲突。
+
+## Provider 支持
+
+运行时使用 OpenAI-compatible LLM gateway。当前 UI 支持的 provider：
+
+| Provider | 默认模型路径 | 说明 |
+| --- | --- | --- |
+| SiliconFlow | `Pro/moonshotai/Kimi-K2.6` | 当前主要真实 E2E provider |
+| OpenAI | `gpt-4o-mini` by env default | OpenAI-compatible 路径 |
+| Gemini | `gemini-2.5-pro` by env default | 通过 OpenAI-compatible endpoint 调用 |
+
+SiliconFlow 当前重点适配过：
+
+- `Pro/moonshotai/Kimi-K2.6`
+- `deepseek-ai/DeepSeek-V4-Flash`
+
+Kimi K2.6 目前是完整 agent E2E 中质量和稳定性更优先的模型。
+
+## 项目结构
+
+```text
+spring-alpha/
+  backend/                         Spring Boot API, SEC/Yahoo boundary, SSE contract
+  frontend/                        Next.js research workbench
+  src/research-service/            FastAPI + LangGraph + LlamaIndex RAG sidecar
+  scripts/                         local stack and verification scripts
+  docs/                            architecture notes and task contracts
+  docker-compose.yml               PGVector + research service + backend + frontend
+```
+
+关键文件：
+
+```text
+frontend/src/components/app/earnings-analyst-app.tsx
+frontend/src/components/app/rag-eval-dashboard.tsx
+frontend/src/app/api/sec/analyze/[ticker]/route.ts
+backend/src/main/java/com/springalpha/backend/service/FinancialAnalysisService.java
+backend/src/main/java/com/springalpha/backend/service/research/ResearchAgentReportMapper.java
+src/research-service/app/agents/research_workflow.py
+src/research-service/app/agents/tool_calling_graph.py
+src/research-service/app/rag/llamaindex_pipeline.py
+```
+
+## 测试
+
+### 前端单元测试
+
+```bash
+cd frontend
 npm test
+```
+
+### 前端 E2E
+
+```bash
+cd frontend
 npm run test:e2e
 ```
 
-### 测试进度与发布签收
+### Research Service 测试
 
-- 详细测试计划与当前通过数见 [testing.md](./testing.md)
-- 发布前真实环境 smoke 手册见 [docs/release-smoke.md](./docs/release-smoke.md)
-- 发布签收模板见 [docs/release-signoff-template.md](./docs/release-signoff-template.md)
-- GitHub Actions CI 已配置在 `.github/workflows/ci.yml`
-- 发布前仍建议按 `testing.md` 中的真实 provider checklist 做一次手工签收
+```bash
+cd src/research-service
+uv run pytest
+```
 
-### 向量库注意事项
+### 后端测试
 
-如果你切换过 embedding 提供商、模型，或者调整过 embedding 维度，已有的 `vector_store` 可能与当前向量维度不兼容。
-一旦日志出现类似 `different vector dimensions 3072 and 768`，需要清理并重建受影响 ticker 的向量数据，否则 RAG 会自动降级且不会提供可验证引用。
+```bash
+cd backend
+./mvnw test
+```
 
----
+### 真实 provider 验证
 
-## 🤝 贡献代码
+这些测试会调用外部 provider，建议手动运行：
 
-欢迎提交 Pull Requests 做任何改进！这是一个展现 Java Web 结合现代 AI 的绝佳练兵场。
-1. Fork 本仓库
-2. 创建您的 Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. 提交您的修改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送分支 (`git push origin feature/AmazingFeature`)
-5. 开启一个 Pull Request
+```bash
+PROVIDER=siliconflow SILICONFLOW_API_KEY="$SILICONFLOW_API_KEY" \
+  scripts/verify-provider-tool-e2e.sh
+```
 
----
+如果要做完整前后端人工验证，先启动后端栈和前端，再使用你的 provider key 对本地 app 跑 Playwright。
 
-## 📄 开源协议 (License)
+## 当前边界
 
-本项目基于 [MIT License](LICENSE) 协议开源，完全免费。
-*Bring Your Own Key, Own Your Data.*
+- 这不是交易机器人，也不会下单。
+- 系统不会暴露隐藏 chain-of-thought；它只展示结构化 agent events、tool names、usage 和 latency。
+- 当 SEC companyfacts 缺少 gross margin、capex、buybacks 等特定指标时，部分 ticker 可能显示 `LIMITED` source context。
+- Provider 延迟和 rate limit 会影响真实运行。
+- RAG telemetry 是运行时可观测性指标，不是在线准确率或召回率分数。
 
-<div align="center">
-  如果这个项目对您有帮助，请给个 ⭐️ Star 鼓励一下作者！
-</div>
+## 路线图
+
+- 提升非标准财报行业的 metric facts 覆盖。
+- 增强 company profile 和 segment KPI 抽取。
+- 增加可选的 earnings call transcript tools。
+- 增加持久化 run archive 和可回放 agent timeline。
+- 扩展 RAG 与 report quality 的 benchmark suite。
+
+## 参与贡献
+
+欢迎提交 issue 和 pull request。当前最有价值的贡献方向：
+
+- 更好的 SEC filing section parsing
+- 更稳健的 metric normalization
+- Provider compatibility 改进
+- 面向高密度金融工作流的 UI polish
+- RAG evaluation dataset 与 edge cases
+
+## 鸣谢
+
+Spring Alpha 的多 Agent 研究工作流，受到 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents)的启发。
+
+TradingAgents 展示了如何把复杂金融研究任务拆给多个专业 Agent，并以清晰的工具调用轨迹呈现推理过程。Spring Alpha 在此基础上选择了不同的产品边界：专注美股财报阅读、SEC filing evidence、metric facts、EvidencePack RAG 和可审计的研究报告，不包含 debate、portfolio management 或自动交易执行。
+
+## 许可证
+
+本项目使用 MIT License 发布。

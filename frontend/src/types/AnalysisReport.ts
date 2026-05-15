@@ -232,6 +232,7 @@ export interface AnalysisReport {
     citations: Citation[];
     metadata: AnalysisMetadata;
     sourceContext?: SourceContext;
+    ragTelemetry?: RagTelemetry;
     currency?: string; // Added currency field
     taskSections?: TaskSpecificSections;
 
@@ -240,6 +241,16 @@ export interface AnalysisReport {
     insightEngine?: InsightEngine;
     factorAnalysis?: FactorAnalysis;
     topicTrends?: TopicTrend[];
+}
+
+export interface RagTelemetry {
+    evidenceRetrieved: number;
+    evidenceUsed: number;
+    metricFacts: number;
+    sectionsCovered: number;
+    retrievalLatencyMs: number;
+    emptyRetrieval: boolean;
+    evidencePackBytes: number;
 }
 
 // --- Advanced Insights Types ---

@@ -116,7 +116,7 @@ def test_agent_run_endpoint_uses_request_scoped_tool_calling_llm_for_latest_earn
 
     assert response.status_code == 200
     payload = response.json()
-    event_tool_names = [event["tool_name"] for event in payload["events"]]
+    event_tool_names = [event["tool_name"] for event in payload["events"] if event["tool_name"]]
 
     assert len(calls) == 1
     assert "tools" not in calls[0]
@@ -128,7 +128,11 @@ def test_agent_run_endpoint_uses_request_scoped_tool_calling_llm_for_latest_earn
     assert payload["final_report"]["task_sections"]["financial_dashboard"]["metrics"][0][
         "value"
     ] == "$90.0B"
-    assert event_tool_names == ["get_company_facts", "search_metric_evidence"]
+    assert event_tool_names == [
+        "get_company_facts",
+        "search_metric_evidence",
+        "build_evidence_pack",
+    ]
     assert "secret" not in response.text
 
 

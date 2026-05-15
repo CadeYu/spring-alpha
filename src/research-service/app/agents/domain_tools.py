@@ -102,6 +102,10 @@ class SecCompanyFactsProvider:
             for record in [_latest_metric_record(companyfacts, metric, period or "latest_quarter")]
             if record is not None
         ]
+        metric_records = _filter_metric_records_to_reporting_cohort(
+            metric_records,
+            period or "latest_quarter",
+        )
         found_metric_names = {str(record["name"]) for record in metric_records}
         missing_metrics = [
             metric
@@ -852,6 +856,33 @@ def _latest_metric_record(
     return None
 
 
+def _filter_metric_records_to_reporting_cohort(
+    records: list[dict[str, object]],
+    period: str,
+) -> list[dict[str, object]]:
+    normalized_period = period.lower()
+    if normalized_period not in {"latest_quarter", "quarterly", "latest_annual", "annual", "fy"}:
+        return records
+    if len(records) < 2:
+        return records
+    anchor = max(records, key=_metric_record_sort_key)
+    anchor_fy = anchor.get("fy")
+    anchor_fp = str(anchor.get("fp") or "")
+    if anchor_fy is None or not anchor_fp:
+        return records
+    return [
+        record
+        for record in records
+        if record.get("fy") == anchor_fy and str(record.get("fp") or "") == anchor_fp
+    ]
+
+
+def _metric_record_sort_key(record: Mapping[str, object]) -> tuple[int, str]:
+    fy = record.get("fy")
+    fiscal_year = int(fy) if isinstance(fy, int | float) else 0
+    return fiscal_year, str(record.get("filed") or "")
+
+
 def _latest_fact(
     concept_payload: Mapping[str, object],
     period: str,
@@ -873,7 +904,7 @@ def _latest_fact(
         ]
         if not facts:
             continue
-        return unit, max(facts, key=_fact_sort_key)
+        return unit, max(facts, key=lambda fact: _fact_sort_key(fact, period))
     return "", None
 
 
@@ -888,11 +919,23 @@ def _matches_period(fact: Mapping[str, object], period: str) -> bool:
     return True
 
 
-def _fact_sort_key(fact: Mapping[str, object]) -> tuple[int, str]:
+def _fact_sort_key(fact: Mapping[str, object], period: str = "") -> tuple[int, str, int]:
     fy = fact.get("fy")
     fiscal_year = int(fy) if isinstance(fy, int | float) else 0
     filed = str(fact.get("filed") or "")
-    return fiscal_year, filed
+    return fiscal_year, filed, _quarterly_frame_score(fact, period)
+
+
+def _quarterly_frame_score(fact: Mapping[str, object], period: str) -> int:
+    if period.lower() not in {"latest_quarter", "quarterly"}:
+        return 0
+    frame = str(fact.get("frame") or "").upper()
+    fp = str(fact.get("fp") or "").upper()
+    if frame and re.fullmatch(r"(?:CY|FY)?\d{4}Q[1-4]", frame):
+        return 2
+    if frame and fp and frame.endswith(fp):
+        return 1
+    return 0
 
 
 def _fact_period(fact: Mapping[str, object]) -> str | None:

@@ -240,6 +240,7 @@ class FinancialAnalysisServiceTest {
                             "ok",
                             List.of(),
                             List.of(),
+                            List.of(),
                             finalReport),
                     null,
                     false);

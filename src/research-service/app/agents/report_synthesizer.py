@@ -64,7 +64,7 @@ class _SynthesizedMetric(BaseModel):
     @field_validator("value", mode="before")
     @classmethod
     def normalize_value(cls, value: object) -> str:
-        return str(value)
+        return _format_metric_display_value(value)
 
     @field_validator("citation_status", mode="before")
     @classmethod
@@ -204,7 +204,7 @@ def build_latest_earnings_report_from_payload(
     source_refs_by_id = _alias_source_refs_by_id(source_refs)
     payload_data = _normalize_latest_earnings_payload(payload_data)
     payload = _LatestEarningsSynthesis.model_validate(payload_data)
-    _validate_source_ids(payload, source_refs_by_id)
+    _sanitize_latest_earnings_source_ids(payload, source_refs_by_id)
     coverage = _coverage(payload, source_refs)
     company_profile = _company_profile_from_synthesis(payload, state, source_refs_by_id)
     task_sections = LatestEarningsSections(
@@ -217,10 +217,11 @@ def build_latest_earnings_report_from_payload(
             _point_from_payload(point, source_refs_by_id) for point in payload.key_takeaways
         ],
         financial_dashboard=LatestFinancialDashboard(
-            metrics=[
-                _metric_with_evidence_guardrail(metric, state, source_refs_by_id)
-                for metric in payload.financial_dashboard.metrics
-            ],
+            metrics=_final_dashboard_metrics(
+                payload.financial_dashboard.metrics,
+                state,
+                source_refs_by_id,
+            ),
             chart_focus=payload.financial_dashboard.chart_focus,
         ),
         driver_snapshot=[
@@ -379,7 +380,7 @@ def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str
             "metrics": _normalize_synthesized_metrics(dashboard.get("metrics", [])),
             "chart_focus": _list_of_strings(dashboard.get("chart_focus")),
         }
-    return normalized
+    return _sanitize_payload_user_text(normalized)
 
 
 def synthesize_business_driver_report(
@@ -421,7 +422,7 @@ def build_business_driver_report_from_payload(
     source_refs_by_id = _alias_source_refs_by_id(source_refs)
     payload_data = _normalize_business_driver_payload(payload_data)
     payload = _BusinessDriverSynthesis.model_validate(payload_data)
-    _validate_business_driver_source_ids(payload, source_refs_by_id)
+    _sanitize_business_driver_source_ids(payload, source_refs_by_id)
     task_sections = BusinessDriverSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
@@ -499,20 +500,11 @@ def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str
             }
     driver_map = payload_data.get("driver_map")
     if not isinstance(driver_map, dict):
-        normalized["driver_map"] = {
-            "product": [],
-            "segment": [],
-            "geography": [],
-            "demand": [],
-            "pricing": [],
-            "customer": [],
-            "strategy": [],
-        }
+        normalized["driver_map"] = _empty_driver_map()
     else:
-        normalized["driver_map"] = {
-            key: _normalize_synthesized_points(value)
-            for key, value in driver_map.items()
-        }
+        normalized["driver_map"] = _normalize_driver_map(driver_map)
+    if not _has_complete_driver_thesis(normalized.get("driver_thesis")):
+        normalized["driver_thesis"] = _driver_thesis_from_normalized_payload(normalized)
     normalized["positive_signals"] = _normalize_synthesized_points(
         normalized.get("positive_signals", [])
     )
@@ -521,7 +513,79 @@ def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str
     )
     normalized["claims"] = _normalize_synthesized_claims(normalized.get("claims", []))
     normalized["watchlist"] = _normalize_watchlist(normalized.get("watchlist", []))
+    return _sanitize_payload_user_text(normalized)
+
+
+def _empty_driver_map() -> dict[str, list[object]]:
+    return {
+        "product": [],
+        "segment": [],
+        "geography": [],
+        "demand": [],
+        "pricing": [],
+        "customer": [],
+        "strategy": [],
+    }
+
+
+def _normalize_driver_map(driver_map: dict[str, object]) -> dict[str, object]:
+    normalized = _empty_driver_map()
+    for key, value in driver_map.items():
+        clean_key = _clean_key(key).strip("_")
+        if clean_key not in normalized:
+            continue
+        normalized[clean_key] = _normalize_synthesized_points(value)
     return normalized
+
+
+def _has_complete_driver_thesis(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return all(str(value.get(key) or "").strip() for key in ("headline", "durability", "summary"))
+
+
+def _driver_thesis_from_normalized_payload(payload: dict[str, Any]) -> dict[str, str]:
+    summary = ""
+    headline = ""
+    driver_map = payload.get("driver_map")
+    if isinstance(driver_map, dict):
+        for points in driver_map.values():
+            if not isinstance(points, list):
+                continue
+            for point in points:
+                if not isinstance(point, dict):
+                    continue
+                summary = str(point.get("summary") or "").strip()
+                headline = str(point.get("title") or "").strip()
+                if summary:
+                    break
+            if summary:
+                break
+    if not summary:
+        for key in ("positive_signals", "negative_signals"):
+            points = _normalize_synthesized_points(payload.get(key, []))
+            if not isinstance(points, list):
+                continue
+            for point in points:
+                if not isinstance(point, dict):
+                    continue
+                summary = str(point.get("summary") or "").strip()
+                headline = str(point.get("title") or "").strip()
+                if summary:
+                    break
+            if summary:
+                break
+    if not summary:
+        summary = (
+            "Business driver evidence is available, but the model did not provide a "
+            "complete driver thesis."
+        )
+        headline = "Business driver evidence is available"
+    return {
+        "headline": headline or _title_from_text(summary),
+        "durability": _driver_durability_from_text(summary),
+        "summary": summary,
+    }
 
 
 def _normalize_synthesized_points(value: object) -> object:
@@ -548,10 +612,16 @@ def _normalize_synthesized_metrics(value: object) -> object:
         return [
             _normalize_synthesized_metric({"name": key, "value": metric_value})
             for key, metric_value in value.items()
+            if not _is_metric_object_metadata_key(key)
         ]
     if not isinstance(value, list):
         return value
-    return [_normalize_synthesized_metric(metric) for metric in value]
+    return [
+        normalized_metric
+        for metric in value
+        for normalized_metric in [_normalize_synthesized_metric(metric)]
+        if not _is_unsupported_placeholder_metric(normalized_metric)
+    ]
 
 
 def _normalize_synthesized_metric(metric: object) -> object:
@@ -564,9 +634,11 @@ def _normalize_synthesized_metric(metric: object) -> object:
             "source_ids": [],
             "citation_status": "unverified",
         }
+    name = str(metric.get("name") or metric.get("metric") or metric.get("label") or "Metric")
+    value = _normalize_metric_value_for_name(name, metric.get("value"))
     return {
-        "name": str(metric.get("name") or metric.get("metric") or metric.get("label") or "Metric"),
-        "value": str(metric.get("value") or "Not extracted"),
+        "name": name,
+        "value": str(value or "Not extracted"),
         "period": metric.get("period"),
         "interpretation": str(
             metric.get("interpretation") or metric.get("summary") or "Reported metric."
@@ -576,12 +648,40 @@ def _normalize_synthesized_metric(metric: object) -> object:
     }
 
 
+def _is_metric_object_metadata_key(key: object) -> bool:
+    return _clean_key(key).strip("_") in {
+        "source_id",
+        "source_ids",
+        "citation_status",
+        "period",
+        "interpretation",
+        "summary",
+        "evidence_refs",
+    }
+
+
+def _normalize_metric_value_for_name(metric_name: str, value: object) -> object:
+    if isinstance(value, int | float) and _metric_name_looks_like_ratio(metric_name):
+        numeric_value = float(value)
+        if -1 <= numeric_value <= 1:
+            return f"{numeric_value * 100:.1f}%"
+    return value
+
+
+def _metric_name_looks_like_ratio(metric_name: str) -> bool:
+    normalized = metric_name.strip().lower()
+    ratio_markers = ("margin", "rate", "ratio", "yield", "roe", "roa")
+    return any(marker in normalized for marker in ratio_markers)
+
+
 def _normalize_synthesized_claims(value: object) -> object:
     if not isinstance(value, list):
         return value
     normalized_claims: list[object] = []
     for claim in value:
         if isinstance(claim, str):
+            if not claim.strip():
+                continue
             normalized_claims.append(
                 {
                     "text": claim,
@@ -593,15 +693,18 @@ def _normalize_synthesized_claims(value: object) -> object:
         if not isinstance(claim, dict):
             normalized_claims.append(claim)
             continue
+        text = str(
+            claim.get("text")
+            or claim.get("claim")
+            or claim.get("statement")
+            or claim.get("summary")
+            or ""
+        ).strip()
+        if not text:
+            continue
         normalized_claims.append(
             {
-                "text": str(
-                    claim.get("text")
-                    or claim.get("claim")
-                    or claim.get("statement")
-                    or claim.get("summary")
-                    or ""
-                ),
+                "text": text,
                 "source_ids": _source_ids_from_value(claim),
                 "citation_status": str(claim.get("citation_status") or "supported"),
             }
@@ -623,6 +726,39 @@ def _source_ids_from_value(value: dict[str, object]) -> list[str]:
     return source_ids
 
 
+def _sanitize_payload_user_text(value: object, *, key: str | None = None) -> object:
+    if isinstance(value, dict):
+        return {
+            item_key: _sanitize_payload_user_text(item_value, key=str(item_key))
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_payload_user_text(item, key=key) for item in value]
+    if isinstance(value, str) and key not in {
+        "source_id",
+        "source_ids",
+        "node_id",
+        "citation_status",
+        "schema_version",
+        "task_type",
+    }:
+        return _sanitize_user_text(value)
+    return value
+
+
+def _sanitize_user_text(value: str) -> str:
+    text = re.sub(r"\s*\((?:source[_ ]?id|node[_ ]?id)\s*[:=][^)]+\)", "", value, flags=re.I)
+    text = re.sub(
+        r"\b(?:source[_ ]?id|node[_ ]?id)\s*[:=]\s*[A-Za-z0-9_.:/-]+,?\s*",
+        "",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"\s{2,}", " ", text)
+    text = re.sub(r"\s+([,.;:])", r"\1", text)
+    return text.strip()
+
+
 def _normalize_synthesized_point(point: object) -> object:
     if not isinstance(point, dict):
         summary = str(point)
@@ -635,7 +771,8 @@ def _normalize_synthesized_point(point: object) -> object:
     point = _clean_mapping_keys(point)
     if "title" in point and "summary" in point:
         return {
-            **point,
+            "title": str(point.get("title") or ""),
+            "summary": str(point.get("summary") or ""),
             "source_ids": _source_ids_from_value(point),
             "citation_status": str(point.get("citation_status") or "supported"),
         }
@@ -728,7 +865,7 @@ def build_cash_flow_report_from_payload(
     source_refs_by_id = _alias_source_refs_by_id(source_refs)
     payload_data = _normalize_cash_flow_payload(payload_data)
     payload = _CashFlowSynthesis.model_validate(payload_data)
-    _validate_cash_flow_source_ids(payload, source_refs_by_id)
+    _sanitize_cash_flow_source_ids(payload, source_refs_by_id)
     cash_metrics = _cash_metrics_with_fact_backfill(payload.cash_metrics, state)
     capital_allocation = _capital_allocation_with_fact_backfill(
         payload.capital_allocation,
@@ -783,6 +920,7 @@ def build_cash_flow_report_from_payload(
 
 def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]:
     normalized = _clean_mapping_keys(payload_data)
+    top_level_summary = str(normalized.pop("summary", "") or "").strip()
     verdict = normalized.get("cash_quality_verdict")
     if isinstance(verdict, str):
         normalized["cash_quality_verdict"] = {
@@ -802,16 +940,28 @@ def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]
                 ),
                 "summary": summary,
             }
+        elif not summary:
+            normalized["cash_quality_verdict"] = {
+                "headline": "Cash flow evidence is available",
+                "earnings_backed_by_cash": "unclear",
+                "summary": (
+                    "Operating cash flow evidence is available, but the model did not "
+                    "provide a complete cash quality verdict."
+                ),
+            }
+    elif top_level_summary:
+        normalized["cash_quality_verdict"] = {
+            "headline": top_level_summary[:120],
+            "earnings_backed_by_cash": _cash_quality_from_text(top_level_summary),
+            "summary": top_level_summary,
+        }
     cash_metrics = normalized.get("cash_metrics", [])
     normalized["cash_metrics"] = _normalize_synthesized_metrics(
         cash_metrics if isinstance(cash_metrics, list | dict) else []
     )
     capital_allocation = normalized.get("capital_allocation")
     if isinstance(capital_allocation, dict):
-        normalized["capital_allocation"] = {
-            key: _normalize_synthesized_points(value)
-            for key, value in capital_allocation.items()
-        }
+        normalized["capital_allocation"] = _normalize_capital_allocation(capital_allocation)
     else:
         normalized["capital_allocation"] = {
             "capex": [],
@@ -828,6 +978,34 @@ def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]
     normalized["claims"] = _normalize_synthesized_claims(
         claims if isinstance(claims, list) else []
     )
+    normalized = {
+        key: normalized[key]
+        for key in {
+            "cash_quality_verdict",
+            "cash_metrics",
+            "capital_allocation",
+            "allocation_discipline",
+            "red_flags",
+            "claims",
+        }
+        if key in normalized
+    }
+    return _sanitize_payload_user_text(normalized)
+
+
+def _normalize_capital_allocation(value: dict[str, object]) -> dict[str, object]:
+    normalized = {
+        "capex": [],
+        "buybacks": [],
+        "dividends": [],
+        "debt": [],
+        "liquidity": [],
+    }
+    for key, item in value.items():
+        clean_key = _clean_key(key).strip("_")
+        if clean_key not in normalized:
+            continue
+        normalized[clean_key] = _normalize_synthesized_points(item)
     return normalized
 
 
@@ -851,8 +1029,13 @@ def _cash_metrics_with_fact_backfill(
     metrics: list[_SynthesizedMetric],
     state: AgentState,
 ) -> list[_SynthesizedMetric]:
-    if metrics:
-        return metrics
+    usable_metrics = [
+        metric
+        for metric in metrics
+        if not _cash_metric_needs_fact_backfill(metric)
+    ]
+    if usable_metrics and len(usable_metrics) == len(metrics):
+        return usable_metrics
     synthesized_metrics = []
     for record in state.evidence_memory.metric_evidence:
         if not _has_fact_value(record):
@@ -894,7 +1077,16 @@ def _cash_metrics_with_fact_backfill(
                     else CitationStatus.UNVERIFIED,
                 )
             )
-    return synthesized_metrics[:3]
+    merged_metrics = [*usable_metrics, *synthesized_metrics]
+    return merged_metrics[:3]
+
+
+def _cash_metric_needs_fact_backfill(metric: _SynthesizedMetric) -> bool:
+    normalized_name = metric.name.strip().lower()
+    return normalized_name in {"metric", "cash metric", "kpi"} or _metric_value_needs_evidence(
+        metric.value,
+        metric.interpretation,
+    )
 
 
 def _capital_allocation_with_fact_backfill(
@@ -997,13 +1189,13 @@ def _earnings_verdict_from_text(value: str) -> str:
 
 def _cash_quality_from_text(value: str) -> str:
     normalized = value.lower()
-    if "no" in normalized or "weak" in normalized:
+    if re.search(r"\b(no|weak|weakness|deteriorat(?:e|ed|ing)|unfunded)\b", normalized):
         return "no"
     if "high_quality" in normalized:
         return "yes"
     if "mixed" in normalized or "caveat" in normalized:
         return "mixed"
-    if "yes" in normalized or "funded" in normalized:
+    if re.search(r"\b(yes|funded|supports?|backed|covered)\b", normalized):
         return "yes"
     return "unclear"
 
@@ -1014,7 +1206,13 @@ def _driver_durability_from_text(value: str) -> str:
         return "temporary"
     if "mixed" in normalized:
         return "mixed"
-    if "durable" in normalized or "structural" in normalized or "platform" in normalized:
+    if (
+        "durable" in normalized
+        or "structural" in normalized
+        or "platform" in normalized
+        or "installed base" in normalized
+        or "engagement" in normalized
+    ):
         return "durable"
     return "unclear"
 
@@ -1334,6 +1532,8 @@ def _alias_source_refs_by_id(source_refs: list[SourceRef]) -> dict[str, SourceRe
             refs_by_id.setdefault("sec_companyfacts", source_ref)
         if source_ref.section.strip().lower() == "sec companyfacts":
             refs_by_id.setdefault("sec_companyfacts", source_ref)
+        for alias in _source_ref_aliases(source_ref, index):
+            refs_by_id.setdefault(alias, source_ref)
     return refs_by_id
 
 
@@ -1344,55 +1544,109 @@ def _aliased_source_refs(source_refs: list[SourceRef]) -> list[SourceRef]:
     ]
 
 
-def _validate_source_ids(
+def _source_ref_aliases(source_ref: SourceRef, index: int) -> list[str]:
+    aliases = [
+        f"{source_ref.accession_number}:src_{index}" if source_ref.accession_number else "",
+    ]
+    if source_ref.source_id:
+        aliases.append(_strip_source_ref_suffix(source_ref.source_id))
+        aliases.extend(_strip_source_ref_suffix(part) for part in source_ref.source_id.split(":"))
+        aliases.append(_source_ref_short_alias(source_ref.source_id))
+    if source_ref.accession_number:
+        aliases.append(_source_ref_short_alias(f"{source_ref.accession_number}:{source_ref.source_id}"))
+    return [alias for alias in aliases if alias]
+
+
+def _source_ref_short_alias(source_id: str) -> str:
+    normalized = source_id.strip().replace("::", ":")
+    if not normalized:
+        return ""
+    parts = normalized.split(":")
+    if len(parts) < 2:
+        return normalized
+    accession = parts[0]
+    tail = ":".join(parts[1:])
+    if tail.startswith("sec_companyfacts"):
+        return f"{accession}:sec_companyfacts"
+    if tail.startswith("unknown:full-filing"):
+        return f"{accession}:unknown:full-filing"
+    if tail.startswith("full-filing"):
+        return f"{accession}:full-filing"
+    if tail.startswith("md-a"):
+        return f"{accession}:md-a"
+    return f"{accession}:{parts[1]}"
+
+
+def _strip_source_ref_suffix(source_id: str) -> str:
+    normalized = source_id.strip()
+    if not normalized:
+        return ""
+    parts = normalized.split(":")
+    if len(parts) <= 2:
+        return normalized
+    return ":".join(parts[:2])
+
+
+def _sanitize_latest_earnings_source_ids(
     payload: _LatestEarningsSynthesis,
     source_refs_by_id: dict[str, SourceRef],
 ) -> None:
-    source_id_groups: list[list[str]] = [
-        payload.company_profile.source_ids if payload.company_profile is not None else [],
-        *[point.source_ids for point in payload.key_takeaways],
-        *[point.source_ids for point in payload.driver_snapshot],
-        *[point.source_ids for point in payload.risk_snapshot],
-        *[metric.source_ids for metric in payload.financial_dashboard.metrics],
-        *[claim.source_ids for claim in payload.claims],
-    ]
-    for source_ids in source_id_groups:
-        for source_id in source_ids:
-            if source_id not in source_refs_by_id:
-                raise ReportSynthesisError(f"Unknown source_id in synthesized report: {source_id}")
+    if payload.company_profile is not None:
+        _sanitize_source_ids(payload.company_profile, source_refs_by_id)
+    for point in [
+        *payload.key_takeaways,
+        *payload.driver_snapshot,
+        *payload.risk_snapshot,
+    ]:
+        _sanitize_source_ids(point, source_refs_by_id)
+    for metric in payload.financial_dashboard.metrics:
+        _sanitize_source_ids(metric, source_refs_by_id)
+    for claim in payload.claims:
+        _sanitize_source_ids(claim, source_refs_by_id)
 
 
-def _validate_business_driver_source_ids(
+def _sanitize_business_driver_source_ids(
     payload: _BusinessDriverSynthesis,
     source_refs_by_id: dict[str, SourceRef],
 ) -> None:
-    source_id_groups: list[list[str]] = [
-        *[point.source_ids for point in _driver_map_points(payload.driver_map)],
-        *[point.source_ids for point in payload.positive_signals],
-        *[point.source_ids for point in payload.negative_signals],
-        *[claim.source_ids for claim in payload.claims],
-    ]
-    for source_ids in source_id_groups:
-        for source_id in source_ids:
-            if source_id not in source_refs_by_id:
-                raise ReportSynthesisError(f"Unknown source_id in synthesized report: {source_id}")
+    for point in [
+        *_driver_map_points(payload.driver_map),
+        *payload.positive_signals,
+        *payload.negative_signals,
+    ]:
+        _sanitize_source_ids(point, source_refs_by_id)
+    for claim in payload.claims:
+        _sanitize_source_ids(claim, source_refs_by_id)
 
 
-def _validate_cash_flow_source_ids(
+def _sanitize_cash_flow_source_ids(
     payload: _CashFlowSynthesis,
     source_refs_by_id: dict[str, SourceRef],
 ) -> None:
-    source_id_groups: list[list[str]] = [
-        *[metric.source_ids for metric in payload.cash_metrics],
-        *[point.source_ids for point in _capital_allocation_points(payload.capital_allocation)],
-        *[point.source_ids for point in payload.allocation_discipline],
-        *[point.source_ids for point in payload.red_flags],
-        *[claim.source_ids for claim in payload.claims],
+    for metric in payload.cash_metrics:
+        _sanitize_source_ids(metric, source_refs_by_id)
+    for point in [
+        *_capital_allocation_points(payload.capital_allocation),
+        *payload.allocation_discipline,
+        *payload.red_flags,
+    ]:
+        _sanitize_source_ids(point, source_refs_by_id)
+    for claim in payload.claims:
+        _sanitize_source_ids(claim, source_refs_by_id)
+
+
+def _sanitize_source_ids(
+    item: _SynthesizedCompanyProfile | _SynthesizedPoint | _SynthesizedMetric | _SynthesizedClaim,
+    source_refs_by_id: dict[str, SourceRef],
+) -> None:
+    original_ids = list(item.source_ids)
+    item.source_ids = [
+        source_id for source_id in original_ids if source_id in source_refs_by_id
     ]
-    for source_ids in source_id_groups:
-        for source_id in source_ids:
-            if source_id not in source_refs_by_id:
-                raise ReportSynthesisError(f"Unknown source_id in synthesized report: {source_id}")
+    if original_ids and not item.source_ids:
+        item.citation_status = CitationStatus.UNVERIFIED
+    elif len(item.source_ids) < len(original_ids) and item.citation_status == CitationStatus.SUPPORTED:
+        item.citation_status = CitationStatus.PARTIAL
 
 
 def _coverage(
@@ -1618,6 +1872,22 @@ def _metric_from_payload(
     )
 
 
+def _final_dashboard_metrics(
+    metrics: list[_SynthesizedMetric],
+    state: AgentState,
+    source_refs_by_id: dict[str, SourceRef],
+) -> list[EvidenceBoundMetric]:
+    final_metrics = [
+        _metric_with_evidence_guardrail(metric, state, source_refs_by_id)
+        for metric in metrics
+    ]
+    return [
+        metric
+        for metric in final_metrics
+        if not _is_placeholder_evidence_metric(metric)
+    ] or _dashboard_metrics_from_fact_evidence(state, source_refs_by_id)
+
+
 def _metric_with_evidence_guardrail(
     metric: _SynthesizedMetric,
     state: AgentState,
@@ -1640,6 +1910,32 @@ def _metric_with_evidence_guardrail(
         evidence_refs=[_evidence_ref(source_ref)],
         citation_status=CitationStatus.SUPPORTED,
     )
+
+
+def _dashboard_metrics_from_fact_evidence(
+    state: AgentState,
+    source_refs_by_id: dict[str, SourceRef],
+) -> list[EvidenceBoundMetric]:
+    synthesized_metrics: list[EvidenceBoundMetric] = []
+    for record in state.evidence_memory.metric_evidence:
+        if not _has_fact_value(record):
+            continue
+        source_id = str(record.get("source_id") or "").strip()
+        source_ref = source_refs_by_id.get(source_id)
+        if source_ref is None:
+            continue
+        name = str(record.get("metric") or record.get("normalized_metric") or "Metric")
+        synthesized_metrics.append(
+            EvidenceBoundMetric(
+                name=name,
+                value=_metric_evidence_value(record),
+                period=_metric_evidence_period(record),
+                interpretation=_metric_evidence_interpretation(record, source_ref),
+                evidence_refs=[_evidence_ref(source_ref)],
+                citation_status=CitationStatus.SUPPORTED,
+            )
+        )
+    return synthesized_metrics[:3]
 
 
 def _metric_evidence_for_name(
@@ -1694,6 +1990,57 @@ def _metric_evidence_value(record: dict[str, Any]) -> str:
     if unit == "USD" and not formatted.startswith("$"):
         return f"${formatted}"
     return formatted
+
+
+def _format_metric_display_value(value: object) -> str:
+    raw_value = "" if value is None else str(value)
+    trimmed_value = raw_value.strip()
+    if not trimmed_value:
+        return raw_value
+    if re.search(r"[%]|(?:\b|[0-9])(k|m|b|t|million|billion|trillion)\b", trimmed_value, re.I):
+        return raw_value
+    numeric_match = re.fullmatch(
+        r"([$€£¥])?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(USD|EUR|GBP|JPY|CNY)?",
+        trimmed_value,
+        re.I,
+    )
+    if numeric_match is None:
+        return raw_value
+    leading_currency, raw_number, trailing_currency = numeric_match.groups()
+    numeric_value = float(raw_number.replace(",", ""))
+    if abs(numeric_value) < 10_000:
+        return raw_value
+    symbol = leading_currency or _currency_symbol(trailing_currency) or "$"
+    return f"{symbol}{_compact_number(numeric_value)}"
+
+
+def _currency_symbol(currency_code: str | None) -> str:
+    if currency_code is None:
+        return ""
+    return {
+        "USD": "$",
+        "EUR": "€",
+        "GBP": "£",
+        "JPY": "¥",
+        "CNY": "¥",
+    }.get(currency_code.upper(), "")
+
+
+def _is_unsupported_placeholder_metric(metric: object) -> bool:
+    if not isinstance(metric, dict):
+        return False
+    source_ids = metric.get("source_ids")
+    has_sources = isinstance(source_ids, list) and bool(source_ids)
+    if has_sources:
+        return False
+    return _metric_value_needs_evidence(
+        str(metric.get("value") or ""),
+        str(metric.get("interpretation") or ""),
+    )
+
+
+def _is_placeholder_evidence_metric(metric: EvidenceBoundMetric) -> bool:
+    return _metric_value_needs_evidence(metric.value, metric.interpretation)
 
 
 def _metric_evidence_period(record: dict[str, Any]) -> str | None:

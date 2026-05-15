@@ -122,6 +122,11 @@ public class AnalysisReport {
     private TaskSpecificSections taskSections;
 
     /**
+     * Live RAG telemetry derived from this run's retrieval records.
+     */
+    private RagTelemetry ragTelemetry;
+
+    /**
      * Represents a single financial metric with interpretation
      */
     @Data
@@ -223,6 +228,21 @@ public class AnalysisReport {
     public static class SourceContext {
         private String status; // "GROUNDED", "LIMITED", "DEGRADED", "UNAVAILABLE"
         private String message;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class RagTelemetry {
+        private int evidenceRetrieved;
+        private int evidenceUsed;
+        private int metricFacts;
+        private int sectionsCovered;
+        private long retrievalLatencyMs;
+        private boolean emptyRetrieval;
+        private int evidencePackBytes;
     }
 
     @Data

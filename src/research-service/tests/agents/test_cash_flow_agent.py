@@ -210,7 +210,227 @@ def test_cash_flow_agent_uses_standard_timeout_for_final_synthesis() -> None:
 
     assert result.status == AgentRunStatus.OK
     assert final_timeouts == [75]
-    assert calls[-1]["max_tokens"] == 2048
+    assert calls[-1]["max_tokens"] == 4096
+
+
+def test_cash_flow_agent_retries_when_final_json_is_invalid() -> None:
+    calls: list[dict[str, object]] = []
+    final_attempts = 0
+
+    def transport(
+        url: str,
+        payload: dict[str, object],
+        headers: dict[str, str],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        nonlocal final_attempts
+        calls.append(payload)
+        tool_messages = _tool_messages(payload)
+        if "tools" not in payload:
+            final_attempts += 1
+            if final_attempts == 1:
+                return {
+                    "choices": [
+                        {"message": {"content": '{"cash_quality_verdict":{"headline":"Cash'}}
+                    ]
+                }
+            source_id = _first_source_id_from_calls(calls)
+            return _content_response(
+                {
+                    "cash_quality_verdict": {
+                        "headline": "Cash generation supports the earnings base",
+                        "earnings_backed_by_cash": "yes",
+                        "summary": "Operating cash flow evidence supports reported earnings.",
+                    },
+                    "cash_metrics": [
+                        {
+                            "name": "Operating Cash Flow",
+                            "value": "$32.0B",
+                            "period": "latest_quarter",
+                            "interpretation": "Cash generation remained healthy.",
+                            "source_ids": [source_id],
+                            "citation_status": "supported",
+                        }
+                    ],
+                    "capital_allocation": {
+                        "capex": [],
+                        "buybacks": [],
+                        "dividends": [],
+                        "debt": [],
+                        "liquidity": [],
+                    },
+                    "allocation_discipline": [],
+                    "red_flags": [],
+                    "claims": [
+                        {
+                            "text": "Cash generation supports the earnings base.",
+                            "source_ids": [source_id],
+                            "citation_status": "supported",
+                        }
+                    ],
+                }
+            )
+        if not tool_messages:
+            return _tool_call_response("call_facts", "get_company_facts", {})
+        if len(tool_messages) == 1:
+            return _tool_call_response(
+                "call_filing",
+                "search_filing_sections",
+                {
+                    "sections": ["Liquidity and Capital Resources"],
+                    "query": "operating cash flow capex buybacks liquidity",
+                },
+            )
+        if len(tool_messages) == 2:
+            return _tool_call_response("call_metrics", "search_metric_evidence", {})
+        raise AssertionError("unexpected tool planning request")
+
+    result = _workflow(transport).run(_cash_flow_request("run_cash_json_retry"))
+
+    assert final_attempts == 2
+    assert result.status == AgentRunStatus.OK
+    assert result.final_report is not None
+    assert result.final_report["task_sections"]["cash_quality_verdict"]["headline"] == (
+        "Cash generation supports the earnings base"
+    )
+
+
+def test_cash_flow_agent_retries_when_final_synthesis_times_out() -> None:
+    calls: list[dict[str, object]] = []
+    final_attempts = 0
+
+    def transport(
+        url: str,
+        payload: dict[str, object],
+        headers: dict[str, str],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        nonlocal final_attempts
+        calls.append(payload)
+        tool_messages = _tool_messages(payload)
+        if "tools" not in payload:
+            final_attempts += 1
+            if final_attempts == 1:
+                raise TimeoutError("final synthesis timeout")
+            source_id = _first_source_id_from_calls(calls)
+            return _content_response(
+                {
+                    "cash_quality_verdict": {
+                        "headline": "Cash generation recovered after retry",
+                        "earnings_backed_by_cash": "yes",
+                        "summary": "Operating cash flow evidence supports the cash view.",
+                    },
+                    "cash_metrics": [
+                        {
+                            "name": "Operating Cash Flow",
+                            "value": "$32.0B",
+                            "period": "latest_quarter",
+                            "interpretation": "Cash generation remained healthy.",
+                            "source_ids": [source_id],
+                            "citation_status": "supported",
+                        }
+                    ],
+                    "capital_allocation": {
+                        "capex": [],
+                        "buybacks": [],
+                        "dividends": [],
+                        "debt": [],
+                        "liquidity": [],
+                    },
+                    "allocation_discipline": [],
+                    "red_flags": [],
+                    "claims": [],
+                }
+            )
+        if not tool_messages:
+            return _tool_call_response("call_facts", "get_company_facts", {})
+        if len(tool_messages) == 1:
+            return _tool_call_response("call_metrics", "search_metric_evidence", {})
+        if len(tool_messages) == 2:
+            return _tool_call_response(
+                "call_pack",
+                "build_evidence_pack",
+                {"focus": "operating cash flow capex buybacks liquidity", "top_k": 5},
+            )
+        raise AssertionError("unexpected tool planning request")
+
+    result = _workflow(transport).run(_cash_flow_request("run_cash_timeout_retry"))
+
+    assert final_attempts == 2
+    assert result.status == AgentRunStatus.OK
+    assert result.final_report is not None
+    assert result.final_report["task_sections"]["cash_quality_verdict"]["headline"] == (
+        "Cash generation recovered after retry"
+    )
+
+
+def test_cash_flow_agent_keeps_completed_report_ok_when_evidence_is_partial() -> None:
+    calls: list[dict[str, object]] = []
+
+    def transport(
+        url: str,
+        payload: dict[str, object],
+        headers: dict[str, str],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        calls.append(payload)
+        if "tools" not in payload:
+            source_id = _first_source_id_from_calls(calls)
+            return _content_response(
+                {
+                    "cash_quality_verdict": {
+                        "headline": "Cash generation is investable despite thin evidence",
+                        "earnings_backed_by_cash": "mixed",
+                        "summary": "Operating cash flow evidence is usable, while missing buyback facts limit allocation confidence.",
+                    },
+                    "cash_metrics": [
+                        {
+                            "name": "Operating Cash Flow",
+                            "value": "$32.0B",
+                            "period": "latest_quarter",
+                            "interpretation": "Operating cash flow anchors the cash quality view.",
+                            "source_ids": [source_id],
+                            "citation_status": "supported",
+                        }
+                    ],
+                    "capital_allocation": {
+                        "capex": [],
+                        "buybacks": [],
+                        "dividends": [],
+                        "debt": [],
+                        "liquidity": [],
+                    },
+                    "allocation_discipline": [],
+                    "red_flags": [],
+                    "claims": [],
+                }
+            )
+        raise AssertionError("planned cash flow graph should not call tool-planning LLM")
+
+    workflow = ResearchAgentWorkflow(
+        tool_service=LlamaIndexResearchToolService(
+            LlamaIndexRagPipeline(),
+            facts_provider=SecCompanyFactsProvider(
+                transport=_fake_sec_transport_without_buybacks,
+                profile_provider=YahooCompanyProfileProvider(transport=_fake_yahoo_transport),
+            ),
+        ),
+        llm_client=OpenAiCompatibleLlmClient(
+            LlmProvider.SILICONFLOW,
+            api_key="secret",
+            base_url="https://example.test/v1",
+            transport=transport,
+        ),
+        rag_pipeline=LlamaIndexRagPipeline(),
+    )
+
+    result = workflow.run(_cash_flow_request("run_cash_partial_evidence"))
+
+    assert result.final_report is not None
+    assert result.status == AgentRunStatus.OK
+    assert result.retryable is False
+    assert any("missing metrics" in reason for reason in result.degraded_reasons)
+    assert any(event.status == "partial" for event in result.events)
 
 
 def test_cash_flow_agent_returns_transparent_partial_state_when_final_llm_fails() -> None:
@@ -251,7 +471,7 @@ def test_cash_flow_agent_returns_transparent_partial_state_when_final_llm_fails(
 
     result = _workflow(transport).run(_cash_flow_request("run_cash_partial"))
 
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert result.status == AgentRunStatus.DEGRADED
     assert result.final_report is None
     assert "provider timed out during final cash flow synthesis" in result.degraded_reasons[0]
@@ -470,6 +690,18 @@ def _fake_sec_transport(url: str, timeout_seconds: float) -> dict[str, object]:
             }
         },
     }
+
+
+def _fake_sec_transport_without_buybacks(url: str, timeout_seconds: float) -> dict[str, object]:
+    payload = _fake_sec_transport(url, timeout_seconds)
+    if url.endswith("/company_tickers.json"):
+        return payload
+    facts = payload["facts"]
+    assert isinstance(facts, dict)
+    us_gaap = facts["us-gaap"]
+    assert isinstance(us_gaap, dict)
+    us_gaap.pop("PaymentsForRepurchaseOfCommonStock", None)
+    return payload
 
 
 def _fake_yahoo_transport(url: str, timeout_seconds: float) -> dict[str, object]:

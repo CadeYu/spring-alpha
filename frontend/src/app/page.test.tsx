@@ -96,6 +96,13 @@ function openAgentReport(name: RegExp) {
   fireEvent.click(screen.getByRole("tab", { name }));
 }
 
+function submitTicker(ticker = "AAPL") {
+  fireEvent.change(screen.getByPlaceholderText(/enter ticker/i), {
+    target: { value: ticker },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+}
+
 describe("Home page", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -104,6 +111,43 @@ describe("Home page", () => {
     chartTimeScaleMock.setVisibleLogicalRange.mockClear();
     window.localStorage.clear();
     window.localStorage.setItem("spring-alpha-siliconflow-key", "sk-test-123");
+  });
+
+  it("starts with an empty ticker state instead of defaulting to AAPL", () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ candles: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+
+    expect(
+      screen.getByPlaceholderText("Enter Ticker (e.g., AAPL, MSFT, TSLA)"),
+    ).toHaveValue("");
+    expect(
+      screen.queryByText(/AAPL market chart/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/enter a ticker to load the market chart/i),
+    ).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("/api/market/chart/AAPL"),
+      expect.anything(),
+    );
+  });
+
+  it("keeps the analyze button inset inside the ticker input", () => {
+    vi.stubGlobal("fetch", vi.fn());
+
+    render(<Home />);
+
+    expect(screen.getByTestId("ticker-input-group")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /analyze ticker/i })).toHaveClass(
+      "mr-2",
+    );
   });
 
   it("keeps degraded source metadata hidden from the quarterly-only analysis stream", async () => {
@@ -147,7 +191,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker("TSLA");
 
     openAgentReport(/latest earnings readout/i);
 
@@ -161,7 +205,7 @@ describe("Home page", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("Typed degraded thesis")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/sec/analyze/AAPL?lang=en&model=siliconflow"),
+      expect.stringContaining("/sec/analyze/TSLA?lang=en&model=siliconflow"),
       expect.anything(),
     );
   });
@@ -199,7 +243,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker("AAPL");
 
     openAgentReport(/latest earnings readout/i);
 
@@ -332,7 +376,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker("TSLA");
 
     openAgentReport(/latest earnings readout/i);
     expect(await screen.findByText("Earnings agent verdict")).toBeInTheDocument();
@@ -347,7 +391,115 @@ describe("Home page", () => {
     ]);
   });
 
-  it("shows the market chart by default and opens an agent report from the sidebar", async () => {
+  it("marks the active agent failed when the backend returns a degraded no-report chunk", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const taskType = new URL(`http://test${url}`).searchParams.get(
+        "taskType",
+      );
+
+      if (taskType === "business_driver_deep_dive") {
+        return createSseResponse([
+          {
+            executiveSummary: "Business driver report.",
+            companyName: "Apple Inc.",
+            period: "Q1 2026",
+            filingDate: "2026-02-01",
+            citations: [],
+            taskSections: {
+              schemaVersion: "task_sections.v1",
+              taskType,
+              coverage: {
+                status: "complete",
+                missingSections: [],
+                evidenceCount: 1,
+              },
+              businessDriver: {
+                driverThesis: {
+                  headline: "Business driver agent thesis",
+                  durability: "durable",
+                  summary: "Business driver agent summary.",
+                },
+                driverMap: {
+                  product: [],
+                  segment: [],
+                  geography: [],
+                  demand: [],
+                  pricing: [],
+                  customer: [],
+                  strategy: [],
+                },
+                positiveSignals: [],
+                negativeSignals: [],
+                watchlist: [],
+              },
+            },
+          },
+        ]);
+      }
+
+      if (taskType === "cash_flow_capital_allocation") {
+        return createSseResponse([
+          {
+            executiveSummary: "Cash flow research agent failed: validation error",
+            sourceContext: {
+              status: "DEGRADED",
+              message: "Cash flow research agent failed: validation error",
+            },
+            metadata: {
+              agentEvents: [
+                {
+                  phase: "degraded",
+                  status: "degraded",
+                  summary: "Cash flow research agent failed.",
+                  eventKind: "reasoning",
+                  agentName: "Cash Flow Analyst",
+                  degradedReason:
+                    "Cash flow research agent failed: validation error",
+                },
+              ],
+            },
+          },
+        ]);
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Latest earnings report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          citations: [],
+          taskSections: latestTaskSections("Earnings agent verdict"),
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker("TSLA");
+
+    expect(
+      await screen.findByRole("tab", {
+        name: /cash flow & capital allocation failed/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Cash flow research agent failed: validation error")
+        .length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("Cash Flow Analyst")).toBeInTheDocument();
+  });
+
+  it("shows the submitted ticker market chart and opens an agent report from the sidebar", async () => {
     const taskOrder: string[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -452,6 +604,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
+    submitTicker("AAPL");
     expect(await screen.findByText(/AAPL market chart/i)).toBeInTheDocument();
     expect(screen.getByTestId("market-candlestick-chart")).toBeInTheDocument();
     expect(screen.getAllByText(/scroll to zoom/i).length).toBeGreaterThan(0);
@@ -478,8 +631,6 @@ describe("Home page", () => {
       ),
     );
     expect(chartTimeScaleMock.fitContent).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
 
     await waitFor(() =>
       expect(taskOrder).toEqual([
@@ -548,7 +699,7 @@ describe("Home page", () => {
     expect(screen.getByText("Business Driver Deep Dive")).toBeInTheDocument();
     expect(screen.getByText("Cash Flow & Capital Allocation")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
     openAgentReport(/latest earnings readout/i);
 
     expect(
@@ -685,7 +836,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     openAgentReport(/business driver deep dive/i);
 
@@ -791,7 +942,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     openAgentReport(/business driver deep dive/i);
 
@@ -861,7 +1012,7 @@ describe("Home page", () => {
                 metrics: [
                   {
                     name: "Typed revenue metric",
-                    value: "$219,659,000,000",
+                    value: 219659000000,
                     period: "latest quarter",
                     interpretation: "Typed metric interpretation.",
                     evidenceRefs: [],
@@ -899,7 +1050,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     openAgentReport(/latest earnings readout/i);
 
@@ -921,7 +1072,7 @@ describe("Home page", () => {
     expect(screen.getByText("Typed revenue takeaway")).toBeInTheDocument();
     expect(screen.getByText("Typed revenue metric")).toBeInTheDocument();
     expect(screen.getByText("$219.7B")).toBeInTheDocument();
-    expect(screen.queryByText("$219,659,000,000")).not.toBeInTheDocument();
+    expect(screen.queryByText("219659000000")).not.toBeInTheDocument();
     expect(screen.getByText("Typed services driver")).toBeInTheDocument();
     expect(screen.getByText("Typed risk snapshot")).toBeInTheDocument();
     expect(
@@ -1009,7 +1160,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     openAgentReport(/latest earnings readout/i);
 
@@ -1023,6 +1174,150 @@ describe("Home page", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("Agent Progress")).not.toBeInTheDocument();
+  });
+
+  it("aggregates messages and tools from every completed agent by default", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const taskType = new URL(`http://test${url}`).searchParams.get(
+        "taskType",
+      );
+      if (taskType === "business_driver_deep_dive") {
+        return createSseResponse([
+          {
+            companyName: "Apple Inc.",
+            period: "Q1 2026",
+            filingDate: "2026-02-01",
+            taskSections: {
+              schemaVersion: "task_sections.v1",
+              taskType,
+              coverage: { status: "complete", missingSections: [], evidenceCount: 1 },
+              businessDriver: {
+                driverThesis: {
+                  headline: "Business thesis",
+                  durability: "durable",
+                  summary: "Business summary.",
+                },
+                driverMap: {
+                  product: [],
+                  segment: [],
+                  geography: [],
+                  demand: [],
+                  pricing: [],
+                  customer: [],
+                  strategy: [],
+                },
+                positiveSignals: [],
+                negativeSignals: [],
+                watchlist: [],
+              },
+            },
+            metadata: {
+              agentEvents: [
+                {
+                  phase: "business_reasoning",
+                  status: "ok",
+                  summary: "Business agent selected evidence tools.",
+                  eventKind: "reasoning",
+                  agentName: "Business driver agent",
+                  modelName: "test-business-model",
+                  latencyMs: 1000,
+                },
+              ],
+            },
+          },
+        ]);
+      }
+
+      if (taskType === "cash_flow_capital_allocation") {
+        return createSseResponse([
+          {
+            companyName: "Apple Inc.",
+            period: "Q1 2026",
+            filingDate: "2026-02-01",
+            taskSections: {
+              schemaVersion: "task_sections.v1",
+              taskType,
+              coverage: { status: "complete", missingSections: [], evidenceCount: 1 },
+              cashFlowCapitalAllocation: {
+                cashGeneration: {
+                  headline: "Cash thesis",
+                  quality: "strong",
+                  summary: "Cash summary.",
+                },
+                cashMetrics: [],
+                capitalAllocation: [],
+                allocationDiscipline: {
+                  headline: "Disciplined",
+                  strengths: [],
+                  weaknesses: [],
+                  investorImplication: "Balanced.",
+                },
+                watchlist: [],
+              },
+            },
+            metadata: {
+              agentEvents: [
+                {
+                  phase: "cash_reasoning",
+                  status: "ok",
+                  summary: "Cash flow agent selected evidence tools.",
+                  eventKind: "reasoning",
+                  agentName: "Cash flow agent",
+                  modelName: "test-cash-model",
+                  latencyMs: 1000,
+                },
+              ],
+            },
+          },
+        ]);
+      }
+
+      return createSseResponse([
+        {
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          taskSections: latestTaskSections("Earnings thesis"),
+          metadata: {
+            agentEvents: [
+              {
+                phase: "earnings_reasoning",
+                status: "ok",
+                summary: "Earnings agent selected evidence tools.",
+                eventKind: "reasoning",
+                agentName: "Earnings agent",
+                modelName: "test-earnings-model",
+                latencyMs: 1000,
+              },
+            ],
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker();
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) =>
+          String(input).includes("/api/sec/analyze/AAPL"),
+        ),
+      ).toHaveLength(3);
+    });
+    expect(screen.getByText("Earnings agent")).toBeInTheDocument();
+    expect(screen.getByText("Business driver agent")).toBeInTheDocument();
+    expect(screen.getByText("Cash flow agent")).toBeInTheDocument();
   });
 
   it("renders typed cash flow synthesis fields from the spring mapper envelope", async () => {
@@ -1137,7 +1432,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     openAgentReport(/cash flow & capital allocation/i);
 
@@ -1164,42 +1459,83 @@ describe("Home page", () => {
     expect(screen.queryByText("Legacy Free Cash Flow")).not.toBeInTheDocument();
   });
 
-  it("renders the RAG eval dashboard with persisted stage 1 hard-suite comparisons", () => {
-    render(<Home />);
+  it("renders live RAG telemetry without offline benchmark scores", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-    expect(screen.queryByText("RAG Eval Dashboard")).not.toBeInTheDocument();
+      return createSseResponse([
+        {
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          taskSections: latestTaskSections("Earnings telemetry thesis"),
+          ragTelemetry: {
+            evidenceRetrieved: 3,
+            evidenceUsed: 2,
+            metricFacts: 7,
+            sectionsCovered: 4,
+            retrievalLatencyMs: 1280,
+            emptyRetrieval: false,
+            evidencePackBytes: 6144,
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker();
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) =>
+          String(input).includes("/api/sec/analyze/AAPL"),
+        ).length,
+      ).toBeGreaterThan(0);
+    });
+
+    expect(screen.queryByText("Live RAG Telemetry")).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: /developer diagnostics/i }),
     );
 
     expect(screen.getByText("Developer diagnostics")).toBeInTheDocument();
-    expect(screen.getByText("RAG Eval Dashboard")).toBeInTheDocument();
-    expect(screen.getByText("Stage 1 Hard RAG")).toBeInTheDocument();
+    expect(screen.getByText("Live RAG Telemetry")).toBeInTheDocument();
+    expect(screen.getByText("Evidence Retrieved")).toBeInTheDocument();
+    expect(screen.getByText("Evidence Used")).toBeInTheDocument();
+    expect(screen.getByText("Metric Facts")).toBeInTheDocument();
+    expect(screen.getByText("Sections Covered")).toBeInTheDocument();
+    expect(screen.getByText("Retrieval Latency")).toBeInTheDocument();
+    expect(screen.getByText("Empty Retrieval")).toBeInTheDocument();
+    expect(screen.getByText("Evidence Pack Size")).toBeInTheDocument();
+    expect(screen.getByText("9")).toBeInTheDocument();
+    expect(screen.getByText("6")).toBeInTheDocument();
+    expect(screen.getByText("21")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.getByText("3.8s")).toBeInTheDocument();
+    expect(screen.getByText("No")).toBeInTheDocument();
+    expect(screen.getByText("18 KB")).toBeInTheDocument();
+    expect(screen.queryByText("Recall@5")).not.toBeInTheDocument();
+    expect(screen.queryByText("Precision@5")).not.toBeInTheDocument();
+    expect(screen.queryByText("Section Accuracy")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unsupported Risk")).not.toBeInTheDocument();
+    expect(screen.queryByText("stage1_hard_rag_eval")).not.toBeInTheDocument();
     expect(
-      screen.getAllByText("hybrid_semantic_lexical_retrieval")[0],
-    ).toBeInTheDocument();
-    expect(
-      screen.getAllByText("Expected Term Hit Rate")[0],
-    ).toBeInTheDocument();
-    expect(
-      screen.getAllByText("Top-1 Section Correctness")[0],
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("Bad Section Leak Rate")[0]).toBeInTheDocument();
-    expect(screen.getByText("Context Precision")).toBeInTheDocument();
-    expect(screen.getByText("stage1_hard_rag_eval")).toBeInTheDocument();
-    expect(
-      screen.getByText("hard_msft_semantic_platform_driver"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Section-Aware Lexical")).toBeInTheDocument();
-    expect(screen.getByText("No Section Filter")).toBeInTheDocument();
-    expect(screen.getByText("No Query Expansion")).toBeInTheDocument();
-    expect(
-      screen.getByText("Generated from the local hard RAG eval suite."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Release Readiness")).toBeInTheDocument();
-    expect(screen.getByText("Provider RAG sample gate")).toBeInTheDocument();
-    expect(screen.getByText("Provider tool-calling agent gate")).toBeInTheDocument();
-    expect(screen.getByText("Compose full E2E")).toBeInTheDocument();
+      screen.queryByText("hybrid_semantic_lexical_retrieval"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("RAG Eval Dashboard")).not.toBeInTheDocument();
+    expect(screen.queryByText("Eval Cases")).not.toBeInTheDocument();
+    expect(screen.queryByText("Stage Comparison")).not.toBeInTheDocument();
+    expect(screen.queryByText("Current Limits")).not.toBeInTheDocument();
+    expect(screen.queryByText("Release Readiness")).not.toBeInTheDocument();
+    expect(screen.queryByText("hard_msft_semantic_platform_driver")).not.toBeInTheDocument();
   });
 
   it("submits the live input value instead of falling back to the stale default ticker", async () => {
@@ -1266,7 +1602,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     expect(
       await screen.findByText(
@@ -1319,10 +1655,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.change(screen.getByPlaceholderText(/enter ticker/i), {
-      target: { value: "V" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker("V");
 
     expect(
       await screen.findByText("Live agent run in progress"),
@@ -1384,7 +1717,7 @@ describe("Home page", () => {
       .mockImplementation(() => {});
     const { unmount } = render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
     unmount();
 
     await waitFor(() => {
@@ -1438,7 +1771,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     openAgentReport(/latest earnings readout/i);
 
@@ -1492,7 +1825,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
     openAgentReport(/latest earnings readout/i);
 
     await screen.findByText("Microsoft Corporation · Q2 2026 · 2026-01-31");
@@ -1551,7 +1884,7 @@ describe("Home page", () => {
     ).toHaveValue("");
     expect(screen.getByText("Saved")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -1599,7 +1932,7 @@ describe("Home page", () => {
       },
     );
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     expect(
       await screen.findByText(
@@ -1635,7 +1968,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     expect(
       await screen.findByText(/SEC company facts are temporarily unavailable/i),
@@ -1673,7 +2006,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     expect(
       await screen.findByText(/Python Research Service unavailable/i),
@@ -1708,7 +2041,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
 
     expect(
       await screen.findByText(/Python Research Service unavailable/i),
@@ -1756,10 +2089,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    fireEvent.change(screen.getByPlaceholderText(/enter ticker/i), {
-      target: { value: "TSLA" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker("TSLA");
 
     openAgentReport(/latest earnings readout/i);
 
@@ -1768,10 +2098,7 @@ describe("Home page", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Tesla typed thesis")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText(/enter ticker/i), {
-      target: { value: "MSFT" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker("MSFT");
 
     openAgentReport(/latest earnings readout/i);
 
@@ -1844,7 +2171,7 @@ describe("Home page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+    submitTicker();
     openAgentReport(/latest earnings readout/i);
 
     expect(

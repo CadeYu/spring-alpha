@@ -200,7 +200,7 @@ const RESEARCH_TASKS = [
 }>;
 
 export default function EarningsAnalystApp() {
-  const [ticker, setTicker] = useState("AAPL");
+  const [ticker, setTicker] = useState("");
   const [activeTicker, setActiveTicker] = useState(""); // only set on submit
   const [lang, setLang] = useState("en");
   const [model, setModel] = useState<ByokProviderId>("siliconflow");
@@ -225,7 +225,7 @@ export default function EarningsAnalystApp() {
   const selectedProvider =
     BYOK_PROVIDERS.find((provider) => provider.id === model) ??
     BYOK_PROVIDERS[0];
-  const reportTitleTicker = activeTicker || ticker;
+  const reportTitleTicker = activeTicker;
   const orderedReports = RESEARCH_TASKS.flatMap((task) => {
     const taskReport = reportsByTask[task.id];
     return taskReport ? [{ task, report: taskReport }] : [];
@@ -239,9 +239,16 @@ export default function EarningsAnalystApp() {
     activeReportTaskId === null
       ? null
       : orderedReports.find(({ task }) => task.id === activeReportTaskId) ?? null;
-  const timelineReport =
-    activeReportEntry?.report ?? orderedReports[orderedReports.length - 1]?.report ?? null;
-  const timelineTask = activeReportEntry?.task ?? orderedReports[orderedReports.length - 1]?.task;
+  const timelineMetadata = buildTimelineMetadata(orderedReports, activeReportEntry);
+  const timelineTaskTitle = activeReportEntry?.task
+    ? isZh
+      ? activeReportEntry.task.titleZh
+      : activeReportEntry.task.title
+    : orderedReports.length > 0
+      ? isZh
+        ? "全部 Agent"
+        : "All agents"
+      : undefined;
   useEffect(() => {
     const savedKey = window.localStorage.getItem(selectedProvider.storageKey);
     if (savedKey) {
@@ -372,7 +379,7 @@ export default function EarningsAnalystApp() {
             : current,
         );
 
-        await runResearchTask({
+        const taskResult = await runResearchTask({
           taskId: task.id,
           requestId,
           submittedTicker,
@@ -383,10 +390,30 @@ export default function EarningsAnalystApp() {
         setPipelineRuns((current) =>
           current.map((run) =>
             run.taskId === task.id
-              ? { ...run, phase: "received", completedAt: Date.now() }
+              ? {
+                  ...run,
+                  phase: taskResult.phase,
+                  completedAt: Date.now(),
+                }
               : run,
           ),
         );
+        if (taskResult.phase === "failed") {
+          setRunState((current) =>
+            current && current.ticker === submittedTicker
+              ? { ...current, phase: "failed" }
+              : current,
+          );
+          setError(
+            taskResult.error ?? {
+              message: "Research agent failed before producing a final report.",
+              source: "python-research-service",
+              code: "RESEARCH_AGENT_DEGRADED",
+              degraded: true,
+            },
+          );
+          break;
+        }
       }
     } catch (error) {
       if (controller.signal.aborted) {
@@ -418,7 +445,7 @@ export default function EarningsAnalystApp() {
     submittedTicker: string;
     runtimeProviderKey: string;
     controller: AbortController;
-  }) => {
+  }): Promise<{ phase: "received" | "failed"; error?: AnalysisErrorState }> => {
     console.log(
       `Fetching ${taskId} analysis for ${submittedTicker} using ${model} in ${lang}...`,
     );
@@ -483,6 +510,12 @@ export default function EarningsAnalystApp() {
               ...current,
               [taskId]: mergeReportChunks(current[taskId], reportData),
             }));
+            if (isDegradedReportWithoutTaskSections(reportData)) {
+              return {
+                phase: "failed",
+                error: degradedReportError(reportData),
+              };
+            }
             console.log("Received progressive report chunk");
           } catch (e) {
             console.warn("JSON parse error:", e);
@@ -492,6 +525,7 @@ export default function EarningsAnalystApp() {
 
       buffer = lines[lines.length - 1];
     }
+    return { phase: "received" };
   };
 
   useEffect(() => {
@@ -569,6 +603,10 @@ export default function EarningsAnalystApp() {
             {/* Row 1: Ticker, Language, Button */}
             <div className="flex gap-2">
               <div className="relative flex-1">
+                <div
+                  data-testid="ticker-input-group"
+                  className="flex h-14 items-stretch overflow-hidden rounded-lg border border-emerald-500/70 bg-slate-950 shadow-[0_0_0_1px_rgba(16,185,129,0.2)] focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-500/30"
+                >
                 <Input
                   ref={tickerInputRef}
                   value={ticker}
@@ -592,14 +630,14 @@ export default function EarningsAnalystApp() {
                       ? "输入股票代码 (如 AAPL, MSFT)"
                       : "Enter Ticker (e.g., AAPL, MSFT, TSLA)"
                   }
-                  className="h-14 rounded-lg border-emerald-500/70 bg-slate-950 pr-16 text-xl font-bold tracking-widest text-emerald-200 shadow-[0_0_0_1px_rgba(16,185,129,0.2)] focus-visible:border-emerald-400 focus-visible:ring-emerald-500/30"
+                  className="h-full flex-1 border-0 bg-transparent pr-16 text-xl font-bold tracking-widest text-emerald-200 shadow-none focus-visible:ring-0"
                 />
                 <Button
                   type="button"
                   aria-label={isZh ? "开始分析" : "Analyze ticker"}
                   onClick={() => void handleSearch(tickerInputRef.current?.value)}
                   disabled={isLoading}
-                  className="absolute right-2 top-1/2 h-10 w-10 -translate-y-1/2 rounded-lg bg-emerald-400 p-0 text-slate-950 shadow-lg shadow-emerald-950/40 hover:bg-emerald-300"
+                  className="my-auto mr-2 h-10 w-10 shrink-0 rounded-lg bg-emerald-400 p-0 text-slate-950 shadow-lg shadow-emerald-950/40 hover:bg-emerald-300"
                 >
                   {isLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -607,6 +645,7 @@ export default function EarningsAnalystApp() {
                     <ArrowRight className="h-5 w-5" />
                   )}
                 </Button>
+                </div>
                 {tickerSuggestionsOpen && tickerSuggestions.length > 0 && (
                   <div
                     id="ticker-suggestion-list"
@@ -750,8 +789,8 @@ export default function EarningsAnalystApp() {
             activeTaskId={activeReportTaskId}
             onSelectTask={setActiveReportTaskId}
             isZh={isZh}
-            timelineMetadata={timelineReport?.metadata}
-            timelineTaskTitle={timelineTask ? (isZh ? timelineTask.titleZh : timelineTask.title) : undefined}
+            timelineMetadata={timelineMetadata}
+            timelineTaskTitle={timelineTaskTitle}
           />
 
           <div className="min-w-0 space-y-6">
@@ -838,7 +877,9 @@ export default function EarningsAnalystApp() {
               {isZh ? "内部验证信息" : "Internal validation artifacts"}
             </p>
           )}
-          {diagnosticsOpen && <RagEvalDashboard />}
+          {diagnosticsOpen && (
+            <RagEvalDashboard reports={orderedReports.map(({ report }) => report)} />
+          )}
         </section>
       </div>
     </div>
@@ -954,6 +995,36 @@ function RunStatusMetric({
   );
 }
 
+function buildTimelineMetadata(
+  orderedReports: Array<{
+    task: (typeof RESEARCH_TASKS)[number];
+    report: AnalysisReport;
+  }>,
+  activeReportEntry:
+    | {
+        task: (typeof RESEARCH_TASKS)[number];
+        report: AnalysisReport;
+      }
+    | null,
+): AnalysisMetadata | undefined {
+  if (activeReportEntry) return activeReportEntry.report.metadata;
+
+  const agentEvents = orderedReports.flatMap(
+    ({ report }) => report.metadata?.agentEvents ?? [],
+  );
+  if (agentEvents.length === 0) return undefined;
+
+  const firstMetadata = orderedReports.find(
+    ({ report }) => report.metadata,
+  )?.report.metadata;
+  return {
+    modelName: firstMetadata?.modelName ?? "multiple agents",
+    generatedAt: firstMetadata?.generatedAt ?? "",
+    language: firstMetadata?.language ?? "en",
+    agentEvents,
+  };
+}
+
 function AgentPipelinePanel({
   runs,
   reportsByTask,
@@ -1032,7 +1103,12 @@ function AgentPipelinePanel({
           {activeRuns.map((run, index) => {
             const task = RESEARCH_TASKS.find((item) => item.id === run.taskId);
             const Icon = task?.Icon ?? Bot;
-            const phase = reportsByTask[run.taskId] ? "received" : run.phase;
+            const phase =
+              run.phase === "failed"
+                ? "failed"
+                : reportsByTask[run.taskId]
+                  ? "received"
+                  : run.phase;
             const selected = activeTaskId === run.taskId;
             return (
               <button
@@ -1264,6 +1340,7 @@ function MarketCandlestickPanel({
   lang: string;
 }) {
   const isZh = lang === "zh";
+  const normalizedTicker = ticker.trim().toUpperCase();
   const [candles, setCandles] = useState<MarketCandle[]>([]);
   const [loading, setLoading] = useState(false);
   const [hoveredCandle, setHoveredCandle] = useState<MarketChartHover | null>(
@@ -1345,7 +1422,13 @@ function MarketCandlestickPanel({
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2 text-emerald-400">
               <TrendingUp className="h-5 w-5" />
-              {isZh ? `${ticker} K 线图` : `${ticker} Market Chart`}
+              {normalizedTicker
+                ? isZh
+                  ? `${normalizedTicker} K 线图`
+                  : `${normalizedTicker} Market Chart`
+                : isZh
+                  ? "输入股票代码后查看 K 线图"
+                  : "Enter a ticker to load the market chart"}
             </CardTitle>
             <p className="mt-1 text-xs text-slate-500">
               {isZh
@@ -1419,7 +1502,13 @@ function MarketCandlestickPanel({
           </div>
         ) : candles.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-slate-500">
-            {isZh ? "暂无可展示的行情 K 线。" : "No market candles available."}
+            {normalizedTicker
+              ? isZh
+                ? "暂无可展示的行情 K 线。"
+                : "No market candles available."
+              : isZh
+                ? "先输入股票代码，再查看行情与财报。"
+                : "Enter a ticker above to load the market chart and reports."}
           </div>
         ) : (
           <TradingCandlestickChart
@@ -2419,24 +2508,25 @@ function EvidenceMetricBlock({ metric }: { metric: EvidenceBoundMetric }) {
   );
 }
 
-function formatMetricDisplayValue(value: string) {
-  const trimmedValue = value.trim();
-  if (!trimmedValue) return value;
+function formatMetricDisplayValue(value: unknown) {
+  const rawValue = value === null || value === undefined ? "" : String(value);
+  const trimmedValue = rawValue.trim();
+  if (!trimmedValue) return rawValue;
 
   if (
     /[%]|(?:\b|[0-9])(k|m|b|t|million|billion|trillion)\b/i.test(trimmedValue)
   ) {
-    return value;
+    return rawValue;
   }
 
   const numericMatch = trimmedValue.match(
     /^([$€£¥])?\s*(-?\d[\d,]*(?:\.\d+)?)\s*(USD|EUR|GBP|JPY|CNY)?$/i,
   );
-  if (!numericMatch) return value;
+  if (!numericMatch) return rawValue;
 
   const [, leadingCurrency, rawNumber, trailingCurrency] = numericMatch;
   const numericValue = Number(rawNumber.replace(/,/g, ""));
-  if (!Number.isFinite(numericValue)) return value;
+  if (!Number.isFinite(numericValue)) return rawValue;
 
   const absoluteValue = Math.abs(numericValue);
   const compactUnit =
@@ -2450,10 +2540,9 @@ function formatMetricDisplayValue(value: string) {
             ? { divisor: 1_000, suffix: "K" }
             : null;
 
-  if (!compactUnit) return value;
+  if (!compactUnit) return rawValue;
 
-  const currencySymbol =
-    leadingCurrency ?? currencyCodeToSymbol(trailingCurrency);
+  const currencySymbol = leadingCurrency || currencyCodeToSymbol(trailingCurrency) || "$";
   const compactNumber = (numericValue / compactUnit.divisor)
     .toFixed(1)
     .replace(/\.0$/, "");
@@ -2615,6 +2704,28 @@ function userFacingErrorMessage(message: string, code?: string): string {
     return "The research agent took too long to finish. Please retry or choose a narrower task while we optimize live report generation.";
   }
   return message;
+}
+
+function isDegradedReportWithoutTaskSections(
+  reportData: Partial<AnalysisReport>,
+): boolean {
+  return (
+    reportData.sourceContext?.status?.toUpperCase() === "DEGRADED" &&
+    !reportData.taskSections
+  );
+}
+
+function degradedReportError(reportData: Partial<AnalysisReport>): AnalysisErrorState {
+  const message =
+    reportData.sourceContext?.message ||
+    reportData.executiveSummary ||
+    "Research agent failed before producing a final report.";
+  return {
+    message,
+    source: "python-research-service",
+    code: "RESEARCH_AGENT_DEGRADED",
+    degraded: true,
+  };
 }
 
 function normalizeAnalysisError(error: unknown): AnalysisErrorState {

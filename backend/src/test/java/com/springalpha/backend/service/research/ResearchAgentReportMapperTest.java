@@ -34,6 +34,7 @@ class ResearchAgentReportMapperTest {
                         0,
                         null)),
                 List.of(),
+                List.of(),
                 Map.of(
                         "company_name", "Apple Inc.",
                         "period", "FY2026 Q2",
@@ -105,6 +106,7 @@ class ResearchAgentReportMapperTest {
                 "ok",
                 List.of(),
                 List.of(),
+                List.of(),
                 Map.of(
                         "company_name", "Apple Inc.",
                         "period", "FY2026 Q2",
@@ -160,6 +162,161 @@ class ResearchAgentReportMapperTest {
     }
 
     @Test
+    void mapsDegradedResultWithoutFinalReportIntoTransparentAnalysisReport() {
+        ResearchAgentResult result = new ResearchAgentResult(
+                "run_degraded_001",
+                ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+                "degraded",
+                List.of(new ResearchAgentEvent(
+                        "run_degraded_001",
+                        ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+                        "degraded",
+                        "degraded",
+                        "Cash flow research agent failed.",
+                        null,
+                        "reasoning",
+                        "Cash Flow Analyst",
+                        "test-model",
+                        Map.of(),
+                        Map.of(),
+                        0,
+                        "Cash flow research agent failed: validation error")),
+                List.of("Cash flow research agent failed: validation error"),
+                List.of(),
+                null);
+
+        AnalysisReport report = mapper.toAnalysisReport(result, "en");
+
+        assertEquals("Cash flow research agent failed: validation error", report.getExecutiveSummary());
+        assertEquals("DEGRADED", report.getSourceContext().getStatus());
+        assertEquals("Cash flow research agent failed: validation error",
+                report.getSourceContext().getMessage());
+        assertNull(report.getTaskSections());
+        assertEquals("degraded", report.getMetadata().getAgentEvents().get(0).getPhase());
+        assertEquals("Cash flow research agent failed: validation error",
+                report.getMetadata().getAgentEvents().get(0).getDegradedReason());
+    }
+
+    @Test
+    void mapsCompletedReportWithPartialEvidenceAsLimitedSourceContext() {
+        ResearchAgentResult result = new ResearchAgentResult(
+                "run_limited_001",
+                ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+                "ok",
+                List.of(new ResearchAgentEvent(
+                        "run_limited_001",
+                        ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+                        "collect_financial_facts",
+                        "partial",
+                        "Collected partial company facts.",
+                        "get_company_facts",
+                        "tool",
+                        "Cash Flow Analyst",
+                        "test-model",
+                        Map.of("metrics", List.of("operating cash flow", "buybacks")),
+                        Map.of(),
+                        0,
+                        "SEC company facts missing metrics: buybacks")),
+                List.of("SEC company facts missing metrics: buybacks"),
+                List.of(),
+                Map.of(
+                        "company_name", "Apple Inc.",
+                        "sections", Map.of("summary", "Cash report completed with limited evidence."),
+                        "task_sections", Map.of(
+                                "schema_version", "task_sections.v1",
+                                "task_type", "cash_flow_capital_allocation",
+                                "coverage", Map.of(
+                                        "status", "partial",
+                                        "missing_sections", List.of(),
+                                        "evidence_count", 1),
+                                "cash_quality_verdict", Map.of(
+                                        "headline", "Cash conversion remains usable",
+                                        "earnings_backed_by_cash", "mixed",
+                                        "summary", "Operating cash flow evidence is usable."),
+                                "cash_metrics", List.of(),
+                                "capital_allocation", Map.of(
+                                        "capex", List.of(),
+                                        "buybacks", List.of(),
+                                        "dividends", List.of(),
+                                        "debt", List.of(),
+                                        "liquidity", List.of()),
+                                "allocation_discipline", List.of(),
+                                "red_flags", List.of())));
+
+        AnalysisReport report = mapper.toAnalysisReport(result, "en");
+
+        assertEquals("LIMITED", report.getSourceContext().getStatus());
+        assertEquals("SEC company facts missing metrics: buybacks",
+                report.getSourceContext().getMessage());
+        assertNotNull(report.getTaskSections());
+        assertEquals("partial", report.getTaskSections().getCoverage().getStatus());
+    }
+
+    @Test
+    void mapsRetrievalRecordsIntoLiveRagTelemetry() {
+        ResearchAgentResult result = new ResearchAgentResult(
+                "run_rag_telemetry_001",
+                ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "ok",
+                List.of(),
+                List.of(),
+                List.of(),
+                Map.of(
+                        "company_name", "Apple Inc.",
+                        "sections", Map.of("summary", "Telemetry report."),
+                        "task_sections", Map.of(
+                                "schema_version", "task_sections.v1",
+                                "task_type", "latest_earnings_readout",
+                                "coverage", Map.of(
+                                        "status", "complete",
+                                        "missing_sections", List.of(),
+                                        "evidence_count", 5),
+                                "topline_verdict", Map.of(
+                                        "headline", "Telemetry verdict",
+                                        "summary", "Telemetry summary.",
+                                        "verdict", "mixed"),
+                                "key_takeaways", List.of(),
+                                "financial_dashboard", Map.of(
+                                        "metrics", List.of(),
+                                        "chart_focus", List.of()),
+                                "driver_snapshot", List.of(),
+                                "risk_snapshot", List.of()),
+                        "retrieval_records", List.of(
+                                Map.of(
+                                        "tool_name", "search_metric_evidence",
+                                        "latency_ms", 120,
+                                        "record_count", 4),
+                                Map.of(
+                                        "tool_name", "build_evidence_pack",
+                                        "latency_ms", 380,
+                                        "retrieved_nodes", List.of(
+                                                Map.of("section", "Management Discussion and Analysis"),
+                                                Map.of("section", "Risk Factors"),
+                                                Map.of("section", "Segment Information"),
+                                                Map.of("section", "Segment Information"),
+                                                Map.of("section", "Notes to Consolidated Financial Statements")),
+                                        "evidence_pack", Map.of(
+                                                "retrieval_status", "ok",
+                                                "filing_evidence_count", 3,
+                                                "metric_fact_count", 7,
+                                                "serialized_length", 6120,
+                                                "sections", List.of(
+                                                        "Management Discussion and Analysis",
+                                                        "Segment Information"))))));
+
+        AnalysisReport report = mapper.toAnalysisReport(result, "en");
+
+        assertNotNull(report.getRagTelemetry());
+        assertEquals(5, report.getRagTelemetry().getEvidenceRetrieved());
+        assertEquals(3, report.getRagTelemetry().getEvidenceUsed());
+        assertEquals(7, report.getRagTelemetry().getMetricFacts());
+        assertEquals(4, report.getRagTelemetry().getSectionsCovered());
+        assertEquals(500, report.getRagTelemetry().getRetrievalLatencyMs());
+        assertFalse(report.getRagTelemetry().isEmptyRetrieval());
+        assertEquals(6120, report.getRagTelemetry().getEvidencePackBytes());
+    }
+
+    @Test
     void mapsLatestEarningsLlmSynthesisTaskSectionsIntoJavaContract() {
         Map<String, Object> sourceRef = Map.of(
                 "section", "Management Discussion and Analysis",
@@ -176,6 +333,7 @@ class ResearchAgentReportMapperTest {
                 "run_latest_001",
                 ResearchTaskType.LATEST_EARNINGS_READOUT,
                 "ok",
+                List.of(),
                 List.of(),
                 List.of(),
                 Map.of(

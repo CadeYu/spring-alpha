@@ -62,6 +62,47 @@ class ResearchServiceAgentClientTest {
     }
 
     @Test
+    void runPreservesDegradedResultWithoutFinalReport() {
+        WebClient.Builder builder = WebClient.builder()
+                .exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.OK)
+                        .header("Content-Type", "application/json")
+                        .body("""
+                                {
+                                  "run_id": "run_degraded_001",
+                                  "task_type": "cash_flow_capital_allocation",
+                                  "status": "degraded",
+                                  "events": [
+                                    {
+                                      "run_id": "run_degraded_001",
+                                      "task_type": "cash_flow_capital_allocation",
+                                      "phase": "degraded",
+                                      "status": "degraded",
+                                      "summary": "Cash flow research agent failed.",
+                                      "degraded_reason": "Cash flow research agent failed: validation error"
+                                    }
+                                  ],
+                                  "degraded_reasons": [
+                                    "Cash flow research agent failed: validation error"
+                                  ],
+                                  "final_report": null
+                                }
+                                """)
+                        .build()));
+        ResearchServiceAgentClient client = new ResearchServiceAgentClient(
+                builder,
+                "http://127.0.0.1:8090",
+                Duration.ofSeconds(1));
+
+        ResearchAgentResult result = client.run(request()).block();
+
+        assertNotNull(result);
+        assertEquals("degraded", result.status());
+        assertNull(result.finalReport());
+        assertEquals("Cash flow research agent failed: validation error",
+                result.degradedReasons().getFirst());
+    }
+
+    @Test
     void runDecodesLiveRagResponsesLargerThanDefaultWebClientBuffer() throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/agent/runs", exchange -> {

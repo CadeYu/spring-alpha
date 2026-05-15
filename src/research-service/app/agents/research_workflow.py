@@ -191,11 +191,7 @@ def _result(
     *,
     final_report: EvidenceAwareReport | None,
 ) -> BoundedAgentResult:
-    status = (
-        AgentRunStatus.DEGRADED
-        if state.degraded_reasons or state.status == AgentRunStatus.DEGRADED
-        else AgentRunStatus.OK
-    )
+    status = AgentRunStatus.DEGRADED if final_report is None else AgentRunStatus.OK
     return BoundedAgentResult(
         run_id=request.run_id,
         task_type=request.task_type,
@@ -203,6 +199,6 @@ def _result(
         events=state.tool_events,
         degraded_reasons=state.degraded_reasons,
         retrieval_records=state.retrieval_records,
-        retryable=status == AgentRunStatus.DEGRADED,
+        retryable=final_report is None,
         final_report=final_report.model_dump(mode="json") if final_report is not None else None,
     )

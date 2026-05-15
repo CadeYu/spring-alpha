@@ -254,6 +254,33 @@ def test_synthesizer_normalizes_deepseek_string_profile_and_claims() -> None:
     assert report.claims[0].citation_status == CitationStatus.UNVERIFIED
 
 
+def test_latest_earnings_synthesizer_drops_blank_claim_objects() -> None:
+    state = state_with_evidence()
+
+    report = build_latest_earnings_report_from_payload(
+        request(),
+        state,
+        {
+            "topline_verdict": {
+                "headline": "Services demand frames the quarter",
+                "summary": "Evidence points to stronger services demand.",
+                "verdict": "mixed",
+            },
+            "key_takeaways": [],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "claims": [
+                {"text": "", "source_ids": ["src_1"], "citation_status": "supported"},
+                {"summary": "Services demand improved.", "source_ids": ["src_1"]},
+                {"claim": "   ", "source_ids": ["src_1"]},
+            ],
+        },
+    )
+
+    assert [claim.text for claim in report.claims] == ["Services demand improved."]
+
+
 def test_synthesizer_normalizes_deepseek_object_cash_metrics() -> None:
     state = state_with_cash_flow_evidence()
 
@@ -264,7 +291,7 @@ def test_synthesizer_normalizes_deepseek_object_cash_metrics() -> None:
             "cash_quality_verdict": {
                 "headline": "Cash generation supports earnings quality",
                 "earnings_backed_by_cash": "yes",
-                "summary": "Operating cash flow supports the earnings base.",
+                "summary": "Operating Cash Flow supports the earnings base.",
             },
             "cash_metrics": {
                 "operating_cash_flow": "$32.0B",
@@ -288,6 +315,117 @@ def test_synthesizer_normalizes_deepseek_object_cash_metrics() -> None:
         "capital_expenditures",
     ]
     assert report.task_sections.cash_metrics[0].value == "$32.0B"
+
+
+def test_cash_flow_synthesizer_ignores_metric_object_metadata_keys() -> None:
+    state = state_with_cash_flow_evidence()
+
+    report = build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        {
+            "cash_quality_verdict": {
+                "headline": "Cash generation supports returns",
+                "earnings_backed_by_cash": "yes",
+                "summary": "Operating Cash Flow supports the capital return base.",
+            },
+            "cash_metrics": {
+                "operating_cash_flow": "$32.0B",
+                "capex": "$3.0B",
+                "source_ids": ["cash_src_1"],
+                "citation_status": "supported",
+            },
+            "capital_allocation": {
+                "capex": [],
+                "buybacks": [],
+                "dividends": [],
+                "debt": [],
+                "liquidity": [],
+            },
+            "allocation_discipline": [],
+            "red_flags": [],
+            "claims": [],
+        },
+    )
+
+    assert [metric.name for metric in report.task_sections.cash_metrics] == [
+        "operating_cash_flow",
+        "capex",
+    ]
+
+
+def test_cash_flow_synthesizer_recovers_empty_verdict_and_drops_blank_points() -> None:
+    state = state_with_cash_flow_evidence()
+
+    report = build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        {
+            "cash_quality_verdict": {},
+            "cash_metrics": [],
+            "capital_allocation": {
+                "capex": [],
+                "buybacks": [],
+                "dividends": [],
+                "debt": [],
+                "liquidity": [],
+            },
+            "allocation_discipline": [
+                {"title": "Funding discipline", "summary": ""},
+                {
+                    "title": "Cash-funded returns",
+                    "summary": "Capital returns were tied to operating cash flow.",
+                    "source_ids": ["cash_src_1"],
+                },
+            ],
+            "red_flags": [],
+            "claims": [],
+        },
+    )
+
+    assert report.task_sections.cash_quality_verdict.headline == (
+        "Cash flow evidence is available"
+    )
+    assert report.task_sections.cash_quality_verdict.earnings_backed_by_cash == "unclear"
+    assert report.task_sections.cash_quality_verdict.summary == (
+        "Operating cash flow evidence is available, but the model did not provide a "
+        "complete cash quality verdict."
+    )
+    assert [point.title for point in report.task_sections.allocation_discipline] == [
+        "Cash-funded returns"
+    ]
+
+
+def test_cash_flow_synthesizer_folds_top_level_summary_into_verdict() -> None:
+    state = state_with_cash_flow_evidence()
+
+    report = build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        {
+            "summary": "Operating Cash Flow funded capital returns despite timing noise.",
+            "cash_metrics": [],
+            "capital_allocation": {
+                "capex": [],
+                "buybacks": [],
+                "dividends": [],
+                "debt": [],
+                "liquidity": [],
+            },
+            "allocation_discipline": [],
+            "red_flags": [],
+            "claims": [],
+        },
+    )
+
+    verdict = report.task_sections.cash_quality_verdict
+    assert verdict.headline == (
+        "Operating Cash Flow funded capital returns despite timing noise."
+    )
+    assert verdict.earnings_backed_by_cash == "yes"
+    assert verdict.summary == (
+        "Operating Cash Flow funded capital returns despite timing noise."
+    )
 
 
 def test_latest_earnings_synthesizer_recovers_compact_topline_verdict() -> None:
@@ -322,7 +460,7 @@ def test_cash_flow_synthesizer_normalizes_item_and_assessment_points() -> None:
         state,
         {
             "cash_quality_verdict": {
-                "summary": "Operating cash flow funded capital returns.",
+                "summary": "Operating Cash Flow funded capital returns.",
                 "rating": "high_quality_with_caveats",
             },
             "cash_metrics": [],
@@ -355,7 +493,7 @@ def test_cash_flow_synthesizer_normalizes_item_and_assessment_points() -> None:
     )
 
     verdict = report.task_sections.cash_quality_verdict
-    assert verdict.headline == "Operating cash flow funded capital returns."
+    assert verdict.headline == "Operating Cash Flow funded capital returns."
     assert verdict.earnings_backed_by_cash == "yes"
     assert report.task_sections.capital_allocation.capex[0].title == "Capex"
     assert report.task_sections.allocation_discipline[0].title == "Allocation discipline"
@@ -392,6 +530,42 @@ def test_business_driver_synthesizer_recovers_compact_driver_thesis() -> None:
         "Cloud demand and AI platform pull-through are durable drivers."
     )
     assert report.task_sections.driver_thesis.durability == "durable"
+
+
+def test_business_driver_synthesizer_recovers_empty_driver_thesis() -> None:
+    state = state_with_business_driver_evidence()
+
+    report = build_business_driver_report_from_payload(
+        business_driver_request(),
+        state,
+        {
+            "driver_thesis": {},
+            "driver_map": {
+                "product": [
+                    {
+                        "title": "Services engagement",
+                        "summary": "Installed base engagement expanded across customers.",
+                        "source_ids": ["driver_src_1"],
+                    }
+                ],
+                "segment": [],
+                "geography": [],
+                "demand": [],
+                "pricing": [],
+                "customer": [],
+                "strategy": [],
+            },
+            "positive_signals": [],
+            "negative_signals": [],
+            "watchlist": [],
+            "claims": [],
+        },
+    )
+
+    thesis = report.task_sections.driver_thesis
+    assert thesis.headline == "Services engagement"
+    assert thesis.durability == "durable"
+    assert thesis.summary == "Installed base engagement expanded across customers."
 
 
 def test_cash_flow_synthesizer_normalizes_object_and_point_lists() -> None:
@@ -446,7 +620,7 @@ def test_cash_flow_synthesizer_recovers_malformed_cash_sections() -> None:
             "cash_quality_verdict": {
                 "headline": "Cash flow is strong",
                 "earnings_backed_by_cash": "yes",
-                "summary": "Operating cash flow supports the earnings base.",
+                "summary": "Operating Cash Flow supports the earnings base.",
             },
             "cash_metrics": ": ",
             "capital_allocation": ": ",
@@ -646,6 +820,50 @@ def test_business_driver_synthesizer_drops_empty_summary_points() -> None:
     assert len(report.task_sections.driver_map.product) == 1
     assert report.task_sections.driver_map.segment == []
     assert report.task_sections.positive_signals == []
+
+
+def test_business_driver_synthesizer_normalizes_punctuated_driver_map_keys() -> None:
+    state = state_with_business_driver_evidence()
+
+    report = build_business_driver_report_from_payload(
+        business_driver_request(),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "AI demand is the core driver",
+                "durability": "durable",
+                "summary": "AI platform demand remains durable.",
+            },
+            "driver_map": {
+                ":segment": [
+                    {
+                        "title": "Data center",
+                        "summary": "Data center demand is driving segment growth.",
+                        "source_ids": ["driver_src_1"],
+                    }
+                ],
+                ".strategy": [
+                    {
+                        "title": "Platform expansion",
+                        "summary": "Management is expanding the platform strategy.",
+                    }
+                ],
+                "unsupported_bucket": [
+                    {
+                        "title": "Ignore",
+                        "summary": "This bucket should not break validation.",
+                    }
+                ],
+            },
+            "positive_signals": [],
+            "negative_signals": [],
+            "watchlist": [],
+            "claims": [],
+        },
+    )
+
+    assert report.task_sections.driver_map.segment[0].title == "Data center"
+    assert report.task_sections.driver_map.strategy[0].title == "Platform expansion"
 
 
 def test_business_driver_synthesizer_normalizes_dotted_summary_key() -> None:
@@ -1028,7 +1246,7 @@ def test_latest_earnings_prompt_instructs_kpi_strip_to_use_metric_values() -> No
     assert "revenue, gross margin, and operating income" in client.user_prompt
 
 
-def test_synthesizer_rejects_unknown_source_ids() -> None:
+def test_synthesizer_downgrades_unknown_source_ids() -> None:
     state = state_with_evidence()
     client = StaticJsonLlmClient(
         {
@@ -1058,12 +1276,110 @@ def test_synthesizer_rejects_unknown_source_ids() -> None:
         }
     )
 
-    try:
-        synthesize_latest_earnings_report(request(), state, client)
-    except ReportSynthesisError as exc:
-        assert "Unknown source_id" in str(exc)
-    else:
-        raise AssertionError("synthesizer should reject unknown source ids")
+    report = synthesize_latest_earnings_report(request(), state, client)
+
+    assert report.task_sections.key_takeaways[0].title == "Unsupported point"
+    assert report.task_sections.key_takeaways[0].evidence_refs == []
+    assert report.task_sections.key_takeaways[0].citation_status == (
+        CitationStatus.UNVERIFIED
+    )
+    assert report.claims[0].source_refs == []
+    assert report.claims[0].citation_status == CitationStatus.UNVERIFIED
+
+
+def test_synthesizer_accepts_long_full_filing_source_alias() -> None:
+    long_source_id = "AAPL:unknown:full-filing:0:78:d11e035557c"
+    state = state_with_evidence()
+    state = state.model_copy(
+        update={
+            "evidence_memory": state.evidence_memory.model_copy(
+                update={
+                    "source_refs": [
+                        {
+                            **state.evidence_memory.source_refs[0],
+                            "source_id": long_source_id,
+                        }
+                    ]
+                }
+            )
+        }
+    )
+    client = StaticJsonLlmClient(
+        {
+            "topline_verdict": {
+                "headline": "Long source aliases should remain valid",
+                "summary": "The report cites a long full-filing source alias.",
+                "verdict": "mixed",
+            },
+            "key_takeaways": [
+                {
+                    "title": "Alias-backed point",
+                    "summary": "The source alias should map to the original evidence.",
+                    "source_ids": [long_source_id],
+                    "citation_status": "supported",
+                }
+            ],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "claims": [
+                {
+                    "text": "This claim should keep the long source alias.",
+                    "source_ids": [long_source_id],
+                    "citation_status": "supported",
+                }
+            ],
+        }
+    )
+
+    report = synthesize_latest_earnings_report(request(), state, client)
+
+    assert report.task_sections.key_takeaways[0].evidence_refs[0].source_id == long_source_id
+    assert report.claims[0].source_refs[0].source_id == long_source_id
+
+
+def test_synthesizer_removes_internal_source_ids_from_user_text() -> None:
+    state = state_with_evidence()
+    source_id = "src_1"
+    client = StaticJsonLlmClient(
+        {
+            "topline_verdict": {
+                "headline": "Readable headline",
+                "summary": "Demand improved (source_id: src_1) and margins expanded.",
+                "verdict": "positive",
+            },
+            "key_takeaways": [
+                {
+                    "title": "Demand",
+                    "summary": "source_id=src_1 Demand improved across the cited base.",
+                    "source_ids": [source_id],
+                    "citation_status": "supported",
+                }
+            ],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "claims": [
+                {
+                    "text": "Demand improved (node_id: src_1).",
+                    "source_ids": [source_id],
+                    "citation_status": "supported",
+                }
+            ],
+        }
+    )
+
+    report = synthesize_latest_earnings_report(request(), state, client)
+
+    visible_text = " ".join(
+        [
+            report.sections["summary"],
+            report.task_sections.key_takeaways[0].summary,
+            report.claims[0].text,
+        ]
+    )
+    assert "source_id" not in visible_text
+    assert "node_id" not in visible_text
 
 
 def test_synthesizer_accepts_sec_companyfacts_source_alias() -> None:
@@ -1211,7 +1527,7 @@ def test_business_driver_prompt_prioritizes_operating_drivers_over_compliance() 
     assert "must not be the main driver_thesis" in client.user_prompt
 
 
-def test_business_driver_synthesizer_rejects_unknown_source_ids() -> None:
+def test_business_driver_synthesizer_downgrades_unknown_source_ids() -> None:
     state = state_with_business_driver_evidence()
     client = StaticJsonLlmClient(
         {
@@ -1243,12 +1559,12 @@ def test_business_driver_synthesizer_rejects_unknown_source_ids() -> None:
         }
     )
 
-    try:
-        synthesize_business_driver_report(business_driver_request(), state, client)
-    except ReportSynthesisError as exc:
-        assert "Unknown source_id" in str(exc)
-    else:
-        raise AssertionError("business driver synthesizer should reject unknown source ids")
+    report = synthesize_business_driver_report(business_driver_request(), state, client)
+
+    product = report.task_sections.driver_map.product[0]
+    assert product.title == "Unsupported"
+    assert product.evidence_refs == []
+    assert product.citation_status == CitationStatus.UNVERIFIED
 
 
 def test_business_driver_synthesizer_normalizes_node_payload_points() -> None:
@@ -1299,10 +1615,10 @@ def test_synthesizer_builds_cash_flow_sections_from_evidence() -> None:
     report = synthesize_cash_flow_report(cash_flow_request(), state, client)
 
     assert report.task_sections.cash_quality_verdict.headline == (
-        "Operating cash flow supports capital returns"
+        "Operating Cash Flow supports capital returns"
     )
     assert report.task_sections.cash_quality_verdict.earnings_backed_by_cash == "mixed"
-    assert report.task_sections.cash_metrics[0].name == "Operating cash flow"
+    assert report.task_sections.cash_metrics[0].name == "Operating Cash Flow"
     assert report.task_sections.cash_metrics[0].evidence_refs[0].source_id == "cash_src_1"
     assert report.task_sections.capital_allocation.buybacks[0].evidence_refs[0].source_id == (
         "cash_src_1"
@@ -1350,6 +1666,40 @@ def test_cash_flow_synthesizer_backfills_empty_metrics_from_facts() -> None:
     assert report.task_sections.capital_allocation.liquidity[0].title == "Cash flow anchor"
 
 
+def test_cash_flow_synthesizer_replaces_non_extracted_metrics_from_facts() -> None:
+    state = state_with_cash_flow_evidence()
+
+    report = build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        {
+            "cash_quality_verdict": {
+                "headline": "Cash conversion remains strong",
+                "earnings_backed_by_cash": "yes",
+                "summary": "Cash conversion remains strong.",
+            },
+            "cash_metrics": [
+                {
+                    "name": "Metric",
+                    "value": "Not extracted",
+                    "period": "latest_quarter",
+                    "interpretation": "Not extracted from the filing.",
+                    "source_ids": [],
+                    "citation_status": "missing",
+                }
+            ],
+            "capital_allocation": ": ",
+            "allocation_discipline": [],
+            "red_flags": [],
+            "claims": [],
+        },
+    )
+
+    assert report.task_sections.cash_metrics[0].name == "Operating Cash Flow"
+    assert report.task_sections.cash_metrics[0].value == "$29.0B"
+    assert report.task_sections.cash_metrics[0].evidence_refs[0].source_id == "cash_src_1"
+
+
 def test_cash_flow_prompt_requires_separate_capital_allocation_categories() -> None:
     state = state_with_cash_flow_evidence()
     client = CapturingLlmClient(cash_flow_synthesis_payload("cash_src_1"))
@@ -1361,16 +1711,16 @@ def test_cash_flow_prompt_requires_separate_capital_allocation_categories() -> N
     assert "Do not collapse all capital return evidence into liquidity" in client.user_prompt
 
 
-def test_cash_flow_synthesizer_rejects_unknown_source_ids() -> None:
+def test_cash_flow_synthesizer_downgrades_unknown_source_ids() -> None:
     state = state_with_cash_flow_evidence()
     client = StaticJsonLlmClient(cash_flow_synthesis_payload("missing_cash_source"))
 
-    try:
-        synthesize_cash_flow_report(cash_flow_request(), state, client)
-    except ReportSynthesisError as exc:
-        assert "Unknown source_id" in str(exc)
-    else:
-        raise AssertionError("cash flow synthesizer should reject unknown source ids")
+    report = synthesize_cash_flow_report(cash_flow_request(), state, client)
+
+    assert report.task_sections.cash_metrics[0].evidence_refs == []
+    assert report.task_sections.cash_metrics[0].citation_status == (
+        CitationStatus.UNVERIFIED
+    )
 
 
 def test_cash_flow_synthesizer_normalizes_value_payload_points() -> None:
@@ -1395,6 +1745,82 @@ def test_cash_flow_synthesizer_normalizes_value_payload_points() -> None:
     assert point.title == "Capital allocation item"
     assert point.summary == "Value was 3000000000 for 2026Q1."
     assert point.evidence_refs[0].source_id == "cash_src_1"
+
+
+def test_cash_flow_synthesizer_accepts_provider_point_aliases_without_extra_fields() -> None:
+    state = state_with_cash_flow_evidence()
+    payload = cash_flow_synthesis_payload("cash_src_1")
+    payload["capital_allocation"]["capex"] = [
+        {
+            "insight": "Capex remained funded by operating cash flow.",
+            "source_id": "cash_src_1",
+            "citation_status": "supported",
+        }
+    ]
+    payload["capital_allocation"]["buybacks"] = [
+        {
+            "title": "Buybacks stayed self-funded",
+            "summary": "Repurchases were supported by the cash generation base.",
+            "source_id": "cash_src_1",
+            "citation_status": "supported",
+        }
+    ]
+
+    report = report_synthesizer.build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        payload,
+    )
+
+    capex = report.task_sections.capital_allocation.capex[0]
+    buybacks = report.task_sections.capital_allocation.buybacks[0]
+    assert capex.summary == "Capex remained funded by operating cash flow."
+    assert capex.evidence_refs[0].source_id == "cash_src_1"
+    assert buybacks.title == "Buybacks stayed self-funded"
+    assert buybacks.evidence_refs[0].source_id == "cash_src_1"
+
+
+def test_cash_flow_synthesizer_ignores_extra_capital_allocation_keys() -> None:
+    state = state_with_cash_flow_evidence()
+    payload = cash_flow_synthesis_payload("cash_src_1")
+    payload["capital_allocation"]["source_ids"] = ["cash_src_1"]
+    payload["capital_allocation"]["summary"] = (
+        "Capital allocation stayed tied to cash generation."
+    )
+    payload["capital_allocation"]["unknown_bucket"] = [
+        {"summary": "This unsupported bucket should be ignored."}
+    ]
+
+    report = report_synthesizer.build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        payload,
+    )
+
+    assert report.task_sections.capital_allocation.capex[0].title == "Capex"
+    assert report.task_sections.capital_allocation.buybacks[0].title == (
+        "Share repurchases"
+    )
+
+
+def test_cash_flow_synthesizer_ignores_top_level_provider_grades() -> None:
+    state = state_with_cash_flow_evidence()
+    payload = cash_flow_synthesis_payload("cash_src_1")
+    payload["score"] = "B+"
+    payload["rationale"] = (
+        "High absolute cash generation, but inventory and FX timing still matter."
+    )
+
+    report = report_synthesizer.build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        payload,
+    )
+
+    assert report.task_sections.cash_quality_verdict.headline == (
+        "Operating Cash Flow supports capital returns"
+    )
+    assert report.task_sections.cash_metrics[0].name == "Operating Cash Flow"
 
 
 def test_synthesizer_prompt_contains_evidence_not_raw_trace() -> None:
@@ -1600,7 +2026,211 @@ def test_synthesizer_accepts_numeric_metric_values_from_provider() -> None:
 
     report = synthesize_latest_earnings_report(request(), state_with_evidence(), client)
 
-    assert report.task_sections.financial_dashboard.metrics[0].value == "219659000000"
+    assert report.task_sections.financial_dashboard.metrics[0].value == "$219.7B"
+
+
+def test_latest_earnings_drops_placeholder_metrics_without_fact_support() -> None:
+    payload = {
+        "topline_verdict": {
+            "headline": "Banking earnings need bank-specific KPIs",
+            "summary": "Gross margin is not meaningful for this report.",
+            "verdict": "mixed",
+        },
+        "key_takeaways": [],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": 49836000000,
+                    "period": "Q1 2026",
+                    "interpretation": "Revenue is available.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Gross Margin",
+                    "value": "Not extracted",
+                    "period": None,
+                    "interpretation": "Not extracted for a bank.",
+                    "source_ids": [],
+                    "citation_status": "missing",
+                },
+                {
+                    "name": "Operating Income",
+                    "value": "Not extracted",
+                    "period": "Q1 2026",
+                    "interpretation": "Not extracted for a bank.",
+                    "source_ids": [],
+                    "citation_status": "missing",
+                },
+            ],
+            "chart_focus": ["revenue"],
+        },
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(request(), state_with_evidence(), payload)
+
+    metrics = report.task_sections.financial_dashboard.metrics
+    assert [metric.name for metric in metrics] == ["Revenue"]
+    assert metrics[0].value == "$49.8B"
+
+
+def test_latest_earnings_drops_placeholder_metrics_after_fact_guardrail() -> None:
+    base_state = state_with_evidence()
+    state = base_state.model_copy(
+        update={
+            "evidence_memory": base_state.evidence_memory.model_copy(
+                update={
+                    "source_refs": [
+                        {
+                            "source_id": "fact_revenue",
+                            "section": "SEC companyfacts",
+                            "snippet": "Revenue was 155700000000 USD for 2026Q1.",
+                            "citation_status": "supported",
+                        },
+                        {
+                            "source_id": "fact_operating_income",
+                            "section": "SEC companyfacts",
+                            "snippet": "Operating income was 18400000000 USD for 2026Q1.",
+                            "citation_status": "supported",
+                        },
+                    ],
+                    "metric_evidence": [
+                        {
+                            "metric": "revenue",
+                            "normalized_metric": "revenue",
+                            "value": 155700000000,
+                            "unit": "USD",
+                            "fact_period": "2026Q1",
+                            "source": "sec_companyfacts",
+                            "source_id": "fact_revenue",
+                        },
+                        {
+                            "metric": "operating income",
+                            "normalized_metric": "operating income",
+                            "value": 18400000000,
+                            "unit": "USD",
+                            "fact_period": "2026Q1",
+                            "source": "sec_companyfacts",
+                            "source_id": "fact_operating_income",
+                        },
+                    ],
+                }
+            )
+        }
+    )
+    payload = {
+        "topline_verdict": {
+            "headline": "Earnings were mixed",
+            "summary": "Revenue and operating income were visible, but margin was absent.",
+            "verdict": "mixed",
+        },
+        "key_takeaways": [],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$155.7B",
+                    "period": "2026Q1",
+                    "interpretation": "Revenue is available.",
+                    "source_ids": ["fact_revenue"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Gross Margin",
+                    "value": "Not extracted",
+                    "period": "2026Q1",
+                    "interpretation": "Not extracted from available facts.",
+                    "source_ids": [],
+                    "citation_status": "missing",
+                },
+                {
+                    "name": "Operating Income",
+                    "value": "Not extracted",
+                    "period": "2026Q1",
+                    "interpretation": "Specific financial figures not extracted.",
+                    "source_ids": ["fact_operating_income"],
+                    "citation_status": "partial",
+                },
+            ],
+            "chart_focus": ["revenue", "gross_margin", "operating_income"],
+        },
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(request(), state, payload)
+
+    metrics = report.task_sections.financial_dashboard.metrics
+    assert [metric.name for metric in metrics] == ["Revenue", "Operating Income"]
+    assert [metric.value for metric in metrics] == ["$155.7B", "$18.4B"]
+
+
+def test_latest_earnings_drops_cited_placeholder_metrics_without_fact_match() -> None:
+    payload = {
+        "topline_verdict": {
+            "headline": "Margin evidence is limited",
+            "summary": "The model cited evidence but did not extract a margin value.",
+            "verdict": "mixed",
+        },
+        "key_takeaways": [],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Gross Margin",
+                    "value": "Not extracted",
+                    "period": "2026Q1",
+                    "interpretation": "Not extracted from the cited evidence.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "partial",
+                }
+            ],
+            "chart_focus": ["gross_margin"],
+        },
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(request(), state_with_evidence(), payload)
+
+    assert report.task_sections.financial_dashboard.metrics == []
+
+
+def test_latest_earnings_formats_ratio_metrics_as_percentages() -> None:
+    payload = {
+        "topline_verdict": {
+            "headline": "Margin quality matters",
+            "summary": "Gross margin was provided as a ratio.",
+            "verdict": "mixed",
+        },
+        "key_takeaways": [],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Gross Margin",
+                    "value": 0.387,
+                    "period": "2026Q1",
+                    "interpretation": "Gross margin ratio from the provider.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+            "chart_focus": ["gross_margin"],
+        },
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(request(), state_with_evidence(), payload)
+
+    metric = report.task_sections.financial_dashboard.metrics[0]
+    assert metric.value == "38.7%"
 
 
 def test_latest_earnings_metric_evidence_overrides_non_extracted_provider_value() -> None:
@@ -1851,7 +2481,7 @@ def state_with_cash_flow_evidence() -> AgentState:
                             "source_id": "cash_src_1",
                             "section": "Cash Flow Statement",
                             "snippet": (
-                                "Operating cash flow funded capital expenditures and "
+                                "Operating Cash Flow funded capital expenditures and "
                                 "share repurchases while liquidity remained strong."
                             ),
                             "filing_type": "10-Q",
@@ -1890,16 +2520,16 @@ def state_with_cash_flow_evidence() -> AgentState:
 def cash_flow_synthesis_payload(source_id: str) -> dict[str, object]:
     return {
         "cash_quality_verdict": {
-            "headline": "Operating cash flow supports capital returns",
+            "headline": "Operating Cash Flow supports capital returns",
             "earnings_backed_by_cash": "mixed",
             "summary": "Cash generation funded capex and buybacks, with liquidity still cited.",
         },
         "cash_metrics": [
             {
-                "name": "Operating cash flow",
+                "name": "Operating Cash Flow",
                 "value": "Evidence-backed",
                 "period": "latest_quarter",
-                "interpretation": "Operating cash flow is tied to the cited cash flow evidence.",
+                "interpretation": "Operating Cash Flow is tied to the cited cash flow evidence.",
                 "source_ids": [source_id],
                 "citation_status": "supported",
             }
@@ -1943,7 +2573,7 @@ def cash_flow_synthesis_payload(source_id: str) -> dict[str, object]:
         "red_flags": [],
         "claims": [
             {
-                "text": "Operating cash flow funded capex and share repurchases.",
+                "text": "Operating Cash Flow funded capex and share repurchases.",
                 "source_ids": [source_id],
                 "citation_status": "supported",
             }

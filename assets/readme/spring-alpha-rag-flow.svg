@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-labelledby="title desc">
+  <title id="title">Spring Alpha RAG and EvidencePack flow</title>
+  <desc id="desc">SEC filing chunks and metric facts become an EvidencePack used by the LLM and measured by live telemetry.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M2,2 L10,6 L2,10" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000" flood-opacity="0.35"/></filter>
+    <style>
+      .bg{fill:#070b11}.title{font:800 38px Inter,Arial,sans-serif;fill:#f8fafc}.sub{font:500 17px Inter,Arial,sans-serif;fill:#94a3b8}.card{fill:#0f172a;stroke:#334155;stroke-width:2}.head{font:800 22px Inter,Arial,sans-serif;fill:#f8fafc}.body{font:600 15px Inter,Arial,sans-serif;fill:#cbd5e1}.tiny{font:600 13px Inter,Arial,sans-serif;fill:#64748b}.flow{fill:none;stroke:#94a3b8;stroke-width:3;marker-end:url(#arrow)}.green{fill:#dcfce7;stroke:#22c55e;stroke-width:3}.blue{fill:#dbeafe;stroke:#60a5fa;stroke-width:3}.violet{fill:#ede9fe;stroke:#8b5cf6;stroke-width:3}.amber{fill:#fef3c7;stroke:#f59e0b;stroke-width:3}.darkText{font-family:Inter,Arial,sans-serif;fill:#0f172a}
+    </style>
+  </defs>
+  <rect class="bg" width="1600" height="560"/>
+  <text x="60" y="68" class="title">RAG as a Tool, Not a Black Box</text>
+  <text x="60" y="100" class="sub">The agent receives compact, inspectable evidence packs plus runtime telemetry instead of unverifiable offline scores.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="165" width="240" height="230" rx="24" class="amber"/>
+    <text x="100" y="210" class="darkText" font-size="24" font-weight="800">SEC Filing</text>
+    <text x="100" y="245" class="darkText" font-size="15" font-weight="700">HTML / 10-Q / 10-K</text>
+    <text x="100" y="285" class="darkText" font-size="15" font-weight="600">cleanup</text>
+    <text x="100" y="312" class="darkText" font-size="15" font-weight="600">section parsing</text>
+    <text x="100" y="339" class="darkText" font-size="15" font-weight="600">node creation</text>
+  </g>
+  <path class="flow" d="M310 280 C350 280 350 280 390 280"/>
+
+  <g filter="url(#shadow)">
+    <rect x="390" y="165" width="240" height="230" rx="24" class="blue"/>
+    <text x="420" y="210" class="darkText" font-size="24" font-weight="800">PGVector</text>
+    <text x="420" y="245" class="darkText" font-size="15" font-weight="700">hybrid retrieval</text>
+    <text x="420" y="285" class="darkText" font-size="15" font-weight="600">semantic match</text>
+    <text x="420" y="312" class="darkText" font-size="15" font-weight="600">section hints</text>
+    <text x="420" y="339" class="darkText" font-size="15" font-weight="600">lexical fallback</text>
+  </g>
+  <path class="flow" d="M630 280 C670 280 670 280 710 280"/>
+
+  <g filter="url(#shadow)">
+    <rect x="710" y="120" width="300" height="320" rx="28" class="green"/>
+    <text x="746" y="168" class="darkText" font-size="28" font-weight="800">EvidencePack</text>
+    <rect x="746" y="200" width="228" height="46" rx="12" fill="#f8fafc" opacity="0.9"/>
+    <text x="766" y="229" class="darkText" font-size="16" font-weight="800">filing evidence</text>
+    <rect x="746" y="260" width="228" height="46" rx="12" fill="#f8fafc" opacity="0.9"/>
+    <text x="766" y="289" class="darkText" font-size="16" font-weight="800">metric facts</text>
+    <rect x="746" y="320" width="228" height="46" rx="12" fill="#f8fafc" opacity="0.9"/>
+    <text x="766" y="349" class="darkText" font-size="16" font-weight="800">source ids</text>
+    <text x="746" y="400" class="darkText" font-size="15" font-weight="700">bounded, serialized, inspectable</text>
+  </g>
+
+  <path class="flow" d="M1010 280 C1050 280 1050 280 1090 280"/>
+
+  <g filter="url(#shadow)">
+    <rect x="1090" y="165" width="220" height="230" rx="24" class="violet"/>
+    <text x="1120" y="210" class="darkText" font-size="24" font-weight="800">LLM</text>
+    <text x="1120" y="245" class="darkText" font-size="15" font-weight="700">final synthesis</text>
+    <text x="1120" y="285" class="darkText" font-size="15" font-weight="600">typed JSON</text>
+    <text x="1120" y="312" class="darkText" font-size="15" font-weight="600">schema guardrails</text>
+    <text x="1120" y="339" class="darkText" font-size="15" font-weight="600">transparent errors</text>
+  </g>
+  <path class="flow" d="M1310 280 C1350 280 1350 280 1390 280"/>
+
+  <g filter="url(#shadow)">
+    <rect x="1390" y="120" width="150" height="320" rx="26" class="card"/>
+    <text x="1418" y="168" class="head">UI</text>
+    <text x="1418" y="210" class="body">reports</text>
+    <text x="1418" y="245" class="body">timeline</text>
+    <text x="1418" y="280" class="body">telemetry</text>
+    <text x="1418" y="330" class="tiny">retrieved</text>
+    <text x="1418" y="355" class="tiny">used</text>
+    <text x="1418" y="380" class="tiny">latency</text>
+  </g>
+</svg>

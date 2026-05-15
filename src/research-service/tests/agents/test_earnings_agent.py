@@ -146,7 +146,7 @@ Revenue and gross margin improved as Services demand increased.
         for message in final_messages
     )
     assert calls[-1]["response_format"] == {"type": "json_object"}
-    assert calls[-1]["max_tokens"] == 2048
+    assert calls[-1]["max_tokens"] == 4096
     assert result.final_report is not None
     task_sections = result.final_report["task_sections"]
     assert task_sections["topline_verdict"]["headline"] == (
@@ -310,7 +310,7 @@ def test_deepseek_flash_final_synthesis_uses_compact_budget() -> None:
     )
 
     assert result.final_report is not None
-    assert calls[-1]["max_tokens"] == 1280
+    assert calls[-1]["max_tokens"] == 3072
     evidence_context = _messages_from_payload(calls[-1])[-1]["content"]
     assert isinstance(evidence_context, str)
     assert len(evidence_context) < 2800
@@ -349,7 +349,7 @@ def test_latest_earnings_final_prompt_requires_research_memo_quality_structure()
     assert "debate" not in normalized_instruction
 
 
-def test_final_synthesis_retries_without_rerunning_tools() -> None:
+def test_final_synthesis_json_retry_does_not_rerun_tools() -> None:
     calls: list[dict[str, object]] = []
     final_attempts = 0
 
@@ -363,7 +363,7 @@ def test_final_synthesis_retries_without_rerunning_tools() -> None:
         calls.append(payload)
         final_attempts += 1
         if final_attempts == 1:
-            raise TimeoutError("transient final synthesis timeout")
+            return {"choices": [{"message": {"content": '{"topline_verdict":{"headline":"Retry'}}]}
         return _content_response(
             {
                 "company_profile": "Apple designs devices, software, and services.",

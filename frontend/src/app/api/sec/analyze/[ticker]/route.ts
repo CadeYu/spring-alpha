@@ -21,7 +21,7 @@ export async function GET(
         request.headers.get('x-provider-api-key') ||
         request.headers.get('x-openai-api-key');
 
-    const baseUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8081';
+    const baseUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8082';
     const backendParams = new URLSearchParams({ lang, model });
     if (taskType) {
         if (!isResearchTaskId(taskType)) {
