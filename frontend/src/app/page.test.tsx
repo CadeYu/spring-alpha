@@ -605,7 +605,9 @@ describe("Home page", () => {
     render(<Home />);
     submitTicker("AAPL");
     expect(await screen.findByText(/AAPL market chart/i)).toBeInTheDocument();
-    expect(screen.getByTestId("market-candlestick-chart")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("market-candlestick-chart"),
+    ).toBeInTheDocument();
     expect(screen.getAllByText(/scroll to zoom/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/drag to pan/i).length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith(
