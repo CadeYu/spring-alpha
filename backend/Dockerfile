@@ -48,7 +48,7 @@ RUN chmod +x /app/start-backend-stack-combined.sh
 
 EXPOSE 8081
 
-ENV JAVA_OPTS="-Xms128m -Xmx384m -XX:+UseContainerSupport -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC"
+ENV JAVA_OPTS="-Xms96m -Xmx224m -XX:+UseContainerSupport -XX:MaxMetaspaceSize=96m -XX:+UseSerialGC"
 ENV PATH="/opt/backend-venv/bin:/app/src/research-service/.venv/bin:${PATH}"
 ENV PYTHON_BIN="/opt/backend-venv/bin/python"
 

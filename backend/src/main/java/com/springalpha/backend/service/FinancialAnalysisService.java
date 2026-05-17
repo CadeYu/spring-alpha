@@ -8,6 +8,7 @@ import com.springalpha.backend.service.research.ResearchAgentReportMapper;
 import com.springalpha.backend.service.research.ResearchAgentRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -22,22 +23,40 @@ import java.util.UUID;
 @Slf4j
 @Service
 public class FinancialAnalysisService {
+    private static final int DEFAULT_AGENT_FILING_MAX_CHARS = 120_000;
+    private static final String FILING_TRUNCATION_MARKER = "... [Truncated for live analysis]";
 
     private final SecService secService;
     private final ProviderCredentialValidator providerCredentialValidator;
     private final ResearchAgentClient researchAgentClient;
     private final ResearchAgentReportMapper researchAgentReportMapper;
+    private final int agentFilingMaxChars;
 
     @Autowired
     public FinancialAnalysisService(
             SecService secService,
             ProviderCredentialValidator providerCredentialValidator,
             ResearchAgentClient researchAgentClient,
-            ResearchAgentReportMapper researchAgentReportMapper) {
+            ResearchAgentReportMapper researchAgentReportMapper,
+            @Value("${app.research-service.agent-filing-max-chars:" + DEFAULT_AGENT_FILING_MAX_CHARS + "}") int agentFilingMaxChars) {
         this.secService = secService;
         this.providerCredentialValidator = providerCredentialValidator;
         this.researchAgentClient = researchAgentClient;
         this.researchAgentReportMapper = researchAgentReportMapper;
+        this.agentFilingMaxChars = Math.max(1, agentFilingMaxChars);
+    }
+
+    public FinancialAnalysisService(
+            SecService secService,
+            ProviderCredentialValidator providerCredentialValidator,
+            ResearchAgentClient researchAgentClient,
+            ResearchAgentReportMapper researchAgentReportMapper) {
+        this(
+                secService,
+                providerCredentialValidator,
+                researchAgentClient,
+                researchAgentReportMapper,
+                DEFAULT_AGENT_FILING_MAX_CHARS);
     }
 
     public List<String> getAvailableModels() {
@@ -97,7 +116,7 @@ public class FinancialAnalysisService {
                         "10-Q",
                         null,
                         null,
-                        filingText)));
+                        capFilingText(filingText))));
 
         log.info("research_agent_start runId={} ticker={} taskType={} provider={}",
                 runId, ticker, taskType, provider);
@@ -178,5 +197,13 @@ public class FinancialAnalysisService {
         return model != null && !model.isBlank()
                 ? model.trim().toLowerCase(Locale.ROOT)
                 : providerCredentialValidator.defaultProvider();
+    }
+
+    private String capFilingText(String filingText) {
+        if (filingText.length() <= agentFilingMaxChars) {
+            return filingText;
+        }
+        int contentLimit = Math.max(1, agentFilingMaxChars - FILING_TRUNCATION_MARKER.length());
+        return filingText.substring(0, contentLimit).stripTrailing() + FILING_TRUNCATION_MARKER;
     }
 }

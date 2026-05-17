@@ -36,10 +36,14 @@ services:
         sync: false
       - key: SPRING_JPA_HIBERNATE_DDL_AUTO
         value: update
+      - key: SPRING_DATASOURCE_MAX_POOL_SIZE
+        value: "3"
       - key: RESEARCH_SERVICE_BASE_URL
         value: http://127.0.0.1:8090
       - key: RESEARCH_SERVICE_TIMEOUT
         value: PT300S
+      - key: RESEARCH_AGENT_FILING_MAX_CHARS
+        value: "120000"
       - key: SILICONFLOW_API_KEY
         sync: false
       - key: SILICONFLOW_MODEL
@@ -55,7 +59,7 @@ services:
       - key: PYTHON_BIN
         value: /opt/backend-venv/bin/python
       - key: RAG_VECTOR_STORE_PROVIDER
-        value: qdrant
+        value: memory
       - key: QDRANT_URL
         sync: false
       - key: QDRANT_API_KEY
@@ -63,6 +67,6 @@ services:
       - key: QDRANT_COLLECTION
         value: spring_alpha_rag_chunks
       - key: RAG_EMBEDDING_PROVIDER
-        value: gemini
+        value: deterministic
       - key: RAG_EMBEDDING_DIMENSION
-        value: "3072"
+        value: "256"

@@ -159,6 +159,32 @@ class FinancialAnalysisServiceTest {
     }
 
     @Test
+    void analyzeStockCapsFilingTextSentToResearchAgent() {
+        FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
+        FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.success();
+        FakeSecService secService = new FakeSecService("Revenue grew. ".repeat(20_000));
+        FinancialAnalysisService service = new FinancialAnalysisService(
+                secService,
+                credentialValidator,
+                researchAgentClient,
+                new com.springalpha.backend.service.research.ResearchAgentReportMapper(),
+                10_000);
+
+        service.analyzeStock(
+                "AAPL",
+                "en",
+                "siliconflow",
+                "secret",
+                ResearchTaskType.LATEST_EARNINGS_READOUT)
+                .collectList()
+                .block();
+
+        String text = researchAgentClient.lastRequest.filings().getFirst().text();
+        assertTrue(text.length() < 10_200);
+        assertTrue(text.endsWith("... [Truncated for live analysis]"));
+    }
+
+    @Test
     void analyzeStockFailsWhenResearchAgentReturnsNoReport() {
         FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
         FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.empty();
@@ -271,11 +297,21 @@ class FinancialAnalysisServiceTest {
 
     private static final class FakeSecService extends SecService {
 
+        private final String filingContent;
         private String lastTicker;
         private String lastThreadName;
 
         private FakeSecService() {
+            this("""
+                Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+                Revenue grew because services demand improved and gross margin expanded.
+                Earnings dashboard metrics include revenue, gross margin, and operating income.
+                """);
+        }
+
+        private FakeSecService(String filingContent) {
             super(null);
+            this.filingContent = filingContent;
         }
 
         @Override
@@ -283,11 +319,7 @@ class FinancialAnalysisServiceTest {
             this.lastTicker = ticker;
             return Mono.fromCallable(() -> {
                 this.lastThreadName = Thread.currentThread().getName();
-                return """
-                    Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
-                    Revenue grew because services demand improved and gross margin expanded.
-                    Earnings dashboard metrics include revenue, gross margin, and operating income.
-                    """;
+                return filingContent;
             });
         }
 
