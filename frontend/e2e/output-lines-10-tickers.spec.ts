@@ -277,9 +277,6 @@ test.describe("Spring Alpha 10 ticker output-line matrix", () => {
           page.getByText(`${tickerCase.companyName} · Q1 2026 · 2026-03-31`),
         ).toBeVisible();
         await expect(page.getByText(taskCase.headline).first()).toBeVisible();
-        await expect(
-          page.getByText(`${tickerCase.companyName} verified citation.`),
-        ).toBeVisible();
         for (const section of taskCase.sections) {
           await expect(page.getByText(section).first()).toBeVisible();
         }

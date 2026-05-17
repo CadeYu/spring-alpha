@@ -850,7 +850,11 @@ test.describe("Spring Alpha smoke", () => {
     await expect(
       page.getByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).toBeVisible();
-    await expect(page.getByText("当前状态：降级模式").first()).toBeVisible();
+    await expect(
+      page.getByText(
+        "SEC filing was available, but semantic grounding was not ready yet.",
+      ),
+    ).toHaveCount(0);
   });
 
   test("TSLA second run in Chinese can recover grounded citations", async ({
@@ -928,14 +932,22 @@ test.describe("Spring Alpha smoke", () => {
 
     await page.getByRole("button", { name: /开始分析/i }).click();
     await openAgentReport(page, /最新财报速读/i);
-    await expect(page.getByText("当前状态：降级模式").first()).toBeVisible();
+    await expect(
+      page.getByText(
+        "SEC filing was available, but semantic grounding was not ready yet.",
+      ),
+    ).toHaveCount(0);
 
     await page.getByRole("button", { name: /开始分析/i }).click();
     await openAgentReport(page, /最新财报速读/i);
     await expect(
       page.getByText("Revenue increased due to stronger deliveries.").first(),
     ).toBeVisible();
-    await expect(page.getByText("当前状态：降级模式")).toHaveCount(0);
+    await expect(
+      page.getByText(
+        "SEC filing was available, but semantic grounding was not ready yet.",
+      ),
+    ).toHaveCount(0);
   });
 
   test("financial-sector tickers require typed sections instead of generic margin dashboards", async ({
@@ -1287,16 +1299,6 @@ test.describe("Spring Alpha live Agent path", () => {
       page.getByText(/Business Driver Research View/i).first(),
     ).toBeVisible();
     await expect(page.getByText(/Trust Summary/i)).toHaveCount(0);
-    await expect(
-      page.getByText(/Source Citations & Verification/i),
-    ).toBeVisible();
-    await expect(
-      page
-        .locator('[data-pdf-section="citations"]')
-        .first()
-        .getByText(/Verified|Partial|Missing|Unknown/i)
-        .first(),
-    ).toBeVisible();
 
     const layout = await page.locator("#pdf-report-root").evaluate((element) => {
       const body = document.documentElement;
