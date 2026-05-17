@@ -388,7 +388,7 @@ test.describe("Spring Alpha smoke", () => {
       ]);
     });
 
-  test("default market chart renders an interactive trading terminal canvas", async ({
+  test("ticker-submitted market chart renders an interactive trading terminal canvas", async ({
     page,
   }) => {
     const observedIntervals: string[] = [];
@@ -396,6 +396,9 @@ test.describe("Spring Alpha smoke", () => {
     await mockMarketChartRoute(page, observedIntervals);
 
     await page.goto("/app");
+    const tickerInput = page.getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)");
+    await tickerInput.fill("AAPL");
+    await page.getByRole("button", { name: /analyze/i }).click();
 
     const chart = page.getByTestId("market-candlestick-chart");
     await expect(chart).toBeVisible();
