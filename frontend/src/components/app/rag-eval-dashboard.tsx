@@ -1,4 +1,4 @@
-import { Activity, Boxes, Gauge, SearchCheck } from "lucide-react";
+import { Activity, Boxes, SearchCheck } from "lucide-react";
 
 import type { AnalysisReport, RagTelemetry } from "@/types/AnalysisReport";
 import { cn } from "@/lib/utils";

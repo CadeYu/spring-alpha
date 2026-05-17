@@ -391,7 +391,7 @@ describe("Home page", () => {
     ]);
   });
 
-  it("marks the active agent failed when the backend returns a degraded no-report chunk", async () => {
+  it("surfaces degraded agent evidence when the backend returns a no-report chunk", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -489,14 +489,13 @@ describe("Home page", () => {
 
     expect(
       await screen.findByRole("tab", {
-        name: /cash flow & capital allocation failed/i,
+        name: /cash flow & capital allocation/i,
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getAllByText("Cash flow research agent failed: validation error")
-        .length,
-    ).toBeGreaterThan(0);
-    expect(screen.getByText("Cash Flow Analyst")).toBeInTheDocument();
+      await screen.findByText("Cash flow research agent failed: validation error"),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Cash Flow Analyst")).toBeInTheDocument();
   });
 
   it("shows the submitted ticker market chart and opens an agent report from the sidebar", async () => {

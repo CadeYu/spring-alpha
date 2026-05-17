@@ -31,6 +31,31 @@ jobs:
           -Dtest=SecControllerTest,SecServiceTest,FinancialAnalysisServiceTest,BaseAiStrategyTest,AnalysisReportValidatorTest,FmpFinancialDataServiceTest
           test
 
+  research-service:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/research-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: uv sync --frozen --dev
+
+      - name: Run RAG tests
+        run: uv run pytest tests/rag/test_llamaindex_pipeline.py
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -64,3 +89,12 @@ jobs:
 
       - name: E2E smoke tests
         run: npm run test:e2e
+
+  deploy-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build combined backend image
+        run: docker build -f backend/Dockerfile -t spring-alpha-backend-combined .

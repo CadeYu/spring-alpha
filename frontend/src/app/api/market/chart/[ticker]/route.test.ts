@@ -1,6 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { GET } from "./route";
 
+function fetchUrl(fetchMock: ReturnType<typeof vi.fn>, index = 0) {
+  const call = fetchMock.mock.calls.at(index);
+  if (!call) throw new Error(`Missing fetch call at index ${index}`);
+  const [input] = call as [string | URL | Request, RequestInit?];
+  return new URL(input instanceof Request ? input.url : input.toString());
+}
+
 describe("market chart route", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -67,7 +74,7 @@ describe("market chart route", () => {
       close: 227,
       volume: 123575,
     });
-    const calledUrl = new URL(fetchMock.mock.calls[0][0] as string);
+    const calledUrl = fetchUrl(fetchMock);
     expect(calledUrl.origin + calledUrl.pathname).toBe(
       "https://query1.finance.yahoo.com/v8/finance/chart/AAPL",
     );
@@ -162,8 +169,8 @@ describe("market chart route", () => {
       params: Promise.resolve({ ticker: "AAPL" }),
     });
 
-    const weeklyUrl = new URL(fetchMock.mock.calls[0][0] as string);
-    const monthlyUrl = new URL(fetchMock.mock.calls[1][0] as string);
+    const weeklyUrl = fetchUrl(fetchMock, 0);
+    const monthlyUrl = fetchUrl(fetchMock, 1);
     expect(weeklyUrl.searchParams.get("interval")).toBe("1wk");
     expect(monthlyUrl.searchParams.get("interval")).toBe("1mo");
     expect(weeklyUrl.searchParams.get("range")).toBeNull();

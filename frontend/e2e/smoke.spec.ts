@@ -406,9 +406,12 @@ test.describe("Spring Alpha smoke", () => {
     await expect(chart).toHaveAttribute("data-visible-to", "2020-08-07");
     await expect.poll(async () => chart.locator("canvas").count()).toBeGreaterThan(0);
 
-    const pixelSample = await chart.locator("canvas").first().evaluate((canvas) => {
+    const pixelSample = await chart.locator("canvas").first().evaluate((element) => {
+      const canvas = element as HTMLCanvasElement;
       const context = canvas.getContext("2d");
-      if (!context) return { nonEmptyPixels: 0, width: canvas.width, height: canvas.height };
+      if (!context) {
+        return { nonEmptyPixels: 0, width: canvas.width, height: canvas.height };
+      }
       const width = canvas.width;
       const height = canvas.height;
       const image = context.getImageData(0, 0, width, height).data;
