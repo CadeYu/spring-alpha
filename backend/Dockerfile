@@ -25,6 +25,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=research-build /usr/local/bin/python /usr/local/bin/python
+COPY --from=research-build /usr/local/bin/python3 /usr/local/bin/python3
+COPY --from=research-build /usr/local/bin/python3.12 /usr/local/bin/python3.12
+COPY --from=research-build /usr/local/lib/libpython3.12.so /usr/local/lib/libpython3.12.so
+COPY --from=research-build /usr/local/lib/libpython3.12.so.1.0 /usr/local/lib/libpython3.12.so.1.0
+COPY --from=research-build /usr/local/lib/python3.12 /usr/local/lib/python3.12
+
 COPY backend/requirements.txt ./backend-requirements.txt
 RUN python3 -m venv /opt/backend-venv \
     && /opt/backend-venv/bin/python -m pip install --upgrade pip \

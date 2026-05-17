@@ -14,7 +14,7 @@ start_research_service() {
   local research_venv="${APP_ROOT}/src/research-service/.venv/bin"
   export PATH="${research_venv}:${PATH}"
 
-  if [[ ! -x "${research_venv}/uvicorn" ]]; then
+  if [[ ! -x "${research_venv}/python" ]]; then
     echo "Missing research service virtualenv at ${research_venv}" >&2
     exit 1
   fi
@@ -22,7 +22,7 @@ start_research_service() {
   echo "Starting Python Research Service on ${RESEARCH_SERVICE_BASE_URL}"
   (
     cd "${APP_ROOT}/src/research-service"
-    exec uvicorn app.main:app --host 127.0.0.1 --port "${RESEARCH_PORT}"
+    exec "${research_venv}/python" -m uvicorn app.main:app --host 127.0.0.1 --port "${RESEARCH_PORT}"
   ) >"${APP_ROOT}/tmp/research-service.log" 2>&1 &
   RESEARCH_PID=$!
 }
