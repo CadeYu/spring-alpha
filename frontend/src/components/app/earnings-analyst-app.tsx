@@ -510,12 +510,6 @@ export default function EarningsAnalystApp() {
               ...current,
               [taskId]: mergeReportChunks(current[taskId], reportData),
             }));
-            if (isDegradedReportWithoutTaskSections(reportData)) {
-              return {
-                phase: "failed",
-                error: degradedReportError(reportData),
-              };
-            }
             console.log("Received progressive report chunk");
           } catch (e) {
             console.warn("JSON parse error:", e);
@@ -2704,28 +2698,6 @@ function userFacingErrorMessage(message: string, code?: string): string {
     return "The research agent took too long to finish. Please retry or choose a narrower task while we optimize live report generation.";
   }
   return message;
-}
-
-function isDegradedReportWithoutTaskSections(
-  reportData: Partial<AnalysisReport>,
-): boolean {
-  return (
-    reportData.sourceContext?.status?.toUpperCase() === "DEGRADED" &&
-    !reportData.taskSections
-  );
-}
-
-function degradedReportError(reportData: Partial<AnalysisReport>): AnalysisErrorState {
-  const message =
-    reportData.sourceContext?.message ||
-    reportData.executiveSummary ||
-    "Research agent failed before producing a final report.";
-  return {
-    message,
-    source: "python-research-service",
-    code: "RESEARCH_AGENT_DEGRADED",
-    degraded: true,
-  };
 }
 
 function normalizeAnalysisError(error: unknown): AnalysisErrorState {

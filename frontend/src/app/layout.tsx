@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Spring Alpha",
+  title: "Spring Alpha | AI Earnings Research Workbench",
   description:
-    "Spring Alpha is an AI earnings research app that turns SEC filings, financial data, charts, and investment framing into a single analysis workspace.",
+    "Spring Alpha is a ticker-first AI earnings research workbench for SEC filings, financial facts, charts, and analyst-style research workflows.",
 };
 
 export default function RootLayout({

@@ -59,7 +59,8 @@ class OpenAiCompatibleProviderCredentialValidatorTest {
                 "siliconflow",
                 "https://siliconflow.example/v1",
                 "https://openai.example/v1",
-                "https://gemini.example/v1beta/openai");
+                "https://gemini.example/v1beta/openai",
+                Duration.ofSeconds(30));
 
         validator.validate("siliconflow", "secret").block();
 
@@ -92,6 +93,7 @@ class OpenAiCompatibleProviderCredentialValidatorTest {
                 "siliconflow",
                 "https://siliconflow.example/v1",
                 "https://openai.example/v1",
-                "https://gemini.example/v1beta/openai");
+                "https://gemini.example/v1beta/openai",
+                Duration.ofSeconds(30));
     }
 }

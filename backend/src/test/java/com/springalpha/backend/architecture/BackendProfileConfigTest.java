@@ -7,7 +7,9 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.PropertySource;
+import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.ClassPathResource;
 
 class BackendProfileConfigTest {
@@ -63,6 +65,26 @@ class BackendProfileConfigTest {
                 .isEqualTo("${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}");
         assertThat(property(sources, "logging.level.com.springalpha"))
                 .isEqualTo("${SPRING_ALPHA_LOG_LEVEL:INFO}");
+    }
+
+    @Test
+    void prodConfigAcceptsSupabasePoolerJdbcUrlFromRuntimeEnvironment() {
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().addFirst(new MapPropertySource(
+                "test-env",
+                java.util.Map.of(
+                        "SPRING_DATASOURCE_URL",
+                        "jdbc:postgresql://aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres?sslmode=require",
+                        "SPRING_DATASOURCE_USERNAME",
+                        "postgres.agwipsqljlgcnsispndc",
+                        "SPRING_DATASOURCE_PASSWORD",
+                        "runtime-only-password")));
+
+        String url = environment.getRequiredProperty("SPRING_DATASOURCE_URL");
+        String username = environment.getRequiredProperty("SPRING_DATASOURCE_USERNAME");
+
+        assertThat(url).contains("pooler.supabase.com:5432/postgres?sslmode=require");
+        assertThat(username).isEqualTo("postgres.agwipsqljlgcnsispndc");
     }
 
     private List<PropertySource<?>> load(String resourceName) throws IOException {

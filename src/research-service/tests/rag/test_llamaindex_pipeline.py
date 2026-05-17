@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from llama_index.core.schema import NodeWithScore, TextNode
 from pytest import MonkeyPatch
 
@@ -12,6 +14,9 @@ from app.rag.llamaindex_pipeline import (
     PgVectorStore,
     PgVectorStoreConfig,
     ProviderEmbeddingFallbackBackend,
+    QdrantClientAdapter,
+    QdrantVectorStore,
+    QdrantVectorStoreConfig,
     RetrievalFallbackStatus,
     SectionAwareFilingParser,
     build_embedding_backend_from_env,
@@ -818,6 +823,152 @@ def test_vector_store_env_factory_defaults_to_pgvector_when_database_url_exists(
     assert store.config.embedding_dimension == 3
 
 
+def test_qdrant_vector_store_upserts_nodes_with_payload_and_embedding() -> None:
+    client = RecordingQdrantClient()
+    store = QdrantVectorStore(
+        config=QdrantVectorStoreConfig(
+            url="https://qdrant.example",
+            api_key="test-key",
+            collection_name="spring_alpha_rag_chunks",
+            embedding_dimension=3,
+        ),
+        embedding_backend=FixedEmbeddingBackend({"dim_0": 1.0, "dim_1": 1.0, "dim_2": 1.0}),
+        client_factory=lambda config: client,
+    )
+    node = TextNode(
+        id_="node_1",
+        text="Azure and enterprise services drove cloud growth.",
+        metadata={"ticker": "MSFT", "section": "Segment Information"},
+    )
+
+    store.upsert(node)
+
+    assert len(client.upserted_points) == 1
+    point = client.upserted_points[0]
+    assert str(UUID(str(point["id"]))) == point["id"]
+    assert point["vector"] == [0.5773502692, 0.5773502692, 0.5773502692]
+    assert point["payload"]["node_id"] == "node_1"
+    assert point["payload"]["text"] == "Azure and enterprise services drove cloud growth."
+    assert point["payload"]["metadata"]["section"] == "Segment Information"
+
+
+def test_qdrant_vector_store_ensures_collection_before_upsert() -> None:
+    client = RecordingQdrantClient()
+    adapter = QdrantClientAdapter(client)
+    adapter.ensure_collection(collection_name="spring_alpha_rag_chunks", vector_size=3)
+
+    assert client.collection_checks == ["spring_alpha_rag_chunks"]
+    assert client.created_collections == [
+        {
+            "collection_name": "spring_alpha_rag_chunks",
+            "vector_size": 3,
+            "on_disk_payload": True,
+        }
+    ]
+
+    store = QdrantVectorStore(
+        config=QdrantVectorStoreConfig(
+            url="https://qdrant.example",
+            api_key="test-key",
+            collection_name="spring_alpha_rag_chunks",
+            embedding_dimension=3,
+        ),
+        embedding_backend=FixedEmbeddingBackend({"dim_0": 1.0, "dim_1": 0.0, "dim_2": 0.0}),
+        client_factory=lambda config: adapter,
+    )
+
+    store.upsert(
+        TextNode(
+            id_="node_1",
+            text="Azure and enterprise services drove cloud growth.",
+            metadata={"ticker": "MSFT", "section": "Segment Information"},
+        )
+    )
+
+    assert len(client.upserted_points) == 1
+
+
+def test_qdrant_vector_store_upsert_many_batches_points() -> None:
+    client = RecordingQdrantClient()
+    store = QdrantVectorStore(
+        config=QdrantVectorStoreConfig(
+            url="https://qdrant.example",
+            api_key="test-key",
+            collection_name="spring_alpha_rag_chunks",
+            embedding_dimension=3,
+        ),
+        embedding_backend=FixedEmbeddingBackend({"dim_0": 1.0, "dim_1": 0.0, "dim_2": 0.0}),
+        client_factory=lambda config: client,
+    )
+
+    store.upsert_many(
+        [
+            TextNode(id_="node_1", text="First node", metadata={"ticker": "MSFT"}),
+            TextNode(id_="node_2", text="Second node", metadata={"ticker": "MSFT"}),
+        ]
+    )
+
+    assert len(client.upserted_points) == 2
+    assert client.upsert_call_count == 1
+    assert {point["payload"]["node_id"] for point in client.upserted_points} == {
+        "node_1",
+        "node_2",
+    }
+
+
+def test_qdrant_vector_store_searches_candidate_node_ids() -> None:
+    client = RecordingQdrantClient(
+        search_results=[
+            {
+                "id": "node_1",
+                "score": 0.91,
+            }
+        ]
+    )
+    store = QdrantVectorStore(
+        config=QdrantVectorStoreConfig(
+            url="https://qdrant.example",
+            api_key="test-key",
+            collection_name="spring_alpha_rag_chunks",
+            embedding_dimension=3,
+        ),
+        embedding_backend=DeterministicFinancialEmbeddingBackend(),
+        client_factory=lambda config: client,
+    )
+    nodes = [
+        TextNode(id_="node_1", text="Azure cloud growth.", metadata={"section": "Segment"}),
+        TextNode(id_="node_2", text="Generic risk factors.", metadata={"section": "Risk"}),
+    ]
+
+    results = store.search(query="platform support", nodes=nodes, top_k=1)
+
+    assert len(results) == 1
+    assert results[0].node.node_id == "node_1"
+    assert results[0].score == 0.91
+    assert client.search_requests[-1]["limit"] == 1
+    assert client.search_requests[-1]["node_ids"] == ["node_1", "node_2"]
+
+
+def test_vector_store_env_factory_builds_qdrant_store_when_configured(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RAG_VECTOR_STORE_PROVIDER", "qdrant")
+    monkeypatch.setenv("QDRANT_URL", "https://qdrant.example")
+    monkeypatch.setenv("QDRANT_API_KEY", "test-key")
+    monkeypatch.setenv("QDRANT_COLLECTION", "spring_alpha_rag_chunks")
+    monkeypatch.setenv("RAG_EMBEDDING_DIMENSION", "3")
+    monkeypatch.setattr(
+        "app.rag.llamaindex_pipeline.QdrantClientAdapter.connect",
+        lambda config: RecordingQdrantClient(),
+    )
+
+    store = build_vector_store_from_env(DeterministicFinancialEmbeddingBackend())
+
+    assert isinstance(store, QdrantVectorStore)
+    assert store.config.collection_name == "spring_alpha_rag_chunks"
+    assert store.config.embedding_dimension == 3
+
+
 def test_production_rag_pipeline_env_factory_enables_hybrid_retrieval(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -849,6 +1000,94 @@ class RecordingConnection:
 
     def close(self) -> None:
         pass
+
+
+class RecordingQdrantClient:
+    def __init__(self, search_results: list[dict[str, object]] | None = None) -> None:
+        self.search_results = search_results or []
+        self.upserted_points: list[dict[str, object]] = []
+        self.upsert_call_count = 0
+        self.search_requests: list[dict[str, object]] = []
+        self.collection_checks: list[str] = []
+        self.created_collections: list[dict[str, object]] = []
+
+    def collection_exists(self, collection_name: str) -> bool:
+        self.collection_checks.append(collection_name)
+        return False
+
+    def create_collection(
+        self,
+        *,
+        collection_name: str,
+        vectors_config: object,
+        on_disk_payload: bool = False,
+    ) -> bool:
+        self.created_collections.append(
+            {
+                "collection_name": collection_name,
+                "vector_size": getattr(vectors_config, "size", None),
+                "on_disk_payload": on_disk_payload,
+            }
+        )
+        return True
+
+    def upsert_points(
+        self,
+        *,
+        collection_name: str,
+        points: list[dict[str, object]],
+    ) -> None:
+        self.upsert_call_count += 1
+        self.upserted_points.extend(points)
+
+    def upsert(
+        self,
+        *,
+        collection_name: str,
+        points: list[object],
+        wait: bool = True,
+        ordering: object | None = None,
+        shard_key_selector: object | None = None,
+        update_filter: object | None = None,
+        update_mode: object | None = None,
+        timeout: int | None = None,
+        **kwargs: object,
+    ) -> object:
+        self.upsert_call_count += 1
+        self.upserted_points.extend(
+            [
+                {
+                    "collection_name": collection_name,
+                    "wait": wait,
+                    "points": points,
+                    "ordering": ordering,
+                    "shard_key_selector": shard_key_selector,
+                    "update_filter": update_filter,
+                    "update_mode": update_mode,
+                    "timeout": timeout,
+                    "kwargs": kwargs,
+                }
+            ]
+        )
+        return {"status": "ok"}
+
+    def search_points(
+        self,
+        *,
+        collection_name: str,
+        vector: list[float],
+        node_ids: list[str],
+        limit: int,
+    ) -> list[dict[str, object]]:
+        self.search_requests.append(
+            {
+                "collection_name": collection_name,
+                "vector": vector,
+                "node_ids": node_ids,
+                "limit": limit,
+            }
+        )
+        return self.search_results
 
 
 class FixedEmbeddingBackend:

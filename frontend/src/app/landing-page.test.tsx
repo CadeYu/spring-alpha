@@ -37,7 +37,7 @@ describe("Landing page", () => {
     await waitFor(() => {
       expect(
         screen.getByRole("heading", {
-          name: /把.*财报阅读.*变成一块真正可用的研究界面/,
+          name: /更快读懂每一次财报/,
         }),
       ).toBeInTheDocument();
     });
@@ -56,7 +56,7 @@ describe("Landing page", () => {
     await waitFor(() => {
       expect(
         screen.getByRole("heading", {
-          name: /Turn.*earnings reading.*into a research interface you can actually use/,
+          name: /Research faster at Any earnings call/,
         }),
       ).toBeInTheDocument();
     });
@@ -77,7 +77,7 @@ describe("Landing page", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("Not a one-line answer, but a full page of research context"),
+        screen.getByText("One ticker. Three agents. One research surface."),
       ).toBeInTheDocument();
     });
   });

@@ -18,7 +18,7 @@ import java.util.Map;
 @Service
 public class OpenAiCompatibleProviderCredentialValidator implements ProviderCredentialValidator {
 
-    private static final Duration VALIDATION_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration DEFAULT_VALIDATION_TIMEOUT = Duration.ofSeconds(30);
     private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleProviderCredentialValidator.class);
 
     private final WebClient.Builder webClientBuilder;
@@ -32,17 +32,8 @@ public class OpenAiCompatibleProviderCredentialValidator implements ProviderCred
             @Value("${app.ai-provider:siliconflow}") String defaultProvider,
             @Value("${app.siliconflow.base-url:https://api.siliconflow.cn/v1}") String siliconFlowBaseUrl,
             @Value("${app.openai.base-url:https://api.openai.com/v1}") String openAiBaseUrl,
-            @Value("${app.gemini.base-url:https://generativelanguage.googleapis.com}") String geminiBaseUrl) {
-        this(webClientBuilder, defaultProvider, siliconFlowBaseUrl, openAiBaseUrl, geminiBaseUrl, VALIDATION_TIMEOUT);
-    }
-
-    OpenAiCompatibleProviderCredentialValidator(
-            WebClient.Builder webClientBuilder,
-            String defaultProvider,
-            String siliconFlowBaseUrl,
-            String openAiBaseUrl,
-            String geminiBaseUrl,
-            Duration validationTimeout) {
+            @Value("${app.gemini.base-url:https://generativelanguage.googleapis.com}") String geminiBaseUrl,
+            @Value("${app.provider-validation-timeout:PT30S}") Duration validationTimeout) {
         this.webClientBuilder = webClientBuilder;
         this.validationTimeout = validationTimeout;
         this.defaultProvider = normalizeProvider(defaultProvider);

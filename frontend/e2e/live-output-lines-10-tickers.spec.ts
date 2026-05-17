@@ -7,7 +7,7 @@ type TaskType =
 
 type TaskCase = {
   taskType: TaskType;
-  radioName: RegExp;
+  tabName: RegExp;
   reportHeading: RegExp;
   requiredComponents: RegExp[];
   qualitySignals: RegExp[];
@@ -19,7 +19,7 @@ const liveSiliconFlowKey = process.env.SILICONFLOW_API_KEY;
 const TASK_CASES: TaskCase[] = [
   {
     taskType: "latest_earnings_readout",
-    radioName: /latest earnings readout/i,
+    tabName: /latest earnings readout/i,
     reportHeading: /Earnings Readout View/i,
     requiredComponents: [
       /Earnings Readout View/i,
@@ -27,17 +27,16 @@ const TASK_CASES: TaskCase[] = [
       /KPI Strip/i,
       /What Changed/i,
       /Watch Next/i,
-      /Source Citations & Verification|Current status:/i,
     ],
     qualitySignals: [
       /\bpositive\b|\bmixed\b|\bnegative\b/i,
-      /\bsupported\b|\bpartial\b|\bmissing\b|\bunverified\b|✅|⚠️|❌/i,
-      /\bnot discernible\b|\bnot provided\b|\bnot available\b|\bevidence\b|\bsource\b/i,
+      /\brevenue\b|\bgross\b|\boperating income\b|\bmargin\b/i,
+      /\bwatch\b|\brisk\b|\bmonitor\b|\binflect\b|\bpressure\b/i,
     ],
   },
   {
     taskType: "business_driver_deep_dive",
-    radioName: /business driver deep dive/i,
+    tabName: /business driver deep dive/i,
     reportHeading: /Business Driver Research View/i,
     requiredComponents: [
       /Business Driver Research View/i,
@@ -46,17 +45,16 @@ const TASK_CASES: TaskCase[] = [
       /Impact Table/i,
       /Signals/i,
       /Watchlist/i,
-      /Source Citations & Verification|Current status:/i,
     ],
     qualitySignals: [
       /\bdurable\b|\bmixed\b|\btemporary\b|\bunclear\b/i,
       /\bproduct\b|\bsegment\b|\bdemand\b|\bpricing\b|\bcustomer\b|\bstrategy\b/i,
-      /\bsupported\b|\bpartial\b|\bmissing\b|\bunverified\b|✅|⚠️|❌/i,
+      /\bdriver\b|\bimpact\b|\bsignal\b|\bwatchlist\b|\bmargin\b/i,
     ],
   },
   {
     taskType: "cash_flow_capital_allocation",
-    radioName: /cash flow & capital allocation/i,
+    tabName: /cash flow & capital allocation/i,
     reportHeading: /Capital Allocation View/i,
     requiredComponents: [
       /Capital Allocation View/i,
@@ -65,12 +63,11 @@ const TASK_CASES: TaskCase[] = [
       /Capital Allocation Scorecard/i,
       /Allocation Discipline/i,
       /Red Flags/i,
-      /Source Citations & Verification|Current status:/i,
     ],
     qualitySignals: [
       /\bcash\b|\boperating cash flow\b|\bfree cash flow\b|\bcapex\b|\bbuyback\b|\bdividend\b|\bdebt\b|\bliquidity\b/i,
       /\bunclear\b|\bmixed\b|\bcash-backed\b|\bnot discernible\b|\bnot provided\b/i,
-      /\bsupported\b|\bpartial\b|\bmissing\b|\bunverified\b|✅|⚠️|❌/i,
+      /\ballocation\b|\bdiscipline\b|\bred flags\b|\bscorecard\b|\bquality\b/i,
     ],
   },
 ];
@@ -126,6 +123,26 @@ const LIVE_CASES = [
 
 test.use({ screenshot: "off", trace: "off", video: "off" });
 
+async function submitTicker(page: import("@playwright/test").Page, ticker: string) {
+  await page.goto("/app");
+  await page.locator("select").selectOption("en");
+  const tickerInput = page.getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)");
+  await tickerInput.fill(ticker);
+  await page.getByRole("button", { name: "Analyze ticker" }).click();
+}
+
+async function waitForAllAgentResponses(
+  page: import("@playwright/test").Page,
+  analyzeResponses: string[],
+) {
+  await expect
+    .poll(() => analyzeResponses.length, {
+      timeout: 420_000,
+      message: "all three live agent responses should return",
+    })
+    .toBe(3);
+}
+
 test.describe("Spring Alpha live 10 ticker output-line matrix", () => {
   test.skip(
     !liveEnabled,
@@ -148,31 +165,46 @@ test.describe("Spring Alpha live 10 ticker output-line matrix", () => {
     }, testInfo) => {
       testInfo.setTimeout(480_000);
 
-      await page.goto("/app");
-      await expect(page.getByText("Saved")).toBeVisible();
-      await page
-        .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
-        .fill(liveCase.ticker);
-      await page.getByRole("radio", { name: liveCase.task.radioName }).click();
-      await page.getByRole("button", { name: /analyze/i }).click();
+      const analyzeRequests: string[] = [];
+      const analyzeResponses: string[] = [];
+      page.on("request", (request) => {
+        const url = request.url();
+        if (url.includes("/api/sec/analyze/")) {
+          analyzeRequests.push(url);
+        }
+      });
+      page.on("response", (response) => {
+        const url = response.url();
+        if (url.includes("/api/sec/analyze/")) {
+          analyzeResponses.push(`${response.status()} ${url}`);
+        }
+      });
 
-      await expect(page.getByRole("status")).toContainText(
-        /Live agent run in progress/i,
+      await submitTicker(page, liveCase.ticker);
+      await expect(page.getByText("Saved")).toBeVisible();
+
+      await waitForAllAgentResponses(page, analyzeResponses);
+      expect(analyzeResponses.every((entry) => entry.startsWith("200 "))).toBe(
+        true,
       );
-      await expect(page.getByRole("status")).toContainText(
-        /Backend and agent running/i,
+      expect(analyzeRequests.length).toBe(3);
+      expect(analyzeRequests.join("\n")).toContain(liveCase.task.taskType);
+
+      await expect(page.getByText(`${liveCase.ticker} Market Chart`)).toBeVisible();
+      await expect(page.getByRole("tab", { name: /market chart/i })).toHaveAttribute(
+        "aria-selected",
+        "true",
       );
+      await page.getByRole("tab", { name: liveCase.task.tabName }).click();
 
       await expect(
         page.getByRole("heading", {
           name: new RegExp(`${liveCase.ticker} Analysis Report`, "i"),
         }),
-      ).toBeVisible({
-        timeout: 420_000,
-      });
+      ).toBeVisible();
 
       const bodyText =
-        (await page.locator("body").textContent({ timeout: 10_000 })) ?? "";
+        (await page.locator("body").innerText({ timeout: 10_000 })) ?? "";
 
       expect(bodyText).toContain(liveCase.ticker);
       for (const forbiddenPattern of FORBIDDEN_OUTPUT_PATTERNS) {
@@ -195,16 +227,17 @@ test.describe("Spring Alpha live 10 ticker output-line matrix", () => {
         await expect(page.getByText(requiredPattern).first()).toBeVisible();
       }
 
-      await expect(page.getByText(liveCase.task.reportHeading).first()).toBeVisible();
       await expect(
-        page
-          .getByText(
-            /Source Citations|Source Citations & Verification|Current status:/i,
-          )
-          .first(),
-      ).toBeVisible({
-        timeout: 30_000,
-      });
+        page.getByRole("region", { name: /messages and tools/i }),
+      ).toContainText(/Reasoning|Tool/i);
+      await page.getByRole("button", { name: /developer diagnostics/i }).click();
+      await expect(page.getByText("Live RAG Telemetry")).toBeVisible();
+      await expect(page.getByText("Evidence Retrieved")).toBeVisible();
+      await expect(page.getByText("Evidence Used")).toBeVisible();
+      await expect(page.getByText("Metric Facts")).toBeVisible();
+      await expect(page.getByText("Evidence Pack Size")).toBeVisible();
+
+      await expect(page.getByText(liveCase.task.reportHeading).first()).toBeVisible();
     });
   }
 });

@@ -5,336 +5,312 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowUpRight,
-  BadgeCheck,
-  BrainCircuit,
-  FileSearch,
+  Bot,
+  ChartCandlestick,
   Github,
   Languages,
-  Radar,
-  Sparkles,
-  SquareChartGantt,
+  MessageSquareText,
+  Search,
+  TerminalSquare,
 } from "lucide-react";
 
 type Locale = "zh" | "en";
 
 const LANDING_LOCALE_STORAGE = "spring-alpha-landing-locale";
 
-const featureIcons = [FileSearch, SquareChartGantt, BrainCircuit] as const;
-
 const copy = {
   zh: {
-    brandTagline: "AI 财报研究驾驶舱",
+    brandTagline: "AI 财报研究工作台",
     nav: {
-      features: "能力",
-      showcase: "展示",
-      workflow: "流程",
+      app: "应用",
+      agents: "Agent",
+      github: "GitHub",
     },
     actions: {
       launch: "进入应用",
-      preview: "看现有界面",
-      github: "去 GitHub 点赞",
-      contribute: "贡献代码 / 提 Issue",
+      github: "查看 GitHub",
+      start: "开始研究",
+      issue: "提交 Issue",
     },
     localeLabel: "语言",
     hero: {
-      badge: "面向美股财报研究的 AI 分析工作台",
-      titlePrefix: "把",
-      titleHighlight: "财报阅读",
-      titleSuffix: "变成一块真正可用的研究界面",
+      pill: "Spring Alpha 工作台",
+      title: "更快读懂每一次财报",
       body:
-        "Spring Alpha 把 SEC 原文、结构化财务指标、趋势图、风险因子和 AI 解读放在一个连续体验里。先看品牌页理解它能做什么，再一键进入真正的财报应用。",
-      quickStats: [
-        { label: "真实分析入口", value: "/app 工作区" },
-        { label: "数据链路", value: "SEC + Yahoo + 财报检索增强" },
-        { label: "当前策略", value: "向量检索 + 原始财报兜底" },
-      ],
-      flowTitle: "分析链路",
-      flowBody: "从披露原文到结构化指标，再到更像研究结论的表达。",
-      signalTitle: "信号快照",
-      signalValue: "+15.65%",
-      signalBody: "营收同比增长",
-      groundedTitle: "可追溯模式",
-      groundedValue: "引用 + 图表",
-      groundedBody: "把数字、图表和论点放进同一条阅读链路。",
-      whatYouGetLabel: "你会得到什么",
-      whatYouGetTitle: "从原始披露，到能直接拿来判断的研究界面",
-      whatYouGetBody:
-        "它不是单独一个聊天框，也不是只有几张图的静态看板，而是把“看财报”和“形成观点”放在同一条阅读路径里。",
-      productLabel: "真实产品界面",
-      productTitle: "用 AAPL 实际页面展示产品完成度",
-      productTag: "真实看板",
-      productCards: [
-        { label: "引擎", value: "SEC + Yahoo" },
-        { label: "输出", value: "看板 + PDF" },
-        { label: "研究模式", value: "多头 / 空头 / 风险" },
-      ],
-      productHighlights: [
-        {
-          title: "模型接入方式",
-          body: "默认使用 BYOK 模式，用户可选择 SiliconFlow、OpenAI 或 Gemini，并使用自己的 API Key。",
-        },
-        {
-          title: "Provider 选择",
-          body: "第一版不再提供免费托管模型，真实 E2E 默认使用 SiliconFlow 的 Kimi K2.6。",
-        },
-        {
-          title: "技术栈",
-          body: "前端基于 Next.js，后端使用 Spring Boot，分析链路串联 SEC、Yahoo、RAG 和多策略模型层。",
-        },
-      ],
-      imageAlt: "Spring Alpha AAPL 看板预览",
+        "Spring Alpha 是一个 ticker-first 的 AI 财报研究工作台。输入股票代码，依次运行三个分析 Agent，在同一块界面里查看 SEC 文件、行情图、工具时间线和实时 RAG telemetry。",
+      imageAlt: "Spring Alpha live workbench preview",
+      command: "用三个 Agent 分析 AAPL 财报",
     },
-    proofPoints: [
-      "季度财报分析",
-      "SEC / Yahoo 双源补充",
-      "关键财务指标与趋势图",
-      "多模型接入与 BYOK",
-      "风险因子与驱动拆解",
-      "PDF 报告导出",
+    strips: [
+      "SEC 文件",
+      "Yahoo 行情数据",
+      "LangGraph Agent",
+      "EvidencePack telemetry",
     ],
-    heroStats: [
-      { label: "数据形态", value: "SEC + Yahoo + AI" },
-      { label: "输出形态", value: "看板 / PDF / 引用" },
-      { label: "适用场景", value: "研究、演示、内容生产" },
+    terminal: {
+      title: "一个 ticker，三个 Agent，一块研究界面。",
+      lines: [
+        "ticker=AAPL provider=siliconflow",
+        "agent.latest_earnings: 收集事实并生成财报解读",
+        "agent.business_driver: 检查分部和需求变化",
+        "agent.cash_flow: 评估 FCF 和资本配置",
+        "ui.timeline: 展示 messages, tools 和 telemetry",
+      ],
+    },
+    sections: [
+      {
+        label: "01 / Agents",
+        title: "三个报告按顺序运行",
+        body:
+          "Latest Earnings Readout、Business Driver Deep Dive、Cash Flow & Capital Allocation 是三条独立分析链路。用户可以切换报告，同时保留完整运行上下文。",
+      },
+      {
+        label: "02 / Workspace",
+        title: "K 线图是默认界面",
+        body:
+          "没有选择报告时，应用默认展示 all-time market chart。报告、Agent 状态和 Messages & Tools 围绕它展开，而不是把工作流降级成聊天框。",
+      },
+      {
+        label: "03 / RAG",
+        title: "展示 telemetry，不展示假分数",
+        body:
+          "RAG 面板只展示当前 run 能证明的指标：evidence retrieved、evidence used、metric facts、sections covered、latency、empty retrieval 和 evidence pack size。",
+      },
     ],
-    flowNodes: [
-      { title: "SEC 财报", detail: "10-Q / 10-K 解析" },
-      { title: "结构化事实", detail: "营收 / 利润率 / 自由现金流" },
-      { title: "AI 研究结论", detail: "驱动因素 / 风险 / 情景推演" },
-    ],
-    features: {
+    highlights: {
+      label: "Project Highlights",
+      title: "不只是好看的 demo，而是一条真实研究链路。",
       cards: [
         {
-          title: "财报读得更快",
+          title: "Ticker-first 入口",
           body:
-            "把 SEC 财报、结构化财务指标和前端看板串成一条链，不用在 10-Q、10-K 和图表之间来回跳。",
+            "用户不需要先选复杂任务。输入 ticker 后，系统补全公司名、展示行情，并按顺序运行三条研究 Agent。",
         },
         {
-          title: "先看结论，再钻细节",
+          title: "TradingAgents 风格执行",
           body:
-            "核心分析、驱动因素、风险项、多空观点和关键图表同屏展开，适合快速形成研究框架。",
+            "Agent 使用 LangGraph / LangChain tool-calling 思路组织，把 company facts、SEC evidence、metric facts 和 synthesis 分开处理。",
         },
         {
-          title: "不是纯聊天，是可落地研究流",
+          title: "真实 telemetry",
           body:
-            "支持引用校验、行业模式切换、指标健康雷达和 PDF 导出，更像一个分析工作台。",
+            "侧边栏展示当前 run 的 messages、tools、latency、evidence pack size 和 retrieval signals，而不是离线 benchmark 假分数。",
+        },
+        {
+          title: "BYOK provider",
+          body:
+            "用户可以带自己的 SiliconFlow、OpenAI 或 Gemini key。前端保存本地 key，后端只在请求时接收并转发。",
         },
       ],
     },
-    showcase: {
-      label: "产品展示",
-      title: "不是只会回答一句话，而是给你一整页研究上下文",
-      body:
-        "这个页面会把核心分析、关键指标、营收趋势、利润率趋势、杜邦拆解、健康雷达、风险因子和多空逻辑排在同一条阅读流里。你不需要边看财报边自己拼看板。",
-      cards: [
+    architecture: {
+      label: "Architecture",
+      title: "Spring Boot, Python agents, Next.js 和 PGVector 组合成一条可审计链路。",
+      rows: [
         {
-          label: "分析界面",
-          title: "读财报最常用的模块一次展开",
-          body:
-            "执行摘要、驱动因素、风险项、引用和图表不是拆开的多个工具，而是一页内完成的分析旅程。",
+          name: "Frontend",
+          value: "Next.js workbench, ticker autocomplete, market chart, agent report tabs, timeline sidebar",
         },
         {
-          label: "研究纪律",
-          title: "兼顾可视化和可追溯输出",
-          body:
-            "不是只有会说故事的 LLM，也不是只有冰冷数字。它尝试把原始披露、结构化指标和表达质量放进同一个产品里。",
+          name: "Backend",
+          value: "Spring Boot API, SEC fetch, SSE bridge, provider error mapping, Java service boundary",
         },
         {
-          label: "为什么重要",
-          title: "为个人研究、内容创作和演示展示做了一层更有完成度的包装",
-          body:
-            "你可以把它当成一个 AI 财报分析应用，也可以把它当成一套面向投资研究产品的交互原型。品牌页负责讲清楚产品定位，“进入应用”负责把人送进真正的工作区。",
+          name: "Research Service",
+          value: "Python, LangGraph, LangChain tools, LlamaIndex cleaning/chunking, EvidencePack assembly",
+        },
+        {
+          name: "Storage",
+          value: "PGVector for filing chunks and retrieval metadata; SEC companyfacts for structured metrics",
         },
       ],
     },
-    workflow: {
-      label: "使用流程",
-      title: "从一只股票，到一页像样的研究输出",
-      steps: [
-        {
-          step: "01",
-          title: "输入股票代码",
-          body:
-            "从 AAPL、NVDA 到银行、支付、半导体，我们先抓财报与行情补充数据。",
-        },
-        {
-          step: "02",
-          title: "生成结构化看板",
-          body:
-            "把营收、利润、现金流、趋势图和健康评分整理成一套可读看板。",
-        },
-        {
-          step: "03",
-          title: "给出研究视角",
-          body:
-            "把业务主线、增长驱动、风险暴露和多空逻辑压缩成更像分析师的表达。",
-        },
+    difference: {
+      label: "What makes it different",
+      title: "我们把 RAG 收缩成工具，把 Agent 输出做成产品界面。",
+      points: [
+        "Company profile 不从 filing snippet 硬凑，而优先来自 company facts 和业务描述。",
+        "LLM 失败时展示透明错误、可重试入口和已收集证据，不再用 deterministic report 假装成功。",
+        "RAG 面板只展示当前 run 可证明的实时指标，不展示无法实时计算的 recall / precision。",
+        "默认显示 all-time K 线图，用户点击不同 Agent report 后再切换报告内容。",
       ],
     },
     footer: {
-      label: "开源进展",
-      title: "如果你喜欢这个方向，欢迎去 GitHub 点赞、提 Issue，或者直接贡献代码。",
+      title: "把 SEC 文件放进更清晰的研究循环。",
       body:
-        "Spring Alpha 现在不仅是一个可运行的财报分析应用，也是一套正在持续打磨的开源产品原型。你的点赞、反馈、PR 和想法，都会直接影响它下一步长成什么样。",
+        "打开应用，输入 ticker，让 Agent 先搭出第一版研究框架；你可以同时检查行情图和工具时间线。",
     },
   },
   en: {
-    brandTagline: "AI earnings research cockpit",
+    brandTagline: "AI earnings research workspace",
     nav: {
-      features: "Features",
-      showcase: "Showcase",
-      workflow: "Workflow",
+      app: "App",
+      agents: "Agents",
+      github: "GitHub",
     },
     actions: {
       launch: "Launch App",
-      preview: "Preview UI",
-      github: "Star on GitHub",
-      contribute: "Contribute / Open Issue",
+      github: "View on GitHub",
+      start: "Start Research",
+      issue: "Open Issue",
     },
     localeLabel: "Language",
     hero: {
-      badge: "An AI workspace for U.S. earnings research",
-      titlePrefix: "Turn",
-      titleHighlight: "earnings reading",
-      titleSuffix: "into a research interface you can actually use",
+      pill: "Spring Alpha Workspace",
+      title: "Research faster at Any earnings call",
       body:
-        "Spring Alpha puts SEC filings, structured financial facts, trend charts, risk factors, and AI reasoning into one continuous experience. The landing page explains the product, then `/app` takes you into the real workspace.",
-      quickStats: [
-        { label: "Real entry", value: "/app workspace" },
-        { label: "Data path", value: "SEC + Yahoo + Filing RAG" },
-        { label: "Current strategy", value: "Vector retrieval + raw filing fallback" },
-      ],
-      flowTitle: "Analysis flow",
-      flowBody: "From raw disclosure to structured facts to analyst-style framing.",
-      signalTitle: "Signal snapshot",
-      signalValue: "+15.65%",
-      signalBody: "Revenue YoY growth",
-      groundedTitle: "Grounded mode",
-      groundedValue: "Facts + charts",
-      groundedBody: "Keep numbers, charts, and claims in the same reading path.",
-      whatYouGetLabel: "What you get",
-      whatYouGetTitle: "From raw disclosure to a research surface ready for judgment",
-      whatYouGetBody:
-        "This is not a lone chat box or a static dashboard with a few charts. It keeps reading the filing and forming a thesis in the same flow.",
-      productLabel: "Live product frame",
-      productTitle: "AAPL screen capture showing real product maturity",
-      productTag: "Real dashboard",
-      productCards: [
-        { label: "Engine", value: "SEC + Yahoo" },
-        { label: "Output", value: "Dashboard + PDF" },
-        { label: "Research mode", value: "Bull / Bear / Risks" },
-      ],
-      productHighlights: [
-        {
-          title: "Model access",
-          body: "Use BYOK by default with SiliconFlow, OpenAI, or Gemini, each backed by the user's own API key.",
-        },
-        {
-          title: "BYOK provider options",
-          body: "Free hosted models are removed; live E2E defaults to SiliconFlow Kimi K2.6.",
-        },
-        {
-          title: "Tech stack",
-          body: "Next.js on the frontend, Spring Boot on the backend, with SEC, Yahoo, RAG, and strategy-based model routing underneath.",
-        },
-      ],
-      imageAlt: "Spring Alpha AAPL dashboard preview",
+        "Spring Alpha is a ticker-first AI research workbench. Enter a stock symbol, run three analyst agents, and review SEC filings, market charts, tool timelines, and live RAG telemetry in one focused workspace.",
+      imageAlt: "Spring Alpha live workbench preview",
+      command: "Analyze NVDA earnings with three agents",
     },
-    proofPoints: [
-      "Quarterly report analysis",
-      "SEC + Yahoo dual-source enrichment",
-      "Key metrics and trend charts",
-      "BYOK provider support",
-      "Risk factors and driver breakdowns",
-      "PDF report export",
+    strips: [
+      "SEC filings",
+      "Yahoo market data",
+      "LangGraph agents",
+      "EvidencePack telemetry",
     ],
-    heroStats: [
-      { label: "Data stack", value: "SEC + Yahoo + AI" },
-      { label: "Outputs", value: "Dashboard / PDF / Charts" },
-      { label: "Use cases", value: "Research, demos, content creation" },
+    terminal: {
+      title: "One ticker. Three agents. One research surface.",
+      lines: [
+        "ticker=NVDA provider=siliconflow",
+        "agent.latest_earnings: collect facts, synthesize report",
+        "agent.business_driver: inspect segment and demand changes",
+        "agent.cash_flow: evaluate FCF and capital allocation",
+        "ui.timeline: stream messages, tools, and telemetry",
+      ],
+    },
+    sections: [
+      {
+        label: "01 / Agents",
+        title: "Three reports run in order",
+        body:
+          "Latest Earnings Readout, Business Driver Deep Dive, and Cash Flow & Capital Allocation are designed as separate analyst lanes, so the user can switch reports without losing the full run context.",
+      },
+      {
+        label: "02 / Workspace",
+        title: "The chart is the default surface",
+        body:
+          "Before a report is selected, the app opens with an all-time market chart. Reports, agent status, and Messages & Tools stay around it instead of replacing the workflow with a chat box.",
+      },
+      {
+        label: "03 / RAG",
+        title: "Telemetry, not fake scores",
+        body:
+          "The RAG panel only shows current-run signals: evidence retrieved, evidence used, metric facts, sections covered, latency, empty retrieval, and evidence pack size.",
+      },
     ],
-    flowNodes: [
-      { title: "SEC Filing", detail: "10-Q / 10-K parsing" },
-      { title: "Structured Facts", detail: "Revenue / Margin / FCF" },
-      { title: "AI Thesis", detail: "Drivers / Risks / Scenarios" },
-    ],
-    features: {
+    highlights: {
+      label: "Project Highlights",
+      title: "Not a pretty demo, but a real research pipeline.",
       cards: [
         {
-          title: "Read filings faster",
+          title: "Ticker-first entry",
           body:
-            "Connect SEC filings, structured financial metrics, and the dashboard in one path instead of bouncing between filings and charts.",
+            "The user starts with a ticker. The workspace resolves the company, opens the chart, and runs three research agents in order.",
         },
         {
-          title: "See the thesis before the details",
+          title: "TradingAgents-style execution",
           body:
-            "Core analysis, drivers, risks, bull and bear cases, and supporting visuals stay on one screen so you can form a view quickly.",
+            "Agents follow a LangGraph / LangChain tool-calling shape, separating company facts, SEC evidence, metric facts, and synthesis.",
         },
         {
-          title: "More than chat, closer to a workflow",
+          title: "Live telemetry",
           body:
-            "Mode switching, health radar, structured facts, and PDF export make this feel like a research workstation instead of a chat demo.",
+            "The sidebar shows current-run messages, tools, latency, evidence pack size, and retrieval signals instead of offline benchmark scores.",
+        },
+        {
+          title: "BYOK providers",
+          body:
+            "Users can bring SiliconFlow, OpenAI, or Gemini keys. Keys stay local in the browser and are forwarded only for the active request.",
         },
       ],
     },
-    showcase: {
-      label: "Showcase",
-      title: "Not a one-line answer, but a full page of research context",
-      body:
-        "The product lines up the executive summary, key metrics, revenue trends, margin trends, DuPont breakdown, health radar, risks, and bull/bear framing in one reading flow.",
-      cards: [
+    architecture: {
+      label: "Architecture",
+      title: "Spring Boot, Python agents, Next.js, and PGVector form an auditable research loop.",
+      rows: [
         {
-          label: "Analysis surface",
-          title: "The modules you use most while reading filings open together",
-          body:
-            "Executive summary, drivers, risks, facts, and charts are not split into separate tools. They are part of one continuous analysis journey.",
+          name: "Frontend",
+          value: "Next.js workbench, ticker autocomplete, market chart, agent report tabs, timeline sidebar",
         },
         {
-          label: "Research discipline",
-          title: "Visual storytelling with grounded output",
-          body:
-            "This is not only an eloquent LLM and not only a cold metrics page. It tries to keep disclosure, structured facts, and communication quality in the same product.",
+          name: "Backend",
+          value: "Spring Boot API, SEC fetch, SSE bridge, provider error mapping, Java service boundary",
         },
         {
-          label: "Why this matters",
-          title: "Packaged for personal research, content creation, and demos",
-          body:
-            "You can treat it as an AI earnings research app or as a stronger interaction prototype for an investing product. The landing page sets the frame and `Launch App` sends users into the real workspace.",
+          name: "Research Service",
+          value: "Python, LangGraph, LangChain tools, LlamaIndex cleaning/chunking, EvidencePack assembly",
+        },
+        {
+          name: "Storage",
+          value: "PGVector for filing chunks and retrieval metadata; SEC companyfacts for structured metrics",
         },
       ],
     },
-    workflow: {
-      label: "Workflow",
-      title: "From one ticker to a credible research output",
-      steps: [
-        {
-          step: "01",
-          title: "Enter a ticker",
-          body:
-            "From AAPL and NVDA to banks, payments, and semis, we first fetch filings and market context.",
-        },
-        {
-          step: "02",
-          title: "Generate a structured dashboard",
-          body:
-            "Revenue, profit, cash flow, trend charts, and health signals get organized into a readable research surface.",
-        },
-        {
-          step: "03",
-          title: "Frame the investment view",
-          body:
-            "Compress the business story, growth drivers, risk exposure, and bull/bear logic into analyst-style output.",
-        },
+    difference: {
+      label: "What makes it different",
+      title: "RAG is a tool. Agent output is a product surface.",
+      points: [
+        "Company profile comes from company facts and business descriptions, not filing snippets forced into a bio.",
+        "LLM failures show transparent errors, retry affordances, and collected evidence instead of deterministic fake reports.",
+        "The RAG panel only exposes current-run telemetry, not recall / precision metrics that cannot be computed live.",
+        "The default surface is the all-time market chart; reports appear when users choose an agent lane.",
       ],
     },
     footer: {
-      label: "Open source momentum",
-      title: "If you like this direction, star the repo, open an issue, or contribute.",
+      title: "Bring SEC filings into a sharper research loop.",
       body:
-        "Spring Alpha is not only a runnable earnings analysis app. It is also an open-source product prototype that is still being shaped in public.",
+        "Open the app, type a ticker, and let the agents build the first pass while you inspect the chart and timeline.",
     },
   },
-} satisfies Record<Locale, unknown>;
+} satisfies Record<Locale, {
+  brandTagline: string;
+  nav: Record<"app" | "agents" | "github", string>;
+  actions: Record<"launch" | "github" | "start" | "issue", string>;
+  localeLabel: string;
+  hero: {
+    pill: string;
+    title: string;
+    body: string;
+    imageAlt: string;
+    command: string;
+  };
+  strips: string[];
+  terminal: {
+    title: string;
+    lines: string[];
+  };
+  sections: Array<{
+    label: string;
+    title: string;
+    body: string;
+  }>;
+  highlights: {
+    label: string;
+    title: string;
+    cards: Array<{
+      title: string;
+      body: string;
+    }>;
+  };
+  architecture: {
+    label: string;
+    title: string;
+    rows: Array<{
+      name: string;
+      value: string;
+    }>;
+  };
+  difference: {
+    label: string;
+    title: string;
+    points: string[];
+  };
+  footer: {
+    title: string;
+    body: string;
+  };
+}>;
 
 function getInitialLocale(): Locale {
   if (typeof window === "undefined") {
@@ -350,431 +326,324 @@ function getInitialLocale(): Locale {
 }
 
 export default function LandingPage() {
-  const [locale, setLocale] = useState<Locale>(() => getInitialLocale());
+  const [locale, setLocale] = useState<Locale>("zh");
+  const [isLocaleReady, setIsLocaleReady] = useState(false);
 
   useEffect(() => {
-    window.localStorage.setItem(LANDING_LOCALE_STORAGE, locale);
-  }, [locale]);
+    const handle = window.setTimeout(() => {
+      setLocale(getInitialLocale());
+      setIsLocaleReady(true);
+    }, 0);
+
+    return () => window.clearTimeout(handle);
+  }, []);
+
+  useEffect(() => {
+    if (isLocaleReady) {
+      window.localStorage.setItem(LANDING_LOCALE_STORAGE, locale);
+    }
+  }, [isLocaleReady, locale]);
 
   const t = copy[locale];
 
+  const updateLocale = (nextLocale: Locale) => {
+    setLocale(nextLocale);
+    window.localStorage.setItem(LANDING_LOCALE_STORAGE, nextLocale);
+  };
+
   return (
-    <main className="min-h-screen overflow-hidden bg-[#07111f] text-white">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-10%] top-[-8rem] h-[28rem] w-[28rem] rounded-full bg-[radial-gradient(circle,_rgba(30,199,164,0.28),_transparent_65%)] blur-3xl" />
-        <div className="absolute right-[-8%] top-[10rem] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,_rgba(71,132,255,0.20),_transparent_70%)] blur-3xl" />
-        <div className="absolute inset-x-0 top-0 h-[32rem] bg-[linear-gradient(180deg,rgba(14,30,54,0.92),rgba(7,17,31,0.55),transparent)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(140,169,212,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(140,169,212,0.08)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:radial-gradient(circle_at_center,black,transparent_85%)]" />
+    <main className="min-h-screen overflow-hidden bg-[#111111] font-['Noto_Sans_Mono',var(--font-geist-mono),ui-monospace,monospace] text-[#ebebeb]">
+      <div className="pointer-events-none fixed inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06)_1px,transparent_1.4px)] bg-[length:18px_18px] opacity-55" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(17,17,17,0.08),#111111_78%)]" />
+        <div className="absolute -left-28 top-8 h-[44rem] w-[26rem] rotate-[-22deg] rounded-[3rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.11),rgba(255,255,255,0.02))] opacity-45 shadow-[0_0_90px_rgba(0,0,0,0.65)]" />
+        <div className="absolute -right-20 top-0 h-[34rem] w-[19rem] rotate-[18deg] rounded-[2.5rem] border border-white/10 bg-[linear-gradient(160deg,rgba(20,184,166,0.2),rgba(212,184,126,0.05),rgba(255,255,255,0.02))] opacity-45 blur-[1px]" />
+        <div className="absolute inset-x-0 bottom-0 h-80 bg-[linear-gradient(180deg,transparent,#111111)]" />
       </div>
 
-      <div className="relative mx-auto flex w-full max-w-7xl flex-col px-6 pb-16 pt-6 sm:px-8 lg:px-10">
-        <header className="sticky top-4 z-20 mb-8">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 rounded-[1.75rem] border border-white/10 bg-slate-950/55 px-5 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.25)] backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-300/20">
-                <Sparkles className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold tracking-[0.24em] text-emerald-300 uppercase">
-                  Spring Alpha
-                </p>
-                <p className="text-xs text-slate-400">{t.brandTagline}</p>
-              </div>
-            </div>
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[1240px] flex-col px-5 pb-16 pt-5 sm:px-7 lg:px-8">
+        <header className="flex items-center justify-between gap-4">
+          <Link href="/" className="flex items-center gap-3" aria-label="Spring Alpha home">
+            <span className="grid h-9 w-9 place-items-center rounded-lg border border-emerald-300/20 bg-[#062b2c] text-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_28px_rgba(16,185,129,0.16)]">
+              <ChartCandlestick className="h-5 w-5" />
+            </span>
+            <span className="text-base font-semibold tracking-[-0.02em] text-white">
+              Spring Alpha
+            </span>
+          </Link>
 
-            <nav className="hidden items-center gap-6 text-sm text-slate-300 md:flex">
-              <a href="#features" className="transition hover:text-white">
-                {t.nav.features}
-              </a>
-              <a href="#showcase" className="transition hover:text-white">
-                {t.nav.showcase}
-              </a>
-              <a href="#workflow" className="transition hover:text-white">
-                {t.nav.workflow}
-              </a>
-            </nav>
+          <nav className="hidden items-center gap-8 text-sm font-semibold text-white/72 md:flex">
+            <Link href="/app" className="transition hover:text-white">
+              <ChartCandlestick className="mr-2 inline h-4 w-4 text-white/40" />
+              {t.nav.app}
+            </Link>
+            <a href="#agents" className="transition hover:text-white">
+              <Bot className="mr-2 inline h-4 w-4 text-white/40" />
+              {t.nav.agents}
+            </a>
+            <a
+              href="https://github.com/CadeYu/spring-alpha"
+              target="_blank"
+              rel="noreferrer"
+              className="transition hover:text-white"
+            >
+              <Github className="mr-2 inline h-4 w-4 text-white/40" />
+              {t.nav.github}
+            </a>
+          </nav>
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1">
-                <span className="px-2 text-xs text-slate-400">
-                  <Languages className="h-3.5 w-3.5" />
-                </span>
-                {(["zh", "en"] as const).map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setLocale(option)}
-                    aria-pressed={locale === option}
-                    aria-label={`${t.localeLabel}: ${option.toUpperCase()}`}
-                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                      locale === option
-                        ? "bg-emerald-300/20 text-emerald-100"
-                        : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    {option.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-              <a
-                href="https://github.com/CadeYu/spring-alpha"
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Open GitHub repository"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-white/5 text-slate-300 transition hover:border-emerald-300/30 hover:bg-white/10 hover:text-white"
-              >
-                <Github className="h-4 w-4" />
-              </a>
-              <Link
-                href="/app"
-                className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-400/15 px-4 py-2 text-sm font-medium text-emerald-200 transition hover:bg-emerald-400/25"
-              >
-                {t.actions.launch}
-                <ArrowUpRight className="h-4 w-4" />
-              </Link>
+          <div className="flex items-center gap-3">
+            <div className="hidden items-center rounded-full border border-white/10 bg-black/35 p-1 sm:flex">
+              <Languages className="ml-2 h-3.5 w-3.5 text-white/45" />
+              {(["zh", "en"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => updateLocale(option)}
+                  aria-pressed={locale === option}
+                  aria-label={`${t.localeLabel}: ${option.toUpperCase()}`}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    locale === option
+                      ? "bg-white/12 text-white"
+                      : "text-white/50 hover:text-white"
+                  }`}
+                >
+                  {option.toUpperCase()}
+                </button>
+              ))}
             </div>
+            <Link
+              href="/app"
+              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-[#0fc6a5] px-5 text-sm font-bold text-[#031f1c] shadow-[0_14px_35px_rgba(15,198,165,0.2)] transition hover:-translate-y-0.5 hover:bg-[#35d8bd]"
+            >
+              {t.actions.launch}
+            </Link>
           </div>
         </header>
 
-        <section className="relative grid items-start gap-8 pb-16 pt-2 lg:grid-cols-[minmax(0,1.02fr)_minmax(420px,0.98fr)] lg:gap-12">
-          <div className="max-w-3xl pt-2">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-sm text-emerald-200">
-              <BadgeCheck className="h-4 w-4" />
-              {t.hero.badge}
-            </div>
+        <section className="flex flex-1 flex-col items-center pt-20 text-center sm:pt-24 lg:pt-28">
+          <Link
+            href="/app"
+            className="mb-12 inline-flex items-center gap-3 rounded-full border border-white/10 bg-black/45 px-4 py-2 text-sm font-semibold text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_34px_rgba(0,0,0,0.35)] backdrop-blur"
+          >
+            <span>{t.hero.pill}</span>
+            <span className="h-4 w-px bg-white/12" />
+            <span className="grid h-7 w-7 place-items-center rounded-full bg-white/8 text-white">
+              <ArrowUpRight className="h-4 w-4" />
+            </span>
+          </Link>
 
-            <div className="mb-8 grid gap-3 sm:grid-cols-3">
-              {t.hero.quickStats.map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-[1.3rem] border border-white/8 bg-white/[0.04] px-4 py-4"
-                >
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                    {item.label}
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-white">{item.value}</p>
+          <h1 className="max-w-5xl text-balance text-[3.05rem] font-semibold leading-[1.04] tracking-[-0.045em] text-[#d8d8d8] sm:text-[4.15rem] lg:text-[5.25rem]">
+            {t.hero.title}
+          </h1>
+
+          <p className="mt-7 max-w-4xl text-balance text-base font-medium leading-8 text-white/48 sm:text-lg lg:text-xl">
+            {t.hero.body}
+          </p>
+
+          <div className="mt-9 flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <Link
+              href="/app"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#0fc6a5] px-6 text-sm font-bold text-[#031f1c] shadow-[0_16px_40px_rgba(15,198,165,0.22)] transition hover:-translate-y-0.5 hover:bg-[#35d8bd]"
+            >
+              <Search className="h-4 w-4" />
+              {t.actions.start}
+            </Link>
+            <a
+              href="https://github.com/CadeYu/spring-alpha"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/10 bg-black/35 px-6 text-sm font-bold text-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:-translate-y-0.5 hover:border-white/20 hover:text-white"
+            >
+              <Github className="h-4 w-4" />
+              {t.actions.github}
+            </a>
+          </div>
+
+          <div className="mt-12 flex max-w-4xl flex-wrap items-center justify-center gap-3">
+            {t.strips.map((item) => (
+              <span
+                key={item}
+                className="rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-xs font-semibold text-white/50"
+              >
+                {item}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        <section className="relative mt-12 border-t border-white/10 pt-4 sm:mt-16">
+          <div className="absolute inset-x-[-3rem] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(20,184,166,0.68),rgba(212,184,126,0.35),transparent)]" />
+          <div className="mx-auto max-w-[1124px] overflow-hidden rounded-t-[1.55rem] border border-white/12 bg-[#0b0b0b] shadow-[0_30px_100px_rgba(0,0,0,0.72)]">
+            <div className="flex items-center gap-2 border-b border-white/10 bg-[#161b1f] px-5 py-3">
+              <span className="h-3 w-3 rounded-full bg-white/18" />
+              <span className="h-3 w-3 rounded-full bg-[#d4b87e]/45" />
+              <span className="h-3 w-3 rounded-full bg-[#2dd4bf]/65" />
+              <div className="ml-4 min-w-0 flex-1 rounded-md bg-white/[0.06] px-3 py-1.5 text-left text-xs font-semibold text-white/45">
+                {t.hero.command}
+              </div>
+            </div>
+            <div className="relative aspect-[16/9] min-h-[320px] bg-[#070b12] sm:min-h-[520px]">
+              <Image
+                src="/showcase/live-workbench.png"
+                alt={t.hero.imageAlt}
+                fill
+                priority
+                sizes="(min-width: 1280px) 1124px, 92vw"
+                className="object-cover object-top"
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-[linear-gradient(180deg,transparent,rgba(17,17,17,0.86))]" />
+            </div>
+          </div>
+        </section>
+
+        <section id="agents" className="grid gap-6 border-y border-white/10 py-16 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="max-w-lg">
+            <p className="text-sm font-bold uppercase tracking-[0.22em] text-[#2dd4bf]">
+              Agent Runtime
+            </p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">
+              {t.terminal.title}
+            </h2>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-black/42 p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]">
+            <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/38">
+              <TerminalSquare className="h-4 w-4" />
+              Messages & Tools
+            </div>
+            <div className="space-y-3">
+              {t.terminal.lines.map((line, index) => (
+                <div key={line} className="grid grid-cols-[3.75rem_1fr] gap-4 text-sm">
+                  <span className="text-white/34">00:0{index + 1}</span>
+                  <span className="text-white/68">{line}</span>
                 </div>
               ))}
             </div>
-
-            <h1 className="max-w-4xl text-5xl font-semibold leading-[0.94] tracking-[-0.05em] text-white sm:text-6xl lg:text-[4.5rem]">
-              {t.hero.titlePrefix}{" "}
-              <span className="bg-[linear-gradient(135deg,#d8fff5,#7cebd4_35%,#8eb9ff_70%,#ffffff)] bg-clip-text text-transparent">
-                {t.hero.titleHighlight}
-              </span>{" "}
-              {t.hero.titleSuffix}
-            </h1>
-
-            <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-300 sm:text-xl">
-              {t.hero.body}
-            </p>
-
-            <div className="mt-9 flex flex-col gap-4 sm:flex-row">
-              <Link
-                href="/app"
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#34d399,#58e7c8,#76a9ff)] px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_18px_45px_rgba(42,192,160,0.35)] transition hover:scale-[1.01]"
-              >
-                {t.actions.launch}
-                <ArrowUpRight className="h-4 w-4" />
-              </Link>
-              <a
-                href="#showcase"
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-white/12 bg-white/5 px-6 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/10"
-              >
-                {t.actions.preview}
-                <Radar className="h-4 w-4" />
-              </a>
-            </div>
-
-            <div className="mt-8 rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,20,32,0.92),rgba(9,15,26,0.88))] p-5">
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-400/12 text-emerald-300 ring-1 ring-emerald-300/15">
-                  <Sparkles className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-emerald-300/80">
-                    {t.hero.flowTitle}
-                  </p>
-                  <p className="mt-1 text-base leading-7 text-slate-300">
-                    {t.hero.flowBody}
-                  </p>
-                </div>
-              </div>
-
-              <div className="relative mt-6 hidden xl:block">
-                <div className="grid gap-5 xl:grid-cols-3">
-                  {t.flowNodes.map((node, index) => (
-                    <div
-                      key={node.title}
-                      className="relative rounded-[1.45rem] border border-white/8 bg-white/[0.04] px-5 py-5"
-                    >
-                      <div className="mb-4 flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-300/20 bg-emerald-300/10 text-sm font-semibold text-emerald-200">
-                          0{index + 1}
-                        </div>
-                        <p className="text-sm font-semibold tracking-[0.18em] text-emerald-200/90">
-                          {node.title}
-                        </p>
-                      </div>
-                      <p className="text-lg leading-9 text-slate-200">{node.detail}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:hidden">
-                <div className="rounded-[1.2rem] border border-emerald-300/15 bg-white/[0.04] px-4 py-4">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                    {t.hero.signalTitle}
-                  </p>
-                  <p className="mt-3 text-3xl font-semibold text-emerald-300">
-                    {t.hero.signalValue}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-300">{t.hero.signalBody}</p>
-                </div>
-                <div className="rounded-[1.2rem] border border-sky-300/15 bg-white/[0.04] px-4 py-4">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                    {t.hero.groundedTitle}
-                  </p>
-                  <p className="mt-3 text-base font-semibold text-white">
-                    {t.hero.groundedValue}
-                  </p>
-                  <p className="mt-2 text-xs leading-6 text-slate-300">
-                    {t.hero.groundedBody}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(14,24,39,0.96),rgba(10,16,28,0.92))] p-5">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
-                  {t.hero.whatYouGetLabel}
-                </p>
-                <p className="mt-3 text-xl font-semibold text-white">
-                  {t.hero.whatYouGetTitle}
-                </p>
-                <p className="mt-4 text-sm leading-7 text-slate-300">
-                  {t.hero.whatYouGetBody}
-                </p>
-              </div>
-              <div className="grid gap-3">
-                {t.heroStats.map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-[1.3rem] border border-white/8 bg-white/[0.045] px-4 py-4"
-                  >
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      {item.label}
-                    </p>
-                    <p className="mt-2 text-base font-semibold text-white">
-                      {item.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="relative lg:pt-16">
-            <div className="absolute -inset-6 rounded-[2rem] bg-[radial-gradient(circle_at_top,rgba(52,211,153,0.20),transparent_55%),radial-gradient(circle_at_bottom_right,rgba(101,153,255,0.18),transparent_45%)] blur-2xl" />
-            <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,31,49,0.96),rgba(10,18,30,0.92))] p-5 shadow-[0_24px_90px_rgba(0,0,0,0.42)]">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-4">
-                <div className="max-w-[24rem]">
-                  <p className="text-xs uppercase tracking-[0.24em] text-emerald-300/80">
-                    {t.hero.productLabel}
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-white">
-                    {t.hero.productTitle}
-                  </p>
-                </div>
-                <div className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100">
-                  {t.hero.productTag}
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                {t.hero.productCards.map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-2xl border border-white/8 bg-[#09111c] p-4"
-                  >
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      {item.label}
-                    </p>
-                    <p className="mt-2 text-lg font-semibold text-white">{item.value}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-5 grid gap-4 xl:grid-cols-[0.46fr_0.54fr]">
-                <div className="grid gap-3">
-                  {t.hero.productHighlights.map((item) => (
-                    <div
-                      key={item.title}
-                      className="rounded-[1.3rem] border border-white/8 bg-white/[0.04] p-4"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.8)]" />
-                        <p className="text-sm font-semibold text-white">{item.title}</p>
-                      </div>
-                      <p className="mt-3 text-sm leading-7 text-slate-300">{item.body}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="overflow-hidden rounded-[1.4rem] border border-white/10 bg-[#040b14] p-3">
-                  <div className="relative h-[34rem] overflow-hidden rounded-[1rem] border border-white/6 bg-[#06101b] sm:h-[42rem] xl:h-[50rem]">
-                    <Image
-                      src="/showcase/aapl-dashboard.png"
-                      alt={t.hero.imageAlt}
-                      fill
-                      priority
-                      sizes="(min-width: 1280px) 32vw, (min-width: 1024px) 40vw, 100vw"
-                      className="object-cover object-[78%_top]"
-                    />
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-[linear-gradient(180deg,transparent,rgba(4,11,20,0.9))]" />
-                  </div>
-                </div>
-              </div>
-
-            </div>
           </div>
         </section>
 
-        <section
-          id="features"
-          className="grid gap-5 border-y border-white/8 py-16 md:grid-cols-3"
-        >
-          {t.features.cards.map(({ title, body }, index) => {
-            const Icon = featureIcons[index];
-            return (
-              <article
-                key={title}
-                className="rounded-[1.8rem] border border-white/8 bg-white/[0.045] p-6 backdrop-blur-sm"
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/12 text-emerald-300 ring-1 ring-emerald-300/15">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <h2 className="mt-5 text-2xl font-semibold text-white">{title}</h2>
-                <p className="mt-4 text-base leading-7 text-slate-300">{body}</p>
-              </article>
-            );
-          })}
+        <section className="grid gap-4 py-16 lg:grid-cols-3">
+          {t.sections.map((section) => (
+            <article
+              key={section.label}
+              className="rounded-2xl border border-white/10 bg-white/[0.035] p-6 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+            >
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/34">
+                {section.label}
+              </p>
+              <h2 className="mt-5 text-2xl font-semibold tracking-[-0.035em] text-white">
+                {section.title}
+              </h2>
+              <p className="mt-4 text-sm leading-7 text-white/50">{section.body}</p>
+            </article>
+          ))}
         </section>
 
-        <section
-          id="showcase"
-          className="grid gap-8 py-16 lg:grid-cols-[0.9fr_1.1fr]"
-        >
-          <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-emerald-300/75">
-              {t.showcase.label}
+        <section className="grid gap-8 border-t border-white/10 py-16 lg:grid-cols-[0.82fr_1.18fr]">
+          <div className="max-w-xl">
+            <p className="text-sm font-bold uppercase tracking-[0.22em] text-[#2dd4bf]">
+              {t.highlights.label}
             </p>
-            <h2 className="mt-4 text-4xl font-semibold tracking-[-0.04em] text-white">
-              {t.showcase.title}
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">
+              {t.highlights.title}
             </h2>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-300">
-              {t.showcase.body}
-            </p>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            {t.showcase.cards.map((card, index) => (
-              <div
+          <div className="grid gap-4 sm:grid-cols-2">
+            {t.highlights.cards.map((card) => (
+              <article
                 key={card.title}
-                className={`rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(13,22,34,0.98),rgba(10,16,26,0.92))] p-5 ${
-                  index === 2 ? "md:col-span-2" : ""
-                }`}
+                className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
               >
-                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                  {card.label}
-                </p>
-                <p className="mt-3 text-xl font-semibold text-white">{card.title}</p>
-                <p className="mt-4 text-sm leading-7 text-slate-300">{card.body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section
-          id="workflow"
-          className="rounded-[2rem] border border-white/8 bg-white/[0.035] p-6 sm:p-8"
-        >
-          <div className="max-w-2xl">
-            <p className="text-sm uppercase tracking-[0.28em] text-emerald-300/75">
-              {t.workflow.label}
-            </p>
-            <h2 className="mt-4 text-4xl font-semibold tracking-[-0.04em] text-white">
-              {t.workflow.title}
-            </h2>
-          </div>
-
-          <div className="mt-10 grid gap-4 lg:grid-cols-3">
-            {t.workflow.steps.map((item) => (
-              <article
-                key={item.step}
-                className="rounded-[1.6rem] border border-white/8 bg-[#08111d] p-6"
-              >
-                <p className="text-xs font-semibold tracking-[0.28em] text-emerald-300">
-                  {item.step}
-                </p>
-                <h3 className="mt-4 text-2xl font-semibold text-white">
-                  {item.title}
+                <h3 className="text-lg font-semibold tracking-[-0.03em] text-white">
+                  {card.title}
                 </h3>
-                <p className="mt-4 text-sm leading-7 text-slate-300">
-                  {item.body}
-                </p>
+                <p className="mt-3 text-sm leading-7 text-white/50">{card.body}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="py-16">
-          <div className="overflow-hidden rounded-[2.4rem] border border-emerald-300/15 bg-[linear-gradient(135deg,rgba(13,28,45,0.96),rgba(10,18,28,0.94))] px-6 py-10 sm:px-10">
-            <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
-              <div>
-                <p className="text-sm uppercase tracking-[0.28em] text-emerald-300/80">
-                  {t.footer.label}
-                </p>
-                <h2 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-white">
-                  {t.footer.title}
-                </h2>
-                <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-300">
-                  {t.footer.body}
-                </p>
-              </div>
+        <section className="grid gap-8 rounded-3xl border border-white/10 bg-black/35 p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:p-8 lg:grid-cols-[0.88fr_1.12fr]">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-[0.22em] text-[#d4b87e]">
+              {t.architecture.label}
+            </p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">
+              {t.architecture.title}
+            </h2>
+          </div>
 
-              <div className="flex flex-col items-stretch gap-3 sm:flex-row lg:flex-col">
-                <a
-                  href="https://github.com/CadeYu/spring-alpha"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#34d399,#58e7c8,#76a9ff)] px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_18px_45px_rgba(42,192,160,0.35)] transition hover:scale-[1.01]"
-                >
-                  {t.actions.github}
-                  <Github className="h-4 w-4" />
-                </a>
-                <a
-                  href="https://github.com/CadeYu/spring-alpha/issues"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-full border border-white/12 bg-white/5 px-6 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/10"
-                >
-                  {t.actions.contribute}
-                  <ArrowUpRight className="h-4 w-4" />
-                </a>
-                <Link
-                  href="/app"
-                  className="inline-flex items-center justify-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-6 py-3 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/16"
-                >
-                  {t.actions.launch}
-                  <ArrowUpRight className="h-4 w-4" />
-                </Link>
+          <div className="divide-y divide-white/10 rounded-2xl border border-white/10 bg-[#0b1114]">
+            {t.architecture.rows.map((row) => (
+              <div key={row.name} className="grid gap-2 p-5 sm:grid-cols-[10rem_1fr]">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/38">
+                  {row.name}
+                </p>
+                <p className="text-sm leading-7 text-white/62">{row.value}</p>
               </div>
-            </div>
+            ))}
           </div>
         </section>
+
+        <section className="grid gap-8 py-16 lg:grid-cols-[0.92fr_1.08fr]">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-[0.22em] text-[#2dd4bf]">
+              {t.difference.label}
+            </p>
+            <h2 className="mt-4 max-w-xl text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">
+              {t.difference.title}
+            </h2>
+          </div>
+
+          <div className="grid gap-3">
+            {t.difference.points.map((point, index) => (
+              <div
+                key={point}
+                className="grid gap-4 rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-left sm:grid-cols-[3.2rem_1fr]"
+              >
+                <span className="text-sm font-bold text-white/34">
+                  0{index + 1}
+                </span>
+                <p className="text-sm leading-7 text-white/58">{point}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <footer className="grid gap-8 rounded-3xl border border-white/10 bg-[#f7f1e8] p-6 text-black shadow-[0_28px_80px_rgba(0,0,0,0.45)] sm:p-8 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-black px-3 py-1.5 text-xs font-bold text-white">
+              <Search className="h-3.5 w-3.5" />
+              Ticker-first
+            </div>
+            <h2 className="max-w-3xl text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
+              {t.footer.title}
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm font-semibold leading-7 text-black/52">
+              {t.footer.body}
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
+            <Link
+              href="/app"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-black px-6 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-black/82"
+            >
+              {t.actions.launch}
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+            <a
+              href="https://github.com/CadeYu/spring-alpha/issues"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-black/10 bg-white/60 px-6 text-sm font-bold text-black transition hover:-translate-y-0.5 hover:bg-white"
+            >
+              <MessageSquareText className="h-4 w-4" />
+              {t.actions.issue}
+            </a>
+          </div>
+        </footer>
       </div>
     </main>
   );

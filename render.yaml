@@ -1,0 +1,68 @@
+services:
+  - type: web
+    name: spring-alpha-frontend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    healthCheckPath: /
+    envVars:
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: spring-alpha-backend
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_BACKEND_URL
+        fromService:
+          type: web
+          name: spring-alpha-backend
+          envVarKey: RENDER_EXTERNAL_URL
+
+  - type: web
+    name: spring-alpha-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: SPRING_DATASOURCE_URL
+        sync: false
+      - key: SPRING_DATASOURCE_USERNAME
+        sync: false
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false
+      - key: SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: update
+      - key: RESEARCH_SERVICE_BASE_URL
+        value: http://127.0.0.1:8090
+      - key: RESEARCH_SERVICE_TIMEOUT
+        value: PT300S
+      - key: SILICONFLOW_API_KEY
+        sync: false
+      - key: SILICONFLOW_MODEL
+        value: Pro/moonshotai/Kimi-K2.6
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-pro
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.2
+      - key: PYTHON_BIN
+        value: /opt/backend-venv/bin/python
+      - key: RAG_VECTOR_STORE_PROVIDER
+        value: qdrant
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION
+        value: spring_alpha_rag_chunks
+      - key: RAG_EMBEDDING_PROVIDER
+        value: gemini
+      - key: RAG_EMBEDDING_DIMENSION
+        value: "3072"

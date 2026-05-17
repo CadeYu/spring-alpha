@@ -90,14 +90,29 @@ The live provider tool gate validates task-specific production paths:
 It is intentionally manual because SEC and provider availability can fluctuate.
 Provider keys must come from runtime environment variables only.
 
-Production RAG defaults are environment-driven. When `RAG_VECTOR_DATABASE_URL`
-is present, the request pipeline uses PGVector unless
+Production RAG defaults are environment-driven. When `RAG_VECTOR_STORE_PROVIDER`
+is `qdrant`, the request pipeline stores SEC chunks in Qdrant Cloud using
+`QDRANT_URL`, `QDRANT_API_KEY`, and `QDRANT_COLLECTION`. When
+`RAG_VECTOR_DATABASE_URL` is present, the request pipeline uses PGVector unless
 `RAG_VECTOR_STORE_PROVIDER` is explicitly set. When `GEMINI_API_KEY` is present,
 the embedding backend defaults to Gemini unless `RAG_EMBEDDING_PROVIDER` is
 explicitly set; otherwise deterministic local embeddings keep tests and local
-smokes reproducible. Configure `RAG_VECTOR_TABLE_NAME`,
-`RAG_EMBEDDING_DIMENSION`, and optionally `RAG_VECTOR_INITIALIZE_SCHEMA=true`
-when running the service against a real database.
+smokes reproducible. Configure `RAG_EMBEDDING_DIMENSION=3072` for Gemini
+embeddings. For PGVector, configure `RAG_VECTOR_TABLE_NAME` and optionally
+`RAG_VECTOR_INITIALIZE_SCHEMA=true` when running the service against a real
+database.
+
+Render deployments should keep vector-store secrets in service environment
+variables only:
+
+```bash
+RAG_VECTOR_STORE_PROVIDER=qdrant
+QDRANT_URL=https://your-cluster.region.aws.cloud.qdrant.io
+QDRANT_API_KEY=your-qdrant-api-key
+QDRANT_COLLECTION=spring_alpha_rag_chunks
+RAG_EMBEDDING_PROVIDER=gemini
+RAG_EMBEDDING_DIMENSION=3072
+```
 
 The readiness eval gate runs the hard RAG suite through real PGVector storage
 and fails if the primary hybrid retrieval artifact violates expected section

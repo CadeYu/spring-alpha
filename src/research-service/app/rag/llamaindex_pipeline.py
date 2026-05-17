@@ -11,6 +11,7 @@ from time import perf_counter
 from typing import Any, Protocol
 from urllib import parse as url_parse
 from urllib import request as url_request
+from uuid import NAMESPACE_URL, uuid5
 
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import NodeWithScore, TextNode
@@ -63,6 +64,23 @@ class PgVectorStoreConfig(BaseModel):
         return normalized
 
 
+class QdrantVectorStoreConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1)
+    api_key: str = Field(min_length=1)
+    collection_name: str = Field(min_length=1)
+    embedding_dimension: int = Field(gt=0)
+
+    @field_validator("collection_name")
+    @classmethod
+    def normalize_collection_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not re.fullmatch(r"[a-zA-Z0-9_.-]+", normalized):
+            raise ValueError("Qdrant collection name must be a simple collection identifier")
+        return normalized
+
+
 class RetrievedNode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -106,6 +124,9 @@ class DatabaseConnection(Protocol):
 class VectorStore(Protocol):
     def upsert(self, node: TextNode) -> None:
         """Persist or refresh a node embedding."""
+
+    def upsert_many(self, nodes: list[TextNode]) -> None:
+        """Persist or refresh multiple node embeddings."""
 
     def search(
         self,
@@ -219,6 +240,10 @@ class InMemoryVectorStore:
     def upsert(self, node: TextNode) -> None:
         self._vectors[node.node_id] = self.embedding_backend.embed(_node_embedding_text(node))
 
+    def upsert_many(self, nodes: list[TextNode]) -> None:
+        for node in nodes:
+            self.upsert(node)
+
     def search(
         self,
         *,
@@ -310,6 +335,38 @@ class PgVectorStore:
         finally:
             connection.close()
 
+    def upsert_many(self, nodes: list[TextNode]) -> None:
+        if not nodes:
+            return
+        connection = self._connection_factory(self.config.database_url)
+        try:
+            for node in nodes:
+                connection.execute(
+                    f"""
+                    INSERT INTO {self.config.table_name}
+                        (node_id, text, metadata, embedding)
+                    VALUES
+                        (%(node_id)s, %(text)s, %(metadata)s, %(embedding)s::vector)
+                    ON CONFLICT (node_id) DO UPDATE SET
+                        text = EXCLUDED.text,
+                        metadata = EXCLUDED.metadata,
+                        embedding = EXCLUDED.embedding,
+                        updated_at = now()
+                    """,
+                    {
+                        "node_id": node.node_id,
+                        "text": node.get_content(),
+                        "metadata": _jsonb_parameter(dict(node.metadata)),
+                        "embedding": _dense_vector_literal(
+                            self.embedding_backend.embed(_node_embedding_text(node)),
+                            self.config.embedding_dimension,
+                        ),
+                    },
+                )
+            connection.commit()
+        finally:
+            connection.close()
+
     def search(
         self,
         *,
@@ -382,6 +439,184 @@ class PsycopgDatabaseConnection:
         self._raw_connection.close()
 
 
+class QdrantClientAdapter:
+    def __init__(self, raw_client: Any) -> None:
+        self._raw_client = raw_client
+
+    @classmethod
+    def connect(cls, config: QdrantVectorStoreConfig) -> "QdrantClientAdapter":
+        try:
+            from qdrant_client import QdrantClient
+        except ImportError as error:
+            raise RuntimeError("Install qdrant-client to use the Qdrant RAG store.") from error
+
+        return cls(QdrantClient(url=config.url, api_key=config.api_key))
+
+    def ensure_collection(self, *, collection_name: str, vector_size: int) -> None:
+        try:
+            from qdrant_client.http import models
+        except ImportError as error:
+            raise RuntimeError("Install qdrant-client to use the Qdrant RAG store.") from error
+
+        if self._raw_client.collection_exists(collection_name):
+            return
+        self._raw_client.create_collection(
+            collection_name=collection_name,
+            vectors_config=models.VectorParams(
+                size=vector_size,
+                distance=models.Distance.COSINE,
+            ),
+            on_disk_payload=True,
+        )
+
+    def upsert_points(
+        self,
+        *,
+        collection_name: str,
+        points: list[dict[str, object]],
+    ) -> None:
+        try:
+            from qdrant_client.models import PointStruct
+        except ImportError as error:
+            raise RuntimeError("Install qdrant-client to use the Qdrant RAG store.") from error
+
+        point_structs = []
+        for point in points:
+            vector = point["vector"]
+            payload = point["payload"]
+            if not isinstance(vector, list) or not isinstance(payload, dict):
+                raise ValueError("Qdrant point payload must include vector and payload fields")
+            point_structs.append(
+                PointStruct(
+                    id=str(point["id"]),
+                    vector=vector,
+                    payload=payload,
+                )
+            )
+        self._raw_client.upsert(
+            collection_name=collection_name,
+            points=point_structs,
+        )
+
+    def search_points(
+        self,
+        *,
+        collection_name: str,
+        vector: list[float],
+        node_ids: list[str],
+        limit: int,
+    ) -> list[dict[str, object]]:
+        try:
+            from qdrant_client.models import FieldCondition, Filter, MatchAny
+        except ImportError as error:
+            raise RuntimeError("Install qdrant-client to use the Qdrant RAG store.") from error
+
+        result = self._raw_client.query_points(
+            collection_name=collection_name,
+            query=vector,
+            query_filter=Filter(
+                must=[FieldCondition(key="node_id", match=MatchAny(any=node_ids))]
+            ),
+            limit=limit,
+            with_payload=False,
+        )
+        points = getattr(result, "points", result)
+        return [
+            {
+                "id": str(point.id),
+                "score": float(point.score),
+            }
+            for point in points
+        ]
+
+
+class QdrantVectorStore:
+    def __init__(
+        self,
+        *,
+        config: QdrantVectorStoreConfig,
+        embedding_backend: EmbeddingBackend,
+        client_factory: Callable[[QdrantVectorStoreConfig], Any] | None = None,
+    ) -> None:
+        self.config = config
+        self.embedding_backend = embedding_backend
+        self._client = (client_factory or QdrantClientAdapter.connect)(config)
+        if isinstance(self._client, QdrantClientAdapter):
+            self._client.ensure_collection(
+                collection_name=self.config.collection_name,
+                vector_size=self.config.embedding_dimension,
+            )
+
+    def upsert(self, node: TextNode) -> None:
+        self._client.upsert_points(
+            collection_name=self.config.collection_name,
+            points=[
+                {
+                    "id": _qdrant_point_id(node.node_id),
+                    "vector": _dense_vector_values(
+                        self.embedding_backend.embed(_node_embedding_text(node)),
+                        self.config.embedding_dimension,
+                    ),
+                    "payload": {
+                        "node_id": node.node_id,
+                        "text": node.get_content(),
+                        "metadata": dict(node.metadata),
+                    },
+                }
+            ],
+        )
+
+    def upsert_many(self, nodes: list[TextNode]) -> None:
+        if not nodes:
+            return
+        self._client.upsert_points(
+            collection_name=self.config.collection_name,
+            points=[
+                {
+                    "id": _qdrant_point_id(node.node_id),
+                    "vector": _dense_vector_values(
+                        self.embedding_backend.embed(_node_embedding_text(node)),
+                        self.config.embedding_dimension,
+                    ),
+                    "payload": {
+                        "node_id": node.node_id,
+                        "text": node.get_content(),
+                        "metadata": dict(node.metadata),
+                    },
+                }
+                for node in nodes
+            ],
+        )
+
+    def search(
+        self,
+        *,
+        query: str,
+        nodes: list[TextNode],
+        top_k: int,
+    ) -> list[NodeWithScore]:
+        node_by_id = {node.node_id: node for node in nodes}
+        if not node_by_id:
+            return []
+
+        rows = self._client.search_points(
+            collection_name=self.config.collection_name,
+            vector=_dense_vector_values(
+                self.embedding_backend.embed(query),
+                self.config.embedding_dimension,
+            ),
+            node_ids=list(node_by_id.keys()),
+            limit=top_k,
+        )
+        return [
+            NodeWithScore(node=node_by_id[node_id], score=score)
+            for row in rows
+            for node_id in [str(row["id"])]
+            for score in [_float_from_row_value(row["score"])]
+            if node_id in node_by_id and score > 0
+        ]
+
+
 def build_vector_store_from_env(
     embedding_backend: EmbeddingBackend,
 ) -> VectorStore:
@@ -389,6 +624,21 @@ def build_vector_store_from_env(
         "RAG_VECTOR_STORE_PROVIDER",
         "pgvector" if getenv("RAG_VECTOR_DATABASE_URL") else "memory",
     ).lower()
+    if provider_name == "qdrant":
+        qdrant_url = getenv("QDRANT_URL")
+        qdrant_api_key = getenv("QDRANT_API_KEY")
+        if not qdrant_url or not qdrant_api_key:
+            return InMemoryVectorStore(embedding_backend)
+        return QdrantVectorStore(
+            config=QdrantVectorStoreConfig(
+                url=qdrant_url,
+                api_key=qdrant_api_key,
+                collection_name=getenv("QDRANT_COLLECTION", "spring_alpha_rag_chunks"),
+                embedding_dimension=int(getenv("RAG_EMBEDDING_DIMENSION", "3072")),
+            ),
+            embedding_backend=embedding_backend,
+        )
+
     if provider_name != "pgvector":
         return InMemoryVectorStore(embedding_backend)
 
@@ -542,12 +792,10 @@ class LlamaIndexRagPipeline:
         self._nodes.extend(new_nodes)
         self._node_ids.update(node.node_id for node in new_nodes)
         if self.enable_hybrid_retrieval and not self._hybrid_degraded_reason:
-            for node in new_nodes:
-                try:
-                    self.vector_store.upsert(node)
-                except Exception as error:
-                    self._degrade_hybrid_retrieval(error)
-                    break
+            try:
+                self.vector_store.upsert_many(new_nodes)
+            except Exception as error:
+                self._degrade_hybrid_retrieval(error)
         return new_nodes
 
     def retrieve_evidence(
@@ -932,6 +1180,10 @@ def _node_embedding_text(node: TextNode) -> str:
     return " ".join([str(node.metadata.get("section", "")), node.get_content()])
 
 
+def _qdrant_point_id(node_id: str) -> str:
+    return str(uuid5(NAMESPACE_URL, f"spring-alpha-rag-node:{node_id}"))
+
+
 def _add_vector_weight(vector: dict[str, float], term: str, weight: float) -> None:
     vector[term] = vector.get(term, 0.0) + weight
 
@@ -950,6 +1202,11 @@ def _cosine_similarity(left: dict[str, float], right: dict[str, float]) -> float
 
 
 def _dense_vector_literal(vector: dict[str, float], dimension: int) -> str:
+    values = _dense_vector_values(vector, dimension)
+    return "[" + ",".join(f"{value:.10g}" for value in values) + "]"
+
+
+def _dense_vector_values(vector: dict[str, float], dimension: int) -> list[float]:
     dense_values = [0.0] * dimension
     for key, value in vector.items():
         index = _vector_dimension_index(key, dimension)
@@ -957,7 +1214,7 @@ def _dense_vector_literal(vector: dict[str, float], dimension: int) -> str:
     norm = sqrt(sum(value * value for value in dense_values))
     if norm > 0:
         dense_values = [value / norm for value in dense_values]
-    return "[" + ",".join(f"{value:.10g}" for value in dense_values) + "]"
+    return [float(f"{value:.10g}") for value in dense_values]
 
 
 def _float_from_row_value(value: object) -> float:

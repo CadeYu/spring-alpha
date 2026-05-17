@@ -41,7 +41,7 @@ app:
   # Python Research Service and does not provide a Java report-generation fallback.
   research-service:
     base-url: ${RESEARCH_SERVICE_BASE_URL:http://127.0.0.1:8090}
-    timeout: ${RESEARCH_SERVICE_TIMEOUT:PT75S}
+    timeout: ${RESEARCH_SERVICE_TIMEOUT:PT180S}
   
   yfinance:
     python-executable: ${PYTHON_BIN:python3}

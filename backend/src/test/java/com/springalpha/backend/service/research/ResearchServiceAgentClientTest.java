@@ -168,6 +168,51 @@ class ResearchServiceAgentClientTest {
         assertTrue(error.getMessage().contains("Python Research Service is unavailable"));
     }
 
+    @Test
+    void runUsesConfiguredTimeoutInsteadOfTenSecondDefault() throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/agent/runs", exchange -> {
+            assertEquals("POST", exchange.getRequestMethod());
+            try {
+                Thread.sleep(11_000);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            }
+            byte[] body = """
+                    {
+                      "run_id": "run_slow_agent",
+                      "task_type": "business_driver_deep_dive",
+                      "status": "ok",
+                      "events": [],
+                      "degraded_reasons": [],
+                      "final_report": {
+                        "ticker": "TSLA"
+                      }
+                    }
+                    """.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream output = exchange.getResponseBody()) {
+                output.write(body);
+            }
+        });
+        server.start();
+        try {
+            ResearchServiceAgentClient client = new ResearchServiceAgentClient(
+                    WebClient.builder(),
+                    "http://127.0.0.1:" + server.getAddress().getPort(),
+                    Duration.ofSeconds(15));
+
+            ResearchAgentResult result = client.run(request()).block(Duration.ofSeconds(16));
+
+            assertNotNull(result);
+            assertEquals("run_slow_agent", result.runId());
+            assertEquals("TSLA", result.finalReport().get("ticker"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private ResearchAgentRequest request() {
         return new ResearchAgentRequest(
                 "run_java_001",

@@ -152,11 +152,49 @@ SILICONFLOW_API_KEY=sk-...
 SILICONFLOW_MODEL=Pro/moonshotai/Kimi-K2.6
 OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=...
-RAG_EMBEDDING_PROVIDER=deterministic
-RAG_VECTOR_TABLE_NAME=rag_chunks
+SPRING_DATASOURCE_URL=jdbc:postgresql://aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres?sslmode=require
+SPRING_DATASOURCE_USERNAME=postgres.your-project-ref
+SPRING_DATASOURCE_PASSWORD=your-supabase-db-password
+SPRING_JPA_HIBERNATE_DDL_AUTO=update
+RAG_EMBEDDING_PROVIDER=gemini
+RAG_VECTOR_STORE_PROVIDER=qdrant
+QDRANT_URL=https://your-cluster.region.aws.cloud.qdrant.io
+QDRANT_API_KEY=your-qdrant-api-key
+QDRANT_COLLECTION=spring_alpha_rag_chunks
+RAG_EMBEDDING_DIMENSION=3072
 ```
 
 本地手动测试时，前端也支持 BYOK。你可以直接在浏览器里粘贴 provider key；它会存到 localStorage，并随分析请求转发给后端。
+
+不要把真实的 provider key、Qdrant API key、数据库密码写进 Git 仓库。Render / Vercel / 本地 `.env` 才是这些 secret 的位置。
+
+线上部署推荐把职责拆开：
+
+- Supabase Free Postgres：Spring Boot 的关系型元数据和 JPA 表。
+- Qdrant Cloud Free：SEC chunk embedding 和向量召回。
+- Render：Spring Boot backend + Python Research Service 的运行时环境变量。
+- Vercel：Next.js frontend，只配置后端 API 地址，不放数据库密码。
+
+Render 后端服务使用 Supabase Supavisor session pooler：
+
+```bash
+SPRING_PROFILES_ACTIVE=prod
+SPRING_DATASOURCE_URL=jdbc:postgresql://aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres?sslmode=require
+SPRING_DATASOURCE_USERNAME=postgres.your-project-ref
+SPRING_DATASOURCE_PASSWORD=your-supabase-db-password
+SPRING_JPA_HIBERNATE_DDL_AUTO=update
+```
+
+Render Python Research Service 使用 Qdrant：
+
+```bash
+RAG_VECTOR_STORE_PROVIDER=qdrant
+QDRANT_URL=https://your-cluster.region.aws.cloud.qdrant.io
+QDRANT_API_KEY=your-qdrant-api-key
+QDRANT_COLLECTION=spring_alpha_rag_chunks
+RAG_EMBEDDING_PROVIDER=gemini
+RAG_EMBEDDING_DIMENSION=3072
+```
 
 ### 启动后端栈
 

@@ -22,7 +22,7 @@ public class ResearchServiceAgentClient implements ResearchAgentClient {
     public ResearchServiceAgentClient(
             WebClient.Builder webClientBuilder,
             @Value("${app.research-service.base-url:http://127.0.0.1:8090}") String baseUrl,
-            @Value("${app.research-service.timeout:PT75S}") Duration timeout) {
+            @Value("${app.research-service.timeout:PT180S}") Duration timeout) {
         this.timeout = timeout;
         this.webClient = webClientBuilder
                 .baseUrl(baseUrl)
