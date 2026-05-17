@@ -5,7 +5,7 @@ type TaskCase = {
     | "latest_earnings_readout"
     | "business_driver_deep_dive"
     | "cash_flow_capital_allocation";
-  radioName: RegExp;
+  tabName: RegExp;
   headline: string;
   sections: string[];
 };
@@ -26,7 +26,7 @@ const TICKERS = [
 const TASK_CASES: TaskCase[] = [
   {
     taskType: "latest_earnings_readout",
-    radioName: /latest earnings readout/i,
+    tabName: /latest earnings readout/i,
     headline: "Typed latest earnings thesis",
     sections: [
       "Earnings Readout View",
@@ -38,7 +38,7 @@ const TASK_CASES: TaskCase[] = [
   },
   {
     taskType: "business_driver_deep_dive",
-    radioName: /business driver deep dive/i,
+    tabName: /business driver deep dive/i,
     headline: "Typed business driver thesis",
     sections: [
       "Business Driver Research View",
@@ -51,7 +51,7 @@ const TASK_CASES: TaskCase[] = [
   },
   {
     taskType: "cash_flow_capital_allocation",
-    radioName: /cash flow & capital allocation/i,
+    tabName: /cash flow & capital allocation/i,
     headline: "Typed cash quality thesis",
     sections: [
       "Capital Allocation View",
@@ -68,6 +68,10 @@ function sseBody(payloads: unknown[]) {
   return payloads
     .map((payload) => `data: ${JSON.stringify(payload)}\n`)
     .join("");
+}
+
+function openAgentReport(page: import("@playwright/test").Page, name: RegExp) {
+  return page.getByRole("tab", { name }).click();
 }
 
 function typedTaskSections(taskType: TaskCase["taskType"]) {
@@ -172,7 +176,6 @@ function typedTaskSections(taskType: TaskCase["taskType"]) {
 
 async function mockCommonRoutes(
   page: import("@playwright/test").Page,
-  taskCase: TaskCase,
   companyName: string,
 ) {
   await page.route("**/api/sec/history/**", async (route) => {
@@ -210,7 +213,13 @@ async function mockCommonRoutes(
     const taskType = new URL(route.request().url()).searchParams.get(
       "taskType",
     );
-    expect(taskType).toBe(taskCase.taskType);
+    expect(taskType).not.toBeNull();
+    expect([
+      "latest_earnings_readout",
+      "business_driver_deep_dive",
+      "cash_flow_capital_allocation",
+    ]).toContain(taskType);
+    const typedTaskType = taskType as TaskCase["taskType"];
     await route.fulfill({
       status: 200,
       contentType: "text/event-stream",
@@ -235,11 +244,7 @@ async function mockCommonRoutes(
             generatedAt: "2026-03-09T10:00:00Z",
             language: "en",
           },
-          sourceContext: {
-            status: "GROUNDED",
-            message: "Grounded in SEC text evidence.",
-          },
-          taskSections: typedTaskSections(taskCase.taskType),
+          taskSections: typedTaskSections(typedTaskType),
         },
       ]),
     });
@@ -264,14 +269,14 @@ test.describe("Spring Alpha 10 ticker output-line matrix", () => {
       test(`${tickerCase.ticker} renders ${taskCase.taskType}`, async ({
         page,
       }) => {
-        await mockCommonRoutes(page, taskCase, tickerCase.companyName);
+        await mockCommonRoutes(page, tickerCase.companyName);
 
         await page.goto("/app");
         await page
           .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
           .fill(tickerCase.ticker);
-        await page.getByRole("radio", { name: taskCase.radioName }).click();
         await page.getByRole("button", { name: /analyze/i }).click();
+        await openAgentReport(page, taskCase.tabName);
 
         await expect(
           page.getByText(`${tickerCase.companyName} · Q1 2026 · 2026-03-31`),

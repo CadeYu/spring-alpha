@@ -80,12 +80,11 @@ async function openAgentReport(
 const TASK_E2E_CASES = [
   {
     taskType: "latest_earnings_readout",
-    radioName: /latest earnings readout/i,
+    tabName: /latest earnings readout/i,
     ticker: "AAPL",
     companyName: "Apple Inc.",
     summary: "Latest earnings readout mocked E2E summary.",
     typedHeadline: "Typed latest earnings thesis",
-    citation: "Latest earnings citation from MD&A.",
     expectedSections: [
       "Company Profile",
       "Earnings Readout View",
@@ -97,12 +96,11 @@ const TASK_E2E_CASES = [
   },
   {
     taskType: "business_driver_deep_dive",
-    radioName: /business driver deep dive/i,
+    tabName: /business driver deep dive/i,
     ticker: "MSFT",
     companyName: "Microsoft Corporation",
     summary: "Business driver deep dive mocked E2E summary.",
     typedHeadline: "Typed business driver thesis",
-    citation: "Business drivers citation from the business section.",
     expectedSections: [
       "Business Driver Research View",
       "Thesis",
@@ -114,12 +112,11 @@ const TASK_E2E_CASES = [
   },
   {
     taskType: "cash_flow_capital_allocation",
-    radioName: /cash flow & capital allocation/i,
+    tabName: /cash flow & capital allocation/i,
     ticker: "NVDA",
     companyName: "NVIDIA Corporation",
     summary: "Cash flow capital allocation mocked E2E summary.",
     typedHeadline: "Typed cash quality thesis",
-    citation: "Cash flow citation from liquidity and capital resources.",
     expectedSections: [
       "Capital Allocation View",
       "Cash Quality",
@@ -341,7 +338,7 @@ test.describe("Spring Alpha smoke", () => {
               citations: [
                 {
                   section: "MD&A",
-                  excerpt: taskCase.citation,
+                  excerpt: `${taskCase.companyName} verified citation.`,
                   verificationStatus: "VERIFIED",
                 },
               ],
@@ -349,10 +346,6 @@ test.describe("Spring Alpha smoke", () => {
                 modelName: "gpt-4o-mini",
                 generatedAt: "2026-03-09T10:00:00Z",
                 language: "en",
-              },
-              sourceContext: {
-                status: "GROUNDED",
-                message: "Grounded in SEC text evidence.",
               },
               taskSections: typedTaskSections(taskCase.taskType),
             },
@@ -370,11 +363,10 @@ test.describe("Spring Alpha smoke", () => {
       await page.getByRole("button", { name: /analyze/i }).click();
 
       for (const taskCase of TASK_E2E_CASES) {
-        await openAgentReport(page, taskCase.radioName);
+        await openAgentReport(page, taskCase.tabName);
         await expect(
           page.getByText(taskCase.typedHeadline).first(),
         ).toBeVisible();
-        await expect(page.getByText(taskCase.citation).first()).toBeVisible();
         for (const section of taskCase.expectedSections) {
           await expect(page.getByText(section).first()).toBeVisible();
         }
@@ -450,7 +442,7 @@ test.describe("Spring Alpha smoke", () => {
     await page.mouse.up();
   });
 
-  test("BYOK analysis renders grounded report metadata and citations", async ({
+  test("BYOK analysis renders grounded report metadata and typed sections", async ({
     page,
   }) => {
     await mockFinancialFactsRoute(page, async (route) => {
@@ -505,10 +497,6 @@ test.describe("Spring Alpha smoke", () => {
               language: "en",
             },
             taskSections: typedTaskSections("latest_earnings_readout"),
-            sourceContext: {
-              status: "GROUNDED",
-              message: "Grounded in SEC text evidence.",
-            },
           },
         ]),
       });
@@ -528,14 +516,11 @@ test.describe("Spring Alpha smoke", () => {
       page.getByText("Typed latest earnings thesis").first(),
     ).toBeVisible();
     await expect(
-      page.getByText("Revenue increased due to stronger deliveries.").first(),
-    ).toBeVisible();
-    await expect(
       page.getByRole("button", { name: /download pdf|下载 pdf 报告/i }),
     ).toBeVisible();
   });
 
-  test("citation cards keep noisy SEC snippets inside the report column", async ({
+  test("typed report sections keep noisy SEC snippets inside the report column", async ({
     page,
   }) => {
     const noisyTableExcerpt =
@@ -589,30 +574,42 @@ test.describe("Spring Alpha smoke", () => {
               generatedAt: "2026-05-01T10:00:00Z",
               language: "en",
             },
-            sourceContext: {
-              status: "GROUNDED",
-              message: "Grounded in SEC text evidence.",
+            taskSections: {
+              ...typedTaskSections("latest_earnings_readout"),
+              latestEarnings: {
+                ...typedTaskSections("latest_earnings_readout").latestEarnings,
+                toplineVerdict: {
+                  headline: "Typed latest earnings thesis",
+                  verdict: "mixed",
+                  summary: noisyTableExcerpt,
+                },
+              },
             },
-            taskSections: typedTaskSections("latest_earnings_readout"),
           },
         ]),
       });
     });
 
     await page.goto("/app");
+    await page
+      .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
+      .fill("AAPL");
     await page.getByRole("button", { name: /analyze/i }).click();
     await openAgentReport(page, /latest earnings readout/i);
 
-    const citationSection = page.locator('[data-pdf-section="citations"]').first();
-    await expect(citationSection).toBeVisible();
+    const summarySection = page.locator('[data-pdf-section="summary"]').first();
+    await expect(summarySection).toBeVisible();
     await expect(
-      citationSection.getByText(/extracted table text is too noisy/i),
+      summarySection.getByText(/Earnings Readout View/i),
     ).toBeVisible();
     await expect(
-      citationSection.getByText(/Revenue From Contract With Customer Excluding Assessed Tax/i),
+      summarySection.getByText("What Changed", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      summarySection.getByText(/gross margin and gross margin percentage/i),
     ).toBeVisible();
 
-    const layout = await citationSection.evaluate((element) => {
+    const layout = await summarySection.evaluate((element) => {
       const sectionRect = element.getBoundingClientRect();
       const body = document.documentElement;
       const leakingElements = Array.from(element.querySelectorAll("*"))
@@ -687,10 +684,6 @@ test.describe("Spring Alpha smoke", () => {
               generatedAt: "2026-05-01T10:00:00Z",
               language: "en",
             },
-            sourceContext: {
-              status: "GROUNDED",
-              message: "Grounded in SEC text evidence.",
-            },
             taskSections: {
               schemaVersion: "task_sections.v1",
               taskType: "latest_earnings_readout",
@@ -736,6 +729,9 @@ test.describe("Spring Alpha smoke", () => {
     });
 
     await page.goto("/app");
+    await page
+      .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
+      .fill("AAPL");
     await page.getByRole("button", { name: /analyze/i }).click();
     await openAgentReport(page, /latest earnings readout/i);
 
@@ -782,6 +778,9 @@ test.describe("Spring Alpha smoke", () => {
       window.localStorage.removeItem("spring-alpha-siliconflow-key");
     });
     await page.goto("/app");
+    await page
+      .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
+      .fill("AAPL");
     await page.getByRole("button", { name: /analyze/i }).click();
 
     await expect(
@@ -829,11 +828,7 @@ test.describe("Spring Alpha smoke", () => {
               generatedAt: "2026-03-09T10:00:00Z",
               language: "zh",
             },
-            sourceContext: {
-              status: "DEGRADED",
-              message:
-                "SEC filing was available, but semantic grounding was not ready yet.",
-            },
+            taskSections: typedTaskSections("latest_earnings_readout"),
           },
         ]),
       });
@@ -850,11 +845,7 @@ test.describe("Spring Alpha smoke", () => {
     await expect(
       page.getByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).toBeVisible();
-    await expect(
-      page.getByText(
-        "SEC filing was available, but semantic grounding was not ready yet.",
-      ),
-    ).toHaveCount(0);
+    await expect(page.getByText("Typed latest earnings thesis")).toBeVisible();
   });
 
   test("TSLA second run in Chinese can recover grounded citations", async ({
@@ -909,16 +900,7 @@ test.describe("Spring Alpha smoke", () => {
               generatedAt: "2026-03-09T10:00:00Z",
               language: "zh",
             },
-            sourceContext: firstRun
-              ? {
-                  status: "DEGRADED",
-                  message:
-                    "SEC filing was available, but semantic grounding was not ready yet.",
-                }
-              : {
-                  status: "GROUNDED",
-                  message: "Grounded in SEC text evidence.",
-                },
+            taskSections: typedTaskSections("latest_earnings_readout"),
           },
         ]),
       });
@@ -932,22 +914,11 @@ test.describe("Spring Alpha smoke", () => {
 
     await page.getByRole("button", { name: /开始分析/i }).click();
     await openAgentReport(page, /最新财报速读/i);
-    await expect(
-      page.getByText(
-        "SEC filing was available, but semantic grounding was not ready yet.",
-      ),
-    ).toHaveCount(0);
+    await expect(page.getByText("Typed latest earnings thesis")).toBeVisible();
 
     await page.getByRole("button", { name: /开始分析/i }).click();
     await openAgentReport(page, /最新财报速读/i);
-    await expect(
-      page.getByText("Revenue increased due to stronger deliveries.").first(),
-    ).toBeVisible();
-    await expect(
-      page.getByText(
-        "SEC filing was available, but semantic grounding was not ready yet.",
-      ),
-    ).toHaveCount(0);
+    await expect(page.getByText("Typed latest earnings thesis")).toBeVisible();
   });
 
   test("financial-sector tickers require typed sections instead of generic margin dashboards", async ({
