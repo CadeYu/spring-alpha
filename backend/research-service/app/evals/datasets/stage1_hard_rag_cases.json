@@ -1,0 +1,136 @@
+{
+  "schema_version": "0.1.0",
+  "name": "stage1_hard_rag_eval",
+  "cases": [
+    {
+      "case_id": "hard_aapl_services_without_section_cue",
+      "ticker": "AAPL",
+      "filing_ref": "aapl_2026_q2_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "installed base engagement subscriptions advertising",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["installed base", "subscriptions", "advertising revenue"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_aapl_buyback_synonym",
+      "ticker": "AAPL",
+      "filing_ref": "aapl_2026_q2_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "buybacks capital ratios",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["repurchases of common stock", "operating activities"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_msft_capex_abbreviation",
+      "ticker": "MSFT",
+      "filing_ref": "msft_2026_q1_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "capex",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["capital expenditures", "data centers"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_msft_segment_without_azure_term",
+      "ticker": "MSFT",
+      "filing_ref": "msft_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "enterprise services server products cloud platform",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["enterprise services", "server products", "azure"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_tsla_risk_pricing_supply",
+      "ticker": "TSLA",
+      "filing_ref": "tsla_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "price cuts input constraints execution uncertainty",
+      "expected_sections": ["Risk Factors"],
+      "expected_terms": ["pricing pressure", "battery supply", "manufacturing execution"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_tsla_energy_segment_without_section_cue",
+      "ticker": "TSLA",
+      "filing_ref": "tsla_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "deployments of storage products energy growth",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["energy generation", "storage revenue", "storage products"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_jpm_capital_return",
+      "ticker": "JPM",
+      "filing_ref": "jpm_2026_q1_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "buybacks capital ratios",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["common stock repurchases", "dividends", "capital ratios"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_jpm_risk_without_exact_phrase",
+      "ticker": "JPM",
+      "filing_ref": "jpm_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "credit deterioration rate swings trading liquidity process failures",
+      "expected_sections": ["Risk Factors"],
+      "expected_terms": ["credit losses", "interest rate volatility", "operational risk"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_nvda_export_supply_risk",
+      "ticker": "NVDA",
+      "filing_ref": "nvda_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "geopolitical restrictions constrained supply concentrated customers",
+      "expected_sections": ["Risk Factors"],
+      "expected_terms": ["export controls", "supply constraints", "customer concentration"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_nvda_capex_inventory_synonym",
+      "ticker": "NVDA",
+      "filing_ref": "nvda_2026_q1_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "capex buybacks",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["capital expenditures", "inventory purchases", "share repurchases"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_amzn_aws_usage_driver",
+      "ticker": "AMZN",
+      "filing_ref": "amzn_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "enterprise migration usage cloud services",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["AWS revenue", "customer usage", "enterprise migration"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_amzn_capex_abbreviation",
+      "ticker": "AMZN",
+      "filing_ref": "amzn_2026_q1_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "capex",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["capital expenditures", "technology infrastructure", "content"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "hard_msft_semantic_platform_driver",
+      "ticker": "MSFT",
+      "filing_ref": "msft_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "platform support",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["azure", "enterprise services", "server products"],
+      "bad_sections": ["MD&A"]
+    }
+  ]
+}

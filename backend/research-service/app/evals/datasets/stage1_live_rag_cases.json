@@ -1,0 +1,306 @@
+{
+  "schema_version": "0.1.0",
+  "name": "stage1_live_rag_eval",
+  "cases": [
+    {
+      "case_id": "aapl_revenue_margin_drivers",
+      "ticker": "AAPL",
+      "filing_ref": "aapl_2026_q2_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "revenue and gross margin drivers",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["services revenue", "gross margin", "cost of sales"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "aapl_services_business_driver",
+      "ticker": "AAPL",
+      "filing_ref": "aapl_2026_q2_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "services installed base subscriptions advertising demand",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["services growth", "installed base", "subscriptions"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "aapl_cash_flow_buybacks",
+      "ticker": "AAPL",
+      "filing_ref": "aapl_2026_q2_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "operating cash flow capex buybacks liquidity",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["operating activities", "capital expenditures", "repurchases"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "aapl_risk_supply_regulation",
+      "ticker": "AAPL",
+      "filing_ref": "aapl_2026_q2_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "supply constraints regulation foreign exchange risk",
+      "expected_sections": ["Risk Factors"],
+      "expected_terms": ["supply constraints", "regulation", "foreign exchange"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "aapl_guidance_outlook",
+      "ticker": "AAPL",
+      "filing_ref": "aapl_2026_q2_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "guidance outlook demand expectations",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["outlook", "demand expectations", "investment"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "msft_cloud_growth",
+      "ticker": "MSFT",
+      "filing_ref": "msft_2026_q1_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "cloud revenue Azure consumption bookings",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["cloud revenue", "azure consumption", "commercial bookings"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "msft_segment_azure",
+      "ticker": "MSFT",
+      "filing_ref": "msft_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "Azure server products enterprise services segment",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["intelligent cloud", "azure", "enterprise services"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "msft_capex_ai_infrastructure",
+      "ticker": "MSFT",
+      "filing_ref": "msft_2026_q1_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "operating cash flow capex data centers share repurchases",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["cash provided by operations", "capital expenditures", "data centers"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "msft_cyber_capacity_risk",
+      "ticker": "MSFT",
+      "filing_ref": "msft_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "cybersecurity data center capacity risk competition",
+      "expected_sections": ["Risk Factors"],
+      "expected_terms": ["cybersecurity", "data center capacity", "competition"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "msft_operating_income_margin",
+      "ticker": "MSFT",
+      "filing_ref": "msft_2026_q1_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "operating income cloud gross margin productivity demand",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["operating income", "cloud gross margin", "productivity software"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "tsla_auto_revenue_pricing",
+      "ticker": "TSLA",
+      "filing_ref": "tsla_2026_q1_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "automotive revenue average selling prices delivery mix",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["automotive revenue", "average selling prices", "delivery mix"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "tsla_energy_storage_driver",
+      "ticker": "TSLA",
+      "filing_ref": "tsla_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "energy storage deployments revenue growth",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["energy generation", "storage revenue", "storage products"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "tsla_capex_manufacturing",
+      "ticker": "TSLA",
+      "filing_ref": "tsla_2026_q1_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "operating cash flow capex manufacturing capacity product development",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["operating cash flow", "capital expenditures", "manufacturing capacity"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "tsla_pricing_demand_risk",
+      "ticker": "TSLA",
+      "filing_ref": "tsla_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "demand uncertainty pricing pressure battery supply risk",
+      "expected_sections": ["Risk Factors"],
+      "expected_terms": ["demand uncertainty", "pricing pressure", "battery supply"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "tsla_gross_margin_costs",
+      "ticker": "TSLA",
+      "filing_ref": "tsla_2026_q1_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "gross margin pricing actions manufacturing costs ramp expenses",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["gross margin", "pricing actions", "manufacturing costs"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "jpm_net_interest_income",
+      "ticker": "JPM",
+      "filing_ref": "jpm_2026_q1_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "net interest income higher rates loan balances",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["net interest income", "higher rates", "loan balances"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "jpm_consumer_banking_driver",
+      "ticker": "JPM",
+      "filing_ref": "jpm_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "consumer community banking card spending deposits mortgage",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["consumer and community banking", "card spending", "deposits"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "jpm_liquidity_capital_actions",
+      "ticker": "JPM",
+      "filing_ref": "jpm_2026_q1_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "liquidity resources capital ratios dividends repurchases",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["liquidity resources", "capital ratios", "common stock repurchases"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "jpm_credit_market_risk",
+      "ticker": "JPM",
+      "filing_ref": "jpm_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "credit losses interest rate volatility market liquidity operational risk",
+      "expected_sections": ["Risk Factors"],
+      "expected_terms": ["credit losses", "interest rate volatility", "operational risk"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "jpm_expense_technology",
+      "ticker": "JPM",
+      "filing_ref": "jpm_2026_q1_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "noninterest expense technology compensation operational costs",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["noninterest expense", "technology investment", "compensation"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "nvda_data_center_revenue",
+      "ticker": "NVDA",
+      "filing_ref": "nvda_2026_q1_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "data center demand accelerated computing networking revenue",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["data center demand", "accelerated computing", "networking products"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "nvda_segment_ai_infrastructure",
+      "ticker": "NVDA",
+      "filing_ref": "nvda_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "data center compute networking AI infrastructure segment",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["data center revenue", "compute", "AI infrastructure"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "nvda_cash_flow_inventory_buybacks",
+      "ticker": "NVDA",
+      "filing_ref": "nvda_2026_q1_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "operating cash flow inventory capital expenditures buybacks",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["operating activities", "capital expenditures", "share repurchases"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "nvda_export_supply_risk",
+      "ticker": "NVDA",
+      "filing_ref": "nvda_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "export controls supply constraints customer concentration risk",
+      "expected_sections": ["Risk Factors"],
+      "expected_terms": ["export controls", "supply constraints", "customer concentration"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "nvda_gross_margin_mix",
+      "ticker": "NVDA",
+      "filing_ref": "nvda_2026_q1_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "gross margin product mix higher volume cost management",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["gross margin", "product mix", "cost management"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "amzn_sales_aws_advertising",
+      "ticker": "AMZN",
+      "filing_ref": "amzn_2026_q1_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "net sales AWS advertising retail demand",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["net sales", "AWS growth", "advertising revenue"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "amzn_aws_driver",
+      "ticker": "AMZN",
+      "filing_ref": "amzn_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "AWS customer usage enterprise migration cloud services demand",
+      "expected_sections": ["Segment Information"],
+      "expected_terms": ["AWS revenue", "customer usage", "enterprise migration"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "amzn_capex_infrastructure",
+      "ticker": "AMZN",
+      "filing_ref": "amzn_2026_q1_10q_excerpt",
+      "task_type": "cash_flow_capital_allocation",
+      "query": "operating cash flow capex fulfillment technology infrastructure content",
+      "expected_sections": ["Liquidity and Capital Resources"],
+      "expected_terms": ["operating cash flow", "capital expenditures", "technology infrastructure"],
+      "bad_sections": ["Risk Factors"]
+    },
+    {
+      "case_id": "amzn_regulatory_fulfillment_risk",
+      "ticker": "AMZN",
+      "filing_ref": "amzn_2026_q1_10q_excerpt",
+      "task_type": "business_driver_deep_dive",
+      "query": "regulatory scrutiny fulfillment execution cloud demand risk",
+      "expected_sections": ["Risk Factors"],
+      "expected_terms": ["regulatory scrutiny", "fulfillment execution", "cloud demand"],
+      "bad_sections": ["MD&A"]
+    },
+    {
+      "case_id": "amzn_operating_income_productivity",
+      "ticker": "AMZN",
+      "filing_ref": "amzn_2026_q1_10q_excerpt",
+      "task_type": "latest_earnings_readout",
+      "query": "operating income fulfillment productivity cloud margin cost discipline",
+      "expected_sections": ["MD&A"],
+      "expected_terms": ["operating income", "fulfillment productivity", "cost discipline"],
+      "bad_sections": ["Risk Factors"]
+    }
+  ]
+}

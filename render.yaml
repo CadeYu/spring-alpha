@@ -23,7 +23,7 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./backend/Dockerfile
-    dockerContext: .
+    dockerContext: ./backend
     healthCheckPath: /health
     envVars:
       - key: SPRING_PROFILES_ACTIVE

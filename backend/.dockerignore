@@ -3,3 +3,17 @@ target/
 .idea/
 *.iml
 .env
+.m2/
+.venv/
+*.log
+*_debug.log
+app_verify.log
+response.txt
+stream_sample.txt
+research-service/.venv/
+research-service/.pytest_cache/
+research-service/.mypy_cache/
+research-service/.ruff_cache/
+research-service/**/__pycache__/
+research-service/**/*.pyc
+research-service/**/*.pyo

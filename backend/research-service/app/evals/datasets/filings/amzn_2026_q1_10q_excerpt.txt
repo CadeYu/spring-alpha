@@ -1,0 +1,16 @@
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Net sales increased because AWS growth, advertising revenue, and retail demand improved.
+Operating income expanded due to fulfillment productivity, cloud margin, and cost discipline.
+Management discussed investment in logistics, AI infrastructure, and customer experience.
+
+Segment Information
+North America revenue reflected online stores, third-party seller services, advertising, and subscriptions.
+AWS revenue increased due to customer usage, enterprise migration, and cloud services demand.
+International results reflected foreign exchange, retail demand, and regional cost structure.
+
+Liquidity and Capital Resources
+Operating cash flow funded capital expenditures for fulfillment centers, technology infrastructure, and content.
+Liquidity was supported by cash, marketable securities, and access to debt markets.
+
+Item 1A. Risk Factors
+Competition, cloud demand, regulatory scrutiny, fulfillment execution, and foreign exchange could affect results.

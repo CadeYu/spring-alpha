@@ -97,4 +97,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build combined backend image
-        run: docker build -f backend/Dockerfile -t spring-alpha-backend-combined .
+        run: docker build -f backend/Dockerfile -t spring-alpha-backend-combined backend
