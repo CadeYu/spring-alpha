@@ -1,5 +1,12 @@
 import EarningsAnalystApp from "@/components/app/earnings-analyst-app";
 
-export default function AppPage() {
-  return <EarningsAnalystApp />;
+type AppPageProps = {
+  searchParams?: Promise<{
+    ticker?: string;
+  }>;
+};
+
+export default async function AppPage({ searchParams }: AppPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  return <EarningsAnalystApp initialTicker={resolvedSearchParams?.ticker ?? ""} />;
 }

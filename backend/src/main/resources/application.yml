@@ -17,6 +17,9 @@ spring:
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     show-sql: false
+
+  flyway:
+    enabled: true
   
 app:
   # BYOK provider: siliconflow | openai | gemini

@@ -21,7 +21,6 @@ import {
 import {
   Loader2,
   TrendingUp,
-  ArrowRight,
   Bot,
   BriefcaseBusiness,
   ChartColumnIncreasing,
@@ -45,6 +44,10 @@ import { PdfDownloadButton } from "@/components/pdf/PdfDownloadButton";
 import { formatPeriodForDisplay } from "@/lib/reportPresentation";
 import { type ResearchTaskId } from "@/lib/researchTasks";
 import { cn } from "@/lib/utils";
+import { useSession } from "next-auth/react";
+import { AuthBanner } from "@/components/app/auth-banner";
+import { TickerSearchInput } from "@/components/app/ticker-search-input";
+import { TrialGate, type TrialGateStatus } from "@/components/app/trial-gate";
 
 const BYOK_PROVIDERS = [
   {
@@ -111,10 +114,16 @@ type AgentPipelineRun = {
 
 type ReportsByTask = Partial<Record<ResearchTaskId, AnalysisReport>>;
 
+const ANONYMOUS_TRIAL_STORAGE_KEY = "spring-alpha-anonymous-trial-used";
+
 type TickerSuggestion = {
   ticker: string;
   companyName: string;
 };
+
+function normalizeTicker(rawTicker: string | undefined | null) {
+  return rawTicker?.toUpperCase().trim() ?? "";
+}
 
 type MarketCandle = {
   date: string;
@@ -199,13 +208,27 @@ const RESEARCH_TASKS = [
   Icon: typeof ChartColumnIncreasing;
 }>;
 
-export default function EarningsAnalystApp() {
-  const [ticker, setTicker] = useState("");
-  const [activeTicker, setActiveTicker] = useState(""); // only set on submit
+export default function EarningsAnalystApp({
+  initialTicker = "",
+}: {
+  initialTicker?: string;
+}) {
+  const normalizedInitialTicker = normalizeTicker(initialTicker);
+  const [ticker, setTicker] = useState(normalizedInitialTicker);
+  const [activeTicker, setActiveTicker] = useState(normalizedInitialTicker); // only set on submit
   const [lang, setLang] = useState("en");
   const [model, setModel] = useState<ByokProviderId>("siliconflow");
   const [providerApiKey, setProviderApiKey] = useState("");
   const [providerKeySaved, setProviderKeySaved] = useState(false);
+  const [trialStatus, setTrialStatus] = useState<TrialGateStatus>(() => {
+    if (typeof window === "undefined") {
+      return "anonymous_ready";
+    }
+
+    return window.localStorage.getItem(ANONYMOUS_TRIAL_STORAGE_KEY) === "true"
+      ? "trial_exhausted"
+      : "anonymous_ready";
+  });
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [reportsByTask, setReportsByTask] = useState<ReportsByTask>({});
   const [activeReportTaskId, setActiveReportTaskId] =
@@ -220,11 +243,18 @@ export default function EarningsAnalystApp() {
   const tickerInputRef = useRef<HTMLInputElement>(null);
   const analysisAbortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
+  const anonymousTrialConsumedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { status: sessionStatus } = useSession();
   const isZh = lang === "zh";
+  const isAuthenticated = sessionStatus === "authenticated";
   const selectedProvider =
     BYOK_PROVIDERS.find((provider) => provider.id === model) ??
     BYOK_PROVIDERS[0];
+  const trialGateStatus: TrialGateStatus =
+    !isAuthenticated && trialStatus === "trial_exhausted"
+      ? "trial_exhausted"
+      : "anonymous_ready";
   const reportTitleTicker = activeTicker;
   const orderedReports = RESEARCH_TASKS.flatMap((task) => {
     const taskReport = reportsByTask[task.id];
@@ -300,9 +330,6 @@ export default function EarningsAnalystApp() {
     ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api`
     : "/api";
 
-  const normalizeTicker = (rawTicker: string | undefined | null) =>
-    rawTicker?.toUpperCase().trim() ?? "";
-
   const selectTickerSuggestion = (suggestion: TickerSuggestion) => {
     setTicker(suggestion.ticker);
     setTickerSuggestionsOpen(false);
@@ -318,14 +345,31 @@ export default function EarningsAnalystApp() {
       providerApiKey.trim() ||
       window.localStorage.getItem(selectedProvider.storageKey)?.trim() ||
       "";
-    if (!runtimeProviderKey) {
+    const anonymousTrialAvailable =
+      runtimeProviderKey.length === 0 && trialStatus !== "trial_exhausted";
+    if (!runtimeProviderKey && isAuthenticated) {
       setError({
         message: isZh
-          ? `请先输入并保存你的 ${selectedProvider.name} API Key。`
-          : `${selectedProvider.name} BYOK mode requires you to enter and save your API key first.`,
+          ? `请先保存你自己的 ${selectedProvider.name} API Key。`
+          : `${selectedProvider.name} requires your own saved API key after sign in.`,
+        code: "PROVIDER_KEY_REQUIRED",
+        source: "auth",
       });
       return;
     }
+    if (!runtimeProviderKey && !anonymousTrialAvailable) {
+      setTrialStatus("trial_exhausted");
+      setError({
+        message: isZh
+          ? "匿名试用已经用完，请使用 Google 登录并保存你自己的 API Key。"
+          : "Your anonymous trial is over. Sign in with Google and save your own API key to continue.",
+        code: "TRIAL_EXHAUSTED",
+        source: "trial",
+      });
+      return;
+    }
+
+    anonymousTrialConsumedRef.current = false;
 
     const requestId = Date.now();
     requestIdRef.current = requestId;
@@ -384,6 +428,7 @@ export default function EarningsAnalystApp() {
           requestId,
           submittedTicker,
           runtimeProviderKey,
+          anonymousTrialMode: anonymousTrialAvailable,
           controller,
         });
 
@@ -438,12 +483,14 @@ export default function EarningsAnalystApp() {
     requestId,
     submittedTicker,
     runtimeProviderKey,
+    anonymousTrialMode,
     controller,
   }: {
     taskId: ResearchTaskId;
     requestId: number;
     submittedTicker: string;
     runtimeProviderKey: string;
+    anonymousTrialMode: boolean;
     controller: AbortController;
   }): Promise<{ phase: "received" | "failed"; error?: AnalysisErrorState }> => {
     console.log(
@@ -454,10 +501,15 @@ export default function EarningsAnalystApp() {
       model,
       taskType: taskId,
     });
+    const requestHeaders: Record<string, string> = {};
+    if (runtimeProviderKey) {
+      requestHeaders["X-Provider-API-Key"] = runtimeProviderKey;
+    }
+
     const response = await fetch(
       `${analysisApiBase}/sec/analyze/${submittedTicker}?${analysisParams.toString()}`,
       {
-        headers: { "X-Provider-API-Key": runtimeProviderKey },
+        headers: requestHeaders,
         signal: controller.signal,
       },
     );
@@ -500,6 +552,15 @@ export default function EarningsAnalystApp() {
             const reportData = JSON.parse(jsonStr) as Partial<AnalysisReport>;
             if (requestIdRef.current !== requestId) {
               continue;
+            }
+            if (
+              anonymousTrialMode &&
+              !anonymousTrialConsumedRef.current &&
+              taskId === "latest_earnings_readout"
+            ) {
+              anonymousTrialConsumedRef.current = true;
+              window.localStorage.setItem(ANONYMOUS_TRIAL_STORAGE_KEY, "true");
+              setTrialStatus("trial_exhausted");
             }
             setRunState((current) =>
               current && current.ticker === submittedTicker
@@ -594,52 +655,37 @@ export default function EarningsAnalystApp() {
         {/* Search Bar */}
         <Card className="bg-slate-900 border-slate-800">
           <CardContent className="p-4 space-y-3">
+            <AuthBanner />
             {/* Row 1: Ticker, Language, Button */}
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <div
-                  data-testid="ticker-input-group"
-                  className="flex h-14 items-stretch overflow-hidden rounded-lg border border-emerald-500/70 bg-slate-950 shadow-[0_0_0_1px_rgba(16,185,129,0.2)] focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-500/30"
-                >
-                <Input
-                  ref={tickerInputRef}
+                <TickerSearchInput
                   value={ticker}
-                  role="combobox"
-                  aria-expanded={tickerSuggestionsOpen && tickerSuggestions.length > 0}
-                  aria-controls="ticker-suggestion-list"
-                  autoComplete="off"
-                  onFocus={() => setTickerSuggestionsOpen(true)}
-                  onBlur={() => {
-                    window.setTimeout(() => setTickerSuggestionsOpen(false), 120);
-                  }}
-                  onChange={(e) => {
-                    setTicker(e.target.value.toUpperCase());
+                  onValueChange={(nextTicker) => {
+                    setTicker(nextTicker.toUpperCase());
                     setTickerSuggestionsOpen(true);
                   }}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && void handleSearch(e.currentTarget.value)
-                  }
+                  onSubmit={(submittedTicker) => void handleSearch(submittedTicker)}
                   placeholder={
                     isZh
                       ? "输入股票代码 (如 AAPL, MSFT)"
                       : "Enter Ticker (e.g., AAPL, MSFT, TSLA)"
                   }
-                  className="h-full flex-1 border-0 bg-transparent pr-16 text-xl font-bold tracking-widest text-emerald-200 shadow-none focus-visible:ring-0"
+                  buttonLabel={isZh ? "开始分析" : "Analyze ticker"}
+                  isSubmitting={isLoading}
+                  inputRef={tickerInputRef}
+                  inputProps={{
+                    role: "combobox",
+                    autoComplete: "off",
+                    "aria-expanded":
+                      tickerSuggestionsOpen && tickerSuggestions.length > 0,
+                    "aria-controls": "ticker-suggestion-list",
+                    onFocus: () => setTickerSuggestionsOpen(true),
+                    onBlur: () => {
+                      window.setTimeout(() => setTickerSuggestionsOpen(false), 120);
+                    },
+                  }}
                 />
-                <Button
-                  type="button"
-                  aria-label={isZh ? "开始分析" : "Analyze ticker"}
-                  onClick={() => void handleSearch(tickerInputRef.current?.value)}
-                  disabled={isLoading}
-                  className="my-auto mr-2 h-10 w-10 shrink-0 rounded-lg bg-emerald-400 p-0 text-slate-950 shadow-lg shadow-emerald-950/40 hover:bg-emerald-300"
-                >
-                  {isLoading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <ArrowRight className="h-5 w-5" />
-                  )}
-                </Button>
-                </div>
                 {tickerSuggestionsOpen && tickerSuggestions.length > 0 && (
                   <div
                     id="ticker-suggestion-list"
@@ -760,6 +806,8 @@ export default function EarningsAnalystApp() {
             </div>
           </CardContent>
         </Card>
+
+        <TrialGate status={trialGateStatus} />
 
         {/* Error Display */}
         {error && <AnalysisErrorPanel error={error} isZh={isZh} />}

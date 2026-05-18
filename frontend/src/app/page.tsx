@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -10,9 +10,10 @@ import {
   Github,
   Languages,
   MessageSquareText,
-  Search,
   TerminalSquare,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { TickerSearchInput } from "@/components/app/ticker-search-input";
 
 type Locale = "zh" | "en";
 
@@ -328,6 +329,9 @@ function getInitialLocale(): Locale {
 export default function LandingPage() {
   const [locale, setLocale] = useState<Locale>("zh");
   const [isLocaleReady, setIsLocaleReady] = useState(false);
+  const [ticker, setTicker] = useState("");
+  const tickerInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -349,6 +353,15 @@ export default function LandingPage() {
   const updateLocale = (nextLocale: Locale) => {
     setLocale(nextLocale);
     window.localStorage.setItem(LANDING_LOCALE_STORAGE, nextLocale);
+  };
+
+  const handleTickerSubmit = (submittedTicker: string) => {
+    const normalizedTicker = submittedTicker.trim().toUpperCase();
+    if (!normalizedTicker) {
+      return;
+    }
+
+    router.push(`/app?ticker=${encodeURIComponent(normalizedTicker)}`);
   };
 
   return (
@@ -441,14 +454,31 @@ export default function LandingPage() {
             {t.hero.body}
           </p>
 
+          <div className="mt-9 w-full max-w-3xl">
+            <TickerSearchInput
+              value={ticker}
+              onValueChange={setTicker}
+              onSubmit={handleTickerSubmit}
+              placeholder={locale === "zh" ? "输入股票代码 (如 AAPL, MSFT)" : "Enter Ticker (e.g., AAPL, MSFT, TSLA)"}
+              buttonLabel={locale === "zh" ? "开始分析" : "Analyze ticker"}
+              inputRef={tickerInputRef}
+              wrapperClassName="h-16"
+              inputClassName="text-lg sm:text-xl"
+              buttonClassName="bg-[#0fc6a5] text-[#031f1c] hover:bg-[#35d8bd]"
+              inputProps={{
+                role: "combobox",
+                autoComplete: "off",
+                "aria-label": locale === "zh" ? "输入股票代码" : "Enter ticker",
+              }}
+            />
+            <p className="mt-3 text-sm text-white/48">
+              {locale === "zh"
+                ? "匿名用户可免费分析 1 次，之后需要 Google 登录并使用自己的 key。"
+                : "Anonymous users get one free real analysis, then must sign in with Google and bring their own key."}
+            </p>
+          </div>
+
           <div className="mt-9 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link
-              href="/app"
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#0fc6a5] px-6 text-sm font-bold text-[#031f1c] shadow-[0_16px_40px_rgba(15,198,165,0.22)] transition hover:-translate-y-0.5 hover:bg-[#35d8bd]"
-            >
-              <Search className="h-4 w-4" />
-              {t.actions.start}
-            </Link>
             <a
               href="https://github.com/CadeYu/spring-alpha"
               target="_blank"
@@ -615,7 +645,7 @@ export default function LandingPage() {
         <footer className="grid gap-8 rounded-3xl border border-white/10 bg-[#f7f1e8] p-6 text-black shadow-[0_28px_80px_rgba(0,0,0,0.45)] sm:p-8 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-black px-3 py-1.5 text-xs font-bold text-white">
-              <Search className="h-3.5 w-3.5" />
+              <ChartCandlestick className="h-3.5 w-3.5" />
               Ticker-first
             </div>
             <h2 className="max-w-3xl text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">

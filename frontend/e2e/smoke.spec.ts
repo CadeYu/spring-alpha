@@ -773,9 +773,41 @@ test.describe("Spring Alpha smoke", () => {
     });
   });
 
-  test("BYOK mode blocks submission when no key is saved", async ({ page }) => {
+  test("anonymous trial allows one real analysis before the gate closes", async ({
+    page,
+  }) => {
+    let analyzeCalls = 0;
     await page.addInitScript(() => {
       window.localStorage.removeItem("spring-alpha-siliconflow-key");
+      window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+    });
+    await mockHistoryRoute(page, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+    await mockMarketChartRoute(page);
+    await mockAnalyzeRoute(page, async (route) => {
+      analyzeCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: sseBody([
+          {
+            executiveSummary: "Anonymous trial report.",
+            companyName: "Apple Inc.",
+            period: "Q1 2026",
+            filingDate: "2026-02-01",
+            keyMetrics: [],
+            businessDrivers: [],
+            riskFactors: [],
+            citations: [],
+            taskSections: typedTaskSections("latest_earnings_readout"),
+          },
+        ]),
+      });
     });
     await page.goto("/app");
     await page
@@ -784,10 +816,15 @@ test.describe("Spring Alpha smoke", () => {
     await page.getByRole("button", { name: /analyze/i }).click();
 
     await expect(
-      page.getByText(
-        /SiliconFlow BYOK mode requires you to enter and save your api key first/i,
-      ),
+      page.getByText("You have used your free analysis."),
     ).toBeVisible();
+    await expect(page.getByText("Free trial reached")).toBeVisible();
+    await page
+      .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
+      .fill("MSFT");
+    await page.getByRole("button", { name: /analyze/i }).click();
+    await expect(page.getByText(/your anonymous trial is over/i)).toBeVisible();
+    expect(analyzeCalls).toBe(3);
   });
 
   test("TSLA first run in Chinese shows degraded-source notice", async ({

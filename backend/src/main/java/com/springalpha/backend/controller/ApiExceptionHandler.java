@@ -3,6 +3,7 @@ package com.springalpha.backend.controller;
 import com.springalpha.backend.financial.service.UnsupportedTickerCategoryException;
 import com.springalpha.backend.service.provider.ProviderAuthenticationException;
 import com.springalpha.backend.service.research.ResearchServiceUnavailableException;
+import com.springalpha.backend.trial.TrialAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -20,6 +21,15 @@ public class ApiExceptionHandler {
                         "error", exception.getMessage(),
                         "code", exception.getCode(),
                         "source", exception.getProvider()));
+    }
+
+    @ExceptionHandler(TrialAccessException.class)
+    public ResponseEntity<Map<String, Object>> handleTrialAccess(TrialAccessException exception) {
+        return ResponseEntity.status(exception.getStatus())
+                .body(Map.of(
+                        "error", exception.getMessage(),
+                        "code", exception.getCode(),
+                        "source", "trial"));
     }
 
     @ExceptionHandler(UnsupportedTickerCategoryException.class)

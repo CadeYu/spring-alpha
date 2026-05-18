@@ -2,6 +2,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LandingPage from "@/app/page";
 
+const pushMock = vi.fn();
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: pushMock,
+  }),
+}));
+
 vi.mock("next/image", () => ({
   default: ({
     priority,
@@ -24,6 +32,7 @@ describe("Landing page", () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.restoreAllMocks();
+    pushMock.mockClear();
   });
 
   it("renders Chinese copy by default for zh browsers", async () => {
@@ -80,5 +89,27 @@ describe("Landing page", () => {
         screen.getByText("One ticker. Three agents. One research surface."),
       ).toBeInTheDocument();
     });
+  });
+
+  it("renders a ticker search entry on the landing page", () => {
+    render(<LandingPage />);
+
+    expect(
+      screen.getByLabelText(/enter ticker|输入股票代码/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /analyze ticker|开始分析/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("routes the landing ticker search into the app", () => {
+    render(<LandingPage />);
+
+    fireEvent.change(screen.getByLabelText(/enter ticker|输入股票代码/i), {
+      target: { value: "AAPL" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /analyze ticker|开始分析/i }));
+
+    expect(pushMock).toHaveBeenCalledWith("/app?ticker=AAPL");
   });
 });

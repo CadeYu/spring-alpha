@@ -5,6 +5,9 @@ import com.springalpha.backend.financial.contract.ResearchTaskType;
 import com.springalpha.backend.financial.model.HistoricalDataPoint;
 import com.springalpha.backend.service.FinancialAnalysisService;
 import com.springalpha.backend.service.SecService;
+import com.springalpha.backend.trial.TrialAccessException;
+import com.springalpha.backend.trial.TrialDecision;
+import com.springalpha.backend.trial.TrialLedgerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -18,6 +21,8 @@ import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * SEC 财报控制器 (Controller)
@@ -37,10 +42,15 @@ public class SecController {
 
     private final SecService secService;
     private final FinancialAnalysisService analysisService;
+    private final TrialLedgerService trialLedgerService;
 
-    public SecController(SecService secService, FinancialAnalysisService analysisService) {
+    public SecController(
+            SecService secService,
+            FinancialAnalysisService analysisService,
+            TrialLedgerService trialLedgerService) {
         this.secService = secService;
         this.analysisService = analysisService;
+        this.trialLedgerService = trialLedgerService;
     }
 
     /**
@@ -61,12 +71,62 @@ public class SecController {
             @RequestParam(defaultValue = ResearchTaskType.DEFAULT_REQUEST_VALUE) String taskType,
             @RequestHeader HttpHeaders headers) {
         ResearchTaskType researchTaskType = parseResearchTaskType(taskType);
+        String providerApiKey = resolveProviderApiKey(headers);
+        enforceTrialAccess(headers, providerApiKey);
         log.info("REST request to analyze stock: {}, lang: {}, model: {}, taskType: {}",
                 ticker, lang, model, researchTaskType.requestValue());
         // The analysis flow calls external SEC/Yahoo/Python Agent services, so move
         // the stream off the Netty event loop.
-        return Flux.defer(() -> analysisService.analyzeStock(ticker, lang, model, resolveProviderApiKey(headers), researchTaskType))
+        return Flux.defer(() -> analysisService.analyzeStock(ticker, lang, model, providerApiKey, researchTaskType))
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private void enforceTrialAccess(HttpHeaders headers, String providerApiKey) {
+        String authMode = Optional.ofNullable(headers.getFirst("X-Auth-Mode"))
+                .orElse("anonymous")
+                .trim()
+                .toLowerCase();
+        if (!providerApiKeyIsBlank(providerApiKey)) {
+            return;
+        }
+        if ("authenticated".equals(authMode)) {
+            throw new TrialAccessException(
+                    "Provider key is required for authenticated analysis.",
+                    "PROVIDER_KEY_REQUIRED",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        UUID visitorId = parseVisitorId(headers.getFirst("X-Visitor-Id"));
+        TrialDecision decision = trialLedgerService.reserveAnonymousTrial(
+                visitorId,
+                Optional.ofNullable(headers.getFirst("X-Client-IP-Hash")).filter(value -> !value.isBlank()));
+        if (!decision.isAllowed()) {
+            throw new TrialAccessException(
+                    decision.message(),
+                    decision.code(),
+                    HttpStatus.PAYMENT_REQUIRED);
+        }
+    }
+
+    private boolean providerApiKeyIsBlank(String providerApiKey) {
+        return providerApiKey == null || providerApiKey.isBlank();
+    }
+
+    private UUID parseVisitorId(String visitorId) {
+        if (visitorId == null || visitorId.isBlank()) {
+            throw new TrialAccessException(
+                    "Anonymous analysis requires a visitor id.",
+                    "AUTH_REQUIRED",
+                    HttpStatus.UNAUTHORIZED);
+        }
+        try {
+            return UUID.fromString(visitorId);
+        } catch (IllegalArgumentException error) {
+            throw new TrialAccessException(
+                    "Anonymous analysis requires a valid visitor id.",
+                    "AUTH_REQUIRED",
+                    HttpStatus.UNAUTHORIZED);
+        }
     }
 
     private String resolveProviderApiKey(HttpHeaders headers) {

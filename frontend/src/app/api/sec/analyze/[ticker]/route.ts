@@ -1,7 +1,10 @@
 import { NextRequest } from 'next/server';
+import { randomUUID } from 'crypto';
 import { isResearchTaskId } from '@/lib/researchTasks';
+import { visitorCookieName } from '@/lib/auth';
 
 const ANALYSIS_PROXY_TIMEOUT_MS = 240_000;
+const VISITOR_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 /**
  * SSE bridge route for stock analysis.
@@ -20,6 +23,8 @@ export async function GET(
     const providerApiKey =
         request.headers.get('x-provider-api-key') ||
         request.headers.get('x-openai-api-key');
+    const visitorId = request.cookies.get(visitorCookieName)?.value || randomUUID();
+    const authMode = request.headers.get('x-auth-mode') || 'anonymous';
 
     const baseUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8082';
     const backendParams = new URLSearchParams({ lang, model });
@@ -42,6 +47,8 @@ export async function GET(
         const response = await fetch(backendUrl, {
             headers: {
                 'Accept': 'text/event-stream',
+                'X-Auth-Mode': authMode,
+                'X-Visitor-Id': visitorId,
                 ...(providerApiKey ? { 'X-Provider-API-Key': providerApiKey } : {}),
             },
             signal: controller.signal,
@@ -88,7 +95,7 @@ export async function GET(
             },
         });
 
-        return new Response(stream, {
+        const proxiedResponse = new Response(stream, {
             status: 200,
             headers: {
                 'Content-Type': 'text/event-stream; charset=utf-8',
@@ -96,6 +103,11 @@ export async function GET(
                 'X-Accel-Buffering': 'no',
             },
         });
+        proxiedResponse.headers.append(
+            'Set-Cookie',
+            `${visitorCookieName}=${visitorId}; Path=/; Max-Age=${VISITOR_COOKIE_MAX_AGE}; SameSite=Lax; HttpOnly`
+        );
+        return proxiedResponse;
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         console.error(`[SSE Proxy] Error for ${ticker}:`, message);

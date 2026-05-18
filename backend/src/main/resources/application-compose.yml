@@ -8,6 +8,9 @@ spring:
     hibernate:
       ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
 
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+
 logging:
   level:
     com.springalpha: ${SPRING_ALPHA_LOG_LEVEL:INFO}

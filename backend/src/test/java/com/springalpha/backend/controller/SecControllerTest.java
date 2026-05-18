@@ -8,6 +8,8 @@ import com.springalpha.backend.service.FinancialAnalysisService;
 import com.springalpha.backend.service.SecService;
 import com.springalpha.backend.service.provider.ProviderCredentialValidator;
 import com.springalpha.backend.service.research.ResearchServiceUnavailableException;
+import com.springalpha.backend.trial.TrialDecision;
+import com.springalpha.backend.trial.TrialLedgerService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -16,6 +18,8 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,7 +31,7 @@ class SecControllerTest {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
         FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
-        SecController controller = new SecController(secService, analysisService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
 
         WebTestClient client = WebTestClient.bindToController(controller).build();
 
@@ -57,12 +61,13 @@ class SecControllerTest {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
         FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
-        SecController controller = new SecController(secService, analysisService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
 
         WebTestClient client = WebTestClient.bindToController(controller).build();
 
         client.get()
                 .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
+                .header("X-Provider-API-Key", "sk-test")
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
                 .expectStatus().isOk()
@@ -81,7 +86,7 @@ class SecControllerTest {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
         FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
-        SecController controller = new SecController(secService, analysisService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
 
         WebTestClient client = WebTestClient.bindToController(controller).build();
 
@@ -95,13 +100,12 @@ class SecControllerTest {
     }
 
     @Test
-    void analyzeEndpointReturnsServiceUnavailableWhenResearchServiceFails() {
+    void analyzeEndpointRejectsTrialExhaustedAnonymousRequests() {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
         FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
-        analysisService.error = new ResearchServiceUnavailableException(
-                "Python Research Service is unavailable: connection refused");
-        SecController controller = new SecController(secService, analysisService);
+        FakeTrialLedgerService trialLedgerService = new FakeTrialLedgerService(false);
+        SecController controller = new SecController(secService, analysisService, trialLedgerService);
 
         WebTestClient client = WebTestClient.bindToController(controller)
                 .controllerAdvice(new ApiExceptionHandler())
@@ -109,6 +113,56 @@ class SecControllerTest {
 
         client.get()
                 .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
+                .header("X-Visitor-Id", UUID.randomUUID().toString())
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isEqualTo(402)
+                .expectBody(String.class)
+                .value(body -> assertTrue(body.contains("TRIAL_EXHAUSTED")));
+
+        assertEquals(0, analysisService.callCount);
+    }
+
+    @Test
+    void analyzeEndpointReturnsKeyRequiredWhenAuthenticatedUserHasNoSavedKey() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        FakeTrialLedgerService trialLedgerService = new FakeTrialLedgerService(true);
+        SecController controller = new SecController(secService, analysisService, trialLedgerService);
+
+        WebTestClient client = WebTestClient.bindToController(controller)
+                .controllerAdvice(new ApiExceptionHandler())
+                .build();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
+                .header("X-Auth-Mode", "authenticated")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody(String.class)
+                .value(body -> assertTrue(body.contains("PROVIDER_KEY_REQUIRED")));
+
+        assertEquals(0, analysisService.callCount);
+    }
+
+    @Test
+    void analyzeEndpointReturnsServiceUnavailableWhenResearchServiceFails() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        analysisService.error = new ResearchServiceUnavailableException(
+                "Python Research Service is unavailable: connection refused");
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
+
+        WebTestClient client = WebTestClient.bindToController(controller)
+                .controllerAdvice(new ApiExceptionHandler())
+                .build();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
+                .header("X-Provider-API-Key", "sk-test")
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
                 .expectStatus().isEqualTo(503)
@@ -126,7 +180,7 @@ class SecControllerTest {
         FakeSecService secService = new FakeSecService(financialDataService);
         secService.content = "A".repeat(10050);
         FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
-        SecController controller = new SecController(secService, analysisService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
 
         WebTestClient client = WebTestClient.bindToController(controller).build();
 
@@ -147,7 +201,7 @@ class SecControllerTest {
         FakeSecService secService = new FakeSecService(financialDataService);
         secService.assertOffEventLoop = true;
         FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
-        SecController controller = new SecController(secService, analysisService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
 
         WebTestClient client = WebTestClient.bindToController(controller).build();
 
@@ -168,7 +222,7 @@ class SecControllerTest {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
         FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
-        SecController controller = new SecController(secService, analysisService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
 
         WebTestClient client = WebTestClient.bindToController(controller).build();
 
@@ -189,7 +243,7 @@ class SecControllerTest {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
         FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
-        SecController controller = new SecController(secService, analysisService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
 
         WebTestClient client = WebTestClient.bindToController(controller).build();
 
@@ -257,6 +311,37 @@ class SecControllerTest {
         @Override
         public String getDefaultModel() {
             return "siliconflow";
+        }
+    }
+
+    private static final class FakeTrialLedgerService extends TrialLedgerService {
+
+        private final boolean allow;
+
+        private FakeTrialLedgerService(boolean allow) {
+            super(new NoopAnonymousVisitorStore());
+            this.allow = allow;
+        }
+
+        @Override
+        public TrialDecision reserveAnonymousTrial(UUID visitorId, Optional<String> ipHash) {
+            return allow
+                    ? TrialDecision.allow()
+                    : TrialDecision.deny("TRIAL_EXHAUSTED", "Trial exhausted");
+        }
+    }
+
+    private static final class NoopAnonymousVisitorStore implements com.springalpha.backend.trial.AnonymousVisitorStore {
+
+        @Override
+        public Optional<com.springalpha.backend.trial.AnonymousVisitor> findById(UUID visitorId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public com.springalpha.backend.trial.AnonymousVisitor save(
+                com.springalpha.backend.trial.AnonymousVisitor visitor) {
+            return visitor;
         }
     }
 

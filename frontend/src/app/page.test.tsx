@@ -12,6 +12,13 @@ vi.mock("@/components/pdf/PdfDownloadButton", () => ({
   PdfDownloadButton: () => <button type="button">pdf</button>,
 }));
 
+vi.mock("next-auth/react", () => ({
+  useSession: () => ({ data: null, status: "unauthenticated" }),
+  signIn: vi.fn(),
+  signOut: vi.fn(),
+  SessionProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 const chartTimeScaleMock = {
   fitContent: vi.fn(),
   scrollToRealTime: vi.fn(),
@@ -1597,18 +1604,74 @@ describe("Home page", () => {
     expect(screen.queryByTestId("key-metrics")).not.toBeInTheDocument();
   });
 
-  it("requires a saved provider key before running BYOK mode", async () => {
+  it("allows one anonymous real analysis before the trial gate closes", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Anonymous trial report.",
+          companyName: "Tesla, Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-03-31",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          metadata: {
+            modelName: "gpt-4o-mini",
+            generatedAt: "2026-03-09T10:00:00",
+            language: "en",
+          },
+          taskSections: latestTaskSections("Anonymous trial thesis"),
+        },
+      ]);
+    });
+
+    window.localStorage.removeItem("spring-alpha-siliconflow-key");
+    window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker("TSLA");
+    openAgentReport(/latest earnings readout/i);
+
+    expect(
+      await screen.findByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /sign in with google/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Free trial reached")).toBeInTheDocument();
+    expect(window.localStorage.getItem("spring-alpha-anonymous-trial-used")).toBe(
+      "true",
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/sec/analyze/TSLA?lang=en&model=siliconflow"),
+      expect.objectContaining({
+        headers: {},
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
+  it("shows the login wall once the anonymous trial is already used", async () => {
     vi.stubGlobal("fetch", vi.fn());
     window.localStorage.removeItem("spring-alpha-siliconflow-key");
+    window.localStorage.setItem("spring-alpha-anonymous-trial-used", "true");
 
     render(<Home />);
 
     submitTicker();
 
     expect(
-      await screen.findByText(
-        /requires you to enter and save your api key first/i,
-      ),
+      await screen.findByText(/your anonymous trial is over/i),
     ).toBeInTheDocument();
     expect(
       vi.mocked(global.fetch).mock.calls.some(([input]) =>

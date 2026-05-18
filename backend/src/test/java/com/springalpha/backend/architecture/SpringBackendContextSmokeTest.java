@@ -22,6 +22,7 @@ import org.springframework.test.context.ActiveProfiles;
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.datasource.driver-class-name=org.h2.Driver",
+        "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.show-sql=false",
         "app.research-service.base-url=http://127.0.0.1:1"
