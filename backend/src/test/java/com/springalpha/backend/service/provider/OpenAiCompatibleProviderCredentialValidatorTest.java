@@ -32,6 +32,56 @@ class OpenAiCompatibleProviderCredentialValidatorTest {
     }
 
     @Test
+    void validateFallsBackToConfiguredApiKeyWhenRequestKeyIsBlank() {
+        java.util.concurrent.atomic.AtomicReference<String> authorization = new java.util.concurrent.atomic.AtomicReference<>();
+        WebClient.Builder builder = WebClient.builder()
+                .exchangeFunction(request -> {
+                    authorization.set(request.headers().getFirst("Authorization"));
+                    return Mono.just(ClientResponse.create(HttpStatus.OK)
+                            .header("Content-Type", "application/json")
+                            .body("{}")
+                            .build());
+                });
+        OpenAiCompatibleProviderCredentialValidator validator = new OpenAiCompatibleProviderCredentialValidator(
+                builder,
+                "siliconflow",
+                "https://siliconflow.example/v1",
+                "https://openai.example/v1",
+                "https://gemini.example/v1beta/openai",
+                Duration.ofSeconds(30),
+                java.util.Map.of("siliconflow", "configured-sf"));
+
+        validator.validate("siliconflow", " ").block();
+
+        assertEquals("Bearer configured-sf", authorization.get());
+    }
+
+    @Test
+    void validateStillPrefersRequestApiKeyOverConfiguredKey() {
+        java.util.concurrent.atomic.AtomicReference<String> authorization = new java.util.concurrent.atomic.AtomicReference<>();
+        WebClient.Builder builder = WebClient.builder()
+                .exchangeFunction(request -> {
+                    authorization.set(request.headers().getFirst("Authorization"));
+                    return Mono.just(ClientResponse.create(HttpStatus.OK)
+                            .header("Content-Type", "application/json")
+                            .body("{}")
+                            .build());
+                });
+        OpenAiCompatibleProviderCredentialValidator validator = new OpenAiCompatibleProviderCredentialValidator(
+                builder,
+                "siliconflow",
+                "https://siliconflow.example/v1",
+                "https://openai.example/v1",
+                "https://gemini.example/v1beta/openai",
+                Duration.ofSeconds(30),
+                java.util.Map.of("siliconflow", "configured-sf"));
+
+        validator.validate("siliconflow", "secret").block();
+
+        assertEquals("Bearer secret", authorization.get());
+    }
+
+    @Test
     void validateMapsUnauthorizedProviderResponse() {
         OpenAiCompatibleProviderCredentialValidator validator = validatorReturning(HttpStatus.UNAUTHORIZED);
 

@@ -25,6 +25,7 @@ public class OpenAiCompatibleProviderCredentialValidator implements ProviderCred
     private final Duration validationTimeout;
     private final String defaultProvider;
     private final Map<String, ProviderConfig> providers;
+    private final Map<String, String> configuredApiKeys;
 
     @Autowired
     public OpenAiCompatibleProviderCredentialValidator(
@@ -33,7 +34,48 @@ public class OpenAiCompatibleProviderCredentialValidator implements ProviderCred
             @Value("${app.siliconflow.base-url:https://api.siliconflow.cn/v1}") String siliconFlowBaseUrl,
             @Value("${app.openai.base-url:https://api.openai.com/v1}") String openAiBaseUrl,
             @Value("${app.gemini.base-url:https://generativelanguage.googleapis.com}") String geminiBaseUrl,
-            @Value("${app.provider-validation-timeout:PT30S}") Duration validationTimeout) {
+            @Value("${app.provider-validation-timeout:PT30S}") Duration validationTimeout,
+            @Value("${app.siliconflow.api-key:}") String siliconFlowApiKey,
+            @Value("${app.openai.api-key:}") String openAiApiKey,
+            @Value("${app.gemini.api-key:}") String geminiApiKey) {
+        this(
+                webClientBuilder,
+                defaultProvider,
+                siliconFlowBaseUrl,
+                openAiBaseUrl,
+                geminiBaseUrl,
+                validationTimeout,
+                Map.of(
+                        "siliconflow", normalizeKey(siliconFlowApiKey),
+                        "openai", normalizeKey(openAiApiKey),
+                        "gemini", normalizeKey(geminiApiKey)));
+    }
+
+    OpenAiCompatibleProviderCredentialValidator(
+            WebClient.Builder webClientBuilder,
+            String defaultProvider,
+            String siliconFlowBaseUrl,
+            String openAiBaseUrl,
+            String geminiBaseUrl,
+            Duration validationTimeout) {
+        this(
+                webClientBuilder,
+                defaultProvider,
+                siliconFlowBaseUrl,
+                openAiBaseUrl,
+                geminiBaseUrl,
+                validationTimeout,
+                Map.of());
+    }
+
+    OpenAiCompatibleProviderCredentialValidator(
+            WebClient.Builder webClientBuilder,
+            String defaultProvider,
+            String siliconFlowBaseUrl,
+            String openAiBaseUrl,
+            String geminiBaseUrl,
+            Duration validationTimeout,
+            Map<String, String> configuredApiKeys) {
         this.webClientBuilder = webClientBuilder;
         this.validationTimeout = validationTimeout;
         this.defaultProvider = normalizeProvider(defaultProvider);
@@ -41,6 +83,7 @@ public class OpenAiCompatibleProviderCredentialValidator implements ProviderCred
                 "gemini", new ProviderConfig("gemini", "Gemini", geminiBaseUrl),
                 "openai", new ProviderConfig("openai", "OpenAI", openAiBaseUrl),
                 "siliconflow", new ProviderConfig("siliconflow", "SiliconFlow", siliconFlowBaseUrl));
+        this.configuredApiKeys = configuredApiKeys == null ? Map.of() : Map.copyOf(configuredApiKeys);
     }
 
     @Override
@@ -56,7 +99,10 @@ public class OpenAiCompatibleProviderCredentialValidator implements ProviderCred
     @Override
     public Mono<Void> validate(String provider, String apiKey) {
         ProviderConfig config = providerConfig(provider);
-        String effectiveApiKey = apiKey == null ? "" : apiKey.trim();
+        String effectiveApiKey = normalizeKey(apiKey);
+        if (effectiveApiKey.isBlank()) {
+            effectiveApiKey = configuredApiKeys.getOrDefault(config.id(), "");
+        }
         if (effectiveApiKey.isBlank()) {
             return Mono.error(new ProviderAuthenticationException(
                     config.displayName() + " API key is required for BYOK mode",
@@ -91,6 +137,10 @@ public class OpenAiCompatibleProviderCredentialValidator implements ProviderCred
         return provider == null || provider.isBlank()
                 ? "siliconflow"
                 : provider.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeKey(String apiKey) {
+        return apiKey == null ? "" : apiKey.trim();
     }
 
     private Mono<Void> mapProviderException(ProviderConfig config, Throwable error) {
