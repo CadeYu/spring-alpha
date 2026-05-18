@@ -114,6 +114,7 @@ class SecControllerTest {
         client.get()
                 .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
                 .header("X-Visitor-Id", UUID.randomUUID().toString())
+                .header("X-Trial-Run-Id", UUID.randomUUID().toString())
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
                 .expectStatus().isEqualTo(402)
@@ -121,6 +122,67 @@ class SecControllerTest {
                 .value(body -> assertTrue(body.contains("TRIAL_EXHAUSTED")));
 
         assertEquals(0, analysisService.callCount);
+    }
+
+    @Test
+    void analyzeEndpointAllowsMultipleAnonymousTasksForOneTrialRun() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        FakeTrialLedgerService trialLedgerService = new FakeTrialLedgerService(true);
+        SecController controller = new SecController(secService, analysisService, trialLedgerService);
+
+        WebTestClient client = WebTestClient.bindToController(controller)
+                .controllerAdvice(new ApiExceptionHandler())
+                .build();
+        UUID visitorId = UUID.randomUUID();
+        UUID trialRunId = UUID.randomUUID();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
+                .header("X-Visitor-Id", visitorId.toString())
+                .header("X-Trial-Run-Id", trialRunId.toString())
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isOk();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?taskType=business_driver_deep_dive")
+                .header("X-Visitor-Id", visitorId.toString())
+                .header("X-Trial-Run-Id", trialRunId.toString())
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isOk();
+
+        assertEquals(2, trialLedgerService.authorizeCount);
+        assertEquals(2, trialLedgerService.confirmCount);
+        assertEquals(2, analysisService.callCount);
+    }
+
+    @Test
+    void analyzeEndpointDoesNotConfirmAnonymousTrialWhenServiceFailsBeforeReport() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        analysisService.error = new ResearchServiceUnavailableException(
+                "Python Research Service is unavailable: connection refused");
+        FakeTrialLedgerService trialLedgerService = new FakeTrialLedgerService(true);
+        SecController controller = new SecController(secService, analysisService, trialLedgerService);
+
+        WebTestClient client = WebTestClient.bindToController(controller)
+                .controllerAdvice(new ApiExceptionHandler())
+                .build();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
+                .header("X-Visitor-Id", UUID.randomUUID().toString())
+                .header("X-Trial-Run-Id", UUID.randomUUID().toString())
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isEqualTo(503);
+
+        assertEquals(1, trialLedgerService.authorizeCount);
+        assertEquals(0, trialLedgerService.confirmCount);
     }
 
     @Test
@@ -317,6 +379,8 @@ class SecControllerTest {
     private static final class FakeTrialLedgerService extends TrialLedgerService {
 
         private final boolean allow;
+        private int authorizeCount;
+        private int confirmCount;
 
         private FakeTrialLedgerService(boolean allow) {
             super(new NoopAnonymousVisitorStore());
@@ -329,6 +393,19 @@ class SecControllerTest {
                     ? TrialDecision.allow()
                     : TrialDecision.deny("TRIAL_EXHAUSTED", "Trial exhausted");
         }
+
+        @Override
+        public TrialDecision authorizeAnonymousTrial(UUID visitorId, UUID trialRunId, Optional<String> ipHash) {
+            authorizeCount++;
+            return allow
+                    ? TrialDecision.allow()
+                    : TrialDecision.deny("TRIAL_EXHAUSTED", "Trial exhausted");
+        }
+
+        @Override
+        public void confirmAnonymousTrial(UUID visitorId, UUID trialRunId, Optional<String> ipHash) {
+            confirmCount++;
+        }
     }
 
     private static final class NoopAnonymousVisitorStore implements com.springalpha.backend.trial.AnonymousVisitorStore {
@@ -336,6 +413,11 @@ class SecControllerTest {
         @Override
         public Optional<com.springalpha.backend.trial.AnonymousVisitor> findById(UUID visitorId) {
             return Optional.empty();
+        }
+
+        @Override
+        public boolean existsByIpHashAndTrialUsedAtIsNotNull(String ipHash) {
+            return false;
         }
 
         @Override

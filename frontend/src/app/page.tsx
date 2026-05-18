@@ -14,6 +14,10 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { TickerSearchInput } from "@/components/app/ticker-search-input";
+import {
+  tickerSearchButtonLabel,
+  tickerSearchPlaceholder,
+} from "@/lib/tickerSearchCopy";
 
 type Locale = "zh" | "en";
 
@@ -459,8 +463,8 @@ export default function LandingPage() {
               value={ticker}
               onValueChange={setTicker}
               onSubmit={handleTickerSubmit}
-              placeholder={locale === "zh" ? "输入股票代码 (如 AAPL, MSFT)" : "Enter Ticker (e.g., AAPL, MSFT, TSLA)"}
-              buttonLabel={locale === "zh" ? "开始分析" : "Analyze ticker"}
+              placeholder={tickerSearchPlaceholder[locale]}
+              buttonLabel={tickerSearchButtonLabel[locale]}
               inputRef={tickerInputRef}
               wrapperClassName="h-16"
               inputClassName="text-lg sm:text-xl"

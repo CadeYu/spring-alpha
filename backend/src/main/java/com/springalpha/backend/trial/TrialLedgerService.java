@@ -25,6 +25,15 @@ public class TrialLedgerService {
     }
 
     public TrialDecision reserveAnonymousTrial(UUID visitorId, Optional<String> ipHash) {
+        UUID trialRunId = UUID.randomUUID();
+        TrialDecision decision = authorizeAnonymousTrial(visitorId, trialRunId, ipHash);
+        if (decision.isAllowed()) {
+            confirmAnonymousTrial(visitorId, trialRunId, ipHash);
+        }
+        return decision;
+    }
+
+    public TrialDecision authorizeAnonymousTrial(UUID visitorId, UUID trialRunId, Optional<String> ipHash) {
         Instant now = Instant.now(clock);
         AnonymousVisitor visitor = anonymousVisitorStore.findById(visitorId)
                 .orElseGet(() -> AnonymousVisitor.builder()
@@ -35,16 +44,43 @@ public class TrialLedgerService {
         visitor.setLastSeenAt(now);
         ipHash.ifPresent(visitor::setIpHash);
 
-        if (visitor.getTrialUsedAt() != null) {
+        if (isUsedByAnotherRun(visitor, trialRunId)) {
             anonymousVisitorStore.save(visitor);
-            return TrialDecision.deny(
-                    "TRIAL_EXHAUSTED",
-                    "Anonymous trial has already been used. Sign in and bring your own provider key to continue.");
+            return trialExhausted();
         }
 
-        visitor.setTrialUsedAt(now);
-        visitor.setTrialRunId(UUID.randomUUID());
+        if (visitor.getTrialUsedAt() == null
+                && ipHash.filter(anonymousVisitorStore::existsByIpHashAndTrialUsedAtIsNotNull).isPresent()) {
+            anonymousVisitorStore.save(visitor);
+            return trialExhausted();
+        }
+
         anonymousVisitorStore.save(visitor);
         return TrialDecision.allow();
+    }
+
+    public void confirmAnonymousTrial(UUID visitorId, UUID trialRunId, Optional<String> ipHash) {
+        Instant now = Instant.now(clock);
+        AnonymousVisitor visitor = anonymousVisitorStore.findById(visitorId)
+                .orElseGet(() -> AnonymousVisitor.builder()
+                        .visitorId(visitorId)
+                        .firstSeenAt(now)
+                        .build());
+
+        visitor.setLastSeenAt(now);
+        ipHash.ifPresent(visitor::setIpHash);
+        visitor.setTrialUsedAt(now);
+        visitor.setTrialRunId(trialRunId);
+        anonymousVisitorStore.save(visitor);
+    }
+
+    private boolean isUsedByAnotherRun(AnonymousVisitor visitor, UUID trialRunId) {
+        return visitor.getTrialUsedAt() != null && !trialRunId.equals(visitor.getTrialRunId());
+    }
+
+    private TrialDecision trialExhausted() {
+        return TrialDecision.deny(
+                "TRIAL_EXHAUSTED",
+                "Anonymous trial has already been used. Sign in and bring your own provider key to continue.");
     }
 }

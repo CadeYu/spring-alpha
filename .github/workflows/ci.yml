@@ -28,7 +28,7 @@ jobs:
       - name: Run backend tests
         run: >
           mvn
-          -Dtest=SecControllerTest,SecServiceTest,FinancialAnalysisServiceTest,BaseAiStrategyTest,AnalysisReportValidatorTest,FmpFinancialDataServiceTest
+          -Dtest=SecControllerTest,SecServiceTest,FinancialAnalysisServiceTest,BaseAiStrategyTest,AnalysisReportValidatorTest,FmpFinancialDataServiceTest,TrialLedgerServiceTest
           test
 
   research-service:

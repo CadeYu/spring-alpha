@@ -48,6 +48,10 @@ import { useSession } from "next-auth/react";
 import { AuthBanner } from "@/components/app/auth-banner";
 import { TickerSearchInput } from "@/components/app/ticker-search-input";
 import { TrialGate, type TrialGateStatus } from "@/components/app/trial-gate";
+import {
+  tickerSearchButtonLabel,
+  tickerSearchPlaceholder,
+} from "@/lib/tickerSearchCopy";
 
 const BYOK_PROVIDERS = [
   {
@@ -123,6 +127,17 @@ type TickerSuggestion = {
 
 function normalizeTicker(rawTicker: string | undefined | null) {
   return rawTicker?.toUpperCase().trim() ?? "";
+}
+
+function createClientUuid() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const value = Math.floor(Math.random() * 16);
+    const nibble = char === "x" ? value : (value & 0x3) | 0x8;
+    return nibble.toString(16);
+  });
 }
 
 type MarketCandle = {
@@ -326,9 +341,7 @@ export default function EarningsAnalystApp({
     };
   }, [ticker]);
 
-  const analysisApiBase = process.env.NEXT_PUBLIC_BACKEND_URL
-    ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api`
-    : "/api";
+  const analysisApiBase = "/api";
 
   const selectTickerSuggestion = (suggestion: TickerSuggestion) => {
     setTicker(suggestion.ticker);
@@ -370,6 +383,7 @@ export default function EarningsAnalystApp({
     }
 
     anonymousTrialConsumedRef.current = false;
+    const trialRunId = anonymousTrialAvailable ? createClientUuid() : null;
 
     const requestId = Date.now();
     requestIdRef.current = requestId;
@@ -429,6 +443,7 @@ export default function EarningsAnalystApp({
           submittedTicker,
           runtimeProviderKey,
           anonymousTrialMode: anonymousTrialAvailable,
+          trialRunId,
           controller,
         });
 
@@ -484,6 +499,7 @@ export default function EarningsAnalystApp({
     submittedTicker,
     runtimeProviderKey,
     anonymousTrialMode,
+    trialRunId,
     controller,
   }: {
     taskId: ResearchTaskId;
@@ -491,6 +507,7 @@ export default function EarningsAnalystApp({
     submittedTicker: string;
     runtimeProviderKey: string;
     anonymousTrialMode: boolean;
+    trialRunId: string | null;
     controller: AbortController;
   }): Promise<{ phase: "received" | "failed"; error?: AnalysisErrorState }> => {
     console.log(
@@ -504,6 +521,9 @@ export default function EarningsAnalystApp({
     const requestHeaders: Record<string, string> = {};
     if (runtimeProviderKey) {
       requestHeaders["X-Provider-API-Key"] = runtimeProviderKey;
+    } else if (anonymousTrialMode && trialRunId) {
+      requestHeaders["X-Auth-Mode"] = "anonymous";
+      requestHeaders["X-Trial-Run-Id"] = trialRunId;
     }
 
     const response = await fetch(
@@ -666,12 +686,8 @@ export default function EarningsAnalystApp({
                     setTickerSuggestionsOpen(true);
                   }}
                   onSubmit={(submittedTicker) => void handleSearch(submittedTicker)}
-                  placeholder={
-                    isZh
-                      ? "输入股票代码 (如 AAPL, MSFT)"
-                      : "Enter Ticker (e.g., AAPL, MSFT, TSLA)"
-                  }
-                  buttonLabel={isZh ? "开始分析" : "Analyze ticker"}
+                  placeholder={tickerSearchPlaceholder[isZh ? "zh" : "en"]}
+                  buttonLabel={tickerSearchButtonLabel[isZh ? "zh" : "en"]}
                   isSubmitting={isLoading}
                   inputRef={tickerInputRef}
                   inputProps={{

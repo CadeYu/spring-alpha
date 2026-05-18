@@ -25,6 +25,8 @@ export async function GET(
         request.headers.get('x-openai-api-key');
     const visitorId = request.cookies.get(visitorCookieName)?.value || randomUUID();
     const authMode = request.headers.get('x-auth-mode') || 'anonymous';
+    const trialRunId = request.headers.get('x-trial-run-id') || '';
+    const clientIpHash = await hashClientIp(request);
 
     const baseUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8082';
     const backendParams = new URLSearchParams({ lang, model });
@@ -49,6 +51,8 @@ export async function GET(
                 'Accept': 'text/event-stream',
                 'X-Auth-Mode': authMode,
                 'X-Visitor-Id': visitorId,
+                ...(trialRunId ? { 'X-Trial-Run-Id': trialRunId } : {}),
+                ...(clientIpHash ? { 'X-Client-IP-Hash': clientIpHash } : {}),
                 ...(providerApiKey ? { 'X-Provider-API-Key': providerApiKey } : {}),
             },
             signal: controller.signal,
@@ -120,3 +124,19 @@ export async function GET(
 
 // Allow long-running live LLM research streams.
 export const maxDuration = 240;
+
+async function hashClientIp(request: NextRequest) {
+    const forwardedFor = request.headers.get('x-forwarded-for') || '';
+    const clientIp = forwardedFor.split(',')[0]?.trim();
+    if (!clientIp) {
+        return null;
+    }
+
+    const digest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(clientIp),
+    );
+    return Array.from(new Uint8Array(digest))
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+}

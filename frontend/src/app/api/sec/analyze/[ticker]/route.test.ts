@@ -72,11 +72,16 @@ describe("analysis SSE bridge", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const visitorId = "2cc57d20-ebd4-49bd-b53d-2c935bd9e01c";
+    const trialRunId = "7f2819ce-042c-4a54-ac27-74294d2f9ca3";
     const response = await GET(
       new NextRequest(
         "http://localhost/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
         {
-          headers: { cookie: `spring-alpha-visitor-id=${visitorId}` },
+          headers: {
+            cookie: `spring-alpha-visitor-id=${visitorId}`,
+            "X-Trial-Run-Id": trialRunId,
+            "X-Forwarded-For": "203.0.113.9",
+          },
         },
       ),
       { params: Promise.resolve({ ticker: "AAPL" }) },
@@ -89,6 +94,8 @@ describe("analysis SSE bridge", () => {
         headers: expect.objectContaining({
           "X-Auth-Mode": "anonymous",
           "X-Visitor-Id": visitorId,
+          "X-Trial-Run-Id": trialRunId,
+          "X-Client-IP-Hash": expect.any(String),
         }),
       }),
     );

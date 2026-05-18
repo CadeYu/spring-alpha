@@ -7,5 +7,7 @@ public interface AnonymousVisitorStore {
 
     Optional<AnonymousVisitor> findById(UUID visitorId);
 
+    boolean existsByIpHashAndTrialUsedAtIsNotNull(String ipHash);
+
     AnonymousVisitor save(AnonymousVisitor visitor);
 }

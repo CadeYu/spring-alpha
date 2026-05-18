@@ -98,8 +98,23 @@ describe("Landing page", () => {
       screen.getByLabelText(/enter ticker|输入股票代码/i),
     ).toBeInTheDocument();
     expect(
+      screen.getByPlaceholderText("输入股票代码 (如 AAPL, MSFT)"),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("button", { name: /analyze ticker|开始分析/i }),
     ).toBeInTheDocument();
+  });
+
+  it("uses the same English ticker placeholder as the app", async () => {
+    window.localStorage.setItem("spring-alpha-landing-locale", "en");
+
+    render(<LandingPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByPlaceholderText("Enter Ticker (e.g., AAPL, MSFT, TSLA)"),
+      ).toBeInTheDocument();
+    });
   });
 
   it("routes the landing ticker search into the app", () => {

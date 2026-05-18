@@ -1655,9 +1655,61 @@ describe("Home page", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/sec/analyze/TSLA?lang=en&model=siliconflow"),
       expect.objectContaining({
-        headers: {},
+        headers: expect.objectContaining({
+          "X-Auth-Mode": "anonymous",
+          "X-Trial-Run-Id": expect.any(String),
+        }),
         signal: expect.any(AbortSignal),
       }),
+    );
+  });
+
+  it("reuses one anonymous trial run id across all agent task requests", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/sec/history/")) {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        return createSseResponse([
+          {
+            executiveSummary: "Anonymous trial report.",
+            companyName: "Apple Inc.",
+            period: "Q1 2026",
+            filingDate: "2026-02-01",
+            keyMetrics: [],
+            businessDrivers: [],
+            riskFactors: [],
+            citations: [],
+            taskSections: latestTaskSections("Anonymous trial thesis"),
+          },
+        ]);
+    });
+
+    window.localStorage.removeItem("spring-alpha-siliconflow-key");
+    window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker("AAPL");
+
+    let analyzeCalls: [RequestInfo | URL, RequestInit?][] = [];
+    await waitFor(() => {
+      analyzeCalls = fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("/api/sec/analyze/AAPL"),
+      );
+      expect(analyzeCalls).toHaveLength(3);
+    });
+    const trialRunIds = analyzeCalls.map(([, init]) =>
+      ((init?.headers ?? {}) as Record<string, string>)["X-Trial-Run-Id"],
+    );
+
+    expect(new Set(trialRunIds).size).toBe(1);
+    expect(trialRunIds[0]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
   });
 

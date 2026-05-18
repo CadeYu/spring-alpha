@@ -72,22 +72,23 @@ public class SecController {
             @RequestHeader HttpHeaders headers) {
         ResearchTaskType researchTaskType = parseResearchTaskType(taskType);
         String providerApiKey = resolveProviderApiKey(headers);
-        enforceTrialAccess(headers, providerApiKey);
+        Optional<AnonymousTrialContext> anonymousTrial = authorizeTrialAccess(headers, providerApiKey);
         log.info("REST request to analyze stock: {}, lang: {}, model: {}, taskType: {}",
                 ticker, lang, model, researchTaskType.requestValue());
         // The analysis flow calls external SEC/Yahoo/Python Agent services, so move
         // the stream off the Netty event loop.
         return Flux.defer(() -> analysisService.analyzeStock(ticker, lang, model, providerApiKey, researchTaskType))
+                .doOnNext(report -> anonymousTrial.ifPresent(this::confirmTrialAccess))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    private void enforceTrialAccess(HttpHeaders headers, String providerApiKey) {
+    private Optional<AnonymousTrialContext> authorizeTrialAccess(HttpHeaders headers, String providerApiKey) {
         String authMode = Optional.ofNullable(headers.getFirst("X-Auth-Mode"))
                 .orElse("anonymous")
                 .trim()
                 .toLowerCase();
         if (!providerApiKeyIsBlank(providerApiKey)) {
-            return;
+            return Optional.empty();
         }
         if ("authenticated".equals(authMode)) {
             throw new TrialAccessException(
@@ -97,15 +98,23 @@ public class SecController {
         }
 
         UUID visitorId = parseVisitorId(headers.getFirst("X-Visitor-Id"));
-        TrialDecision decision = trialLedgerService.reserveAnonymousTrial(
+        UUID trialRunId = parseTrialRunId(headers.getFirst("X-Trial-Run-Id"));
+        Optional<String> ipHash = Optional.ofNullable(headers.getFirst("X-Client-IP-Hash")).filter(value -> !value.isBlank());
+        TrialDecision decision = trialLedgerService.authorizeAnonymousTrial(
                 visitorId,
-                Optional.ofNullable(headers.getFirst("X-Client-IP-Hash")).filter(value -> !value.isBlank()));
+                trialRunId,
+                ipHash);
         if (!decision.isAllowed()) {
             throw new TrialAccessException(
                     decision.message(),
                     decision.code(),
                     HttpStatus.PAYMENT_REQUIRED);
         }
+        return Optional.of(new AnonymousTrialContext(visitorId, trialRunId, ipHash));
+    }
+
+    private void confirmTrialAccess(AnonymousTrialContext context) {
+        trialLedgerService.confirmAnonymousTrial(context.visitorId(), context.trialRunId(), context.ipHash());
     }
 
     private boolean providerApiKeyIsBlank(String providerApiKey) {
@@ -129,6 +138,23 @@ public class SecController {
         }
     }
 
+    private UUID parseTrialRunId(String trialRunId) {
+        if (trialRunId == null || trialRunId.isBlank()) {
+            throw new TrialAccessException(
+                    "Anonymous analysis requires a trial run id.",
+                    "AUTH_REQUIRED",
+                    HttpStatus.UNAUTHORIZED);
+        }
+        try {
+            return UUID.fromString(trialRunId);
+        } catch (IllegalArgumentException error) {
+            throw new TrialAccessException(
+                    "Anonymous analysis requires a valid trial run id.",
+                    "AUTH_REQUIRED",
+                    HttpStatus.UNAUTHORIZED);
+        }
+    }
+
     private String resolveProviderApiKey(HttpHeaders headers) {
         String genericKey = headers.getFirst("X-Provider-API-Key");
         if (genericKey != null && !genericKey.isBlank()) {
@@ -144,6 +170,9 @@ public class SecController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         }
+    }
+
+    private record AnonymousTrialContext(UUID visitorId, UUID trialRunId, Optional<String> ipHash) {
     }
 
     /**
