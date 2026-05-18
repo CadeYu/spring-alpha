@@ -63,6 +63,10 @@ class BackendProfileConfigTest {
         assertThat(property(sources, "spring.datasource.password")).isEqualTo("${SPRING_DATASOURCE_PASSWORD}");
         assertThat(property(sources, "spring.jpa.hibernate.ddl-auto"))
                 .isEqualTo("${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}");
+        assertThat(property(sources, "spring.flyway.baseline-on-migrate"))
+                .isEqualTo("${SPRING_FLYWAY_BASELINE_ON_MIGRATE:true}");
+        assertThat(property(sources, "spring.flyway.baseline-version"))
+                .isEqualTo("${SPRING_FLYWAY_BASELINE_VERSION:0}");
         assertThat(property(sources, "logging.level.com.springalpha"))
                 .isEqualTo("${SPRING_ALPHA_LOG_LEVEL:INFO}");
     }
