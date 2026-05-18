@@ -52,6 +52,23 @@ describe("Landing page", () => {
     });
   });
 
+  it("renders the architecture block in Chinese on the landing page", async () => {
+    vi.stubGlobal("navigator", {
+      ...window.navigator,
+      language: "zh-CN",
+    });
+
+    render(<LandingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("系统架构")).toBeInTheDocument();
+      expect(screen.getByText("前端")).toBeInTheDocument();
+      expect(screen.getByText("后端")).toBeInTheDocument();
+      expect(screen.getByText("研究服务")).toBeInTheDocument();
+      expect(screen.getByText("存储")).toBeInTheDocument();
+    });
+  });
+
   it("switches to English and persists the locale", async () => {
     vi.stubGlobal("navigator", {
       ...window.navigator,

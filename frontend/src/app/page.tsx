@@ -109,24 +109,25 @@ const copy = {
       ],
     },
     architecture: {
-      label: "Architecture",
-      title: "Spring Boot, Python agents, Next.js 和 PGVector 组合成一条可审计链路。",
+      label: "系统架构",
+      title:
+        "Spring Boot 后端、Python 研究智能体、Next.js 前端和 PGVector 检索层，共同组成一条可审计的研究链路。",
       rows: [
         {
-          name: "Frontend",
-          value: "Next.js workbench, ticker autocomplete, market chart, agent report tabs, timeline sidebar",
+          name: "前端",
+          value: "负责股票代码自动补全、行情图、报告页签和时间线侧栏。",
         },
         {
-          name: "Backend",
-          value: "Spring Boot API, SEC fetch, SSE bridge, provider error mapping, Java service boundary",
+          name: "后端",
+          value: "负责 SEC 抓取、SSE 桥接、Provider 错误映射，以及 Java 服务边界。",
         },
         {
-          name: "Research Service",
-          value: "Python, LangGraph, LangChain tools, LlamaIndex cleaning/chunking, EvidencePack assembly",
+          name: "研究服务",
+          value: "负责 Python 智能体、LangGraph / LangChain 工具、LlamaIndex 清洗切块和 EvidencePack 组装。",
         },
         {
-          name: "Storage",
-          value: "PGVector for filing chunks and retrieval metadata; SEC companyfacts for structured metrics",
+          name: "存储",
+          value: "PGVector 保存 filing 分块和检索元数据，SEC companyfacts 保存结构化指标。",
         },
       ],
     },
