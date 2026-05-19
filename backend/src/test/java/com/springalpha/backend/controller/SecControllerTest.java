@@ -443,6 +443,11 @@ class SecControllerTest {
         public Mono<Void> validate(String provider, String apiKey) {
             return Mono.empty();
         }
+
+        @Override
+        public String resolveApiKey(String provider, String apiKey) {
+            return apiKey == null ? "" : apiKey.trim();
+        }
     }
 
     private static final class FakeSecService extends SecService {

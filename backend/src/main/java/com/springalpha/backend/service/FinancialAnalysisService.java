@@ -87,7 +87,8 @@ public class FinancialAnalysisService {
                         .subscribeOn(Schedulers.boundedElastic())
                         .flatMapMany(facts -> secService.getLatestFilingContent(normalizedTicker)
                         .subscribeOn(Schedulers.boundedElastic())
-                        .flatMapMany(filingText -> runResearchAgent(normalizedTicker, language, provider, providerApiKey,
+                        .flatMapMany(filingText -> runResearchAgent(normalizedTicker, language, provider,
+                                providerCredentialValidator.resolveApiKey(provider, providerApiKey),
                                 effectiveTaskType, filingText, facts))));
     }
 

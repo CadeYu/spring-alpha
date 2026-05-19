@@ -10,5 +10,7 @@ public interface ProviderCredentialValidator {
 
     String defaultProvider();
 
+    String resolveApiKey(String provider, String apiKey);
+
     Mono<Void> validate(String provider, String apiKey);
 }
