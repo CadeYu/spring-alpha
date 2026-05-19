@@ -157,6 +157,71 @@ describe("Home page", () => {
     );
   });
 
+  it("selects a SiliconFlow model and forwards it with analysis requests", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Apple report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          taskSections: latestTaskSections("Apple thesis"),
+        },
+      ]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+
+    fireEvent.click(
+      screen.getByRole("radio", { name: /deepseek v4 flash/i }),
+    );
+    submitTicker("AAPL");
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "llmModel=deepseek-ai%2Fdeepseek-v4-flash",
+        ),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+  });
+
+  it("shows a masked saved-key state after the provider key is saved", () => {
+    window.localStorage.removeItem("spring-alpha-siliconflow-key");
+    vi.stubGlobal("fetch", vi.fn());
+
+    render(<Home />);
+
+    fireEvent.change(screen.getByPlaceholderText("Enter your SiliconFlow key"), {
+      target: { value: "sk-siliconflow-secret-1234" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.getByText("Saved locally")).toBeInTheDocument();
+    expect(screen.getByText("••••••••••••1234")).toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText("Enter your SiliconFlow key"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /change key/i }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps degraded source metadata hidden from the quarterly-only analysis stream", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -260,7 +325,7 @@ describe("Home page", () => {
       await screen.findByText("Apple Inc. · Q1 2026 · 2026-02-01"),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
+      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
@@ -311,7 +376,7 @@ describe("Home page", () => {
     expect(screen.getByPlaceholderText(/enter ticker/i)).toHaveValue("AAPL");
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
+        "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout",
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
     );
@@ -773,15 +838,15 @@ describe("Home page", () => {
       await screen.findByText("Apple Inc. · Q1 2026 · 2026-02-01"),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
+      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=business_driver_deep_dive",
+      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=business_driver_deep_dive",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=cash_flow_capital_allocation",
+      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=cash_flow_capital_allocation",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
@@ -1656,7 +1721,7 @@ describe("Home page", () => {
       await screen.findByText("Visa Inc. · Q1 2026 · 2026-02-01"),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/V?lang=en&model=siliconflow&taskType=latest_earnings_readout",
+      "/api/sec/analyze/V?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(screen.getByText("Visa typed thesis")).toBeInTheDocument();
@@ -2046,6 +2111,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
+    fireEvent.click(screen.getByRole("button", { name: /change key/i }));
     fireEvent.change(
       screen.getByPlaceholderText(/enter your siliconflow key/i),
       {
@@ -2054,10 +2120,9 @@ describe("Home page", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
 
-    expect(
-      screen.getByPlaceholderText(/enter your siliconflow key/i),
-    ).toHaveValue("");
     expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.getByText("Saved locally")).toBeInTheDocument();
+    expect(screen.getByText("••••••••••••-123")).toBeInTheDocument();
 
     submitTicker();
 
@@ -2100,6 +2165,7 @@ describe("Home page", () => {
 
     render(<Home />);
 
+    fireEvent.click(screen.getByRole("button", { name: /change key/i }));
     fireEvent.change(
       screen.getByPlaceholderText(/enter your siliconflow key/i),
       {

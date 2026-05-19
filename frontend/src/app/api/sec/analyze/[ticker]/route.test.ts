@@ -61,6 +61,35 @@ describe("analysis SSE bridge", () => {
     );
   });
 
+  it("forwards the selected provider model to the backend", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data:{}\n\n"));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn(async () => new Response(stream, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=deepseek-ai%2Fdeepseek-v4-flash&taskType=latest_earnings_readout",
+        {
+          headers: { "X-Provider-API-Key": "sk-test-123" },
+        },
+      ),
+      { params: Promise.resolve({ ticker: "AAPL" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "llmModel=deepseek-ai%2Fdeepseek-v4-flash",
+      ),
+      expect.anything(),
+    );
+  });
+
   it("forwards anonymous visitor context when no BYOK key is present", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {

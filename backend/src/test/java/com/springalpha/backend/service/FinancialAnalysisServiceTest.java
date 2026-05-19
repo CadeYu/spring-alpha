@@ -85,6 +85,30 @@ class FinancialAnalysisServiceTest {
     }
 
     @Test
+    void analyzeStockForwardsSelectedLlmModelToResearchAgent() {
+        FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
+        FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.success();
+        FinancialAnalysisService service = new FinancialAnalysisService(
+                new FakeSecService(),
+                credentialValidator,
+                researchAgentClient,
+                new com.springalpha.backend.service.research.ResearchAgentReportMapper());
+
+        service.analyzeStock(
+                "AAPL",
+                "en",
+                "siliconflow",
+                "deepseek-ai/deepseek-v4-flash",
+                "secret",
+                ResearchTaskType.LATEST_EARNINGS_READOUT)
+                .collectList()
+                .block();
+
+        assertEquals("siliconflow", credentialValidator.lastProvider);
+        assertEquals("deepseek-ai/deepseek-v4-flash", researchAgentClient.lastRequest.llmModel());
+    }
+
+    @Test
     void analyzeStockForwardsConfiguredProviderKeyWhenRequestKeyIsBlank() {
         FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
         credentialValidator.configuredApiKey = "configured-provider-key";

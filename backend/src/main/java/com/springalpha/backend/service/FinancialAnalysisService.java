@@ -77,7 +77,18 @@ public class FinancialAnalysisService {
             String model,
             String providerApiKey,
             ResearchTaskType taskType) {
+        return analyzeStock(ticker, lang, model, null, providerApiKey, taskType);
+    }
+
+    public Flux<AnalysisReport> analyzeStock(
+            String ticker,
+            String lang,
+            String model,
+            String llmModel,
+            String providerApiKey,
+            ResearchTaskType taskType) {
         String provider = resolveProvider(model);
+        String selectedLlmModel = normalizeLlmModel(llmModel);
         String language = lang != null && !lang.isBlank() ? lang : "en";
         String normalizedTicker = ticker.toUpperCase(Locale.ROOT);
         ResearchTaskType effectiveTaskType = taskType != null ? taskType : ResearchTaskType.LATEST_EARNINGS_READOUT;
@@ -88,6 +99,7 @@ public class FinancialAnalysisService {
                         .flatMapMany(facts -> secService.getLatestFilingContent(normalizedTicker)
                         .subscribeOn(Schedulers.boundedElastic())
                         .flatMapMany(filingText -> runResearchAgent(normalizedTicker, language, provider,
+                                selectedLlmModel,
                                 providerCredentialValidator.resolveApiKey(provider, providerApiKey),
                                 effectiveTaskType, filingText, facts))));
     }
@@ -96,6 +108,7 @@ public class FinancialAnalysisService {
             String ticker,
             String language,
             String provider,
+            String llmModel,
             String providerApiKey,
             ResearchTaskType taskType,
             String filingText,
@@ -109,7 +122,7 @@ public class FinancialAnalysisService {
                 language,
                 2,
                 provider,
-                null,
+                llmModel,
                 providerApiKey,
                 facts,
                 List.of(new ResearchAgentRequest.FilingDocument(
@@ -119,8 +132,8 @@ public class FinancialAnalysisService {
                         null,
                         capFilingText(filingText))));
 
-        log.info("research_agent_start runId={} ticker={} taskType={} provider={}",
-                runId, ticker, taskType, provider);
+        log.info("research_agent_start runId={} ticker={} taskType={} provider={} llmModel={}",
+                runId, ticker, taskType, provider, llmModel);
 
         return researchAgentClient.run(request)
                 .switchIfEmpty(Mono.error(new IllegalStateException(
@@ -198,6 +211,10 @@ public class FinancialAnalysisService {
         return model != null && !model.isBlank()
                 ? model.trim().toLowerCase(Locale.ROOT)
                 : providerCredentialValidator.defaultProvider();
+    }
+
+    private String normalizeLlmModel(String llmModel) {
+        return llmModel != null && !llmModel.isBlank() ? llmModel.trim() : null;
     }
 
     private String capFilingText(String filingText) {

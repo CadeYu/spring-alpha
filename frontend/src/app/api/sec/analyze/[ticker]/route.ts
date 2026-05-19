@@ -19,6 +19,7 @@ export async function GET(
     const { ticker } = await params;
     const lang = request.nextUrl.searchParams.get('lang') || 'en';
     const model = request.nextUrl.searchParams.get('model') || '';
+    const llmModel = request.nextUrl.searchParams.get('llmModel') || '';
     const taskType = request.nextUrl.searchParams.get('taskType') || '';
     const providerApiKey =
         request.headers.get('x-provider-api-key') ||
@@ -30,6 +31,9 @@ export async function GET(
 
     const baseUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8082';
     const backendParams = new URLSearchParams({ lang, model });
+    if (llmModel) {
+        backendParams.set('llmModel', llmModel);
+    }
     if (taskType) {
         if (!isResearchTaskId(taskType)) {
             return new Response(

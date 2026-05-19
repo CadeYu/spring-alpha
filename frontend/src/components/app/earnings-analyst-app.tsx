@@ -57,39 +57,77 @@ const BYOK_PROVIDERS = [
   {
     id: "siliconflow",
     name: "SiliconFlow",
-    modelName: "Kimi K2.6",
     description: "Use your own SiliconFlow key",
     descZh: "使用你自己的 SiliconFlow Key",
     keyLabel: "SiliconFlow API Key",
     keyPlaceholder: "Enter your SiliconFlow key",
     storageKey: "spring-alpha-siliconflow-key",
     badge: "SF",
+    models: [
+      {
+        id: "Pro/moonshotai/Kimi-K2.6",
+        name: "Kimi K2.6",
+        description: "Moonshot Kimi K2.6 via SiliconFlow",
+        descriptionZh: "通过 SiliconFlow 调用 Kimi K2.6",
+      },
+      {
+        id: "deepseek-ai/deepseek-v4-flash",
+        name: "DeepSeek V4 Flash",
+        description: "DeepSeek V4 Flash via SiliconFlow",
+        descriptionZh: "通过 SiliconFlow 调用 DeepSeek V4 Flash",
+      },
+    ],
   },
   {
     id: "openai",
     name: "OpenAI",
-    modelName: "GPT",
     description: "Use your own OpenAI key",
     descZh: "使用你自己的 OpenAI Key",
     keyLabel: "OpenAI API Key",
     keyPlaceholder: "Enter your OpenAI key",
     storageKey: "spring-alpha-openai-key",
     badge: "OA",
+    models: [
+      {
+        id: "gpt-5.2",
+        name: "GPT default",
+        description: "Default OpenAI model",
+        descriptionZh: "默认 OpenAI 模型",
+      },
+    ],
   },
   {
     id: "gemini",
     name: "Gemini",
-    modelName: "Gemini Pro",
     description: "Use your own Gemini key",
     descZh: "使用你自己的 Gemini Key",
     keyLabel: "Gemini API Key",
     keyPlaceholder: "Enter your Gemini key",
     storageKey: "spring-alpha-gemini-key",
     badge: "GM",
+    models: [
+      {
+        id: "gemini-2.5-pro",
+        name: "Gemini default",
+        description: "Default Gemini model",
+        descriptionZh: "默认 Gemini 模型",
+      },
+    ],
   },
 ] as const;
 
 type ByokProviderId = (typeof BYOK_PROVIDERS)[number]["id"];
+type ByokProvider = (typeof BYOK_PROVIDERS)[number];
+
+function defaultLlmModelForProvider(provider: ByokProvider) {
+  return provider.models[0].id;
+}
+
+function maskProviderKey(key: string) {
+  const trimmedKey = key.trim();
+  if (!trimmedKey) return "";
+  return `••••••••••••${trimmedKey.slice(-4)}`;
+}
 
 type AnalysisErrorState = {
   message: string;
@@ -233,8 +271,13 @@ export default function EarningsAnalystApp({
   const [activeTicker, setActiveTicker] = useState(normalizedInitialTicker); // only set on submit
   const [lang, setLang] = useState("en");
   const [model, setModel] = useState<ByokProviderId>("siliconflow");
+  const [selectedLlmModel, setSelectedLlmModel] = useState<string>(
+    BYOK_PROVIDERS[0].models[0].id,
+  );
   const [providerApiKey, setProviderApiKey] = useState("");
   const [providerKeySaved, setProviderKeySaved] = useState(false);
+  const [providerSavedKeyPreview, setProviderSavedKeyPreview] = useState("");
+  const [providerKeyEditing, setProviderKeyEditing] = useState(false);
   const [trialStatus, setTrialStatus] = useState<TrialGateStatus>(() => {
     if (typeof window === "undefined") {
       return "anonymous_ready";
@@ -270,6 +313,9 @@ export default function EarningsAnalystApp({
   const selectedProvider =
     BYOK_PROVIDERS.find((provider) => provider.id === model) ??
     BYOK_PROVIDERS[0];
+  const selectedProviderModel =
+    selectedProvider.models.find((providerModel) => providerModel.id === selectedLlmModel) ??
+    selectedProvider.models[0];
   const trialGateStatus: TrialGateStatus =
     !isAuthenticated && trialStatus === "trial_exhausted"
       ? "trial_exhausted"
@@ -303,11 +349,24 @@ export default function EarningsAnalystApp({
     if (savedKey) {
       setProviderApiKey("");
       setProviderKeySaved(true);
+      setProviderSavedKeyPreview(maskProviderKey(savedKey));
+      setProviderKeyEditing(false);
     } else {
       setProviderApiKey("");
       setProviderKeySaved(false);
+      setProviderSavedKeyPreview("");
+      setProviderKeyEditing(true);
     }
   }, [selectedProvider.storageKey]);
+
+  useEffect(() => {
+    const providerSupportsCurrentModel = selectedProvider.models.some(
+      (providerModel) => providerModel.id === selectedLlmModel,
+    );
+    if (!providerSupportsCurrentModel) {
+      setSelectedLlmModel(defaultLlmModelForProvider(selectedProvider));
+    }
+  }, [selectedLlmModel, selectedProvider]);
 
   useEffect(() => {
     const query = ticker.trim();
@@ -536,11 +595,12 @@ export default function EarningsAnalystApp({
     controller: AbortController;
   }): Promise<{ phase: "received" | "failed"; error?: AnalysisErrorState }> => {
     console.log(
-      `Fetching ${taskId} analysis for ${submittedTicker} using ${model} in ${lang}...`,
+      `Fetching ${taskId} analysis for ${submittedTicker} using ${model}/${selectedProviderModel.id} in ${lang}...`,
     );
     const analysisParams = new URLSearchParams({
       lang,
       model,
+      llmModel: selectedProviderModel.id,
       taskType: taskId,
     });
     const requestHeaders: Record<string, string> = {};
@@ -658,6 +718,8 @@ export default function EarningsAnalystApp({
     window.localStorage.setItem(selectedProvider.storageKey, trimmedKey);
     setProviderApiKey("");
     setProviderKeySaved(true);
+    setProviderSavedKeyPreview(maskProviderKey(trimmedKey));
+    setProviderKeyEditing(false);
     setError(null);
   };
 
@@ -665,6 +727,8 @@ export default function EarningsAnalystApp({
     window.localStorage.removeItem(selectedProvider.storageKey);
     setProviderApiKey("");
     setProviderKeySaved(false);
+    setProviderSavedKeyPreview("");
+    setProviderKeyEditing(true);
     setError({
       message: isZh
         ? `已清除 ${selectedProvider.name} Key，请重新输入。`
@@ -776,7 +840,11 @@ export default function EarningsAnalystApp({
                 {BYOK_PROVIDERS.map((provider) => (
                   <button
                     key={provider.id}
-                    onClick={() => setModel(provider.id)}
+                    type="button"
+                    onClick={() => {
+                      setModel(provider.id);
+                      setSelectedLlmModel(defaultLlmModelForProvider(provider));
+                    }}
                     className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                       model === provider.id
                         ? "bg-emerald-600 text-white"
@@ -789,6 +857,47 @@ export default function EarningsAnalystApp({
                     </span>
                     <span>{provider.name}</span>
                   </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2">
+              <ChartColumnIncreasing className="mt-1 w-4 h-4 text-slate-500" />
+              <span className="mt-1 text-xs text-slate-500">
+                {isZh ? "模型:" : "Model:"}
+              </span>
+              <div
+                role="radiogroup"
+                aria-label={isZh ? `${selectedProvider.name} 模型` : `${selectedProvider.name} model`}
+                className="grid flex-1 gap-2 sm:grid-cols-2"
+              >
+                {selectedProvider.models.map((providerModel) => (
+                  <label
+                    key={providerModel.id}
+                    className={cn(
+                      "flex min-h-16 cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors",
+                      selectedProviderModel.id === providerModel.id
+                        ? "border-emerald-500/60 bg-emerald-950/30 text-emerald-100"
+                        : "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="llm-model"
+                      value={providerModel.id}
+                      checked={selectedProviderModel.id === providerModel.id}
+                      onChange={() => setSelectedLlmModel(providerModel.id)}
+                      className="mt-1 h-4 w-4 accent-emerald-500"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">
+                        {providerModel.name}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500">
+                        {isZh ? providerModel.descriptionZh : providerModel.description}
+                      </span>
+                    </span>
+                  </label>
                 ))}
               </div>
             </div>
@@ -817,33 +926,68 @@ export default function EarningsAnalystApp({
                       : "Not saved"}
                 </span>
               </div>
-              <div className="flex gap-2">
-                <Input
-                  type="password"
-                  value={providerApiKey}
-                  onChange={(e) => {
-                    setProviderApiKey(e.target.value);
-                    setProviderKeySaved(false);
-                  }}
-                  placeholder={selectedProvider.keyPlaceholder}
-                  className="bg-slate-950 border-slate-700 text-slate-200"
-                />
-                <Button
-                  type="button"
-                  onClick={saveProviderKey}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                >
-                  {isZh ? "保存" : "Save"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={clearProviderKey}
-                  className="border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-900"
-                >
-                  {isZh ? "清除" : "Clear"}
-                </Button>
-              </div>
+              {providerKeySaved && !providerKeyEditing ? (
+                <div className="flex flex-col gap-3 rounded-md border border-slate-800 bg-slate-950/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs uppercase tracking-widest text-emerald-400">
+                      {isZh ? "已保存到本地" : "Saved locally"}
+                    </p>
+                    <p className="mt-1 break-all text-sm font-semibold text-slate-200">
+                      {providerSavedKeyPreview}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setProviderApiKey("");
+                        setProviderKeyEditing(true);
+                      }}
+                      className="border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-900"
+                    >
+                      {isZh ? "更换 Key" : "Change key"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={clearProviderKey}
+                      className="border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-900"
+                    >
+                      {isZh ? "清除" : "Clear"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    value={providerApiKey}
+                    onChange={(e) => {
+                      setProviderApiKey(e.target.value);
+                      setProviderKeySaved(false);
+                      setProviderSavedKeyPreview("");
+                    }}
+                    placeholder={selectedProvider.keyPlaceholder}
+                    className="bg-slate-950 border-slate-700 text-slate-200"
+                  />
+                  <Button
+                    type="button"
+                    onClick={saveProviderKey}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    {isZh ? "保存" : "Save"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={clearProviderKey}
+                    className="border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-900"
+                  >
+                    {isZh ? "清除" : "Clear"}
+                  </Button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -57,6 +57,25 @@ class SecControllerTest {
     }
 
     @Test
+    void analyzeEndpointPassesSelectedLlmModelToService() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
+
+        WebTestClient client = WebTestClient.bindToController(controller).build();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=deepseek-ai/deepseek-v4-flash")
+                .header("X-Provider-API-Key", "sk-test")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isOk();
+
+        assertEquals("deepseek-ai/deepseek-v4-flash", analysisService.lastLlmModel);
+    }
+
+    @Test
     void analyzeEndpointPassesLatestEarningsReadoutTaskTypeToService() {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
@@ -326,6 +345,7 @@ class SecControllerTest {
 
         private String lastLang;
         private String lastModel;
+        private String lastLlmModel;
         private String lastReportType;
         private String lastOpenAiApiKey;
         private ResearchTaskType lastTaskType;
@@ -347,9 +367,16 @@ class SecControllerTest {
         @Override
         public Flux<AnalysisReport> analyzeStock(String ticker, String lang, String model, String openAiApiKey,
                 ResearchTaskType taskType) {
+            return analyzeStock(ticker, lang, model, null, openAiApiKey, taskType);
+        }
+
+        @Override
+        public Flux<AnalysisReport> analyzeStock(String ticker, String lang, String model, String llmModel,
+                String openAiApiKey, ResearchTaskType taskType) {
             this.callCount++;
             this.lastLang = lang;
             this.lastModel = model;
+            this.lastLlmModel = llmModel;
             this.lastReportType = "quarterly";
             this.lastOpenAiApiKey = openAiApiKey;
             this.lastTaskType = taskType;

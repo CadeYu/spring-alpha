@@ -61,23 +61,25 @@ public class SecController {
      *
      * @param ticker 股票代码 (e.g., AAPL)
      * @param lang   语言 (en/zh)
-     * @param model  指定模型 (可选)
+     * @param model  BYOK provider (optional)
      */
     @GetMapping(value = "/analyze/{ticker}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<AnalysisReport> analyzeStock(
             @PathVariable String ticker,
             @RequestParam(defaultValue = "en") String lang,
             @RequestParam(defaultValue = "") String model,
+            @RequestParam(defaultValue = "") String llmModel,
             @RequestParam(defaultValue = ResearchTaskType.DEFAULT_REQUEST_VALUE) String taskType,
             @RequestHeader HttpHeaders headers) {
         ResearchTaskType researchTaskType = parseResearchTaskType(taskType);
         String providerApiKey = resolveProviderApiKey(headers);
         Optional<AnonymousTrialContext> anonymousTrial = authorizeTrialAccess(headers, providerApiKey);
-        log.info("REST request to analyze stock: {}, lang: {}, model: {}, taskType: {}",
-                ticker, lang, model, researchTaskType.requestValue());
+        log.info("REST request to analyze stock: {}, lang: {}, model: {}, llmModel: {}, taskType: {}",
+                ticker, lang, model, llmModel, researchTaskType.requestValue());
         // The analysis flow calls external SEC/Yahoo/Python Agent services, so move
         // the stream off the Netty event loop.
-        return Flux.defer(() -> analysisService.analyzeStock(ticker, lang, model, providerApiKey, researchTaskType))
+        return Flux.defer(() -> analysisService.analyzeStock(ticker, lang, model, llmModel, providerApiKey,
+                researchTaskType))
                 .doOnNext(report -> anonymousTrial.ifPresent(this::confirmTrialAccess))
                 .subscribeOn(Schedulers.boundedElastic());
     }
