@@ -85,6 +85,25 @@ class FinancialAnalysisServiceTest {
     }
 
     @Test
+    void analyzeStockForwardsConfiguredProviderKeyWhenRequestKeyIsBlank() {
+        FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
+        credentialValidator.configuredApiKey = "configured-provider-key";
+        FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.success();
+        FinancialAnalysisService service = new FinancialAnalysisService(
+                new FakeSecService(),
+                credentialValidator,
+                researchAgentClient,
+                new com.springalpha.backend.service.research.ResearchAgentReportMapper());
+
+        service.analyzeStock("AAPL", "en", "siliconflow", "")
+                .collectList()
+                .block();
+
+        assertEquals("", credentialValidator.lastApiKey);
+        assertEquals("configured-provider-key", researchAgentClient.lastRequest.llmApiKey());
+    }
+
+    @Test
     void analyzeStockPropagatesCredentialValidationErrorsBeforeCallingResearchAgent() {
         FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
         credentialValidator.error = new ProviderAuthenticationException(
@@ -220,6 +239,7 @@ class FinancialAnalysisServiceTest {
         private RuntimeException error;
         private String lastProvider;
         private String lastApiKey;
+        private String configuredApiKey = "";
 
         @Override
         public List<String> availableProviders() {
@@ -236,6 +256,14 @@ class FinancialAnalysisServiceTest {
             this.lastProvider = provider;
             this.lastApiKey = apiKey;
             return error == null ? Mono.empty() : Mono.error(error);
+        }
+
+        @Override
+        public String resolveApiKey(String provider, String apiKey) {
+            if (apiKey != null && !apiKey.isBlank()) {
+                return apiKey.trim();
+            }
+            return configuredApiKey;
         }
     }
 

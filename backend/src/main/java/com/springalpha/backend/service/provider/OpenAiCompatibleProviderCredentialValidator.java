@@ -97,12 +97,19 @@ public class OpenAiCompatibleProviderCredentialValidator implements ProviderCred
     }
 
     @Override
-    public Mono<Void> validate(String provider, String apiKey) {
+    public String resolveApiKey(String provider, String apiKey) {
         ProviderConfig config = providerConfig(provider);
         String effectiveApiKey = normalizeKey(apiKey);
         if (effectiveApiKey.isBlank()) {
             effectiveApiKey = configuredApiKeys.getOrDefault(config.id(), "");
         }
+        return effectiveApiKey;
+    }
+
+    @Override
+    public Mono<Void> validate(String provider, String apiKey) {
+        ProviderConfig config = providerConfig(provider);
+        String effectiveApiKey = resolveApiKey(config.id(), apiKey);
         if (effectiveApiKey.isBlank()) {
             return Mono.error(new ProviderAuthenticationException(
                     config.displayName() + " API key is required for BYOK mode",
