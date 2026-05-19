@@ -44,6 +44,7 @@ Thumbs.db
 start_backend.sh
 start_research_service.sh
 backend/.env
+deploy/vultr/.env.vultr
 backend/test_run.sh
 **/application-local.yml
 
