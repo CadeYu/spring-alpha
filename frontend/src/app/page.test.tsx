@@ -265,6 +265,65 @@ describe("Home page", () => {
     );
   });
 
+  it("auto-starts analysis when opened with a landing ticker", async () => {
+    const taskOrder: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/tickers/search")) {
+        return new Response(JSON.stringify({ suggestions: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/market/chart/")) {
+        return new Response(JSON.stringify({ candles: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const taskType = new URL(`http://test${url}`).searchParams.get(
+        "taskType",
+      );
+      if (taskType) taskOrder.push(taskType);
+
+      return createSseResponse([
+        {
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          citations: [],
+          taskSections: latestTaskSections("Auto-started thesis"),
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home initialTicker="aapl" />);
+
+    expect(screen.getByPlaceholderText(/enter ticker/i)).toHaveValue("AAPL");
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    await waitFor(() =>
+      expect(taskOrder).toEqual([
+        "latest_earnings_readout",
+        "business_driver_deep_dive",
+        "cash_flow_capital_allocation",
+      ]),
+    );
+  });
+
   it("runs all three research agents sequentially from one ticker submission", async () => {
     const taskOrder: string[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

@@ -259,6 +259,10 @@ export default function EarningsAnalystApp({
   const analysisAbortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
   const anonymousTrialConsumedRef = useRef(false);
+  const handleSearchRef = useRef<((rawTicker?: string) => Promise<void>) | null>(
+    null,
+  );
+  const autoStartTriggeredRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { status: sessionStatus } = useSession();
   const isZh = lang === "zh";
@@ -492,6 +496,27 @@ export default function EarningsAnalystApp({
       }
     }
   };
+
+  handleSearchRef.current = handleSearch;
+
+  useEffect(() => {
+    if (
+      !normalizedInitialTicker ||
+      sessionStatus === "loading" ||
+      autoStartTriggeredRef.current
+    ) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      autoStartTriggeredRef.current = true;
+      void handleSearchRef.current?.(normalizedInitialTicker);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [normalizedInitialTicker, sessionStatus]);
 
   const runResearchTask = async ({
     taskId,
