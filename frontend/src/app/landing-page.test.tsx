@@ -144,4 +144,56 @@ describe("Landing page", () => {
 
     expect(pushMock).toHaveBeenCalledWith("/app?ticker=AAPL");
   });
+
+  it("shows ticker suggestions from the server ticker catalog", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/tickers/search")) {
+        return new Response(
+          JSON.stringify({
+            suggestions: [
+              {
+                ticker: "AAPL",
+                companyName: "Apple Inc.",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<LandingPage />);
+
+    fireEvent.change(screen.getByLabelText(/输入股票代码|Enter ticker/i), {
+      target: { value: "aap" },
+    });
+
+    const option = await screen.findByRole("option", {
+      name: /AAPL Apple Inc\./i,
+    });
+
+    expect(option).toBeInTheDocument();
+    expect(screen.getByText("AAPL")).toBeInTheDocument();
+    expect(screen.getByText("Apple Inc.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tickers/search?q=AAP&limit=8",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    fireEvent.click(option);
+
+    expect(
+      screen.getByLabelText(/输入股票代码|Enter ticker/i),
+    ).toHaveValue("AAPL");
+  });
 });

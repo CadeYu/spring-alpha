@@ -21,6 +21,11 @@ import {
 
 type Locale = "zh" | "en";
 
+type TickerSuggestion = {
+  ticker: string;
+  companyName: string;
+};
+
 const LANDING_LOCALE_STORAGE = "spring-alpha-landing-locale";
 
 const copy = {
@@ -335,6 +340,11 @@ export default function LandingPage() {
   const [locale, setLocale] = useState<Locale>("zh");
   const [isLocaleReady, setIsLocaleReady] = useState(false);
   const [ticker, setTicker] = useState("");
+  const [tickerSuggestionsOpen, setTickerSuggestionsOpen] = useState(false);
+  const [tickerSuggestionsQuery, setTickerSuggestionsQuery] = useState("");
+  const [tickerSuggestions, setTickerSuggestions] = useState<TickerSuggestion[]>(
+    [],
+  );
   const tickerInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
@@ -353,6 +363,42 @@ export default function LandingPage() {
     }
   }, [isLocaleReady, locale]);
 
+  useEffect(() => {
+    const query = ticker.trim();
+    if (query.length < 2) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `/api/tickers/search?q=${encodeURIComponent(query)}&limit=8`,
+          { signal: controller.signal },
+        );
+        if (!response.ok) {
+          setTickerSuggestions([]);
+          return;
+        }
+
+        const payload = (await response.json()) as {
+          suggestions?: TickerSuggestion[];
+        };
+        setTickerSuggestions(payload.suggestions ?? []);
+        setTickerSuggestionsQuery(query);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [ticker]);
+
   const t = copy[locale];
 
   const updateLocale = (nextLocale: Locale) => {
@@ -368,6 +414,19 @@ export default function LandingPage() {
 
     router.push(`/app?ticker=${encodeURIComponent(normalizedTicker)}`);
   };
+
+  const selectTickerSuggestion = (suggestion: TickerSuggestion) => {
+    setTicker(suggestion.ticker);
+    setTickerSuggestionsOpen(false);
+    tickerInputRef.current?.focus();
+  };
+
+  const tickerQuery = ticker.trim();
+  const showTickerSuggestions =
+    tickerSuggestionsOpen &&
+    tickerQuery.length >= 2 &&
+    tickerSuggestionsQuery === tickerQuery &&
+    tickerSuggestions.length > 0;
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#111111] font-['Noto_Sans_Mono',var(--font-geist-mono),ui-monospace,monospace] text-[#ebebeb]">
@@ -460,22 +519,61 @@ export default function LandingPage() {
           </p>
 
           <div className="mt-9 w-full max-w-3xl">
-            <TickerSearchInput
-              value={ticker}
-              onValueChange={setTicker}
-              onSubmit={handleTickerSubmit}
-              placeholder={tickerSearchPlaceholder[locale]}
-              buttonLabel={tickerSearchButtonLabel[locale]}
-              inputRef={tickerInputRef}
-              wrapperClassName="h-16"
-              inputClassName="text-lg sm:text-xl"
-              buttonClassName="bg-[#0fc6a5] text-[#031f1c] hover:bg-[#35d8bd]"
-              inputProps={{
-                role: "combobox",
-                autoComplete: "off",
-                "aria-label": locale === "zh" ? "输入股票代码" : "Enter ticker",
-              }}
-            />
+            <div className="relative">
+              <TickerSearchInput
+                value={ticker}
+                onValueChange={(nextTicker) => {
+                  setTicker(nextTicker.toUpperCase());
+                  setTickerSuggestionsOpen(true);
+                }}
+                onSubmit={handleTickerSubmit}
+                placeholder={tickerSearchPlaceholder[locale]}
+                buttonLabel={tickerSearchButtonLabel[locale]}
+                inputRef={tickerInputRef}
+                wrapperClassName="h-16"
+                inputClassName="text-lg sm:text-xl"
+                buttonClassName="bg-[#0fc6a5] text-[#031f1c] hover:bg-[#35d8bd]"
+                inputProps={{
+                  role: "combobox",
+                  autoComplete: "off",
+                  "aria-expanded": showTickerSuggestions,
+                  "aria-controls": "landing-ticker-suggestion-list",
+                  "aria-label":
+                    locale === "zh" ? "输入股票代码" : "Enter ticker",
+                  onFocus: () => setTickerSuggestionsOpen(true),
+                  onBlur: () => {
+                    window.setTimeout(() => setTickerSuggestionsOpen(false), 120);
+                  },
+                }}
+              />
+              {showTickerSuggestions && (
+                <div
+                  id="landing-ticker-suggestion-list"
+                  role="listbox"
+                  className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 overflow-hidden rounded-lg border border-emerald-500/30 bg-slate-900 text-left shadow-2xl shadow-slate-950/60"
+                >
+                  {tickerSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.ticker}
+                      type="button"
+                      role="option"
+                      aria-label={`${suggestion.ticker} ${suggestion.companyName}`}
+                      aria-selected={ticker === suggestion.ticker}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => selectTickerSuggestion(suggestion)}
+                      className="flex w-full flex-col items-start gap-1 border-b border-slate-800 px-4 py-3 text-left last:border-b-0 hover:bg-emerald-950/30 focus:bg-emerald-950/30 focus:outline-none"
+                    >
+                      <span className="text-sm font-bold tracking-widest text-emerald-300">
+                        {suggestion.ticker}
+                      </span>
+                      <span className="text-sm text-slate-400">
+                        {suggestion.companyName}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <p className="mt-3 text-sm text-white/48">
               {locale === "zh"
                 ? "匿名用户可免费分析 1 次，之后需要 Google 登录并使用自己的 key。"
