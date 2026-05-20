@@ -827,6 +827,7 @@ class LlamaIndexRagPipeline:
             return cached_result.model_copy(
                 update={
                     "run_id": run_id,
+                    "query": query,
                     "latency_ms": int((perf_counter() - started_at) * 1000),
                 },
                 deep=True,
