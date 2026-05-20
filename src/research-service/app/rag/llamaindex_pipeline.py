@@ -774,6 +774,7 @@ class LlamaIndexRagPipeline:
         self._nodes: list[TextNode] = []
         self._node_ids: set[str] = set()
         self._hybrid_degraded_reason: str | None = None
+        self._retrieve_evidence_cache: dict[tuple[object, ...], RetrieveEvidenceResult] = {}
 
     def ingest_filing(self, filing: FilingDocument) -> list[TextNode]:
         sections = self.parser.parse(filing)
@@ -791,6 +792,8 @@ class LlamaIndexRagPipeline:
         new_nodes = [node for node in nodes if node.node_id not in self._node_ids]
         self._nodes.extend(new_nodes)
         self._node_ids.update(node.node_id for node in new_nodes)
+        if new_nodes:
+            self._retrieve_evidence_cache.clear()
         if self.enable_hybrid_retrieval and not self._hybrid_degraded_reason:
             try:
                 self.vector_store.upsert_many(new_nodes)
@@ -811,6 +814,23 @@ class LlamaIndexRagPipeline:
         started_at = perf_counter()
         expanded_query = _expand_financial_query(query) if self.enable_query_expansion else query
         requested_sections = sections if self.enable_section_filter else None
+        cache_key = _retrieve_evidence_cache_key(
+            ticker=ticker,
+            task_type=task_type,
+            query=expanded_query,
+            sections=requested_sections,
+            top_k=top_k,
+            hybrid_degraded_reason=self._hybrid_degraded_reason,
+        )
+        cached_result = self._retrieve_evidence_cache.get(cache_key)
+        if cached_result is not None:
+            return cached_result.model_copy(
+                update={
+                    "run_id": run_id,
+                    "latency_ms": int((perf_counter() - started_at) * 1000),
+                },
+                deep=True,
+            )
         candidates = self._retrieve_candidates(
             ticker=ticker,
             query=expanded_query,
@@ -844,7 +864,7 @@ class LlamaIndexRagPipeline:
             for candidate, _, _ in ranked_nodes
             if isinstance(candidate.node, TextNode)
         ]
-        return RetrieveEvidenceResult(
+        result = RetrieveEvidenceResult(
             run_id=run_id,
             ticker=ticker.upper(),
             task_type=task_type,
@@ -854,6 +874,8 @@ class LlamaIndexRagPipeline:
             latency_ms=int((perf_counter() - started_at) * 1000),
             fallback_status=self._retrieval_fallback_status(retrieved_nodes),
         )
+        self._retrieve_evidence_cache[cache_key] = result
+        return result
 
     def _retrieve_candidates(
         self,
@@ -954,6 +976,25 @@ def _section_matches(text: str) -> list[_SectionMatch]:
                 )
             )
     return sorted(matches, key=lambda match: match.start)
+
+
+def _retrieve_evidence_cache_key(
+    *,
+    ticker: str,
+    task_type: ResearchTaskType,
+    query: str,
+    sections: list[str] | None,
+    top_k: int,
+    hybrid_degraded_reason: str | None,
+) -> tuple[object, ...]:
+    return (
+        ticker.upper(),
+        task_type.value,
+        query,
+        tuple(_canonical_section_name(section) for section in sections or []),
+        top_k,
+        hybrid_degraded_reason or "",
+    )
 
 
 def _dedupe_repeated_lines(text: str) -> str:
