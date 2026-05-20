@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +59,27 @@ class FinancialAnalysisServiceTest {
         assertEquals(
                 "Tesla designs electric vehicles and energy systems.",
                 researchAgentClient.lastRequest.facts().get("marketBusinessSummary"));
+        assertEquals(new BigDecimal("25500000000"), researchAgentClient.lastRequest.facts().get("revenue"));
+        assertEquals(new BigDecimal("0.1823"), researchAgentClient.lastRequest.facts().get("gross_margin"));
+        assertEquals(new BigDecimal("4200000000"), researchAgentClient.lastRequest.facts().get("operating_cash_flow"));
+        assertTrue(researchAgentClient.lastRequest.facts().get("metrics") instanceof List<?>);
+        List<?> metrics = (List<?>) researchAgentClient.lastRequest.facts().get("metrics");
+        assertTrue(metrics.stream()
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .anyMatch(metric -> "revenue".equals(metric.get("name"))
+                        && new BigDecimal("25500000000").equals(metric.get("value"))));
+        assertTrue(metrics.stream()
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .anyMatch(metric -> "gross margin".equals(metric.get("name"))
+                        && new BigDecimal("0.1823").equals(metric.get("value"))
+                        && "pure".equals(metric.get("unit"))));
+        assertTrue(metrics.stream()
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .anyMatch(metric -> "operating cash flow".equals(metric.get("name"))
+                        && new BigDecimal("4200000000").equals(metric.get("value"))));
         assertNotNull(researchAgentClient.lastRequest.filings());
         assertEquals(1, researchAgentClient.lastRequest.filings().size());
         assertEquals("TSLA", researchAgentClient.lastRequest.filings().getFirst().ticker());
@@ -394,6 +416,15 @@ class FinancialAnalysisServiceTest {
                             .marketSector("Consumer Cyclical")
                             .marketIndustry("Auto Manufacturers")
                             .marketBusinessSummary("Tesla designs electric vehicles and energy systems.")
+                            .revenue(new BigDecimal("25500000000"))
+                            .grossProfit(new BigDecimal("4650000000"))
+                            .grossMargin(new BigDecimal("0.1823"))
+                            .operatingIncome(new BigDecimal("2100000000"))
+                            .operatingMargin(new BigDecimal("0.0824"))
+                            .netIncome(new BigDecimal("1900000000"))
+                            .operatingCashFlow(new BigDecimal("4200000000"))
+                            .freeCashFlow(new BigDecimal("3100000000"))
+                            .totalAssets(new BigDecimal("120000000000"))
                             .build();
                 }
 

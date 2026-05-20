@@ -166,6 +166,9 @@ class ResearchToolService:
         self._facts_provider = facts_provider
 
     def get_company_facts(self, tool_input: CompanyFactsInput, state: AgentState) -> ToolResult:
+        preloaded_facts = _complete_preloaded_facts(tool_input, state)
+        if preloaded_facts is not None:
+            return ToolResult.ok(data=preloaded_facts)
         if self._facts_provider is not None:
             facts = self._facts_provider.fetch_company_facts(
                 ticker=state.ticker,
@@ -325,8 +328,12 @@ class LlamaIndexResearchToolService(ResearchToolService):
         tool_input: MetricEvidenceInput,
         state: AgentState,
     ) -> ToolResult:
+        fact_only_result = _metric_evidence_from_preloaded_facts(tool_input, state)
+        if fact_only_result is not None:
+            return fact_only_result
+        metrics_for_retrieval = _metrics_missing_from_facts(tool_input.metrics, state)
         queries = _task_scoped_metric_queries(
-            tool_input.query or " ".join(tool_input.metrics), state
+            tool_input.query or " ".join(metrics_for_retrieval), state, metrics_for_retrieval
         )
         results = [
             self._rag_pipeline.retrieve_evidence(
@@ -334,7 +341,7 @@ class LlamaIndexResearchToolService(ResearchToolService):
                 ticker=state.ticker,
                 task_type=state.task_type,
                 query=query,
-                sections=_preferred_metric_sections(tool_input.metrics),
+                sections=_preferred_metric_sections(metrics_for_retrieval),
                 top_k=2 if state.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION else 5,
             )
             for query in queries
@@ -380,6 +387,80 @@ class LlamaIndexResearchToolService(ResearchToolService):
             latency_ms=latency_ms,
             source_refs=combined_source_refs,
         )
+
+
+def _complete_preloaded_facts(
+    tool_input: CompanyFactsInput,
+    state: AgentState,
+) -> dict[str, object] | None:
+    facts = state.evidence_memory.facts
+    if not facts:
+        return None
+    requested_metrics = tool_input.metrics or ["revenue", "gross margin", "operating income"]
+    facts_by_metric = _facts_by_metric(state)
+    missing_metrics = [
+        metric
+        for metric in requested_metrics
+        if _normalize_metric_name(metric) not in facts_by_metric
+    ]
+    if missing_metrics:
+        return None
+    return {
+        **facts,
+        "ticker": str(facts.get("ticker") or state.ticker).upper(),
+        "period": tool_input.period or str(facts.get("period") or "latest_quarter"),
+        "source": "preloaded_financial_facts",
+        "missing_metrics": [],
+    }
+
+
+def _metric_evidence_from_preloaded_facts(
+    tool_input: MetricEvidenceInput,
+    state: AgentState,
+) -> ToolResult | None:
+    facts_by_metric = _facts_by_metric(state)
+    if not facts_by_metric:
+        return None
+    missing_metrics = [
+        metric
+        for metric in tool_input.metrics
+        if _normalize_metric_name(metric) not in facts_by_metric
+    ]
+    if missing_metrics:
+        return None
+    fact_source_refs = _companyfacts_source_refs(
+        run_id=state.run_id,
+        metrics=tool_input.metrics,
+        facts_by_metric=facts_by_metric,
+    )
+    if not fact_source_refs:
+        return None
+    return ToolResult.ok(
+        data={
+            "records": [
+                _metric_evidence_record(
+                    metric,
+                    tool_input.period or "latest_quarter",
+                    fact_source_refs,
+                    facts_by_metric,
+                )
+                for metric in tool_input.metrics
+            ],
+            "retrieved_nodes": [],
+            "fallback_status": "none",
+        },
+        source_refs=fact_source_refs,
+    )
+
+
+def _metrics_missing_from_facts(metrics: list[str], state: AgentState) -> list[str]:
+    facts_by_metric = _facts_by_metric(state)
+    if not facts_by_metric:
+        return metrics
+    missing_metrics = [
+        metric for metric in metrics if _normalize_metric_name(metric) not in facts_by_metric
+    ]
+    return missing_metrics or metrics
 
 
 def _content_terms(text: str) -> set[str]:
@@ -449,15 +530,29 @@ def _task_scoped_filing_queries(query: str, state: AgentState) -> list[str]:
     return [query]
 
 
-def _task_scoped_metric_queries(query: str, state: AgentState) -> list[str]:
+def _task_scoped_metric_queries(
+    query: str,
+    state: AgentState,
+    metrics: list[str] | None = None,
+) -> list[str]:
     if state.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
-        return [
-            "operating cash flow net cash provided by operating activities",
-            "capital expenditures capex payments to acquire property plant equipment",
-            "repurchases of common stock share repurchases buybacks",
-            "dividends dividend equivalents",
-            "debt maturities liquidity cash equivalents marketable securities",
-        ]
+        metric_terms = {_normalize_metric_name(metric) for metric in metrics or []}
+        cash_queries = []
+        if not metric_terms or "operating cash flow" in metric_terms:
+            cash_queries.append("operating cash flow net cash provided by operating activities")
+        if not metric_terms or {"capital expenditures", "capex"} & metric_terms:
+            cash_queries.append(
+                "capital expenditures capex payments to acquire property plant equipment"
+            )
+        if not metric_terms or {"buybacks", "share repurchases"} & metric_terms:
+            cash_queries.append("repurchases of common stock share repurchases buybacks")
+        cash_queries.extend(
+            [
+                "dividends dividend equivalents",
+                "debt maturities liquidity cash equivalents marketable securities",
+            ]
+        )
+        return cash_queries
     if state.task_type == ResearchTaskType.LATEST_EARNINGS_READOUT:
         return [
             " ".join(

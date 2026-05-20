@@ -14,6 +14,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -182,6 +184,29 @@ public class FinancialAnalysisService {
             putIfPresent(facts, "businessSummary", financialFacts.getMarketBusinessSummary());
             putIfPresent(facts, "market_business_summary", financialFacts.getMarketBusinessSummary());
             putIfPresent(facts, "marketBusinessSummary", financialFacts.getMarketBusinessSummary());
+            putIfPresent(facts, "revenue", financialFacts.getRevenue());
+            putIfPresent(facts, "revenue_yoy", financialFacts.getRevenueYoY());
+            putIfPresent(facts, "gross_profit", financialFacts.getGrossProfit());
+            putIfPresent(facts, "gross_margin", financialFacts.getGrossMargin());
+            putIfPresent(facts, "operating_income", financialFacts.getOperatingIncome());
+            putIfPresent(facts, "operating_margin", financialFacts.getOperatingMargin());
+            putIfPresent(facts, "net_income", financialFacts.getNetIncome());
+            putIfPresent(facts, "net_margin", financialFacts.getNetMargin());
+            putIfPresent(facts, "earnings_per_share", financialFacts.getEarningsPerShare());
+            putIfPresent(facts, "operating_cash_flow", financialFacts.getOperatingCashFlow());
+            putIfPresent(facts, "free_cash_flow", financialFacts.getFreeCashFlow());
+            putIfPresent(facts, "total_assets", financialFacts.getTotalAssets());
+            putIfPresent(facts, "total_liabilities", financialFacts.getTotalLiabilities());
+            putIfPresent(facts, "total_equity", financialFacts.getTotalEquity());
+            putIfPresent(facts, "debt_to_equity_ratio", financialFacts.getDebtToEquityRatio());
+            putIfPresent(facts, "return_on_equity", financialFacts.getReturnOnEquity());
+            putIfPresent(facts, "return_on_assets", financialFacts.getReturnOnAssets());
+            putIfPresent(facts, "price_to_earnings_ratio", financialFacts.getPriceToEarningsRatio());
+            putIfPresent(facts, "price_to_book_ratio", financialFacts.getPriceToBookRatio());
+            List<Map<String, Object>> metrics = agentMetricFacts(financialFacts);
+            if (!metrics.isEmpty()) {
+                facts.put("metrics", metrics);
+            }
             return facts;
         } catch (RuntimeException error) {
             log.warn("agent_facts_unavailable ticker={} errorCode={}", ticker, error.getClass().getSimpleName());
@@ -189,8 +214,77 @@ public class FinancialAnalysisService {
         }
     }
 
+    private List<Map<String, Object>> agentMetricFacts(
+            com.springalpha.backend.financial.model.FinancialFacts financialFacts) {
+        List<Map<String, Object>> metrics = new ArrayList<>();
+        addMetricFact(metrics, "revenue", financialFacts.getRevenue(), "USD", financialFacts);
+        addMetricFact(metrics, "gross profit", financialFacts.getGrossProfit(), "USD", financialFacts);
+        addMetricFact(metrics, "gross margin", financialFacts.getGrossMargin(), "pure", financialFacts);
+        addMetricFact(metrics, "operating income", financialFacts.getOperatingIncome(), "USD", financialFacts);
+        addMetricFact(metrics, "operating margin", financialFacts.getOperatingMargin(), "pure", financialFacts);
+        addMetricFact(metrics, "net income", financialFacts.getNetIncome(), "USD", financialFacts);
+        addMetricFact(metrics, "net margin", financialFacts.getNetMargin(), "pure", financialFacts);
+        addMetricFact(
+                metrics,
+                "earnings per share",
+                financialFacts.getEarningsPerShare(),
+                financialFacts.getCurrency(),
+                financialFacts);
+        addMetricFact(metrics, "operating cash flow", financialFacts.getOperatingCashFlow(), "USD", financialFacts);
+        addMetricFact(metrics, "free cash flow", financialFacts.getFreeCashFlow(), "USD", financialFacts);
+        addMetricFact(metrics, "total assets", financialFacts.getTotalAssets(), "USD", financialFacts);
+        addMetricFact(metrics, "total liabilities", financialFacts.getTotalLiabilities(), "USD", financialFacts);
+        addMetricFact(metrics, "total equity", financialFacts.getTotalEquity(), "USD", financialFacts);
+        addMetricFact(metrics, "debt to equity ratio", financialFacts.getDebtToEquityRatio(), "pure", financialFacts);
+        addMetricFact(metrics, "return on equity", financialFacts.getReturnOnEquity(), "pure", financialFacts);
+        addMetricFact(metrics, "return on assets", financialFacts.getReturnOnAssets(), "pure", financialFacts);
+        addMetricFact(metrics, "price to earnings ratio", financialFacts.getPriceToEarningsRatio(), "pure", financialFacts);
+        addMetricFact(metrics, "price to book ratio", financialFacts.getPriceToBookRatio(), "pure", financialFacts);
+        if (financialFacts.getAdditionalMetrics() != null) {
+            financialFacts.getAdditionalMetrics().forEach((name, value) ->
+                    addMetricFact(metrics, name, value, financialFacts.getCurrency(), financialFacts));
+        }
+        return metrics;
+    }
+
+    private void addMetricFact(
+            List<Map<String, Object>> metrics,
+            String name,
+            BigDecimal value,
+            String unit,
+            com.springalpha.backend.financial.model.FinancialFacts financialFacts) {
+        if (value == null) {
+            return;
+        }
+        Map<String, Object> metric = new LinkedHashMap<>();
+        metric.put("name", name);
+        metric.put("value", value);
+        putIfPresent(metric, "unit", normalizedMetricUnit(unit, financialFacts));
+        putIfPresent(metric, "period", financialFacts.getPeriod());
+        putIfPresent(metric, "filed", financialFacts.getFilingDate());
+        metric.put("source", "preloaded_financial_facts");
+        metrics.add(metric);
+    }
+
+    private String normalizedMetricUnit(
+            String unit,
+            com.springalpha.backend.financial.model.FinancialFacts financialFacts) {
+        if (unit == null || unit.isBlank() || "USD".equals(unit)) {
+            return financialFacts.getCurrency() != null && !financialFacts.getCurrency().isBlank()
+                    ? financialFacts.getCurrency()
+                    : unit;
+        }
+        return unit;
+    }
+
     private void putIfPresent(Map<String, Object> facts, String key, String value) {
         if (value != null && !value.isBlank()) {
+            facts.put(key, value);
+        }
+    }
+
+    private void putIfPresent(Map<String, Object> facts, String key, BigDecimal value) {
+        if (value != null) {
             facts.put(key, value);
         }
     }
