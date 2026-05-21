@@ -1656,9 +1656,9 @@ describe("Home page", () => {
         ),
       ).toHaveLength(3);
     });
-    expect(screen.getByText("Earnings agent")).toBeInTheDocument();
-    expect(screen.getByText("Business driver agent")).toBeInTheDocument();
-    expect(screen.getByText("Cash flow agent")).toBeInTheDocument();
+    expect(await screen.findByText("Earnings agent")).toBeInTheDocument();
+    expect(await screen.findByText("Business driver agent")).toBeInTheDocument();
+    expect(await screen.findByText("Cash flow agent")).toBeInTheDocument();
   });
 
   it("renders typed cash flow synthesis fields from the spring mapper envelope", async () => {
