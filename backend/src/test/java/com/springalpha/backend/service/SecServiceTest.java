@@ -4,10 +4,12 @@ import com.springalpha.backend.financial.service.FinancialDataService;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -246,8 +248,10 @@ class SecServiceTest {
     void getLatestFilingContentDedupesConcurrentRequestsForTheSameTicker() throws InterruptedException {
         CountDownLatch fetchEntered = new CountDownLatch(1);
         CountDownLatch releaseFetch = new CountDownLatch(1);
+        CountDownLatch subscriptionsObserved = new CountDownLatch(2);
         AtomicInteger fetchCount = new AtomicInteger();
         AtomicReference<Throwable> failure = new AtomicReference<>();
+        CyclicBarrier startBarrier = new CyclicBarrier(2);
 
         SecService service = new SecService(new NoopFinancialDataService() {
             @Override
@@ -255,6 +259,20 @@ class SecServiceTest {
                 return true;
             }
         }) {
+            @Override
+            public Mono<String> getLatestFilingContent(String ticker) {
+                try {
+                    startBarrier.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
+                } catch (java.util.concurrent.BrokenBarrierException | java.util.concurrent.TimeoutException e) {
+                    throw new RuntimeException(e);
+                }
+                return super.getLatestFilingContent(ticker)
+                        .doOnSubscribe(subscription -> subscriptionsObserved.countDown());
+            }
+
             @Override
             String findLatestFilingIndexUrl(String ticker, String[] docTypes) {
                 return "https://www.sec.gov/Archives/edgar/data/1318605/0001/0001-index.htm";
@@ -297,8 +315,11 @@ class SecServiceTest {
         });
 
         first.start();
-        assertTrue(fetchEntered.await(5, TimeUnit.SECONDS));
         second.start();
+
+        assertTrue(fetchEntered.await(5, TimeUnit.SECONDS));
+        assertTrue(subscriptionsObserved.await(5, TimeUnit.SECONDS));
+        assertEquals(1, fetchCount.get());
         releaseFetch.countDown();
 
         first.join(5000);
