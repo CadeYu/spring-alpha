@@ -134,6 +134,27 @@ describe("KeyMetrics", () => {
     expect(screen.queryByText(/Financial sector mode is active/i)).not.toBeInTheDocument();
   });
 
+  it("localizes metric cards for chinese reports", () => {
+    render(
+      <KeyMetrics
+        lang="zh"
+        metrics={[
+          {
+            metricName: "Revenue",
+            value: "$100B",
+            interpretation: "Reported metric.",
+            sentiment: "positive",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("营收")).toBeInTheDocument();
+    expect(screen.getByText("已披露指标。")).toBeInTheDocument();
+    expect(screen.queryByText("Revenue")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reported metric.")).not.toBeInTheDocument();
+  });
+
   it("keeps generic charts in a loading state until facts resolve for the submitted ticker", async () => {
     let resolveFetch!: (value: {
       ok: boolean;

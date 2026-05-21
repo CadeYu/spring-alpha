@@ -14,6 +14,15 @@ describe("TrialGate", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders Chinese copy when trial is exhausted in zh locale", () => {
+    render(<TrialGate status="trial_exhausted" lang="zh" />);
+
+    expect(screen.getByText("你已经用完一次免费分析。")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /使用 google 登录/i }),
+    ).toBeInTheDocument();
+  });
+
   it("renders nothing for active anonymous access", () => {
     const { container } = render(<TrialGate status="anonymous_ready" />);
     expect(container).toBeEmptyDOMElement();

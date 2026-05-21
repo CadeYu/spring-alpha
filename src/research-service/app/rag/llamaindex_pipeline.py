@@ -172,10 +172,10 @@ class DeterministicFinancialEmbeddingBackend:
     def embed(self, text: str) -> dict[str, float]:
         vector: dict[str, float] = {}
         terms = _term_counts(text)
-        for term, count in terms.items():
-            _add_vector_weight(vector, term, float(count))
+        for term, term_count in terms.items():
+            _add_vector_weight(vector, term, float(term_count))
             for semantic_term in _SEMANTIC_EMBEDDING_EXPANSIONS.get(term, []):
-                _add_vector_weight(vector, semantic_term, float(count))
+                _add_vector_weight(vector, semantic_term, float(term_count))
         for phrase, semantic_terms in _SEMANTIC_PHRASE_EMBEDDINGS.items():
             if phrase in text.lower():
                 for semantic_term in semantic_terms:
@@ -836,7 +836,7 @@ class LlamaIndexRagPipeline:
             ticker=ticker,
             query=expanded_query,
             sections=requested_sections,
-            top_k=max(top_k * 2, top_k),
+            top_k=max(top_k * 4, 20),
         )
         ranked_nodes = self._rerank_candidates(
             query=expanded_query,
@@ -900,23 +900,22 @@ class LlamaIndexRagPipeline:
             or _canonical_section_name(str(node.metadata.get("section", ""))) in requested_sections
         ]
         candidate_nodes = section_filtered_nodes or ticker_nodes
-        lexical_candidates = [
-            NodeWithScore(node=node, score=score)
-            for node in candidate_nodes
-            for score in [_score_node(query_terms, node)]
-            if score > 0
-        ]
+        lexical_candidates = _rank_lexical_candidates(query_terms, candidate_nodes)
         if self.enable_hybrid_retrieval and not self._hybrid_degraded_reason:
             try:
                 vector_candidates = self.vector_store.search(
                     query=query,
                     nodes=candidate_nodes,
-                    top_k=top_k,
+                    top_k=max(top_k * 4, top_k),
                 )
             except Exception as error:
                 self._degrade_hybrid_retrieval(error)
                 vector_candidates = []
-            scored_nodes = _merge_candidate_scores(lexical_candidates, vector_candidates)
+            scored_nodes = _merge_candidate_scores(
+                lexical_candidates,
+                vector_candidates,
+                top_k=max(top_k * 4, top_k),
+            )
         else:
             scored_nodes = lexical_candidates
         return sorted(
@@ -939,7 +938,12 @@ class LlamaIndexRagPipeline:
         reranked = [
             (
                 candidate,
-                _rerank_score(query_terms, requested_sections, candidate),
+                _rerank_score(
+                    query_terms,
+                    requested_sections,
+                    candidate,
+                    rank=index + 1,
+                ),
                 rerank_reason
                 or (
                     "section_filtered_financial_lexical_overlap"
@@ -947,7 +951,7 @@ class LlamaIndexRagPipeline:
                     else "lexical_overlap_with_section_metadata"
                 ),
             )
-            for candidate in candidates
+            for index, candidate in enumerate(candidates)
         ]
         return sorted(reranked, key=lambda item: item[1], reverse=True)[:top_k]
 
@@ -1215,7 +1219,39 @@ def _node_to_source_ref(node: TextNode, query: str) -> SourceRef:
 
 def _score_node(query_terms: Counter[str], node: TextNode) -> float:
     node_terms = _term_counts(node.get_content())
-    return float(sum(min(count, node_terms.get(term, 0)) for term, count in query_terms.items()))
+    if not query_terms or not node_terms:
+        return 0.0
+    score = 0.0
+    node_length = max(1, sum(node_terms.values()))
+    avg_length = 180.0
+    k1 = 1.4
+    b = 0.75
+    length_norm = k1 * (1 - b + b * (node_length / avg_length))
+    for term, query_frequency in query_terms.items():
+        term_frequency = node_terms.get(term, 0)
+        if term_frequency <= 0:
+            continue
+        idf = _term_idf(term)
+        score += idf * (
+            (term_frequency * (k1 + 1) * query_frequency)
+            / (term_frequency + length_norm)
+        )
+    if "section" in node.metadata:
+        section_terms = _term_counts(str(node.metadata.get("section", "")))
+        score += 0.15 * sum(1 for term in query_terms if term in section_terms)
+    return score
+
+
+def _rank_lexical_candidates(
+    query_terms: Counter[str],
+    candidate_nodes: list[TextNode],
+) -> list[NodeWithScore]:
+    scored_nodes = [
+        NodeWithScore(node=node, score=_score_node(query_terms, node))
+        for node in candidate_nodes
+    ]
+    scored_nodes = [candidate for candidate in scored_nodes if float(candidate.score or 0.0) > 0]
+    return sorted(scored_nodes, key=lambda candidate: float(candidate.score or 0.0), reverse=True)
 
 
 def _node_embedding_text(node: TextNode) -> str:
@@ -1284,16 +1320,18 @@ def _vector_dimension_index(key: str, dimension: int) -> int:
 def _merge_candidate_scores(
     lexical_candidates: list[NodeWithScore],
     vector_candidates: list[NodeWithScore],
+    *,
+    top_k: int,
 ) -> list[NodeWithScore]:
     merged: dict[str, NodeWithScore] = {}
-    for candidate in lexical_candidates:
+    for rank, candidate in enumerate(lexical_candidates, start=1):
         merged[candidate.node.node_id] = NodeWithScore(
             node=candidate.node,
-            score=float(candidate.score or 0.0),
+            score=_reciprocal_rank_score(rank, top_k),
         )
-    for candidate in vector_candidates:
+    for rank, candidate in enumerate(vector_candidates, start=1):
+        vector_score = _reciprocal_rank_score(rank, top_k)
         existing = merged.get(candidate.node.node_id)
-        vector_score = float(candidate.score or 0.0)
         if existing is None:
             merged[candidate.node.node_id] = NodeWithScore(
                 node=candidate.node,
@@ -1308,20 +1346,88 @@ def _rerank_score(
     query_terms: Counter[str],
     requested_sections: set[str],
     candidate: NodeWithScore,
+    *,
+    rank: int,
 ) -> float:
     retrieval_score = float(candidate.score or 0.0)
     node = candidate.node
     if not isinstance(node, TextNode):
         return retrieval_score
-    section_terms = _term_counts(str(node.metadata.get("section", "")))
-    section_bonus = sum(1 for term in query_terms if term in section_terms) * 0.25
+
+    section_name = str(node.metadata.get("section", ""))
+    section_terms = _term_counts(section_name)
+    retrieval_bonus = 0.5 / max(1, rank)
+    section_bonus = sum(1 for term in query_terms if term in section_terms) * 0.4
     requested_section_bonus = (
-        2.0
-        if requested_sections
-        and _canonical_section_name(str(node.metadata.get("section", ""))) in requested_sections
+        3.0
+        if requested_sections and _canonical_section_name(section_name) in requested_sections
         else 0.0
     )
-    return retrieval_score + section_bonus + requested_section_bonus
+    term_coverage_bonus = _query_term_coverage_bonus(query_terms, node)
+    numeric_bonus = _numeric_match_bonus(query_terms, node)
+    freshness_bonus = _freshness_bonus(node)
+    return (
+        retrieval_score
+        + retrieval_bonus
+        + section_bonus
+        + requested_section_bonus
+        + term_coverage_bonus
+        + numeric_bonus
+        + freshness_bonus
+    )
+
+
+def _reciprocal_rank_score(rank: int, top_k: int) -> float:
+    return 1.0 / (60 + min(rank, max(1, top_k)))
+
+
+def _query_term_coverage_bonus(query_terms: Counter[str], node: TextNode) -> float:
+    if not query_terms:
+        return 0.0
+    node_terms = _term_counts(node.get_content())
+    covered_terms = sum(1 for term in query_terms if node_terms.get(term, 0) > 0)
+    return covered_terms / max(1, len(query_terms)) * 0.8
+
+
+def _numeric_match_bonus(query_terms: Counter[str], node: TextNode) -> float:
+    query_numbers = {term for term in query_terms if term.isdigit()}
+    if not query_numbers:
+        return 0.0
+    node_terms = _term_counts(node.get_content())
+    matched_numbers = sum(1 for term in query_numbers if node_terms.get(term, 0) > 0)
+    return matched_numbers * 0.6
+
+
+def _freshness_bonus(node: TextNode) -> float:
+    filing_date = _optional_str(node.metadata.get("filing_date"))
+    if not filing_date:
+        return 0.0
+    year_match = re.match(r"^(\d{4})", filing_date)
+    if not year_match:
+        return 0.0
+    year = int(year_match.group(1))
+    return max(0.0, min(0.4, (year - 2024) * 0.1))
+
+
+def _term_idf(term: str) -> float:
+    common_terms = {
+        "cash",
+        "flow",
+        "liquidity",
+        "debt",
+        "maturities",
+        "revenue",
+        "demand",
+        "pricing",
+        "margin",
+        "capital",
+        "operating",
+        "income",
+        "product",
+        "services",
+        "segment",
+    }
+    return 1.8 if term in common_terms else 1.0
 
 
 def _term_counts(text: str) -> Counter[str]:

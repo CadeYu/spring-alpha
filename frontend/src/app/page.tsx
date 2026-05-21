@@ -69,13 +69,13 @@ const copy = {
     },
     sections: [
       {
-        label: "01 / Agents",
+        label: "01 / 智能体",
         title: "三个报告按顺序运行",
         body:
-          "Latest Earnings Readout、Business Driver Deep Dive、Cash Flow & Capital Allocation 是三条独立分析链路。用户可以切换报告，同时保留完整运行上下文。",
+          "最新财报速读、业务驱动深挖、现金流与资本配置是三条独立分析链路。用户可以切换报告，同时保留完整运行上下文。",
       },
       {
-        label: "02 / Workspace",
+        label: "02 / 工作区",
         title: "K 线图是默认界面",
         body:
           "没有选择报告时，应用默认展示 all-time market chart。报告、Agent 状态和 Messages & Tools 围绕它展开，而不是把工作流降级成聊天框。",
@@ -88,11 +88,11 @@ const copy = {
       },
     ],
     highlights: {
-      label: "Project Highlights",
+      label: "项目亮点",
       title: "不只是好看的 demo，而是一条真实研究链路。",
       cards: [
         {
-          title: "Ticker-first 入口",
+          title: "股票代码优先入口",
           body:
             "用户不需要先选复杂任务。输入 ticker 后，系统补全公司名、展示行情，并按顺序运行三条研究 Agent。",
         },
@@ -102,12 +102,12 @@ const copy = {
             "Agent 使用 LangGraph / LangChain tool-calling 思路组织，把 company facts、SEC evidence、metric facts 和 synthesis 分开处理。",
         },
         {
-          title: "真实 telemetry",
+          title: "真实遥测",
           body:
             "侧边栏展示当前 run 的 messages、tools、latency、evidence pack size 和 retrieval signals，而不是离线 benchmark 假分数。",
         },
         {
-          title: "BYOK provider",
+          title: "自带 Key",
           body:
             "用户可以带自己的 SiliconFlow、OpenAI 或 Gemini key。前端保存本地 key，后端只在请求时接收并转发。",
         },
@@ -137,7 +137,7 @@ const copy = {
       ],
     },
     difference: {
-      label: "What makes it different",
+      label: "差异化",
       title: "我们把 RAG 收缩成工具，把 Agent 输出做成产品界面。",
       points: [
         "Company profile 不从 filing snippet 硬凑，而优先来自 company facts 和业务描述。",
@@ -608,7 +608,7 @@ export default function LandingPage() {
         <section className="relative mt-12 border-t border-white/10 pt-4 sm:mt-16">
           <div className="absolute inset-x-[-3rem] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(20,184,166,0.68),rgba(212,184,126,0.35),transparent)]" />
           <div className="mx-auto max-w-[1124px] overflow-hidden rounded-t-[1.55rem] border border-white/12 bg-[#0b0b0b] shadow-[0_30px_100px_rgba(0,0,0,0.72)]">
-            <div className="flex items-center gap-2 border-b border-white/10 bg-[#161b1f] px-5 py-3">
+          <div className="flex items-center gap-2 border-b border-white/10 bg-[#161b1f] px-5 py-3">
               <span className="h-3 w-3 rounded-full bg-white/18" />
               <span className="h-3 w-3 rounded-full bg-[#d4b87e]/45" />
               <span className="h-3 w-3 rounded-full bg-[#2dd4bf]/65" />
@@ -636,15 +636,15 @@ export default function LandingPage() {
               Agent Runtime
             </p>
             <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">
-              {t.terminal.title}
+              {locale === "zh" ? "Agent 运行面板" : t.terminal.title}
             </h2>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/42 p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]">
-            <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/38">
-              <TerminalSquare className="h-4 w-4" />
-              Messages & Tools
-            </div>
+          <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/38">
+            <TerminalSquare className="h-4 w-4" />
+            {locale === "zh" ? "消息与工具" : "Messages & Tools"}
+          </div>
             <div className="space-y-3">
               {t.terminal.lines.map((line, index) => (
                 <div key={line} className="grid grid-cols-[3.75rem_1fr] gap-4 text-sm">
@@ -749,7 +749,7 @@ export default function LandingPage() {
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-black px-3 py-1.5 text-xs font-bold text-white">
               <ChartCandlestick className="h-3.5 w-3.5" />
-              Ticker-first
+              {locale === "zh" ? "股票代码优先" : "Ticker-first"}
             </div>
             <h2 className="max-w-3xl text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
               {t.footer.title}

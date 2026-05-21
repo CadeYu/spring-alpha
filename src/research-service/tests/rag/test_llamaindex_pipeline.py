@@ -446,6 +446,143 @@ Azure, server products, and enterprise services drove Intelligent Cloud growth.
     )
 
 
+class LengthBiasedEmbeddingBackend:
+    def embed(self, text: str) -> dict[str, float]:
+        if len(text) < 120:
+            return {"dim_0": 1.0, "dim_1": 0.0}
+        if len(text) > 360:
+            return {"dim_0": 1.0, "dim_1": 0.0}
+        return {"dim_0": 0.0, "dim_1": 1.0}
+
+
+def test_hybrid_pipeline_prioritizes_sparse_evidence_over_dense_noise() -> None:
+    pipeline = LlamaIndexRagPipeline(
+        enable_hybrid_retrieval=True,
+        embedding_backend=LengthBiasedEmbeddingBackend(),
+    )
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000320193-26-000040",
+            text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Cash flow liquidity debt maturities were discussed alongside capital allocation, pricing,
+customer behavior, and product demand. The discussion repeated those same words many times
+while adding broad filler about operations, execution, margin discipline, and resilience.
+The section remains long enough for dense retrieval to overvalue it when sparse evidence is weak.
+
+Liquidity and Capital Resources
+Cash flow liquidity debt maturities were manageable and capital allocation remained disciplined.
+""",
+        )
+    )
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_sparse_rescue",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        query="cash flow liquidity debt maturities",
+        sections=["MD&A", "Liquidity and Capital Resources"],
+        top_k=1,
+    )
+
+    assert result.source_refs
+    assert result.source_refs[0].section == "Liquidity and Capital Resources"
+    assert "manageable" in result.source_refs[0].snippet
+    assert result.retrieved_nodes[0].rerank_score >= result.retrieved_nodes[0].retrieval_score
+
+
+def test_hybrid_pipeline_reranks_recent_numeric_match_above_older_repetition() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000320193-26-000100",
+            text="""
+Liquidity and Capital Resources
+Operating cash flow funded capital expenditures and share repurchases in 2026.
+""",
+        )
+    )
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2025-10-31",
+            accession_number="0000320193-25-000050",
+            text="""
+Liquidity and Capital Resources
+Operating cash flow cash flow cash flow cash flow cash flow 2026.
+""",
+        )
+    )
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_numeric_freshness",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        query="operating cash flow capital expenditures share repurchases 2026",
+        sections=["Liquidity and Capital Resources"],
+        top_k=1,
+    )
+
+    assert result.source_refs
+    assert result.source_refs[0].accession_number == "0000320193-26-000100"
+    assert "capital expenditures" in result.source_refs[0].snippet
+
+
+
+def test_hybrid_pipeline_reranks_recent_section_match_above_keyword_filler() -> None:
+    pipeline = LlamaIndexRagPipeline(enable_hybrid_retrieval=True)
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0000320193-26-000100",
+            text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Revenue increased because services demand improved and pricing remained disciplined.
+
+Liquidity and Capital Resources
+Operating cash flow funded capital expenditures and share repurchases.
+""",
+        )
+    )
+    pipeline.ingest_filing(
+        FilingDocument(
+            ticker="AAPL",
+            filing_type="10-Q",
+            filing_date="2026-01-31",
+            accession_number="0000320193-26-000050",
+            text="""
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Revenue revenue revenue revenue revenue revenue revenue revenue revenue revenue.
+
+Liquidity and Capital Resources
+Cash flow cash flow cash flow.
+""",
+        )
+    )
+
+    result = pipeline.retrieve_evidence(
+        run_id="run_lightweight_rerank",
+        ticker="AAPL",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        query="revenue demand pricing",
+        sections=["MD&A"],
+        top_k=1,
+    )
+
+    assert result.source_refs
+    assert result.source_refs[0].accession_number == "0000320193-26-000100"
+    assert "revenue increased" in result.source_refs[0].snippet.lower()
+
+
 def test_embedding_backend_env_factory_defaults_to_deterministic(
     monkeypatch: MonkeyPatch,
 ) -> None:

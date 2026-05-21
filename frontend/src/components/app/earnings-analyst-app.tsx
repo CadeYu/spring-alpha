@@ -52,6 +52,19 @@ import {
   tickerSearchButtonLabel,
   tickerSearchPlaceholder,
 } from "@/lib/tickerSearchCopy";
+import {
+  formatTimelineTokenUsage,
+  timelineEmptyState,
+  timelineEventKindLabel,
+  timelineSectionTitle,
+  translateTimelineAgentName,
+  translateTimelineSummary,
+} from "@/lib/agentTimelineCopy";
+import {
+  type ReportMetricLocale,
+  formatMetricInterpretation,
+  formatMetricName,
+} from "@/lib/reportMetricCopy";
 
 const BYOK_PROVIDERS = [
   {
@@ -157,6 +170,7 @@ type AgentPipelineRun = {
 type ReportsByTask = Partial<Record<ResearchTaskId, AnalysisReport>>;
 
 const ANONYMOUS_TRIAL_STORAGE_KEY = "spring-alpha-anonymous-trial-used";
+const APP_LOCALE_STORAGE_KEY = "spring-alpha-app-locale";
 
 type TickerSuggestion = {
   ticker: string;
@@ -165,6 +179,24 @@ type TickerSuggestion = {
 
 function normalizeTicker(rawTicker: string | undefined | null) {
   return rawTicker?.toUpperCase().trim() ?? "";
+}
+
+function getInitialAppLocale(): "zh" | "en" {
+  if (typeof window === "undefined") {
+    return "zh";
+  }
+
+  const savedLocale = window.localStorage.getItem(APP_LOCALE_STORAGE_KEY);
+  if (savedLocale === "zh" || savedLocale === "en") {
+    return savedLocale;
+  }
+
+  const landingLocale = window.localStorage.getItem("spring-alpha-landing-locale");
+  if (landingLocale === "zh" || landingLocale === "en") {
+    return landingLocale;
+  }
+
+  return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
 function createClientUuid() {
@@ -261,6 +293,28 @@ const RESEARCH_TASKS = [
   Icon: typeof ChartColumnIncreasing;
 }>;
 
+function promoteAnalysisRunPhase(
+  current: AnalysisRunPhase,
+  next: AnalysisRunPhase,
+): AnalysisRunPhase {
+  if (current === "failed" || current === "received") {
+    return current;
+  }
+  if (current === "streaming" && next === "submitted") {
+    return current;
+  }
+  if (next === "received") {
+    return "received";
+  }
+  if (next === "failed") {
+    return "failed";
+  }
+  if (next === "streaming") {
+    return "streaming";
+  }
+  return "submitted";
+}
+
 export default function EarningsAnalystApp({
   initialTicker = "",
 }: {
@@ -269,7 +323,7 @@ export default function EarningsAnalystApp({
   const normalizedInitialTicker = normalizeTicker(initialTicker);
   const [ticker, setTicker] = useState(normalizedInitialTicker);
   const [activeTicker, setActiveTicker] = useState(normalizedInitialTicker); // only set on submit
-  const [lang, setLang] = useState("en");
+  const [lang, setLang] = useState<"zh" | "en">(() => getInitialAppLocale());
   const [model, setModel] = useState<ByokProviderId>("siliconflow");
   const [selectedLlmModel, setSelectedLlmModel] = useState<string>(
     BYOK_PROVIDERS[0].models[0].id,
@@ -344,6 +398,10 @@ export default function EarningsAnalystApp({
         ? "全部 Agent"
         : "All agents"
       : undefined;
+
+  useEffect(() => {
+    window.localStorage.setItem(APP_LOCALE_STORAGE_KEY, lang);
+  }, [lang]);
   useEffect(() => {
     const savedKey = window.localStorage.getItem(selectedProvider.storageKey);
     if (savedKey) {
@@ -477,9 +535,9 @@ export default function EarningsAnalystApp({
     setRunNow(startedAt);
 
     try {
-      for (const task of RESEARCH_TASKS) {
+      const taskPromises = RESEARCH_TASKS.map(async (task) => {
         if (requestIdRef.current !== requestId || controller.signal.aborted) {
-          return;
+          return { phase: "failed" as const };
         }
 
         const taskStartedAt = Date.now();
@@ -490,54 +548,89 @@ export default function EarningsAnalystApp({
               : run,
           ),
         );
-        setRunState((current) =>
-          current && current.ticker === submittedTicker
-            ? {
-                ...current,
-                taskTitle: isZh ? task.titleZh : task.title,
-                phase: "submitted",
-              }
-            : current,
-        );
 
-        const taskResult = await runResearchTask({
-          taskId: task.id,
-          requestId,
-          submittedTicker,
-          runtimeProviderKey,
-          anonymousTrialMode: anonymousTrialAvailable,
-          trialRunId,
-          controller,
-        });
+        try {
+          const taskResult = await runResearchTask({
+            taskId: task.id,
+            requestId,
+            submittedTicker,
+            runtimeProviderKey,
+            anonymousTrialMode: anonymousTrialAvailable,
+            trialRunId,
+            controller,
+          });
 
-        setPipelineRuns((current) =>
-          current.map((run) =>
-            run.taskId === task.id
-              ? {
-                  ...run,
-                  phase: taskResult.phase,
-                  completedAt: Date.now(),
-                }
-              : run,
-          ),
-        );
-        if (taskResult.phase === "failed") {
-          setRunState((current) =>
-            current && current.ticker === submittedTicker
-              ? { ...current, phase: "failed" }
-              : current,
+          if (requestIdRef.current !== requestId || controller.signal.aborted) {
+            return taskResult;
+          }
+
+          setPipelineRuns((current) =>
+            current.map((run) =>
+              run.taskId === task.id
+                ? {
+                    ...run,
+                    phase: taskResult.phase,
+                    completedAt: Date.now(),
+                  }
+                : run,
+            ),
           );
-          setError(
-            taskResult.error ?? {
-              message: "Research agent failed before producing a final report.",
-              source: "python-research-service",
-              code: "RESEARCH_AGENT_DEGRADED",
-              degraded: true,
-            },
+
+          if (taskResult.phase === "failed" && taskResult.error) {
+            setError(taskResult.error);
+          }
+
+          return taskResult;
+        } catch (error) {
+          if (requestIdRef.current !== requestId || controller.signal.aborted) {
+            return { phase: "failed" as const };
+          }
+
+          console.error("Fetch Error:", error);
+          const normalizedError = normalizeAnalysisError(error);
+          setPipelineRuns((current) =>
+            current.map((run) =>
+              run.taskId === task.id
+                ? {
+                    ...run,
+                    phase: "failed",
+                    completedAt: Date.now(),
+                  }
+                : run,
+            ),
           );
-          break;
+          setError(normalizedError);
+          return { phase: "failed" as const, error: normalizedError };
         }
+      });
+
+      const settledResults = await Promise.allSettled(taskPromises);
+      if (requestIdRef.current !== requestId || controller.signal.aborted) {
+        return;
       }
+
+      const hasReceivedReport = settledResults.some(
+        (result) =>
+          result.status === "fulfilled" && result.value.phase === "received",
+      );
+      const hasFailure = settledResults.some(
+        (result) =>
+          result.status === "rejected" ||
+          (result.status === "fulfilled" && result.value.phase === "failed"),
+      );
+
+      setRunState((current) =>
+        current && current.ticker === submittedTicker
+          ? {
+              ...current,
+              phase: hasFailure
+                ? "failed"
+                : hasReceivedReport
+                  ? "received"
+                  : current.phase,
+            }
+          : current,
+      );
     } catch (error) {
       if (controller.signal.aborted) {
         return;
@@ -545,7 +638,10 @@ export default function EarningsAnalystApp({
       console.error("Fetch Error:", error);
       setRunState((current) =>
         current && current.ticker === submittedTicker
-          ? { ...current, phase: "failed" }
+          ? {
+              ...current,
+              phase: promoteAnalysisRunPhase(current.phase, "failed"),
+            }
           : current,
       );
       setError(normalizeAnalysisError(error));
@@ -627,7 +723,7 @@ export default function EarningsAnalystApp({
 
     setRunState((current) =>
       current && current.ticker === submittedTicker
-        ? { ...current, phase: "streaming" }
+        ? { ...current, phase: promoteAnalysisRunPhase(current.phase, "streaming") }
         : current,
     );
     setPipelineRuns((current) =>
@@ -669,7 +765,10 @@ export default function EarningsAnalystApp({
             }
             setRunState((current) =>
               current && current.ticker === submittedTicker
-                ? { ...current, phase: "received" }
+                ? {
+                    ...current,
+                    phase: promoteAnalysisRunPhase(current.phase, "received"),
+                  }
                 : current,
             );
             setReportsByTask((current) => ({
@@ -764,7 +863,7 @@ export default function EarningsAnalystApp({
         {/* Search Bar */}
         <Card className="bg-slate-900 border-slate-800">
           <CardContent className="p-4 space-y-3">
-            <AuthBanner />
+            <AuthBanner lang={lang} />
             {/* Row 1: Ticker, Language, Button */}
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -822,7 +921,7 @@ export default function EarningsAnalystApp({
 
               <select
                 value={lang}
-                onChange={(e) => setLang(e.target.value)}
+                onChange={(e) => setLang(e.target.value as "en" | "zh")}
                 className="bg-slate-950 border border-slate-700 text-emerald-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono text-sm"
               >
                 <option value="en">🇺🇸 EN</option>
@@ -992,7 +1091,7 @@ export default function EarningsAnalystApp({
           </CardContent>
         </Card>
 
-        <TrialGate status={trialGateStatus} />
+        <TrialGate status={trialGateStatus} lang={lang} />
 
         {/* Error Display */}
         {error && <AnalysisErrorPanel error={error} isZh={isZh} />}
@@ -1105,7 +1204,10 @@ export default function EarningsAnalystApp({
             </p>
           )}
           {diagnosticsOpen && (
-            <RagEvalDashboard reports={orderedReports.map(({ report }) => report)} />
+            <RagEvalDashboard
+              reports={orderedReports.map(({ report }) => report)}
+              lang={lang === "zh" ? "zh" : "en"}
+            />
           )}
         </section>
       </div>
@@ -1157,12 +1259,12 @@ function AnalysisRunStatusPanel({
             </div>
 
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-              <RunStatusMetric label="Ticker" value={runState.ticker} />
+              <RunStatusMetric label={isZh ? "股票代码" : "Ticker"} value={runState.ticker} />
               <RunStatusMetric
                 label={isZh ? "任务" : "Task"}
                 value={runState.taskTitle}
               />
-              <RunStatusMetric label="Provider" value={runState.providerName} />
+              <RunStatusMetric label={isZh ? "提供方" : "Provider"} value={runState.providerName} />
               <RunStatusMetric
                 label={isZh ? "耗时" : "Elapsed"}
                 value={`${elapsedSeconds}s`}
@@ -1419,17 +1521,18 @@ function AgentMessagesTimeline({
   isZh: boolean;
 }) {
   const events = metadata?.agentEvents?.filter((event) => event.summary) ?? [];
+  const locale = isZh ? "zh" : "en";
 
   return (
     <section
-      aria-label={isZh ? "Agent 消息和工具" : "Messages and tools"}
+      aria-label={timelineSectionTitle(locale)}
       className="rounded-md border border-emerald-500/20 bg-[#111716] p-4 shadow-xl shadow-slate-950/30"
     >
       <div className="flex items-center gap-2 border-b border-emerald-500/25 pb-4">
         <MessageSquareText className="h-4 w-4 text-emerald-300" />
         <div>
           <p className="text-lg font-bold text-emerald-300">
-            {isZh ? "Messages & Tools" : "Messages & Tools"}
+            {timelineSectionTitle(locale)}
           </p>
           {taskTitle && (
             <p className="mt-1 text-xs uppercase tracking-widest text-slate-500">
@@ -1441,9 +1544,7 @@ function AgentMessagesTimeline({
 
       {events.length === 0 ? (
         <div className="py-6 text-sm leading-6 text-slate-500">
-          {isZh
-            ? "运行完成后，这里会展示 reasoning 与 tool 调用时间线。"
-            : "Reasoning and tool-call timeline appears here after an agent finishes."}
+          {timelineEmptyState(locale)}
         </div>
       ) : (
         <div className="max-h-[640px] overflow-y-auto pr-1">
@@ -1451,11 +1552,13 @@ function AgentMessagesTimeline({
             const kind = event.eventKind ?? (event.toolName ? "tool" : "reasoning");
             const isTool = kind === "tool" || Boolean(event.toolName);
             const elapsedMs = cumulativeEventLatency(events, index);
-            const agentName =
-              event.agentName || agentNameFromTaskTitle(taskTitle, isZh);
+            const agentName = translateTimelineAgentName(
+              event.agentName || agentNameFromTaskTitle(taskTitle, isZh),
+              locale,
+            );
             const detail = isTool
-              ? toolEventDetail(event)
-              : reasoningEventDetail(event);
+              ? toolEventDetail(event, locale)
+              : reasoningEventDetail(event, locale);
             return (
               <article
                 key={`${event.phase}-${event.toolName ?? kind}-${index}`}
@@ -1480,7 +1583,10 @@ function AgentMessagesTimeline({
                     ) : (
                       <Bot className="h-3.5 w-3.5" />
                     )}
-                    {isTool ? "Tool" : "Reasoning"}
+                    {timelineEventKindLabel(
+                      isTool ? "tool" : "reasoning",
+                      locale,
+                    )}
                   </span>
                 </div>
                 <p className="text-sm font-semibold text-slate-400">
@@ -1519,7 +1625,10 @@ function formatTimelineTime(milliseconds: number) {
   return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
-function reasoningEventDetail(event: NonNullable<AnalysisMetadata["agentEvents"]>[number]) {
+function reasoningEventDetail(
+  event: NonNullable<AnalysisMetadata["agentEvents"]>[number],
+  locale: "zh" | "en",
+) {
   const model = event.modelName || "provider model";
   const usage = event.usage ?? {};
   const inputTokens = numberFromUnknown(
@@ -1528,18 +1637,22 @@ function reasoningEventDetail(event: NonNullable<AnalysisMetadata["agentEvents"]
   const outputTokens = numberFromUnknown(
     usage.completion_tokens ?? usage.output_tokens ?? usage.total_completion_tokens,
   );
-  if (inputTokens !== null || outputTokens !== null) {
-    return `${model}: ${inputTokens ?? "?"} in, ${outputTokens ?? "?"} out`;
+  const tokenUsage = formatTimelineTokenUsage(model, inputTokens, outputTokens, locale);
+  if (tokenUsage) {
+    return tokenUsage;
   }
-  return `${model}: ${event.summary}`;
+  return `${model}: ${translateTimelineSummary(event.summary, locale)}`;
 }
 
-function toolEventDetail(event: NonNullable<AnalysisMetadata["agentEvents"]>[number]) {
+function toolEventDetail(
+  event: NonNullable<AnalysisMetadata["agentEvents"]>[number],
+  locale: "zh" | "en",
+) {
   const toolName = event.toolName || event.phase || "tool";
   const input = event.toolInput && Object.keys(event.toolInput).length > 0
     ? `: ${JSON.stringify(event.toolInput)}`
     : event.summary
-      ? `: ${event.summary}`
+      ? `: ${translateTimelineSummary(event.summary, locale)}`
       : "";
   return `${toolName}${input}`;
 }
@@ -2081,6 +2194,22 @@ function analysisRunPhaseCopy(phase: AnalysisRunPhase, isZh: boolean) {
   };
 }
 
+function missingTaskSectionsTitle(taskTitle: string, isZh: boolean) {
+  if (isZh) {
+    if (taskTitle === "Latest Earnings Readout") return "最新财报报告缺少 typed sections";
+    if (taskTitle === "Business Driver Deep Dive") return "业务驱动报告缺少 typed sections";
+    return "现金流报告缺少 typed sections";
+  }
+  return "Missing typed taskSections";
+}
+
+function missingTaskSectionsBody(taskTitle: string, isZh: boolean) {
+  if (isZh) {
+    return `当前 ${taskTitle} 报告没有返回任务专属 typed contract。前端已移除旧 dashboard 兜底，避免展示过期的 legacy 字段。`;
+  }
+  return `The ${taskTitle} report did not include its task-specific typed contract. The legacy dashboard fallback has been removed so stale legacy fields are not presented as a valid report.`;
+}
+
 function LatestEarningsReportSections({
   report,
   lang,
@@ -2094,7 +2223,9 @@ function LatestEarningsReportSections({
     return <TypedLatestEarningsSections sections={typedSections} lang={lang} />;
   }
 
-  return <MissingTaskSectionsCard lang={lang} taskTitle="Latest Earnings Readout" />;
+  return (
+    <MissingTaskSectionsCard lang={lang} taskTitle="Latest Earnings Readout" />
+  );
 }
 
 function TypedLatestEarningsSections({
@@ -2105,6 +2236,7 @@ function TypedLatestEarningsSections({
   lang: string;
 }) {
   const isZh = lang === "zh";
+  const metricLocale: ReportMetricLocale = isZh ? "zh" : "en";
   const toplineVerdict = sections.toplineVerdict ?? {
     headline: isZh ? "财报观点待补充" : "Latest earnings thesis pending",
     verdict: "mixed" as const,
@@ -2149,7 +2281,8 @@ function TypedLatestEarningsSections({
       <MetricStripCard
         title={isZh ? "关键指标条" : "KPI Strip"}
         metrics={sections.financialDashboard?.metrics ?? []}
-        emptyText={isZh ? "没有指标证据。" : "No KPI evidence provided."}
+        emptyText={isZh ? "没有 KPI 证据。" : "No KPI evidence provided."}
+        lang={metricLocale}
       />
 
       <PointListCard
@@ -2211,7 +2344,9 @@ function BusinessDriverReportSections({
     return <TypedBusinessDriverSections sections={typedSections} lang={lang} />;
   }
 
-  return <MissingTaskSectionsCard lang={lang} taskTitle="Business Driver Deep Dive" />;
+  return (
+    <MissingTaskSectionsCard lang={lang} taskTitle="Business Driver Deep Dive" />
+  );
 }
 
 function CashFlowReportSections({
@@ -2319,7 +2454,7 @@ function TypedBusinessDriverSections({
                   ))
                 ) : (
                   <p className="text-sm text-slate-500">
-                    {isZh ? "没有该维度证据。" : "No evidence for this lens."}
+                    {isZh ? "该维度没有证据。" : "No evidence for this lens."}
                   </p>
                 )}
               </div>
@@ -2351,6 +2486,7 @@ function TypedCashFlowSections({
   lang: string;
 }) {
   const isZh = lang === "zh";
+  const metricLocale: ReportMetricLocale = isZh ? "zh" : "en";
   const capitalAllocation = sections.capitalAllocation ?? {
     capex: [],
     buybacks: [],
@@ -2406,6 +2542,7 @@ function TypedCashFlowSections({
         title={isZh ? "现金流桥" : "Cash Flow Bridge"}
         metrics={sections.cashMetrics ?? []}
         emptyText={isZh ? "没有现金流指标。" : "No cash flow metrics provided."}
+        lang={metricLocale}
       />
 
       <Card className="bg-slate-900 border-slate-800">
@@ -2433,7 +2570,7 @@ function TypedCashFlowSections({
                   ))
                 ) : (
                   <p className="text-sm text-slate-500">
-                    {isZh ? "没有该维度证据。" : "No evidence for this lens."}
+                    {isZh ? "该维度没有证据。" : "No evidence for this lens."}
                   </p>
                 )}
               </div>
@@ -2630,10 +2767,12 @@ function MetricStripCard({
   title,
   metrics,
   emptyText,
+  lang,
 }: {
   title: string;
   metrics: EvidenceBoundMetric[];
   emptyText: string;
+  lang: ReportMetricLocale;
 }) {
   return (
     <Card className="bg-slate-900 border-slate-800">
@@ -2643,7 +2782,7 @@ function MetricStripCard({
       <CardContent className="grid gap-3 p-6 md:grid-cols-3">
         {metrics.length > 0 ? (
           metrics.map((metric) => (
-            <EvidenceMetricBlock key={metric.name} metric={metric} />
+            <EvidenceMetricBlock key={metric.name} metric={metric} lang={lang} />
           ))
         ) : (
           <p className="text-sm text-slate-500">{emptyText}</p>
@@ -2719,17 +2858,23 @@ function ImpactTableCard({
   );
 }
 
-function EvidenceMetricBlock({ metric }: { metric: EvidenceBoundMetric }) {
+function EvidenceMetricBlock({
+  metric,
+  lang,
+}: {
+  metric: EvidenceBoundMetric;
+  lang: ReportMetricLocale;
+}) {
   return (
     <div className="min-w-0 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4">
       <p className="min-w-0 [overflow-wrap:anywhere] text-sm text-slate-400">
-        {metric.name}
+        {formatMetricName(metric.name, lang)}
       </p>
       <p className="mt-1 min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-emerald-300">
         {formatMetricDisplayValue(metric.value)}
       </p>
       <p className="mt-3 min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400">
-        {metric.interpretation}
+        {formatMetricInterpretation(metric.interpretation, lang)}
       </p>
     </div>
   );
@@ -2864,14 +3009,12 @@ function MissingTaskSectionsCard({
       <CardHeader className="border-b border-slate-800">
         <CardTitle className="flex items-center gap-2 text-amber-300">
           <AlertTriangle className="h-5 w-5" />
-          {isZh ? "缺少 typed taskSections" : "Missing typed taskSections"}
+          {isZh ? missingTaskSectionsTitle(taskTitle, isZh) : "Missing typed taskSections"}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 p-6">
         <p className="text-sm leading-6 text-slate-300">
-          {isZh
-            ? `当前 ${taskTitle} 报告没有返回任务专属 typed contract。前端已移除旧 dashboard 兜底，避免展示过期的 legacy 字段。`
-            : `The ${taskTitle} report did not include its task-specific typed contract. The legacy dashboard fallback has been removed so stale legacy fields are not presented as a valid report.`}
+          {missingTaskSectionsBody(taskTitle, isZh)}
         </p>
         <p className="text-xs uppercase tracking-widest text-slate-500">
           {isZh

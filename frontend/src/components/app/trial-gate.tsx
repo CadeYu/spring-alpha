@@ -10,9 +10,11 @@ export type TrialGateStatus = "anonymous_ready" | "authenticated_ready" | "trial
 
 type TrialGateProps = {
   status: TrialGateStatus;
+  lang?: "zh" | "en";
 };
 
-export function TrialGate({ status }: TrialGateProps) {
+export function TrialGate({ status, lang = "en" }: TrialGateProps) {
+  const isZh = lang === "zh";
   if (status !== "trial_exhausted") {
     return null;
   }
@@ -23,18 +25,20 @@ export function TrialGate({ status }: TrialGateProps) {
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Badge className="bg-amber-500/10 text-amber-300 hover:bg-amber-500/10">
-              Trial exhausted
+              {isZh ? "试用已用完" : "Trial exhausted"}
             </Badge>
             <span className="inline-flex items-center gap-1 text-xs uppercase tracking-widest text-slate-500">
               <Sparkles className="h-3.5 w-3.5" />
-              Free trial reached
+              {isZh ? "免费试用次数已达上限" : "Free trial reached"}
             </span>
           </div>
           <p className="text-sm font-medium text-slate-100">
-            You have used your free analysis.
+            {isZh ? "你已经用完一次免费分析。" : "You have used your free analysis."}
           </p>
           <p className="max-w-2xl text-sm text-slate-400">
-            Sign in with Google and continue with your own key to keep analyzing tickers.
+            {isZh
+              ? "请使用 Google 登录，并输入你自己的 Key，继续分析 ticker。"
+              : "Sign in with Google and continue with your own key to keep analyzing tickers."}
           </p>
         </div>
         <Button
@@ -44,7 +48,7 @@ export function TrialGate({ status }: TrialGateProps) {
           onClick={() => void signIn("google")}
         >
           <KeyRound className="h-4 w-4" />
-          Sign in with Google
+          {isZh ? "使用 Google 登录" : "Sign in with Google"}
         </Button>
       </CardContent>
     </Card>

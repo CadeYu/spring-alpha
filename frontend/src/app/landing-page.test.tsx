@@ -49,6 +49,10 @@ describe("Landing page", () => {
           name: /更快读懂每一次财报/,
         }),
       ).toBeInTheDocument();
+      expect(screen.getByText("项目亮点")).toBeInTheDocument();
+      expect(screen.getByText("差异化")).toBeInTheDocument();
+      expect(screen.getByText("Agent 运行面板")).toBeInTheDocument();
+      expect(screen.getByText("消息与工具")).toBeInTheDocument();
     });
   });
 
@@ -115,7 +119,7 @@ describe("Landing page", () => {
       screen.getByLabelText(/enter ticker|输入股票代码/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText("输入股票代码 (如 AAPL, MSFT)"),
+      screen.getByPlaceholderText("输入股票代码 (如 AAPL, MSFT, TSLA)"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /analyze ticker|开始分析/i }),

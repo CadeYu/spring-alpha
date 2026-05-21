@@ -1,13 +1,22 @@
 import { Activity, Boxes, SearchCheck } from "lucide-react";
 
 import type { AnalysisReport, RagTelemetry } from "@/types/AnalysisReport";
+import {
+  buildRagEvalMetricCopy,
+  ragEvalDashboardDescription,
+  ragEvalDashboardReportCountLabel,
+  ragEvalDashboardStatusLabel,
+  ragEvalDashboardTitle,
+  type RagEvalLocale,
+} from "@/lib/ragEvalCopy";
 import { cn } from "@/lib/utils";
 
 type LiveRagMetric = {
+  key: string;
   label: string;
   value: string;
   detail: string;
-  tone: string;
+  tone: RagMetricTone;
 };
 
 const metricTone = {
@@ -17,13 +26,18 @@ const metricTone = {
   muted: "border-slate-700 bg-slate-950/70 text-slate-200",
 } as const;
 
+type RagMetricTone = keyof typeof metricTone;
+
 export function RagEvalDashboard({
   reports,
+  lang,
 }: {
   reports?: AnalysisReport[];
+  lang: RagEvalLocale;
 }) {
+  const locale = lang;
   const telemetry = aggregateRagTelemetry(reports ?? []);
-  const metrics = buildLiveRagMetrics(telemetry);
+  const metrics = buildLiveRagMetrics(telemetry, locale);
 
   return (
     <section
@@ -38,23 +52,25 @@ export function RagEvalDashboard({
               id="rag-live-telemetry-title"
               className="text-lg font-semibold text-emerald-300"
             >
-              Live RAG Telemetry
+              {ragEvalDashboardTitle(locale)}
             </h2>
           </div>
           <p className="max-w-2xl text-sm leading-6 text-slate-400">
-            Current run evidence telemetry from retrieval records. No offline benchmark
-            scores are shown here.
+            {ragEvalDashboardDescription(locale)}
           </p>
         </div>
 
         <div className="grid min-w-[240px] grid-cols-1 gap-2 text-xs text-slate-400">
           <span className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2">
             <Activity className="h-3.5 w-3.5 text-cyan-300" />
-            {telemetry ? `${telemetry.reportCount} reports` : "Not reported"}
+            {ragEvalDashboardReportCountLabel(
+              telemetry ? telemetry.reportCount : null,
+              locale,
+            )}
           </span>
           <span className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2">
             <Boxes className="h-3.5 w-3.5 text-emerald-300" />
-            {telemetry ? "Live run data" : "Waiting for retrieval records"}
+            {ragEvalDashboardStatusLabel(Boolean(telemetry), locale)}
           </span>
         </div>
       </div>
@@ -63,7 +79,10 @@ export function RagEvalDashboard({
         {metrics.map((metric) => (
           <div
             key={metric.label}
-            className={cn("min-h-[112px] rounded-md border p-3", metric.tone)}
+            className={cn(
+              "min-h-[112px] rounded-md border p-3",
+              metricTone[metric.tone],
+            )}
           >
             <p className="text-[11px] uppercase leading-tight tracking-widest opacity-75">
               {metric.label}
@@ -117,51 +136,39 @@ export function aggregateRagTelemetry(
 
 function buildLiveRagMetrics(
   telemetry: AggregatedRagTelemetry | null,
+  locale: RagEvalLocale,
 ): LiveRagMetric[] {
-  return [
-    {
-      label: "Evidence Retrieved",
-      value: telemetry ? String(telemetry.evidenceRetrieved) : "N/A",
-      tone: metricTone.strong,
-      detail: "Filing evidence chunks returned by retrieval.",
-    },
-    {
-      label: "Evidence Used",
-      value: telemetry ? String(telemetry.evidenceUsed) : "N/A",
-      tone: metricTone.stable,
-      detail: "Filing chunks kept in the evidence pack.",
-    },
-    {
-      label: "Metric Facts",
-      value: telemetry ? String(telemetry.metricFacts) : "N/A",
-      tone: metricTone.stable,
-      detail: "SEC or market facts available to the agent.",
-    },
-    {
-      label: "Sections Covered",
-      value: telemetry ? String(telemetry.sectionsCovered) : "N/A",
-      tone: metricTone.muted,
-      detail: "Distinct filing sections represented.",
-    },
-    {
-      label: "Retrieval Latency",
-      value: telemetry ? formatLatency(telemetry.retrievalLatencyMs) : "N/A",
-      tone: metricTone.muted,
-      detail: "Total retrieval tool latency.",
-    },
-    {
-      label: "Empty Retrieval",
-      value: telemetry ? (telemetry.emptyRetrieval ? "Yes" : "No") : "N/A",
-      tone: telemetry?.emptyRetrieval ? metricTone.caution : metricTone.strong,
-      detail: "Whether any retrieval step returned no evidence.",
-    },
-    {
-      label: "Evidence Pack Size",
-      value: telemetry ? formatBytes(telemetry.evidencePackBytes) : "N/A",
-      tone: metricTone.muted,
-      detail: "Serialized evidence payload size.",
-    },
-  ];
+  return buildRagEvalMetricCopy(locale).map((metric) => ({
+    ...metric,
+    value: telemetry ? formatMetricValue(metric.key, telemetry) : "N/A",
+    tone:
+      metric.key === "emptyRetrieval" && telemetry?.emptyRetrieval
+        ? "caution"
+        : metric.tone,
+  }));
+}
+
+function formatMetricValue(
+  key: LiveRagMetric["key"],
+  telemetry: AggregatedRagTelemetry,
+) {
+  switch (key) {
+    case "evidenceRetrieved":
+      return String(telemetry.evidenceRetrieved);
+    case "evidenceUsed":
+      return String(telemetry.evidenceUsed);
+    case "metricFacts":
+      return String(telemetry.metricFacts);
+    case "sectionsCovered":
+      return String(telemetry.sectionsCovered);
+    case "retrievalLatency":
+      return formatLatency(telemetry.retrievalLatencyMs);
+    case "emptyRetrieval":
+      return telemetry.emptyRetrieval ? "Yes" : "No";
+    case "evidencePackSize":
+      return formatBytes(telemetry.evidencePackBytes);
+  }
+  return "N/A";
 }
 
 function formatLatency(value: number) {

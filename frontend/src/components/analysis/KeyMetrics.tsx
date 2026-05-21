@@ -9,6 +9,10 @@ import {
 import { formatFinancialValue } from "@/lib/utils";
 import type { FinancialFactsSnapshot } from "@/types/FinancialFacts";
 import { DashboardModeNotice } from "@/components/financial/dashboard-mode-notice";
+import {
+  formatMetricInterpretation,
+  formatMetricName,
+} from "@/lib/reportMetricCopy";
 
 interface KeyMetricsProps {
   metrics: MetricInsight[];
@@ -106,7 +110,7 @@ export function KeyMetrics({
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <h3 className="text-sm font-medium text-slate-400">
-                      {metric.metricName}
+                      {formatMetricName(metric.metricName, lang as "zh" | "en")}
                     </h3>
                     <p className="text-2xl font-bold text-emerald-400 mt-1">
                       {formatFinancialValue(
@@ -133,7 +137,10 @@ export function KeyMetrics({
                   </div>
                 </div>
                 <p className="text-sm text-slate-400 mt-3">
-                  {metric.interpretation}
+                  {formatMetricInterpretation(
+                    metric.interpretation,
+                    lang as "zh" | "en",
+                  )}
                 </p>
               </CardContent>
             </Card>

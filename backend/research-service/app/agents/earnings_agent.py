@@ -279,13 +279,25 @@ def _evidence_pack_summary(evidence_pack: dict[str, Any]) -> dict[str, Any]:
 
 
 def _initial_earnings_instruction(request: AgentRequest, state: AgentState) -> str:
+    if _is_zh_locale(request.language):
+        return (
+            f"请分析 {state.ticker} 的最新财报。\n"
+            "先调用 get_company_facts。然后调用 search_metric_evidence 获取 revenue、"
+            "gross margin 和 operating income。然后调用一次 build_evidence_pack，聚焦经营结果驱动因素。"
+            "工具结果返回后，只输出最终 JSON。\n"
+            "最终 JSON 必须严格匹配这个结构：\n"
+            f"{json.dumps(synthesize_latest_earnings_payload(request.language), ensure_ascii=True)}\n"
+            "只能使用工具返回的 source_ids。Company Profile 应该简洁，并基于 company facts "
+            "或 market profile facts，不要基于 RAG snippets。\n"
+            f"Language: {request.language}"
+        )
     return (
         f"Analyze latest earnings for {state.ticker}.\n"
         "First call get_company_facts. Then call search_metric_evidence for revenue, "
         "gross margin, and operating income. Then call build_evidence_pack once for "
         "operating result drivers. After tool results, return final JSON only.\n"
         "Final JSON must match this shape exactly:\n"
-        f"{json.dumps(synthesize_latest_earnings_payload(), ensure_ascii=True)}\n"
+        f"{json.dumps(synthesize_latest_earnings_payload(request.language), ensure_ascii=True)}\n"
         "Use only source_ids returned by tools. Company Profile should be concise and "
         "based on company facts or market profile facts, not RAG snippets.\n"
         f"Language: {request.language}"
@@ -293,6 +305,22 @@ def _initial_earnings_instruction(request: AgentRequest, state: AgentState) -> s
 
 
 def _final_earnings_instruction(request: AgentRequest, state: AgentState) -> str:
+    if _is_zh_locale(request.language):
+        return (
+            f"请基于 evidence context 为 {state.ticker} 写出最新财报报告 JSON。\n"
+            "只返回这些顶层 keys: company_profile, topline_verdict, "
+            "key_takeaways, financial_dashboard, driver_snapshot, risk_snapshot, claims。\n"
+            "写成投资备忘录，而不是指标复述。topline_verdict.summary 必须说明财报结论、"
+            "对投资者的意义，以及如果证据 mixed 时最强的反证。key_takeaways 必须回答发生了什么变化；"
+            "risk_snapshot 必须回答下季度需要观察什么，以及什么会改变结论。\n"
+            "company_profile 必须是基于 company facts 或 market profile facts 的简洁业务身份描述，"
+            "不能使用 filing risk snippets。使用简洁的一句话表达。不要把 schema label 或 placeholder "
+            "写进正文，包括 Evidence point, Company profile unavailable, KPI Strip, What Changed, "
+            "Watch Next 或 N/A。每个数组项必须使用 title 和 summary 字段，不要用 headline/body/item。"
+            "只使用 evidence context 里存在的 source_ids；不需要引用时使用 []。每个数组最多 2 项。\n"
+            "如果证据存在，financial_dashboard.metrics 应包含 Revenue, Gross Margin 和 Operating Income。\n"
+            f"Language: {request.language}"
+        )
     return (
         f"Write the latest earnings report JSON for {state.ticker} from the evidence context.\n"
         "Return exactly these top-level keys: company_profile, topline_verdict, "
@@ -313,6 +341,10 @@ def _final_earnings_instruction(request: AgentRequest, state: AgentState) -> str
         "when evidence exists.\n"
         f"Language: {request.language}"
     )
+
+
+def _is_zh_locale(language: str | None) -> bool:
+    return str(language or "").lower().startswith("zh")
 
 
 def _tool_prompt() -> ChatPromptTemplate:

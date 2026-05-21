@@ -1,6 +1,12 @@
 import logging
+from collections import OrderedDict
 from collections.abc import Callable
+from concurrent.futures import Future
+from hashlib import sha256
+from os import getenv
+from threading import Lock
 from time import perf_counter
+from typing import Any
 
 from fastapi import FastAPI
 
@@ -25,6 +31,9 @@ logger = logging.getLogger("uvicorn.error")
 
 AgentWorkflow = ResearchAgentWorkflow
 LlmClientFactory = Callable[[LlmProvider, str], LlmClient]
+_REQUEST_PIPELINE_CACHE: OrderedDict[str, Any] = OrderedDict()
+_REQUEST_PIPELINE_IN_FLIGHT: dict[str, Future[Any]] = {}
+_REQUEST_PIPELINE_CACHE_LOCK = Lock()
 
 
 def create_app(
@@ -105,22 +114,66 @@ def _workflow_for_request_filings(
 ) -> AgentWorkflow:
     if configured_workflow is not None:
         return configured_workflow
-    if not request.filings:
-        return ResearchAgentWorkflow(
-            tool_service=LlamaIndexResearchToolService(
-                build_production_rag_pipeline_from_env(),
-                facts_provider=facts_provider,
-            ),
-            llm_client=llm_client,
-        )
 
-    pipeline_started_at = perf_counter()
-    pipeline = build_production_rag_pipeline_from_env()
-    logger.info(
-        "agent_rag_pipeline_ready run_id=%s latency_ms=%s",
-        request.run_id,
-        _elapsed_ms(pipeline_started_at),
+    pipeline = _cached_request_pipeline(request)
+
+    return ResearchAgentWorkflow(
+        tool_service=LlamaIndexResearchToolService(pipeline, facts_provider=facts_provider),
+        llm_client=llm_client,
+        rag_pipeline=pipeline,
     )
+
+
+def _cached_request_pipeline(request: AgentRequest):
+    cache_key = _request_pipeline_cache_key(request)
+    with _REQUEST_PIPELINE_CACHE_LOCK:
+        pipeline = _REQUEST_PIPELINE_CACHE.get(cache_key)
+        if pipeline is None:
+            future = _REQUEST_PIPELINE_IN_FLIGHT.get(cache_key)
+            if future is None:
+                future = Future()
+                _REQUEST_PIPELINE_IN_FLIGHT[cache_key] = future
+                builder = True
+            else:
+                builder = False
+        else:
+            _REQUEST_PIPELINE_CACHE.move_to_end(cache_key)
+            return pipeline
+
+    if not builder:
+        return future.result()
+
+    try:
+        pipeline_started_at = perf_counter()
+        pipeline = build_production_rag_pipeline_from_env()
+        if request.filings:
+            _ingest_request_filings(request, pipeline)
+        logger.info(
+            "agent_rag_pipeline_ready run_id=%s latency_ms=%s",
+            request.run_id,
+            _elapsed_ms(pipeline_started_at),
+        )
+        with _REQUEST_PIPELINE_CACHE_LOCK:
+            _store_request_pipeline(cache_key, pipeline)
+            future.set_result(pipeline)
+            _REQUEST_PIPELINE_IN_FLIGHT.pop(cache_key, None)
+        return pipeline
+    except Exception as error:
+        with _REQUEST_PIPELINE_CACHE_LOCK:
+            future.set_exception(error)
+            _REQUEST_PIPELINE_IN_FLIGHT.pop(cache_key, None)
+        raise
+
+
+def _store_request_pipeline(cache_key: str, pipeline: Any) -> None:
+    _REQUEST_PIPELINE_CACHE[cache_key] = pipeline
+    _REQUEST_PIPELINE_CACHE.move_to_end(cache_key)
+    max_entries = _request_pipeline_cache_max_entries()
+    while len(_REQUEST_PIPELINE_CACHE) > max_entries:
+        _REQUEST_PIPELINE_CACHE.popitem(last=False)
+
+
+def _ingest_request_filings(request: AgentRequest, pipeline) -> None:
     for filing in request.filings:
         ingest_started_at = perf_counter()
         pipeline.ingest_filing(
@@ -139,11 +192,34 @@ def _workflow_for_request_filings(
             len(filing.text),
             _elapsed_ms(ingest_started_at),
         )
-    return ResearchAgentWorkflow(
-        tool_service=LlamaIndexResearchToolService(pipeline, facts_provider=facts_provider),
-        llm_client=llm_client,
-        rag_pipeline=pipeline,
-    )
+
+
+def _request_pipeline_cache_key(request: AgentRequest) -> str:
+    filing_fingerprint = sha256()
+    for filing in request.filings:
+        filing_fingerprint.update(filing.ticker.upper().encode("utf-8"))
+        filing_fingerprint.update(b"\0")
+        filing_fingerprint.update(filing.filing_type.encode("utf-8"))
+        filing_fingerprint.update(b"\0")
+        filing_fingerprint.update((filing.filing_date or "").encode("utf-8"))
+        filing_fingerprint.update(b"\0")
+        filing_fingerprint.update((filing.accession_number or "").encode("utf-8"))
+        filing_fingerprint.update(b"\0")
+        filing_fingerprint.update(filing.text.encode("utf-8"))
+        filing_fingerprint.update(b"\0")
+    return f"{request.ticker.upper()}:{filing_fingerprint.hexdigest()}"
+
+
+def _request_pipeline_cache_max_entries() -> int:
+    raw_value = getenv("AGENT_PIPELINE_CACHE_MAX_ENTRIES", "3")
+    try:
+        return max(1, int(raw_value))
+    except ValueError:
+        logger.warning(
+            "Invalid AGENT_PIPELINE_CACHE_MAX_ENTRIES=%s, using default of 3",
+            raw_value,
+        )
+        return 3
 
 
 def _elapsed_ms(started_at: float) -> int:

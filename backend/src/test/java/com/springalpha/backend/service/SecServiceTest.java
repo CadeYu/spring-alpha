@@ -5,7 +5,13 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -234,6 +240,75 @@ class SecServiceTest {
                 () -> service.getLatestFilingContent("XYZ").block());
 
         assertTrue(ex.getMessage().contains("not mapped in SEC company_tickers.json"));
+    }
+
+    @Test
+    void getLatestFilingContentDedupesConcurrentRequestsForTheSameTicker() throws InterruptedException {
+        CountDownLatch fetchEntered = new CountDownLatch(1);
+        CountDownLatch releaseFetch = new CountDownLatch(1);
+        AtomicInteger fetchCount = new AtomicInteger();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        SecService service = new SecService(new NoopFinancialDataService() {
+            @Override
+            public boolean isSupported(String ticker) {
+                return true;
+            }
+        }) {
+            @Override
+            String findLatestFilingIndexUrl(String ticker, String[] docTypes) {
+                return "https://www.sec.gov/Archives/edgar/data/1318605/0001/0001-index.htm";
+            }
+
+            @Override
+            String findPrimaryDocumentUrl(String indexUrl, String[] acceptedTypes) {
+                return "https://www.sec.gov/Archives/edgar/data/1318605/0001/tsla-20260331.htm";
+            }
+
+            @Override
+            String fetchAndCleanHtml(String docUrl) throws IOException {
+                fetchCount.incrementAndGet();
+                fetchEntered.countDown();
+                try {
+                    releaseFetch.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException(e);
+                }
+                return "clean filing content";
+            }
+        };
+
+        CopyOnWriteArrayList<String> results = new CopyOnWriteArrayList<>();
+
+        Thread first = new Thread(() -> {
+            try {
+                results.add(service.getLatestFilingContent("AAPL").block());
+            } catch (Throwable t) {
+                failure.set(t);
+            }
+        });
+        Thread second = new Thread(() -> {
+            try {
+                results.add(service.getLatestFilingContent("AAPL").block());
+            } catch (Throwable t) {
+                failure.set(t);
+            }
+        });
+
+        first.start();
+        assertTrue(fetchEntered.await(5, TimeUnit.SECONDS));
+        second.start();
+        releaseFetch.countDown();
+
+        first.join(5000);
+        second.join(5000);
+
+        assertNull(failure.get(), () -> "Unexpected failure: " + failure.get());
+        assertEquals(2, results.size());
+        assertEquals("clean filing content", results.get(0));
+        assertEquals("clean filing content", results.get(1));
+        assertEquals(1, fetchCount.get());
     }
 
     private static class NoopFinancialDataService implements FinancialDataService {

@@ -18,6 +18,10 @@ from app.contracts.agent import (
 )
 from app.contracts.report import CitationStatus
 from app.contracts.research_task import ResearchTaskType
+from scripts.write_live_agent_quality_artifact import (
+    quality_flag_evidence_for_report,
+    quality_flags_for_report,
+)
 
 
 class CapturingLlmClient:
@@ -1698,6 +1702,51 @@ def test_cash_flow_synthesizer_replaces_non_extracted_metrics_from_facts() -> No
     assert report.task_sections.cash_metrics[0].name == "Operating Cash Flow"
     assert report.task_sections.cash_metrics[0].value == "$29.0B"
     assert report.task_sections.cash_metrics[0].evidence_refs[0].source_id == "cash_src_1"
+
+
+def test_cash_flow_synthesizer_rewrites_placeholder_availability_language() -> None:
+    state = state_with_cash_flow_evidence()
+
+    report = build_cash_flow_report_from_payload(
+        cash_flow_request(),
+        state,
+        {
+            "cash_quality_verdict": {
+                "headline": "Cash conversion remains strong",
+                "earnings_backed_by_cash": "yes",
+                "summary": "Cash conversion remains strong.",
+            },
+            "cash_metrics": [],
+            "capital_allocation": {
+                "capex": [
+                    {
+                        "title": "Capex",
+                        "summary": (
+                            "Capital expenditures data was not available in the "
+                            "retrieved evidence."
+                        ),
+                        "source_ids": ["cash_src_1"],
+                        "citation_status": "partial",
+                    }
+                ],
+                "buybacks": [],
+                "dividends": [],
+                "debt": [],
+                "liquidity": [],
+            },
+            "allocation_discipline": [],
+            "red_flags": [],
+            "claims": [],
+        },
+    )
+
+    report_json = report.model_dump(mode="json")
+
+    assert report.task_sections.capital_allocation.capex[0].summary == (
+        "Capital expenditures coverage remains thin in the retrieved sources."
+    )
+    assert "placeholder_text" not in quality_flags_for_report(report_json)
+    assert "placeholder_text" not in quality_flag_evidence_for_report(report_json)
 
 
 def test_cash_flow_prompt_requires_separate_capital_allocation_categories() -> None:

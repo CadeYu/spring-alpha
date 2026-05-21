@@ -404,6 +404,32 @@ def _final_prompt() -> ChatPromptTemplate:
 
 
 def _business_driver_instruction(request: AgentRequest, state: AgentState) -> str:
+    if _is_zh_locale(request.language):
+        return (
+            f"请分析 {state.ticker} 的业务驱动因素。\n"
+            "Required workflow:\n"
+            "1. 调用 get_company_facts 获取 company profile 和核心 revenue facts。\n"
+            "2. 调用 search_metric_evidence 获取 revenue、segment revenue 和任何可用的 driver KPIs。\n"
+            "3. 调用 build_evidence_pack 获取 product、segment、geography、demand、pricing、"
+            "customer 和 strategy 证据。\n"
+            "4. 在 filing 或 metric evidence 已存在后调用 get_business_signals。\n"
+            "Final JSON shape:\n"
+            "{"
+            '"driver_thesis":{"headline":"...","durability":"durable|mixed|temporary|unclear",'
+            '"summary":"..."},'
+            '"driver_map":{"product":[],"segment":[],"geography":[],"demand":[],"pricing":[],'
+            '"customer":[],"strategy":[]},'
+            '"positive_signals":[{"title":"...","summary":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"}],'
+            '"negative_signals":[{"title":"...","summary":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"}],'
+            '"watchlist":["..."],'
+            '"claims":[{"text":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"}]'
+            "}\n"
+            "只能使用工具返回的 source_ids。"
+            f"Language: {request.language}"
+        )
     return (
         f"Analyze business drivers for {state.ticker}.\n"
         "Required workflow:\n"
@@ -433,6 +459,21 @@ def _business_driver_instruction(request: AgentRequest, state: AgentState) -> st
 
 
 def _final_business_driver_instruction(request: AgentRequest, state: AgentState) -> str:
+    if _is_zh_locale(request.language):
+        return (
+            f"请基于 evidence context 为 {state.ticker} 写出 business driver report JSON。\n"
+            "只返回这些顶层 keys: driver_thesis, driver_map, positive_signals, "
+            "negative_signals, watchlist, claims。\n"
+            "写成投资备忘录，而不是简单复述。driver_thesis.summary 必须说明经营结论、"
+            "对投资者的意义，以及如果证据 mixed 时最强的反证。watchlist 必须包括下季度什么变化会改变结论。\n"
+            "driver_map 必须包含 product, segment, geography, demand, pricing, customer, "
+            "strategy arrays。如果证据存在，至少覆盖四个 driver_map 视角；没有证据的视角保持空数组，不要编造事实。"
+            "positive_signals 应是偏 bullish 的证据；negative_signals 应是偏 bearish 的证据或反证。"
+            "不要把 schema labels 或 placeholders 写进正文，包括 Evidence point, Business driver thesis, "
+            "driver_map, positive_signals 或 N/A。每个 section 都应解释结论、投资者相关性，以及重要的证据限制或反证。"
+            "每个数组最多 2 个简洁条目。任何引用证据的分析点都只能使用 evidence context 中存在的 source_ids。\n"
+            f"Language: {request.language}"
+        )
     return (
         f"Write the business driver report JSON for {state.ticker} from the evidence context.\n"
         "Return exactly these top-level keys: driver_thesis, driver_map, positive_signals, "
@@ -453,3 +494,7 @@ def _final_business_driver_instruction(request: AgentRequest, state: AgentState)
         "present in evidence context.\n"
         f"Language: {request.language}"
     )
+
+
+def _is_zh_locale(language: str | None) -> bool:
+    return str(language or "").lower().startswith("zh")

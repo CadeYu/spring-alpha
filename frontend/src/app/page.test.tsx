@@ -104,10 +104,10 @@ function openAgentReport(name: RegExp) {
 }
 
 function submitTicker(ticker = "AAPL") {
-  fireEvent.change(screen.getByPlaceholderText(/enter ticker/i), {
+  fireEvent.change(screen.getByPlaceholderText(/enter ticker|输入股票代码/i), {
     target: { value: ticker },
   });
-  fireEvent.click(screen.getByRole("button", { name: /analyze/i }));
+  fireEvent.click(screen.getByRole("button", { name: /analyze|开始分析/i }));
 }
 
 describe("Home page", () => {
@@ -222,6 +222,18 @@ describe("Home page", () => {
     ).toBeInTheDocument();
   });
 
+  it("inherits the landing locale when opening the app", async () => {
+    window.localStorage.setItem("spring-alpha-landing-locale", "zh");
+    vi.stubGlobal("fetch", vi.fn());
+
+    render(<Home />);
+
+    await waitFor(() => {
+      expect(screen.getByText("接入你的账号")).toBeInTheDocument();
+      expect(screen.getByText("使用自己的 Key")).toBeInTheDocument();
+    });
+  });
+
   it("keeps degraded source metadata hidden from the quarterly-only analysis stream", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -265,7 +277,7 @@ describe("Home page", () => {
     render(<Home />);
     submitTicker("TSLA");
 
-    openAgentReport(/latest earnings readout/i);
+    openAgentReport(/latest earnings readout|最新财报速读/i);
 
     expect(
       await screen.findByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
@@ -317,9 +329,9 @@ describe("Home page", () => {
     render(<Home />);
     submitTicker("AAPL");
 
-    openAgentReport(/latest earnings readout/i);
+    openAgentReport(/latest earnings readout|最新财报速读/i);
 
-    openAgentReport(/latest earnings readout/i);
+    openAgentReport(/latest earnings readout|最新财报速读/i);
 
     expect(
       await screen.findByText("Apple Inc. · Q1 2026 · 2026-02-01"),
@@ -509,7 +521,7 @@ describe("Home page", () => {
     render(<Home />);
     submitTicker("TSLA");
 
-    openAgentReport(/latest earnings readout/i);
+    openAgentReport(/latest earnings readout|最新财报速读/i);
     expect(await screen.findByText("Earnings agent verdict")).toBeInTheDocument();
     openAgentReport(/business driver deep dive/i);
     expect(await screen.findByText("Business driver agent thesis")).toBeInTheDocument();
@@ -832,7 +844,7 @@ describe("Home page", () => {
     expect(screen.getByText("Cash Flow & Capital Allocation")).toBeInTheDocument();
 
     submitTicker();
-    openAgentReport(/latest earnings readout/i);
+    openAgentReport(/latest earnings readout|最新财报速读/i);
 
     expect(
       await screen.findByText("Apple Inc. · Q1 2026 · 2026-02-01"),
@@ -1184,7 +1196,7 @@ describe("Home page", () => {
     render(<Home />);
     submitTicker();
 
-    openAgentReport(/latest earnings readout/i);
+    openAgentReport(/latest earnings readout|最新财报速读/i);
 
     expect(
       await screen.findByText("Typed latest earnings thesis"),
@@ -1205,12 +1217,109 @@ describe("Home page", () => {
     expect(screen.getByText("Typed revenue metric")).toBeInTheDocument();
     expect(screen.getByText("$219.7B")).toBeInTheDocument();
     expect(screen.queryByText("219659000000")).not.toBeInTheDocument();
+    expect(screen.queryByText("Revenue")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reported metric.")).not.toBeInTheDocument();
     expect(screen.getByText("Typed services driver")).toBeInTheDocument();
     expect(screen.getByText("Typed risk snapshot")).toBeInTheDocument();
     expect(
       screen.queryByText(/Waiting for the model/i),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/1970/i)).not.toBeInTheDocument();
+  });
+
+  it("localizes metric strip names and interpretations in chinese reports", async () => {
+    window.localStorage.setItem("spring-alpha-landing-locale", "zh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Quarterly report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          taskSections: {
+            schemaVersion: "task_sections.v1",
+            taskType: "latest_earnings_readout",
+            coverage: {
+              status: "complete",
+              missingSections: [],
+              evidenceCount: 1,
+            },
+            latestEarnings: {
+              toplineVerdict: {
+                headline: "Typed latest earnings thesis",
+                verdict: "mixed",
+                summary: "Typed latest earnings summary.",
+              },
+              keyTakeaways: [],
+              financialDashboard: {
+                metrics: [
+                  {
+                    name: "Revenue",
+                    value: 219659000000,
+                    period: "latest quarter",
+                    interpretation: "Reported metric.",
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                  {
+                    name: "Gross Margin",
+                    value: "46.1%",
+                    period: "latest quarter",
+                    interpretation: "Revenue increased.",
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                  {
+                    name: "Operating Income",
+                    value: "$71.5B",
+                    period: "latest quarter",
+                    interpretation: "Capex remained disciplined.",
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                ],
+                chartFocus: ["revenue"],
+              },
+              driverSnapshot: [],
+              riskSnapshot: [],
+            },
+          },
+          metadata: {
+            modelName: "python-research-service",
+            language: "zh",
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker();
+    openAgentReport(/latest earnings readout|最新财报速读/i);
+
+    expect(await screen.findByText("营收")).toBeInTheDocument();
+    expect(screen.getByText("毛利率")).toBeInTheDocument();
+    expect(screen.getByText("营业利润")).toBeInTheDocument();
+    expect(screen.getByText("已披露指标。")).toBeInTheDocument();
+    expect(screen.getByText("营收增长。")).toBeInTheDocument();
+    expect(screen.getByText("资本开支保持克制。")).toBeInTheDocument();
+    expect(screen.queryByText("Revenue")).not.toBeInTheDocument();
+    expect(screen.queryByText("Gross Margin")).not.toBeInTheDocument();
+    expect(screen.queryByText("Operating Income")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reported metric.")).not.toBeInTheDocument();
   });
 
   it("renders agent messages and tools in the side timeline", async () => {
@@ -1294,10 +1403,10 @@ describe("Home page", () => {
     render(<Home />);
     submitTicker();
 
-    openAgentReport(/latest earnings readout/i);
+    openAgentReport(/latest earnings readout|最新财报速读/i);
 
     expect(await screen.findByText("Typed thesis")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /messages and tools/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /Messages & Tools/i })).toBeInTheDocument();
     expect(screen.getAllByText("Messages & Tools").length).toBeGreaterThan(0);
     expect(screen.getByText("test-model: 1416 in, 53 out")).toBeInTheDocument();
     expect(
@@ -1306,6 +1415,106 @@ describe("Home page", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("Agent Progress")).not.toBeInTheDocument();
+  });
+
+  it("translates the app timeline label for zh users", async () => {
+    window.localStorage.setItem("spring-alpha-landing-locale", "zh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Agent completed.",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          taskSections: {
+            schemaVersion: "task_sections.v1",
+            taskType: "latest_earnings_readout",
+            coverage: {
+              status: "complete",
+              missingSections: [],
+              evidenceCount: 1,
+            },
+            latestEarnings: {
+              toplineVerdict: {
+                headline: "Typed thesis",
+                verdict: "mixed",
+                summary: "Typed summary.",
+              },
+              keyTakeaways: [],
+              financialDashboard: {
+                metrics: [],
+                chartFocus: [],
+              },
+              driverSnapshot: [],
+              riskSnapshot: [],
+            },
+          },
+          metadata: {
+            modelName: "python-research-service",
+            language: "zh",
+            agentEvents: [
+              {
+                phase: "build_evidence_plan",
+                status: "ok",
+                summary: "Earnings agent selected the required evidence tools.",
+                eventKind: "reasoning",
+                agentName: "Earnings Analyst",
+                modelName: "test-model",
+                usage: {
+                  prompt_tokens: 1416,
+                  completion_tokens: 53,
+                },
+                latencyMs: 1000,
+              },
+              {
+                phase: "retrieve_evidence",
+                status: "ok",
+                summary: "Collected company facts for business drivers.",
+                eventKind: "tool",
+                agentName: "Earnings Analyst",
+                toolName: "get_company_facts",
+                toolInput: {
+                  metrics: ["revenue"],
+                  period: "latest_quarter",
+                },
+                latencyMs: 2000,
+              },
+            ],
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker();
+
+    openAgentReport(/latest earnings readout|最新财报速读/i);
+
+    expect(await screen.findByText("Typed thesis")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /消息与工具/i })).toBeInTheDocument();
+    expect(screen.getByText("消息与工具")).toBeInTheDocument();
+    expect(screen.queryByText("Messages & Tools")).not.toBeInTheDocument();
+    expect(screen.getByText("推理")).toBeInTheDocument();
+    expect(screen.getByText("工具")).toBeInTheDocument();
+    expect(
+      screen.getByText("test-model: 1416 输入，53 输出"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'get_company_facts: {"metrics":["revenue"],"period":"latest_quarter"}',
+      ),
+    ).toBeInTheDocument();
   });
 
   it("aggregates messages and tools from every completed agent by default", async () => {
@@ -1670,6 +1879,65 @@ describe("Home page", () => {
     expect(screen.queryByText("hard_msft_semantic_platform_driver")).not.toBeInTheDocument();
   });
 
+  it("renders zh RAG telemetry copy in the diagnostics panel", async () => {
+    window.localStorage.setItem("spring-alpha-landing-locale", "zh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          taskSections: latestTaskSections("Earnings telemetry thesis"),
+          ragTelemetry: {
+            evidenceRetrieved: 3,
+            evidenceUsed: 2,
+            metricFacts: 7,
+            sectionsCovered: 4,
+            retrievalLatencyMs: 1280,
+            emptyRetrieval: false,
+            evidencePackBytes: 6144,
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker();
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) =>
+          String(input).includes("/api/sec/analyze/AAPL"),
+        ).length,
+      ).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /开发者诊断/i }),
+    );
+
+    expect(screen.getByText("实时 RAG 遥测")).toBeInTheDocument();
+    expect(screen.getByText("已检索证据")).toBeInTheDocument();
+    expect(screen.getByText("已使用证据")).toBeInTheDocument();
+    expect(screen.getByText("指标事实")).toBeInTheDocument();
+    expect(screen.getByText("覆盖章节")).toBeInTheDocument();
+    expect(screen.getByText("检索延迟")).toBeInTheDocument();
+    expect(screen.getByText("空检索")).toBeInTheDocument();
+    expect(screen.getByText("证据包大小")).toBeInTheDocument();
+    expect(screen.queryByText("Live RAG Telemetry")).not.toBeInTheDocument();
+    expect(screen.queryByText("Evidence Retrieved")).not.toBeInTheDocument();
+  });
+
   it("submits the live input value instead of falling back to the stale default ticker", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -1837,6 +2105,155 @@ describe("Home page", () => {
     );
   });
 
+  it("starts all three research agent requests before the first one resolves", async () => {
+    const deferredResponses = [
+      createDeferredResponse(),
+      createDeferredResponse(),
+      createDeferredResponse(),
+    ];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const taskType = new URL(`http://test${url}`).searchParams.get(
+        "taskType",
+      );
+      const responseIndex =
+        taskType === "business_driver_deep_dive"
+          ? 1
+          : taskType === "cash_flow_capital_allocation"
+            ? 2
+            : 0;
+      return deferredResponses[responseIndex].promise;
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker("AAPL");
+
+    await waitFor(() => {
+      const analyzeCalls = fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("/api/sec/analyze/AAPL"),
+      );
+      expect(analyzeCalls).toHaveLength(3);
+    });
+
+    deferredResponses[0].resolve(
+      createSseResponse([
+        {
+          executiveSummary: "Latest earnings report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          taskSections: latestTaskSections("Earnings agent verdict"),
+        },
+      ]),
+    );
+    deferredResponses[1].resolve(
+      createSseResponse([
+        {
+          executiveSummary: "Business driver report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          taskSections: {
+            schemaVersion: "task_sections.v1",
+            taskType: "business_driver_deep_dive",
+            coverage: {
+              status: "complete",
+              missingSections: [],
+              evidenceCount: 1,
+            },
+            businessDriver: {
+              driverThesis: {
+                headline: "Business driver agent thesis",
+                durability: "durable",
+                summary: "Business driver agent summary.",
+              },
+              driverMap: {
+                product: [],
+                segment: [],
+                geography: [],
+                demand: [],
+                pricing: [],
+                customer: [],
+                strategy: [],
+              },
+              positiveSignals: [],
+              negativeSignals: [],
+              watchlist: [],
+            },
+          },
+        },
+      ]),
+    );
+    deferredResponses[2].resolve(
+      createSseResponse([
+        {
+          executiveSummary: "Cash flow report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          taskSections: {
+            schemaVersion: "task_sections.v1",
+            taskType: "cash_flow_capital_allocation",
+            coverage: {
+              status: "complete",
+              missingSections: [],
+              evidenceCount: 1,
+            },
+            cashFlowCapitalAllocation: {
+              cashQualityVerdict: {
+                headline: "Cash flow agent verdict",
+                earningsBackedByCash: "mixed",
+                summary: "Cash flow agent summary.",
+              },
+              cashMetrics: [],
+              capitalAllocation: {
+                capex: [],
+                buybacks: [],
+                dividends: [],
+                debt: [],
+                liquidity: [],
+              },
+              allocationDiscipline: [],
+              redFlags: [],
+            },
+          },
+        },
+      ]),
+    );
+
+    openAgentReport(/latest earnings readout|最新财报速读/i);
+    expect(await screen.findByText("Earnings agent verdict")).toBeInTheDocument();
+
+    openAgentReport(/business driver deep dive|业务驱动深挖/i);
+    expect(
+      await screen.findByText("Business driver agent thesis"),
+    ).toBeInTheDocument();
+
+    openAgentReport(/cash flow & capital allocation|现金流与资本配置/i);
+    expect(await screen.findByText("Cash flow agent verdict")).toBeInTheDocument();
+  });
+
   it("shows the login wall once the anonymous trial is already used", async () => {
     vi.stubGlobal("fetch", vi.fn());
     window.localStorage.removeItem("spring-alpha-siliconflow-key");
@@ -1905,7 +2322,11 @@ describe("Home page", () => {
       screen.getAllByText("Cash Flow & Capital Allocation").length,
     ).toBeGreaterThan(0);
     expect(screen.getAllByText("SiliconFlow").length).toBeGreaterThan(1);
-    expect(screen.getByText("Backend and agent running")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Backend and agent running|Waiting for agent output|Report chunk received/i,
+      ),
+    ).toBeInTheDocument();
 
     act(() => {
       deferred.resolve(

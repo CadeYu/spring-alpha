@@ -37,6 +37,10 @@ DEFAULT_SYNTHESIS_TIMEOUT_SECONDS = 5
 DEFAULT_SYNTHESIS_ATTEMPTS = 1
 
 
+def _is_zh_locale(language: str | None) -> bool:
+    return str(language or "").lower().startswith("zh")
+
+
 class _SynthesizedPoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -183,7 +187,7 @@ def synthesize_latest_earnings_report(
             provider=client.provider,
             model=request.llm_model,
             task_type=request.task_type,
-            system_prompt=_system_prompt(),
+            system_prompt=_system_prompt(request.language),
             user_prompt=_user_prompt(request, state, source_refs),
             state=state,
             timeout_seconds=_synthesis_timeout_seconds(),
@@ -260,7 +264,64 @@ def build_latest_earnings_report_from_payload(
     )
 
 
-def synthesize_latest_earnings_payload() -> dict[str, Any]:
+def synthesize_latest_earnings_payload(language: str = "en") -> dict[str, Any]:
+    if _is_zh_locale(language):
+        return {
+            "company_profile": {
+                "summary": "简洁的面向投资者的公司画像。",
+                "source_ids": [],
+                "citation_status": "unverified",
+            },
+            "topline_verdict": {
+                "headline": "有证据支撑的简要财报判断。",
+                "summary": "用一到两句话概括最新财报解读。",
+                "verdict": "mixed",
+            },
+            "key_takeaways": [
+                {
+                    "title": "关键要点",
+                    "summary": "有证据支撑的要点。",
+                    "source_ids": [],
+                    "citation_status": "unverified",
+                }
+            ],
+            "financial_dashboard": {
+                "metrics": [
+                    {
+                        "name": "Revenue",
+                        "value": "$0.0B",
+                        "period": "latest_quarter",
+                        "interpretation": "这个 KPI 的含义。",
+                        "source_ids": [],
+                        "citation_status": "unverified",
+                    }
+                ],
+                "chart_focus": ["revenue", "gross_margin", "operating_income"],
+            },
+            "driver_snapshot": [
+                {
+                    "title": "驱动因素",
+                    "summary": "有证据支撑的经营驱动。",
+                    "source_ids": [],
+                    "citation_status": "unverified",
+                }
+            ],
+            "risk_snapshot": [
+                {
+                    "title": "风险",
+                    "summary": "有证据支撑的风险。",
+                    "source_ids": [],
+                    "citation_status": "unverified",
+                }
+            ],
+            "claims": [
+                {
+                    "text": "有证据支撑的判断。",
+                    "source_ids": [],
+                    "citation_status": "unverified",
+                }
+            ],
+        }
     return {
         "company_profile": {
             "summary": "Concise investor-facing company profile.",
@@ -399,7 +460,7 @@ def synthesize_business_driver_report(
             provider=client.provider,
             model=request.llm_model,
             task_type=request.task_type,
-            system_prompt=_system_prompt(),
+            system_prompt=_system_prompt(request.language),
             user_prompt=_business_driver_prompt(request, state, source_refs),
             state=state,
             timeout_seconds=_synthesis_timeout_seconds(),
@@ -754,9 +815,40 @@ def _sanitize_user_text(value: str) -> str:
         text,
         flags=re.I,
     )
+    text = _rewrite_placeholder_availability_text(text)
     text = re.sub(r"\s{2,}", " ", text)
     text = re.sub(r"\s+([,.;:])", r"\1", text)
     return text.strip()
+
+
+def _rewrite_placeholder_availability_text(value: str) -> str:
+    text = value
+    replacements = (
+        (
+            re.compile(
+                r"\bdata was not available in the retrieved evidence\.?",
+                flags=re.I,
+            ),
+            "coverage remains thin in the retrieved sources.",
+        ),
+        (
+            re.compile(
+                r"\b(?:was|were) not available in the retrieved evidence\.?",
+                flags=re.I,
+            ),
+            "coverage remains thin in the retrieved sources.",
+        ),
+        (
+            re.compile(
+                r"\bnot available in the retrieved evidence\.?",
+                flags=re.I,
+            ),
+            "coverage remains thin in the retrieved sources.",
+        ),
+    )
+    for pattern, replacement in replacements:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 def _normalize_synthesized_point(point: object) -> object:
@@ -846,7 +938,7 @@ def synthesize_cash_flow_report(
             provider=client.provider,
             model=request.llm_model,
             task_type=request.task_type,
-            system_prompt=_system_prompt(),
+            system_prompt=_system_prompt(request.language),
             user_prompt=_cash_flow_prompt(request, state, source_refs),
             state=state,
             timeout_seconds=_synthesis_timeout_seconds(),
@@ -1232,8 +1324,8 @@ def synthesize_company_profile(
             provider=client.provider,
             model=request.llm_model,
             task_type=request.task_type,
-            system_prompt=_company_profile_system_prompt(),
-            user_prompt=_company_profile_user_prompt(state, business_summary),
+            system_prompt=_company_profile_system_prompt(request.language),
+            user_prompt=_company_profile_user_prompt(state, business_summary, request.language),
             state=state,
             timeout_seconds=2,
         ),
@@ -1249,7 +1341,13 @@ def synthesize_company_profile(
     )
 
 
-def _system_prompt() -> str:
+def _system_prompt(language: str = "en") -> str:
+    if _is_zh_locale(language):
+        return (
+            "你是一名金融研究报告综合器。只返回一个 JSON 对象。"
+            "只能使用提供的证据。不要展示思维链。"
+            "每个字段都必须严格匹配请求的 JSON schema。"
+        )
     return (
         "You are a financial research report synthesizer. Return one JSON object only. "
         "Use only the provided evidence. Do not include chain-of-thought. "
@@ -1274,14 +1372,23 @@ def _complete_company_profile_json(client: LlmClient, request: LlmRequest) -> Ll
         raise ReportSynthesisError(f"Company profile synthesis failed: {exc}") from exc
 
 
-def _company_profile_system_prompt() -> str:
+def _company_profile_system_prompt(language: str = "en") -> str:
+    if _is_zh_locale(language):
+        return (
+            "你撰写面向投资者的简洁公司画像。只返回一个 JSON 对象。"
+            "只能使用提供的公司事实。不要展示思维链。"
+        )
     return (
         "You write concise investor-facing company profiles. Return one JSON object only. "
         "Use only the provided company facts. Do not include chain-of-thought."
     )
 
 
-def _company_profile_user_prompt(state: AgentState, business_summary: str) -> str:
+def _company_profile_user_prompt(
+    state: AgentState,
+    business_summary: str,
+    language: str = "en",
+) -> str:
     facts = {
         key: value
         for key, value in state.evidence_memory.facts.items()
@@ -1300,12 +1407,22 @@ def _company_profile_user_prompt(state: AgentState, business_summary: str) -> st
             "description",
         }
     }
+    if _is_zh_locale(language):
+        return (
+            "请用 1-2 句话写一段面向投资者的公司画像。\n"
+            "只使用已提供的公司事实。\n"
+            "在信息可用时，说明业务身份、核心产品和主要市场。\n"
+            "不要写创始历史、总部、零售渠道，也不要展开成完整产品清单。\n"
+            '只返回 JSON: {"summary": "..."}。\n'
+            f"Ticker: {state.ticker}\n"
+            f"Facts: {_json_safe(facts)}\n"
+            f"Business summary: {business_summary}"
+        )
     return (
-        "Write a concise investor-facing company profile in 1-2 sentences.\n"
+        "Write a 1-2 sentence investor-facing company profile.\n"
         "Use only the provided company facts.\n"
-        "Mention business identity, core products, and primary markets when available.\n"
-        "Do not include founding history, headquarters, retail channels, or exhaustive "
-        "product lists.\n"
+        "When available, mention the business identity, core products, and primary markets.\n"
+        "Do not include founding history, headquarters, retail channels, or exhaustive product lists.\n"
         'Return JSON only: {"summary": "..."}.\n'
         f"Ticker: {state.ticker}\n"
         f"Facts: {_json_safe(facts)}\n"
@@ -1356,12 +1473,45 @@ def _business_driver_prompt(
     evidence_refs = _aliased_source_refs(source_refs)
     evidence_lines = _evidence_lines(evidence_refs, source_refs)
     allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
+    if _is_zh_locale(request.language):
+        return (
+            "请生成业务驱动深挖所需的 typed task sections。\n"
+            "只返回 JSON。凡是需要对象或数组的位置，不要用字符串代替。\n"
+            f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
+            "不要编造 source_ids。不要引用上面未列出的事实、概念或 node id。\n"
+            "请严格使用以下结构：\n"
+            "{\n"
+            '  "driver_thesis": {"headline": "...", "durability": '
+            '"durable|mixed|temporary|unclear", "summary": "..."},\n'
+            '  "driver_map": {"product": [], "segment": [], "geography": [], '
+            '"demand": [], "pricing": [], "customer": [], "strategy": []},\n'
+            '  "positive_signals": [{"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+            '  "negative_signals": [{"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+            '  "watchlist": ["..."],\n'
+            '  "claims": [{"text": "...", "source_ids": ["..."], '
+            '"citation_status": "supported|partial|missing|unverified"}]\n'
+            "}\n"
+            "driver_map 的每个分类都必须是 point 数组，每个 point 包含 title、summary、source_ids 和 citation_status。\n"
+            "所有 source_ids 都必须来自已提供的证据。\n"
+            "如果证据稀薄，也要保持同样的对象/数组结构，但文案要谨慎。\n"
+            "优先围绕经营驱动因素：产品、服务、分部、需求、定价、客户、渠道库存、组合和战略。\n"
+            "监管、合规、法律或市场风险证据应放在 risks、negative_signals 或 watchlist 中，除非完全没有经营驱动证据，否则不要把它们写成 driver_thesis 的主结论。\n"
+            f"Ticker: {state.ticker}\n"
+            f"Task: {request.task_type.value}\n"
+            f"Business signals: {_json_safe(state.evidence_memory.business_signals)}\n"
+            f"Coverage: status={state.coverage.status}; "
+            f"evidence_count={state.coverage.evidence_count}; "
+            f"citation_coverage={state.coverage.citation_coverage}\n"
+            "Evidence:\n" + "\n".join(evidence_lines)
+        )
     return (
-        "Generate typed business driver deep dive task sections.\n"
+        "Generate typed task sections for business driver deep dive.\n"
         "Return JSON only. Do not use strings where objects or arrays are required.\n"
         f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
-        "Never invent source_ids. Do not cite facts, concepts, or node ids not listed above.\n"
-        "Use exactly this shape:\n"
+        "Do not invent source_ids. Do not reference facts, concepts, or node ids that are not listed above.\n"
+        "Use this structure exactly:\n"
         "{\n"
         '  "driver_thesis": {"headline": "...", "durability": '
         '"durable|mixed|temporary|unclear", "summary": "..."},\n'
@@ -1375,15 +1525,11 @@ def _business_driver_prompt(
         '  "claims": [{"text": "...", "source_ids": ["..."], '
         '"citation_status": "supported|partial|missing|unverified"}]\n'
         "}\n"
-        "Each driver_map category value must be an array of points with title, summary, "
-        "source_ids, and citation_status.\n"
-        "Every source_ids value must come from provided evidence only.\n"
-        "If evidence is thin, still return the same object/array shape with cautious text.\n"
-        "Prioritize operating drivers: products, services, segments, demand, pricing, "
-        "customers, channel inventory, mix, and strategy.\n"
-        "Regulatory, compliance, legal, or market-risk evidence belongs in risks, "
-        "negative_signals, or watchlist and must not be the main driver_thesis "
-        "unless no operating-driver evidence is available.\n"
+        "Each driver_map category must be a point array, and each point must include title, summary, source_ids, and citation_status.\n"
+        "All source_ids must come from the evidence provided.\n"
+        "If evidence is sparse, keep the same object and array structure, but stay cautious in the wording.\n"
+        "Focus on operating drivers: products, services, segments, demand, pricing, customers, channel inventory, mix, and strategy.\n"
+        "Regulatory, compliance, legal, or market-risk evidence should live in risks, negative_signals, or watchlist unless there is no operating driver evidence at all.\n"
         f"Ticker: {state.ticker}\n"
         f"Task: {request.task_type.value}\n"
         f"Business signals: {_json_safe(state.evidence_memory.business_signals)}\n"
@@ -1402,12 +1548,48 @@ def _cash_flow_prompt(
     evidence_refs = _aliased_source_refs(source_refs)
     evidence_lines = _evidence_lines(evidence_refs, source_refs)
     allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
+    if _is_zh_locale(request.language):
+        return (
+            "请生成现金流与资本配置所需的 typed task sections。\n"
+            "只返回 JSON。凡是需要对象或数组的位置，不要用字符串代替。\n"
+            f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
+            "不要编造 source_ids。不要引用上面未列出的事实、概念或 node id。\n"
+            "请严格使用以下结构：\n"
+            "{\n"
+            '  "cash_quality_verdict": {"headline": "...", '
+            '"earnings_backed_by_cash": "yes|mixed|no|unclear", "summary": "..."},\n'
+            '  "cash_metrics": [{"name": "...", "value": "...", '
+            '"period": "latest_quarter", "interpretation": "...", "source_ids": ["..."], '
+            '"citation_status": "supported|partial|missing|unverified"}],\n'
+            '  "capital_allocation": {"capex": [], "buybacks": [], "dividends": [], '
+            '"debt": [], "liquidity": []},\n'
+            '  "allocation_discipline": [{"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+            '  "red_flags": [{"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+            '  "claims": [{"text": "...", "source_ids": ["..."], '
+            '"citation_status": "supported|partial|missing|unverified"}]\n'
+            "}\n"
+            "capital_allocation 的每个分类都必须是 point 数组，每个 point 包含 title、summary、source_ids 和 citation_status。\n"
+            "所有 source_ids 都必须来自已提供的证据。\n"
+            "如果证据稀薄，也要保持同样的对象/数组结构，但文案要谨慎。\n"
+            "当证据里出现相关内容时，要优先把经营现金流、资本开支、回购、分红、债务和流动性拆成独立的 capital_allocation 分类。\n"
+            "不要把所有资本回报相关证据都合并成 liquidity。\n"
+            f"Ticker: {state.ticker}\n"
+            f"Task: {request.task_type.value}\n"
+            f"Facts: {_json_safe(state.evidence_memory.facts)}\n"
+            f"Metric evidence: {_json_safe(state.evidence_memory.metric_evidence)}\n"
+            f"Coverage: status={state.coverage.status}; "
+            f"evidence_count={state.coverage.evidence_count}; "
+            f"citation_coverage={state.coverage.citation_coverage}\n"
+            "Evidence:\n" + "\n".join(evidence_lines)
+        )
     return (
-        "Generate typed cash flow and capital allocation task sections.\n"
+        "Generate typed task sections for cash flow and capital allocation.\n"
         "Return JSON only. Do not use strings where objects or arrays are required.\n"
         f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
-        "Never invent source_ids. Do not cite facts, concepts, or node ids not listed above.\n"
-        "Use exactly this shape:\n"
+        "Do not invent source_ids. Do not reference facts, concepts, or node ids that are not listed above.\n"
+        "Use this structure exactly:\n"
         "{\n"
         '  "cash_quality_verdict": {"headline": "...", '
         '"earnings_backed_by_cash": "yes|mixed|no|unclear", "summary": "..."},\n'
@@ -1423,14 +1605,11 @@ def _cash_flow_prompt(
         '  "claims": [{"text": "...", "source_ids": ["..."], '
         '"citation_status": "supported|partial|missing|unverified"}]\n'
         "}\n"
-        "Each capital_allocation category value must be an array of points with title, "
-        "summary, source_ids, and citation_status.\n"
-        "Every source_ids value must come from provided evidence only.\n"
-        "If evidence is thin, still return the same object/array shape with cautious text.\n"
-        "Prioritize operating cash flow, capital expenditures, share repurchases, "
-        "dividends, debt, and liquidity as separate capital_allocation categories when "
-        "the evidence contains those terms. Do not collapse all capital return evidence "
-        "into liquidity.\n"
+        "Each capital_allocation category must be a point array, and each point must include title, summary, source_ids, and citation_status.\n"
+        "All source_ids must come from the evidence provided.\n"
+        "If evidence is sparse, keep the same object and array structure, but stay cautious in the wording.\n"
+        "When relevant evidence exists, split operating cash flow, capex, buybacks, dividends, debt, and liquidity into separate capital_allocation categories.\n"
+        "Do not merge every capital return signal into liquidity.\n"
         f"Ticker: {state.ticker}\n"
         f"Task: {request.task_type.value}\n"
         f"Facts: {_json_safe(state.evidence_memory.facts)}\n"
@@ -1451,12 +1630,56 @@ def _user_prompt(
     evidence_lines = _evidence_lines(evidence_refs, source_refs)
     allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
     facts = state.evidence_memory.facts
+    if _is_zh_locale(request.language):
+        return (
+            "请生成最新财报分析所需的 typed JSON。\n"
+            "只返回 JSON。凡是需要对象或数组的位置，不要用字符串代替。\n"
+            f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
+            "不要编造 source_ids。不要引用上面未列出的事实、概念或 node id。\n"
+            "请严格使用以下结构：\n"
+            "{\n"
+            '  "company_profile": {"summary": "...", "source_ids": ["..."], '
+            '"citation_status": "supported|partial|missing|unverified"},\n'
+            '  "topline_verdict": {"headline": "...", "summary": "...", '
+            '"verdict": "positive|mixed|negative"},\n'
+            '  "key_takeaways": [{"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+            '  "financial_dashboard": {"metrics": [{"name": "...", "value": "...", '
+            '"period": "latest_quarter", "interpretation": "...", "source_ids": ["..."], '
+            '"citation_status": "supported|partial|missing|unverified"}], '
+            '"chart_focus": ["revenue"]},\n'
+            '  "driver_snapshot": [{"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+            '  "risk_snapshot": [{"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+            '  "claims": [{"text": "...", "source_ids": ["..."], '
+            '"citation_status": "supported|partial|missing|unverified"}]\n'
+            "}\n"
+            "company_profile 在可用时必须使用 Facts.business_summary、businessSummary、market_business_summary、marketBusinessSummary 或 description。\n"
+            "如果不存在这类 profile 事实，就把 company_profile 设为 null；不要从 filing snippet 或 risk-factor evidence 里硬拼公司画像。\n"
+            "每个 profile、point、metric 和 claim 都只能使用已提供证据中的 source_ids。\n"
+            "如果证据稀薄，也要保持同样的对象/数组结构，但文案要谨慎。\n"
+            "当证据稀薄时，请用保守措辞。\n"
+            "financial_dashboard.metrics 尽量使用 Metric evidence 里的数值。KPI 数值优先采用 SEC companyfacts 的 metric value，而不是 table snippet。\n"
+            "如果 Metric evidence 已经包含数值和单位，不要说这个 metric 没有被提取。\n"
+            "在 latest earnings 中，优先关注 revenue、gross margin 和 operating income。\n"
+            "把经营结果证据放进 topline_verdict、key_takeaways、financial_dashboard 和 driver_snapshot。\n"
+            "风险披露证据默认只放进 risk_snapshot，除非完全没有经营结果证据。\n"
+            f"Ticker: {state.ticker}\n"
+            f"Task: {request.task_type.value}\n"
+            f"Facts: {_json_safe(facts)}\n"
+            f"Metric evidence: {_json_safe(state.evidence_memory.metric_evidence)}\n"
+            f"Coverage: status={state.coverage.status}; "
+            f"evidence_count={state.coverage.evidence_count}; "
+            f"citation_coverage={state.coverage.citation_coverage}\n"
+            "Evidence:\n" + "\n".join(evidence_lines)
+        )
     return (
-        "Generate typed latest earnings task sections.\n"
+        "Generate typed JSON for the latest earnings task sections.\n"
         "Return JSON only. Do not use strings where objects or arrays are required.\n"
         f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
-        "Never invent source_ids. Do not cite facts, concepts, or node ids not listed above.\n"
-        "Use exactly this shape:\n"
+        "Do not invent source_ids. Do not reference facts, concepts, or node ids that are not listed above.\n"
+        "Use this structure exactly:\n"
         "{\n"
         '  "company_profile": {"summary": "...", "source_ids": ["..."], '
         '"citation_status": "supported|partial|missing|unverified"},\n'
@@ -1475,21 +1698,16 @@ def _user_prompt(
         '  "claims": [{"text": "...", "source_ids": ["..."], '
         '"citation_status": "supported|partial|missing|unverified"}]\n'
         "}\n"
-        "Company profile must use Facts.business_summary, businessSummary, "
-        "market_business_summary, marketBusinessSummary, or description when available. "
-        "If no such profile fact exists, return null for company_profile; do not synthesize "
-        "a company profile from filing snippets or risk-factor evidence.\n"
-        "Each profile, point, metric, and claim must use source_ids from the provided "
-        "evidence only.\n"
-        "If evidence is thin, still return the same object/array shape with cautious text.\n"
-        "Use cautious language when evidence is thin.\n"
-        "Use Metric evidence values for financial_dashboard.metrics when they are available. "
-        "Prefer SEC companyfacts metric values over table snippets for KPI values. "
-        "Do not say a metric was not extracted when Metric evidence contains value and unit. "
+        "When available, company_profile must use Facts.business_summary, businessSummary, market_business_summary, marketBusinessSummary, or description.\n"
+        "If no such profile fact exists, set company_profile to null; do not stitch a company profile from filing snippets or risk-factor evidence.\n"
+        "Each profile, point, metric, and claim may only use source_ids already present in the evidence.\n"
+        "If evidence is sparse, keep the same object and array structure, but stay cautious in the wording.\n"
+        "When evidence is sparse, use conservative phrasing.\n"
+        "financial_dashboard.metrics should prefer the numeric values in Metric evidence. KPI values should come from SEC companyfacts metric values when available, not table snippets.\n"
+        "If Metric evidence already contains a value and unit, do not say the metric was not extracted.\n"
         "For latest earnings, prioritize revenue, gross margin, and operating income.\n"
-        "Put operating result evidence in topline_verdict, key_takeaways, "
-        "financial_dashboard, and driver_snapshot. Risk disclosure evidence belongs only "
-        "in risk_snapshot unless no operating result evidence is available.\n"
+        "Place operating result evidence in topline_verdict, key_takeaways, financial_dashboard, and driver_snapshot.\n"
+        "Risk disclosure evidence should default to risk_snapshot unless there is no operating result evidence at all.\n"
         f"Ticker: {state.ticker}\n"
         f"Task: {request.task_type.value}\n"
         f"Facts: {_json_safe(facts)}\n"

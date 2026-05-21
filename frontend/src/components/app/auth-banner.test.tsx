@@ -42,6 +42,15 @@ describe("AuthBanner", () => {
     expect(signInMock).toHaveBeenCalledWith("google");
   });
 
+  it("renders Chinese copy when locale is zh", () => {
+    render(<AuthBanner lang="zh" />);
+
+    expect(screen.getByText("接入你的账号")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /使用 google 登录/i }),
+    ).toBeInTheDocument();
+  });
+
   it("shows the current user and sign out action when authenticated", () => {
     sessionState = {
       data: { user: { email: "cadeyu@example.com", name: "Cade" } },

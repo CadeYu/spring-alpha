@@ -754,9 +754,40 @@ def _sanitize_user_text(value: str) -> str:
         text,
         flags=re.I,
     )
+    text = _rewrite_placeholder_availability_text(text)
     text = re.sub(r"\s{2,}", " ", text)
     text = re.sub(r"\s+([,.;:])", r"\1", text)
     return text.strip()
+
+
+def _rewrite_placeholder_availability_text(value: str) -> str:
+    text = value
+    replacements = (
+        (
+            re.compile(
+                r"\bdata was not available in the retrieved evidence\.?",
+                flags=re.I,
+            ),
+            "coverage remains thin in the retrieved sources.",
+        ),
+        (
+            re.compile(
+                r"\b(?:was|were) not available in the retrieved evidence\.?",
+                flags=re.I,
+            ),
+            "coverage remains thin in the retrieved sources.",
+        ),
+        (
+            re.compile(
+                r"\bnot available in the retrieved evidence\.?",
+                flags=re.I,
+            ),
+            "coverage remains thin in the retrieved sources.",
+        ),
+    )
+    for pattern, replacement in replacements:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 def _normalize_synthesized_point(point: object) -> object:

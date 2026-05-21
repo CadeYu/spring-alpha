@@ -376,6 +376,33 @@ def _final_prompt() -> ChatPromptTemplate:
 
 
 def _cash_flow_instruction(request: AgentRequest, state: AgentState) -> str:
+    if _is_zh_locale(request.language):
+        return (
+            f"请分析 {state.ticker} 的现金流和资本配置。\n"
+            "Required workflow:\n"
+            "1. 调用 get_company_facts 获取 operating cash flow、capital expenditures 和 buybacks。\n"
+            "2. 调用 search_metric_evidence 获取 operating cash flow、capital expenditures 和 buybacks。\n"
+            "3. 调用 build_evidence_pack 获取 liquidity、cash flow statement、capital allocation、"
+            "buybacks、dividends、debt、capex 和 working capital 证据。\n"
+            "Final JSON shape:\n"
+            "{"
+            '"cash_quality_verdict":{"headline":"...",'
+            '"earnings_backed_by_cash":"yes|mixed|no|unclear","summary":"..."},'
+            '"cash_metrics":[{"name":"...","value":"...","period":"...",'
+            '"interpretation":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"}],'
+            '"capital_allocation":{"capex":[],"buybacks":[],"dividends":[],"debt":[],'
+            '"liquidity":[]},'
+            '"allocation_discipline":[{"title":"...","summary":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"}],'
+            '"red_flags":[{"title":"...","summary":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"}],'
+            '"claims":[{"text":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"}]'
+            "}\n"
+            "只能使用工具返回的 source_ids。"
+            f"Language: {request.language}"
+        )
     return (
         f"Analyze cash flow and capital allocation for {state.ticker}.\n"
         "Required workflow:\n"
@@ -407,6 +434,20 @@ def _cash_flow_instruction(request: AgentRequest, state: AgentState) -> str:
 
 
 def _final_cash_flow_instruction(request: AgentRequest, state: AgentState) -> str:
+    if _is_zh_locale(request.language):
+        return (
+            f"请基于 evidence context 为 {state.ticker} 写出 cash flow and capital allocation report JSON。\n"
+            "只返回这些顶层 keys: cash_quality_verdict, cash_metrics, "
+            "capital_allocation, allocation_discipline, red_flags, claims。\n"
+            "写成投资备忘录，而不是简单复述。cash_quality_verdict.summary 必须说明现金质量结论、"
+            "对投资者的意义，以及如果现金转换或资本配置纪律 mixed 时最强的反证。red_flags "
+            "在相关时必须包括下季度什么变化会改变结论。\n"
+            "capital_allocation 必须包含 capex, buybacks, dividends, debt, liquidity arrays。"
+            "不要把 schema labels 或 placeholders 写进正文，包括 Evidence point, cash_quality_verdict, "
+            "capital_allocation, red_flags 或 N/A。每个 section 都应该把现金流证据连接到投资者相关性，"
+            "而不是复述指标。每个数组最多 2 个简洁条目。任何引用证据的分析点都只能使用 evidence context 中存在的 source_ids。\n"
+            f"Language: {request.language}"
+        )
     return (
         f"Write the cash flow and capital allocation report JSON for {state.ticker} from "
         "the evidence context.\n"
@@ -424,3 +465,7 @@ def _final_cash_flow_instruction(request: AgentRequest, state: AgentState) -> st
         "evidence must use only source_ids present in evidence context.\n"
         f"Language: {request.language}"
     )
+
+
+def _is_zh_locale(language: str | None) -> bool:
+    return str(language or "").lower().startswith("zh")

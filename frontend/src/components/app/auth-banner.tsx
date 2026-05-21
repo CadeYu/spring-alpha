@@ -6,13 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { KeyRound, LogIn, LogOut, UserCircle2 } from "lucide-react";
 
-export function AuthBanner() {
+type AuthBannerProps = {
+  lang?: "zh" | "en";
+};
+
+export function AuthBanner({ lang = "en" }: AuthBannerProps) {
+  const isZh = lang === "zh";
   const { data: session, status } = useSession();
 
   if (status === "loading") {
     return (
       <div className="rounded-lg border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm text-slate-400">
-        Checking Google session...
+        {isZh ? "正在检查 Google 登录状态..." : "Checking Google session..."}
       </div>
     );
   }
@@ -29,13 +34,15 @@ export function AuthBanner() {
           <div className="min-w-0">
             <p className="font-medium text-emerald-100">{userLabel}</p>
             <p className="text-xs text-slate-400">
-              Your saved key powers every analysis.
+              {isZh
+                ? "你保存的 Key 会驱动每一次分析。"
+                : "Your saved key powers every analysis."}
             </p>
           </div>
         </div>
         <Button type="button" variant="outline" onClick={() => void signOut()}>
           <LogOut className="h-4 w-4" />
-          Sign out
+          {isZh ? "退出登录" : "Sign out"}
         </Button>
       </div>
     );
@@ -51,17 +58,21 @@ export function AuthBanner() {
             </Badge>
             <span className="inline-flex items-center gap-1 text-xs uppercase tracking-widest text-slate-500">
               <KeyRound className="h-3.5 w-3.5" />
-              Bring your own key
+              {isZh ? "使用自己的 Key" : "Bring your own key"}
             </span>
           </div>
-          <p className="text-sm font-medium text-slate-100">Connect your account</p>
+          <p className="text-sm font-medium text-slate-100">
+            {isZh ? "接入你的账号" : "Connect your account"}
+          </p>
           <p className="max-w-xl text-sm text-slate-400">
-            Sign in with Google after your free trial and continue with your own key.
+            {isZh
+              ? "免费试用用完后，用 Google 登录并继续使用你自己的 Key。"
+              : "Sign in with Google after your free trial and continue with your own key."}
           </p>
         </div>
         <Button type="button" onClick={() => void signIn("google")}>
           <LogIn className="h-4 w-4" />
-          Continue with Google
+          {isZh ? "使用 Google 登录" : "Continue with Google"}
         </Button>
       </CardContent>
     </Card>

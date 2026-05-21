@@ -228,9 +228,9 @@ test.describe("Spring Alpha live 10 ticker output-line matrix", () => {
       }
 
       await expect(
-        page.getByRole("region", { name: /messages and tools/i }),
+        page.getByRole("region", { name: /Messages & Tools/i }),
       ).toContainText(/Reasoning|Tool/i);
-      await page.getByRole("button", { name: /developer diagnostics/i }).click();
+      await page.getByRole("button", { name: /Developer diagnostics/i }).click();
       await expect(page.getByText("Live RAG Telemetry")).toBeVisible();
       await expect(page.getByText("Evidence Retrieved")).toBeVisible();
       await expect(page.getByText("Evidence Used")).toBeVisible();
