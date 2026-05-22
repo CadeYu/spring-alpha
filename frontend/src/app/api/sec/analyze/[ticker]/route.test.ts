@@ -86,7 +86,7 @@ describe("analysis SSE bridge", () => {
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(
-        "https://45.77.171.32/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
+        "http://45.77.171.32/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
       ),
       expect.anything(),
     );
