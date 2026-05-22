@@ -19,14 +19,33 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VULTR_APP_DIR: ${{ secrets.VULTR_APP_DIR }}
+      VULTR_HOST: ${{ secrets.VULTR_HOST }}
+      VULTR_USER: ${{ secrets.VULTR_USER }}
+      VULTR_SSH_KEY: ${{ secrets.VULTR_SSH_KEY }}
+      VULTR_PORT: ${{ secrets.VULTR_PORT || '22' }}
     steps:
+      - name: Check deploy secrets
+        run: |
+          set -eu
+          missing=''
+          for name in VULTR_HOST VULTR_USER VULTR_SSH_KEY VULTR_APP_DIR VULTR_PORT; do
+            if [ -z "$(eval "printf '%s' \"\${${name}:-}\"")" ]; then
+              missing="${missing} ${name}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "Missing required deployment secrets:${missing}" >&2
+            exit 1
+          fi
+          echo "Vultr deploy preflight passed for ${VULTR_USER}@${VULTR_HOST}:${VULTR_PORT}"
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VULTR_HOST }}
           username: ${{ secrets.VULTR_USER }}
           key: ${{ secrets.VULTR_SSH_KEY }}
-          port: ${{ secrets.VULTR_PORT }}
+          port: ${{ env.VULTR_PORT }}
           envs: VULTR_APP_DIR
           command_timeout: 30m
           script: |
