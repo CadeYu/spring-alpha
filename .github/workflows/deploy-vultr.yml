@@ -23,7 +23,13 @@ jobs:
       VULTR_USER: ${{ secrets.VULTR_USER }}
       VULTR_SSH_KEY: ${{ secrets.VULTR_SSH_KEY }}
       VULTR_PORT: ${{ secrets.VULTR_PORT || '2222' }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+
       - name: Check deploy secrets
         run: |
           set -eu
@@ -53,6 +59,23 @@ jobs:
           echo "host=$host" >> "$GITHUB_OUTPUT"
           echo "Normalized VULTR_HOST length=${#host}"
 
+      - name: Create deployment archive
+        run: |
+          set -eu
+          git archive --format=tar.gz --output=spring-alpha-release.tar.gz HEAD
+          ls -lh spring-alpha-release.tar.gz
+
+      - name: Upload deployment archive
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ steps.normalize_host.outputs.host }}
+          username: ${{ secrets.VULTR_USER }}
+          key: ${{ secrets.VULTR_SSH_KEY }}
+          port: ${{ env.VULTR_PORT }}
+          source: spring-alpha-release.tar.gz
+          target: /tmp/spring-alpha-deploy
+          rm: true
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -60,12 +83,14 @@ jobs:
           username: ${{ secrets.VULTR_USER }}
           key: ${{ secrets.VULTR_SSH_KEY }}
           port: ${{ env.VULTR_PORT }}
-          envs: VULTR_APP_DIR
+          envs: VULTR_APP_DIR,DEPLOY_SHA
           command_timeout: 30m
           script: |
             set -eu
             compose_file='deploy/vultr/docker-compose.yml'
+            archive_file='/tmp/spring-alpha-deploy/spring-alpha-release.tar.gz'
             print_diagnostics() {
+              cd "${VULTR_APP_DIR}" 2>/dev/null || return 0
               docker compose -f "${compose_file}" ps || true
               docker compose -f "${compose_file}" logs --tail=200 backend research-service nginx || true
             }
@@ -77,11 +102,31 @@ jobs:
               fi
             }
             trap cleanup EXIT INT TERM
+            if [ ! -f "${archive_file}" ]; then
+              echo "Deployment archive not found at ${archive_file}" >&2
+              exit 1
+            fi
+            case "${VULTR_APP_DIR}" in
+              /opt/spring-alpha|/root/spring-alpha|/home/*/spring-alpha) ;;
+              *)
+                echo "Refusing to deploy to unexpected VULTR_APP_DIR=${VULTR_APP_DIR}" >&2
+                exit 1
+                ;;
+            esac
+            mkdir -p "${VULTR_APP_DIR}"
             cd "${VULTR_APP_DIR}"
-            git fetch --prune origin main
-            git checkout main
-            git pull --ff-only origin main
-            echo "Deploying commit $(git rev-parse --short HEAD)"
+            if [ ! -f deploy/vultr/.env.vultr ]; then
+              echo "Missing deploy/vultr/.env.vultr on Vultr; refusing to deploy without production env vars" >&2
+              exit 1
+            fi
+            env_backup="$(mktemp)"
+            cp deploy/vultr/.env.vultr "${env_backup}"
+            find . -mindepth 1 -maxdepth 1 ! -name .deploy -exec rm -rf {} +
+            tar -xzf "${archive_file}" -C "${VULTR_APP_DIR}"
+            mkdir -p deploy/vultr
+            cp "${env_backup}" deploy/vultr/.env.vultr
+            rm -f "${env_backup}"
+            echo "Deploying commit ${DEPLOY_SHA}"
             docker compose -f deploy/vultr/docker-compose.yml up -d --build --remove-orphans
             for _ in $(seq 1 60); do
               if curl -fsS http://127.0.0.1/health >/dev/null; then
