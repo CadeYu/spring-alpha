@@ -39,10 +39,24 @@ jobs:
           fi
           echo "Vultr deploy preflight passed for ${VULTR_USER}@${VULTR_HOST}:${VULTR_PORT}"
 
+      - name: Normalize deploy host
+        id: normalize_host
+        env:
+          RAW_VULTR_HOST: ${{ secrets.VULTR_HOST }}
+        run: |
+          set -eu
+          host="$(printf '%s' "$RAW_VULTR_HOST" | tr -d '[:space:]')"
+          if [ -z "$host" ]; then
+            echo "Normalized VULTR_HOST is empty" >&2
+            exit 1
+          fi
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "Normalized VULTR_HOST length=${#host}"
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VULTR_HOST }}
+          host: ${{ steps.normalize_host.outputs.host }}
           username: ${{ secrets.VULTR_USER }}
           key: ${{ secrets.VULTR_SSH_KEY }}
           port: ${{ env.VULTR_PORT }}
