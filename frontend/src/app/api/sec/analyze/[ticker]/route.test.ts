@@ -61,6 +61,37 @@ describe("analysis SSE bridge", () => {
     );
   });
 
+  it("uses the production backend url on Vercel when no explicit backend url is configured", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data:{}\n\n"));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn(async () => new Response(stream, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("BACKEND_URL", "");
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
+        {
+          headers: { "X-Provider-API-Key": "sk-test-123" },
+        },
+      ),
+      { params: Promise.resolve({ ticker: "AAPL" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "https://45.77.171.32/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
+      ),
+      expect.anything(),
+    );
+  });
+
   it("forwards the selected provider model to the backend", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -83,9 +114,7 @@ describe("analysis SSE bridge", () => {
 
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "llmModel=deepseek-ai%2Fdeepseek-v4-flash",
-      ),
+      expect.stringContaining("llmModel=deepseek-ai%2Fdeepseek-v4-flash"),
       expect.anything(),
     );
   });
