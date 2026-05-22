@@ -89,12 +89,3 @@ jobs:
 
       - name: E2E smoke tests
         run: npm run test:e2e
-
-  deploy-image:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build combined backend image
-        run: docker build -f backend/Dockerfile -t spring-alpha-backend-combined backend

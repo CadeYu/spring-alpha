@@ -1,0 +1,61 @@
+name: Deploy to Vultr
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency:
+  group: vultr-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      VULTR_APP_DIR: ${{ secrets.VULTR_APP_DIR }}
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VULTR_HOST }}
+          username: ${{ secrets.VULTR_USER }}
+          key: ${{ secrets.VULTR_SSH_KEY }}
+          port: ${{ secrets.VULTR_PORT }}
+          envs: VULTR_APP_DIR
+          command_timeout: 30m
+          script: |
+            set -eu
+            compose_file='deploy/vultr/docker-compose.yml'
+            print_diagnostics() {
+              docker compose -f "${compose_file}" ps || true
+              docker compose -f "${compose_file}" logs --tail=200 backend research-service nginx || true
+            }
+            cleanup() {
+              status=$?
+              if [ "${status}" -ne 0 ]; then
+                echo "Vultr deploy failed with status ${status}"
+                print_diagnostics
+              fi
+            }
+            trap cleanup EXIT INT TERM
+            cd "${VULTR_APP_DIR}"
+            git fetch --prune origin main
+            git checkout main
+            git pull --ff-only origin main
+            echo "Deploying commit $(git rev-parse --short HEAD)"
+            docker compose -f deploy/vultr/docker-compose.yml up -d --build --remove-orphans
+            for _ in $(seq 1 60); do
+              if curl -fsS http://127.0.0.1/health >/dev/null; then
+                break
+              fi
+              sleep 5
+            done
+            curl -fsS http://127.0.0.1/health >/dev/null
+            curl -fsS http://127.0.0.1/api/sec/models >/dev/null
+            docker compose -f deploy/vultr/docker-compose.yml ps

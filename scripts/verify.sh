@@ -27,6 +27,7 @@ required_files=(
   "scripts/verify-provider-mini-rag-eval.sh"
   "src/research-service/Dockerfile"
   ".github/workflows/ci.yml"
+  ".github/workflows/deploy-vultr.yml"
 )
 
 for file in "${required_files[@]}"; do
@@ -118,6 +119,29 @@ const requiredSnippets = [
 for (const snippet of requiredSnippets) {
   if (!compose.includes(snippet)) {
     throw new Error(`Missing docker-compose Research Service wiring: ${snippet}`);
+  }
+}
+NODE
+
+echo "Checking Vultr deploy workflow contract..."
+node - <<'NODE'
+const fs = require('fs');
+
+const deployWorkflow = fs.readFileSync('.github/workflows/deploy-vultr.yml', 'utf8');
+const requiredSnippets = [
+  'workflow_run:',
+  'workflow_dispatch:',
+  'workflows: ["CI"]',
+  "github.event.workflow_run.conclusion == 'success'",
+  'appleboy/ssh-action@v1.0.3',
+  'docker compose -f deploy/vultr/docker-compose.yml up -d --build --remove-orphans',
+  'curl -fsS http://127.0.0.1/health >/dev/null',
+  'curl -fsS http://127.0.0.1/api/sec/models >/dev/null',
+];
+
+for (const snippet of requiredSnippets) {
+  if (!deployWorkflow.includes(snippet)) {
+    throw new Error(`Missing Vultr deploy workflow snippet: ${snippet}`);
   }
 }
 NODE
@@ -217,7 +241,8 @@ const requiredSnippets = [
   [toolCallingScript, 'OpenAiCompatibleLlmClient'],
   [toolE2EGate, 'write_provider_tool_e2e_artifact.py'],
   [reportSynthesis, 'synthesize_latest_earnings_report'],
-  [reportSynthesis, 'Unknown source_id in synthesized report'],
+  [reportSynthesis, 'def _sanitize_source_ids'],
+  [reportSynthesis, 'CitationStatus.UNVERIFIED'],
   [reportSynthesisScript, 'stage_1_provider_report_synthesis'],
   [reportSynthesisGate, 'write_provider_report_synthesis_artifact.py'],
   [verifyDocs, './scripts/verify-provider-tool-e2e.sh'],

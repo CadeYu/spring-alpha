@@ -166,16 +166,16 @@ RAG_EMBEDDING_DIMENSION=3072
 
 本地手动测试时，前端也支持 BYOK。你可以直接在浏览器里粘贴 provider key；它会存到 localStorage，并随分析请求转发给后端。
 
-不要把真实的 provider key、Qdrant API key、数据库密码写进 Git 仓库。Render / Vercel / 本地 `.env` 才是这些 secret 的位置。
+不要把真实的 provider key、Qdrant API key、数据库密码写进 Git 仓库。Vultr / Vercel / 本地 `.env` 才是这些 secret 的位置。
 
 线上部署推荐把职责拆开：
 
 - Supabase Free Postgres：Spring Boot 的关系型元数据和 JPA 表。
 - Qdrant Cloud Free：SEC chunk embedding 和向量召回。
-- Render：Spring Boot backend + Python Research Service 的运行时环境变量。
+- Vultr：Spring Boot backend + Python Research Service 的运行时环境变量。
 - Vercel：Next.js frontend，只配置后端 API 地址，不放数据库密码。
 
-Render 后端服务使用 Supabase Supavisor session pooler：
+Vultr 后端服务使用 Supabase Supavisor session pooler：
 
 ```bash
 SPRING_PROFILES_ACTIVE=prod
@@ -185,7 +185,7 @@ SPRING_DATASOURCE_PASSWORD=your-supabase-db-password
 SPRING_JPA_HIBERNATE_DDL_AUTO=update
 ```
 
-Render Python Research Service 使用 Qdrant：
+Vultr Python Research Service 使用 Qdrant：
 
 ```bash
 RAG_VECTOR_STORE_PROVIDER=qdrant
@@ -232,6 +232,8 @@ docker compose up -d --build
 ```
 
 Compose 会启动 PGVector、Research Service、Spring Boot backend 和 Next.js frontend。Compose 模式下 backend 在 Docker 网络内使用 `8081`；本地脚本模式使用 `8082`，避免和其他服务冲突。
+
+Production deploys now run from GitHub Actions to Vultr on every successful push to `main`. Local Compose remains the supported path for development and verification.
 
 ## Provider 支持
 

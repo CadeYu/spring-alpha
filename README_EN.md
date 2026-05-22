@@ -195,6 +195,8 @@ docker compose up -d --build
 
 The compose profile starts PGVector, Research Service, Spring Boot backend, and Next.js frontend. In compose mode the backend service uses port `8081` inside the Docker network; local script mode uses `8082` to avoid conflicts.
 
+Production deploys now run from GitHub Actions to Vultr on every successful push to `main`. Local Compose remains the supported path for development and verification.
+
 ## Provider Support
 
 The runtime uses an OpenAI-compatible LLM gateway. Current UI providers:
