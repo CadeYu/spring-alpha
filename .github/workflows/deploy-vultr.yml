@@ -22,7 +22,7 @@ jobs:
       VULTR_HOST: ${{ secrets.VULTR_HOST }}
       VULTR_USER: ${{ secrets.VULTR_USER }}
       VULTR_SSH_KEY: ${{ secrets.VULTR_SSH_KEY }}
-      VULTR_PORT: ${{ secrets.VULTR_PORT || '22' }}
+      VULTR_PORT: ${{ secrets.VULTR_PORT || '2222' }}
     steps:
       - name: Check deploy secrets
         run: |
