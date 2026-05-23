@@ -681,6 +681,15 @@ def build_embedding_backend_from_env() -> EmbeddingBackend:
     )
 
 
+def build_live_rag_pipeline_from_env() -> "LlamaIndexRagPipeline":
+    embedding_backend = DeterministicFinancialEmbeddingBackend()
+    return LlamaIndexRagPipeline(
+        enable_hybrid_retrieval=False,
+        embedding_backend=embedding_backend,
+        vector_store=InMemoryVectorStore(embedding_backend),
+    )
+
+
 def build_production_rag_pipeline_from_env() -> "LlamaIndexRagPipeline":
     embedding_backend = build_embedding_backend_from_env()
     return LlamaIndexRagPipeline(

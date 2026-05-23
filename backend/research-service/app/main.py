@@ -22,7 +22,7 @@ from app.agents.llm_gateway import (
 )
 from app.agents.research_workflow import ResearchAgentWorkflow
 from app.contracts.agent import AgentRequest, BoundedAgentResult, LlmProvider
-from app.rag.llamaindex_pipeline import FilingDocument, build_production_rag_pipeline_from_env
+from app.rag.llamaindex_pipeline import FilingDocument, build_live_rag_pipeline_from_env
 
 SERVICE_NAME = "spring-alpha-research-service"
 SERVICE_VERSION = "0.1.0"
@@ -145,7 +145,7 @@ def _cached_request_pipeline(request: AgentRequest):
 
     try:
         pipeline_started_at = perf_counter()
-        pipeline = build_production_rag_pipeline_from_env()
+        pipeline = build_live_rag_pipeline_from_env()
         if request.filings:
             _ingest_request_filings(request, pipeline)
         logger.info(

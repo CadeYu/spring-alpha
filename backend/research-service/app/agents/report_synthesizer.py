@@ -1470,7 +1470,7 @@ def _business_driver_prompt(
     state: AgentState,
     source_refs: list[SourceRef],
 ) -> str:
-    evidence_refs = _aliased_source_refs(source_refs)
+    evidence_refs = _aliased_source_refs(_limit_source_refs(source_refs))
     evidence_lines = _evidence_lines(evidence_refs, source_refs)
     allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
     if _is_zh_locale(request.language):
@@ -1545,7 +1545,7 @@ def _cash_flow_prompt(
     state: AgentState,
     source_refs: list[SourceRef],
 ) -> str:
-    evidence_refs = _aliased_source_refs(source_refs)
+    evidence_refs = _aliased_source_refs(_limit_source_refs(source_refs))
     evidence_lines = _evidence_lines(evidence_refs, source_refs)
     allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
     if _is_zh_locale(request.language):
@@ -1626,7 +1626,7 @@ def _user_prompt(
     state: AgentState,
     source_refs: list[SourceRef],
 ) -> str:
-    evidence_refs = _aliased_source_refs(source_refs)
+    evidence_refs = _aliased_source_refs(_limit_source_refs(source_refs))
     evidence_lines = _evidence_lines(evidence_refs, source_refs)
     allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
     facts = state.evidence_memory.facts
@@ -1737,6 +1737,37 @@ def _source_refs_from_state(state: AgentState) -> list[SourceRef]:
         except ValueError:
             continue
     return refs
+
+
+def _limit_source_refs(source_refs: list[SourceRef], *, max_refs: int = 8) -> list[SourceRef]:
+    if len(source_refs) <= max_refs:
+        return source_refs
+    trimmed: list[SourceRef] = []
+    preferred_sections = {
+        "md&a",
+        "management discussion and analysis",
+        "liquidity and capital resources",
+        "cash flows",
+        "net sales",
+        "segment information",
+        "business",
+        "sec companyfacts",
+    }
+    seen_sections: set[str] = set()
+    for source_ref in source_refs:
+        section_key = source_ref.section.strip().lower()
+        if section_key in preferred_sections and section_key not in seen_sections:
+            trimmed.append(source_ref)
+            seen_sections.add(section_key)
+        if len(trimmed) >= max_refs:
+            return trimmed
+    for source_ref in source_refs:
+        if source_ref in trimmed:
+            continue
+        trimmed.append(source_ref)
+        if len(trimmed) >= max_refs:
+            break
+    return trimmed
 
 
 def _alias_source_refs_by_id(source_refs: list[SourceRef]) -> dict[str, SourceRef]:
@@ -2307,7 +2338,7 @@ def _evidence_lines(
             f"- source_id={source_ref.source_id}; section={source_ref.section}; "
             f"original_source_id={original_source_ref.source_id}; "
             f"filing_type={source_ref.filing_type}; filing_date={source_ref.filing_date}; "
-            f"snippet={_clip(source_ref.snippet)}"
+            f"snippet={_clip(source_ref.snippet, 360)}"
         )
         for source_ref, original_source_ref in zip(source_refs, originals, strict=False)
     ]

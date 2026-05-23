@@ -22,14 +22,14 @@ def test_request_filings_reuse_the_same_pipeline_for_identical_payloads(monkeypa
 
     fake_pipeline = FakePipeline()
 
-    def fake_build_production_rag_pipeline_from_env():
+    def fake_build_live_rag_pipeline_from_env():
         build_calls()
         return fake_pipeline
 
     monkeypatch.setattr(
         app_main,
-        "build_production_rag_pipeline_from_env",
-        fake_build_production_rag_pipeline_from_env,
+        "build_live_rag_pipeline_from_env",
+        fake_build_live_rag_pipeline_from_env,
     )
 
     request = AgentRequest(
@@ -80,15 +80,15 @@ def test_request_pipeline_cache_evicts_oldest_entry_when_full(monkeypatch):
         "MSFT": FakePipeline("MSFT"),
     }
 
-    def fake_build_production_rag_pipeline_from_env():
+    def fake_build_live_rag_pipeline_from_env():
         build_calls()
         current_ticker = "AAPL" if build_calls.call_count == 1 else "MSFT"
         return pipelines[current_ticker]
 
     monkeypatch.setattr(
         app_main,
-        "build_production_rag_pipeline_from_env",
-        fake_build_production_rag_pipeline_from_env,
+        "build_live_rag_pipeline_from_env",
+        fake_build_live_rag_pipeline_from_env,
     )
 
     base_request = dict(
@@ -153,7 +153,7 @@ def test_request_pipeline_cache_reuses_one_in_flight_build_for_same_key(monkeypa
 
     fake_pipeline = FakePipeline()
 
-    def fake_build_production_rag_pipeline_from_env():
+    def fake_build_live_rag_pipeline_from_env():
         build_calls()
         build_started.set()
         allow_build_to_finish.wait(timeout=2)
@@ -161,8 +161,8 @@ def test_request_pipeline_cache_reuses_one_in_flight_build_for_same_key(monkeypa
 
     monkeypatch.setattr(
         app_main,
-        "build_production_rag_pipeline_from_env",
-        fake_build_production_rag_pipeline_from_env,
+        "build_live_rag_pipeline_from_env",
+        fake_build_live_rag_pipeline_from_env,
     )
 
     request = AgentRequest(
@@ -201,3 +201,22 @@ def test_request_pipeline_cache_reuses_one_in_flight_build_for_same_key(monkeypa
     assert build_calls.call_count == 1
     assert len(results) == 2
     assert all(result is fake_pipeline for result in results)
+
+
+def test_live_rag_pipeline_defaults_to_local_retrieval(monkeypatch):
+    from app.rag import llamaindex_pipeline as rag_pipeline_module
+
+    captured: dict[str, object] = {}
+
+    class FakePipeline:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(rag_pipeline_module, "LlamaIndexRagPipeline", FakePipeline)
+
+    pipeline = rag_pipeline_module.build_live_rag_pipeline_from_env()
+
+    assert pipeline is not None
+    assert captured["enable_hybrid_retrieval"] is False
+    assert isinstance(captured["embedding_backend"], rag_pipeline_module.DeterministicFinancialEmbeddingBackend)
+    assert isinstance(captured["vector_store"], rag_pipeline_module.InMemoryVectorStore)

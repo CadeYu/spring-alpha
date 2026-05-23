@@ -8,12 +8,14 @@ from app.agents.report_synthesizer import (
     _cash_flow_prompt,
     _company_profile_system_prompt,
     _company_profile_user_prompt,
+    _evidence_lines,
     _sanitize_user_text,
     _system_prompt,
     _user_prompt,
     synthesize_latest_earnings_payload,
 )
 from app.contracts.agent import AgentState, CoverageState, EvidenceMemory, TaskPolicy
+from app.contracts.report import SourceRef
 from app.contracts.research_task import ResearchTaskType
 
 
@@ -129,6 +131,26 @@ def test_sanitize_user_text_rewrites_placeholder_availability_language() -> None
     )
 
     assert text == "Capital expenditures coverage remains thin in the retrieved sources."
+
+
+def test_evidence_lines_are_compact_and_do_not_repeat_large_context() -> None:
+    source_refs = [
+        SourceRef(
+            source_id=f"src_{index}",
+            section="MD&A",
+            snippet="Revenue increased because demand improved. " * 12,
+            filing_type="10-Q",
+            filing_date="2026-04-30",
+            accession_number="0001",
+        )
+        for index in range(1, 4)
+    ]
+
+    lines = _evidence_lines(source_refs)
+
+    assert len(lines) == 3
+    assert all("original_source_id" in line for line in lines)
+    assert all(len(line) < 900 for line in lines)
 
 
 def _make_request(task_type: ResearchTaskType, language: str) -> Any:
