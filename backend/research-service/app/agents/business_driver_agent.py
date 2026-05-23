@@ -143,12 +143,16 @@ def _business_driver_tools(
             period=period,
             metrics=metrics or ["revenue"],
         )
+        started_at = perf_counter()
+        tool_result = tool_service.get_company_facts(tool_input, state_getter())
+        tool_latency_ms = int((perf_counter() - started_at) * 1000)
         next_state, payload = _run_domain_tool(
             state_getter(),
             "get_company_facts",
             "Collected company facts for business drivers.",
-            tool_service.get_company_facts(tool_input, state_getter()),
+            tool_result,
             tool_input.model_dump(mode="json"),
+            tool_latency_ms=tool_latency_ms,
         )
         state_setter(next_state)
         return payload
@@ -162,12 +166,16 @@ def _business_driver_tools(
             query=query,
             limit=limit,
         )
+        started_at = perf_counter()
+        tool_result = tool_service.search_filing_sections(tool_input, state_getter())
+        tool_latency_ms = int((perf_counter() - started_at) * 1000)
         next_state, payload = _run_domain_tool(
             state_getter(),
             "search_filing_sections",
             "Searched filing sections for business drivers.",
-            tool_service.search_filing_sections(tool_input, state_getter()),
+            tool_result,
             tool_input.model_dump(mode="json"),
+            tool_latency_ms=tool_latency_ms,
         )
         state_setter(next_state)
         return payload
@@ -186,12 +194,16 @@ def _business_driver_tools(
             period=period,
             query=query,
         )
+        started_at = perf_counter()
+        tool_result = tool_service.search_metric_evidence(tool_input, state_getter())
+        tool_latency_ms = int((perf_counter() - started_at) * 1000)
         next_state, payload = _run_domain_tool(
             state_getter(),
             "search_metric_evidence",
             "Searched metric evidence for business drivers.",
-            tool_service.search_metric_evidence(tool_input, state_getter()),
+            tool_result,
             tool_input.model_dump(mode="json"),
+            tool_latency_ms=tool_latency_ms,
         )
         state_setter(next_state)
         return payload
@@ -203,12 +215,16 @@ def _business_driver_tools(
             task_type=request.task_type,
             signal_types=signal_types or [],
         )
+        started_at = perf_counter()
+        tool_result = tool_service.get_business_signals(tool_input, state_getter())
+        tool_latency_ms = int((perf_counter() - started_at) * 1000)
         next_state, payload = _run_domain_tool(
             state_getter(),
             "get_business_signals",
             "Extracted business driver signals.",
-            tool_service.get_business_signals(tool_input, state_getter()),
+            tool_result,
             tool_input.model_dump(mode="json"),
+            tool_latency_ms=tool_latency_ms,
         )
         state_setter(next_state)
         return payload
@@ -262,8 +278,13 @@ def _run_domain_tool(
     summary: str,
     result: Any,
     tool_input: dict[str, Any] | None = None,
+    *,
+    tool_latency_ms: int | None = None,
 ) -> tuple[AgentState, str]:
     started_at = perf_counter()
+    latency_ms = tool_latency_ms if tool_latency_ms is not None else result.latency_ms
+    if latency_ms <= 0:
+        latency_ms = int((perf_counter() - started_at) * 1000)
     event = AgentEvent(
         run_id=state.run_id,
         task_type=state.task_type,
@@ -275,7 +296,7 @@ def _run_domain_tool(
         agent_name="Business driver agent",
         model_name=state.model,
         tool_input=tool_input or {},
-        latency_ms=result.latency_ms or int((perf_counter() - started_at) * 1000),
+        latency_ms=latency_ms,
         degraded_reason=result.degraded_reasons[0] if result.degraded_reasons else None,
     )
     evidence_memory = state.evidence_memory.model_copy(deep=True)

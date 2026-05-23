@@ -1,5 +1,6 @@
 import json
 from collections.abc import Callable
+from time import perf_counter
 from typing import Any
 
 from langchain_core.tools import StructuredTool
@@ -25,6 +26,7 @@ def create_agent_evidence_pack_tool(
         focus: str | None = None,
         top_k: int = 5,
     ) -> str:
+        started_at = perf_counter()
         if rag_pipeline is None:
             result = ToolResult.empty(
                 data={"evidence_pack": None, "source_refs": []},
@@ -49,6 +51,8 @@ def create_agent_evidence_pack_tool(
                 )
             else:
                 result = ToolResult.ok(data=data, source_refs=source_refs)
+        if result.latency_ms <= 0:
+            result = result.model_copy(update={"latency_ms": int((perf_counter() - started_at) * 1000)})
         next_state, payload = run_domain_tool(
             state_getter(),
             "build_evidence_pack",

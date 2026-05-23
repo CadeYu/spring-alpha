@@ -97,6 +97,23 @@ class ResearchAgentWorkflow:
                 degraded_reason=f"Tool-calling research agent failed: {exc}",
             )
             final_report = None
+        stage_summary = _stage_latency_summary(state.tool_events)
+        logger.info(
+            (
+                "research_agent_stage_summary run_id=%s task_type=%s agent=%s "
+                "planning_ms=%s tool_ms=%s synthesis_ms=%s total_ms=%s "
+                "tool_events=%s reasoning_events=%s"
+            ),
+            request.run_id,
+            request.task_type.value,
+            stage_summary["agent_name"],
+            stage_summary["planning_ms"],
+            stage_summary["tool_ms"],
+            stage_summary["synthesis_ms"],
+            int((perf_counter() - started_at) * 1000),
+            stage_summary["tool_event_count"],
+            stage_summary["reasoning_event_count"],
+        )
         logger.info(
             "research_agent_complete run_id=%s task_type=%s latency_ms=%s events=%s",
             request.run_id,
@@ -202,3 +219,28 @@ def _result(
         retryable=final_report is None,
         final_report=final_report.model_dump(mode="json") if final_report is not None else None,
     )
+
+
+def _stage_latency_summary(events: list[AgentEvent]) -> dict[str, int | str]:
+    planning_ms = sum(
+        event.latency_ms
+        for event in events
+        if event.event_kind == "reasoning" and event.phase == AgentPhase.BUILD_EVIDENCE_PLAN
+    )
+    synthesis_ms = sum(
+        event.latency_ms
+        for event in events
+        if event.event_kind == "reasoning" and event.phase == AgentPhase.DRAFT_REPORT_SECTIONS
+    )
+    tool_ms = sum(event.latency_ms for event in events if event.event_kind == "tool")
+    return {
+        "agent_name": next(
+            (str(event.agent_name) for event in events if event.agent_name),
+            "unknown",
+        ),
+        "planning_ms": planning_ms,
+        "tool_ms": tool_ms,
+        "synthesis_ms": synthesis_ms,
+        "tool_event_count": sum(1 for event in events if event.event_kind == "tool"),
+        "reasoning_event_count": sum(1 for event in events if event.event_kind == "reasoning"),
+    }

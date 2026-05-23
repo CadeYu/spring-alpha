@@ -1,5 +1,7 @@
 import json
+import logging
 from collections.abc import Callable
+from time import perf_counter
 from typing import Any, Literal, NoReturn, TypedDict
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -10,6 +12,8 @@ from langgraph.graph import END, StateGraph
 
 from app.agents.llm_gateway import _parse_json_text
 from app.contracts.agent import AgentEvent, AgentPhase, AgentState, ToolStatus
+
+logger = logging.getLogger("uvicorn.error")
 
 
 class ToolCallingAgentError(RuntimeError):
@@ -141,6 +145,7 @@ def run_tool_calling_graph_agent(
     def synthesize(graph_state: ToolCallingGraphState) -> ToolCallingGraphState:
         if graph_state["payload"] is not None:
             return graph_state
+        synthesis_started_at = perf_counter()
         final_messages = [
             HumanMessage(content=final_instruction or initial_instruction),
             HumanMessage(
@@ -153,7 +158,7 @@ def run_tool_calling_graph_agent(
         final_result, payload = _invoke_and_parse_final_payload(
             final_chain=final_chain,
             final_messages=final_messages,
-            attempts=2,
+            attempts=1,
             agent_name=agent_name,
             raise_error=_raise,
         )
@@ -165,6 +170,13 @@ def run_tool_calling_graph_agent(
             message=final_result,
             phase=AgentPhase.DRAFT_REPORT_SECTIONS,
             summary=f"{agent_name} synthesized the final report sections.",
+        )
+        logger.info(
+            "research_agent_synthesis_detail agent=%s synthesis_ms=%s final_tokens=%s compact=%s",
+            agent_name,
+            int((perf_counter() - synthesis_started_at) * 1000),
+            _final_token_count(final_result),
+            compact_synthesis,
         )
         return {
             **graph_state,
@@ -267,6 +279,7 @@ def _run_planned_tool_graph(
         }
 
     def synthesize(graph_state: ToolCallingGraphState) -> ToolCallingGraphState:
+        synthesis_started_at = perf_counter()
         final_messages = [
             HumanMessage(content=final_instruction or initial_instruction),
             HumanMessage(
@@ -279,7 +292,7 @@ def _run_planned_tool_graph(
         final_result, payload = _invoke_and_parse_final_payload(
             final_chain=final_chain,
             final_messages=final_messages,
-            attempts=2,
+            attempts=1,
             agent_name=agent_name,
             raise_error=_raise,
         )
@@ -291,6 +304,13 @@ def _run_planned_tool_graph(
             message=final_result,
             phase=AgentPhase.DRAFT_REPORT_SECTIONS,
             summary=f"{agent_name} synthesized the final report sections.",
+        )
+        logger.info(
+            "research_agent_synthesis_detail agent=%s synthesis_ms=%s final_tokens=%s compact=%s",
+            agent_name,
+            int((perf_counter() - synthesis_started_at) * 1000),
+            _final_token_count(final_result),
+            compact_synthesis,
         )
         return {
             **graph_state,
@@ -401,9 +421,9 @@ def _json_response_llm(llm: BaseChatModel) -> BaseChatModel:
             update={
                 "tools": [],
                 "tool_choice": None,
-                "max_tokens": 3072 if compact_synthesis else 4096,
+                "max_tokens": 2048 if compact_synthesis else 3072,
                 "response_format": {"type": "json_object"},
-                "timeout_seconds": 75,
+                "timeout_seconds": 60,
             }
         )
     return llm
@@ -491,3 +511,14 @@ def _trim_json_value(value: Any, *, compact: bool = False) -> Any:
         max_length = 240 if compact else 600
         return value if len(value) <= max_length else value[:max_length]
     return value
+
+
+def _final_token_count(message: AIMessage) -> int:
+    metadata = message.response_metadata if isinstance(message.response_metadata, dict) else {}
+    usage = metadata.get("usage")
+    if isinstance(usage, dict):
+        prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("completion_tokens")
+        if isinstance(prompt_tokens, int) and isinstance(completion_tokens, int):
+            return prompt_tokens + completion_tokens
+    return 0
