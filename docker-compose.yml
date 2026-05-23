@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   research-service:
-    build: ./src/research-service
+    build: ./backend/research-service
     ports:
       - "${RESEARCH_SERVICE_HOST_PORT:-8090}:8090"
     environment:

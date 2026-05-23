@@ -257,8 +257,8 @@ Kimi K2.6 目前是完整 agent E2E 中质量和稳定性更优先的模型。
 ```text
 spring-alpha/
   backend/                         Spring Boot API, SEC/Yahoo boundary, SSE contract
+  backend/research-service/        FastAPI + LangGraph + LlamaIndex RAG sidecar
   frontend/                        Next.js research workbench
-  src/research-service/            FastAPI + LangGraph + LlamaIndex RAG sidecar
   scripts/                         local stack and verification scripts
   docs/                            architecture notes and task contracts
   docker-compose.yml               PGVector + research service + backend + frontend
@@ -272,9 +272,9 @@ frontend/src/components/app/rag-eval-dashboard.tsx
 frontend/src/app/api/sec/analyze/[ticker]/route.ts
 backend/src/main/java/com/springalpha/backend/service/FinancialAnalysisService.java
 backend/src/main/java/com/springalpha/backend/service/research/ResearchAgentReportMapper.java
-src/research-service/app/agents/research_workflow.py
-src/research-service/app/agents/tool_calling_graph.py
-src/research-service/app/rag/llamaindex_pipeline.py
+backend/research-service/app/agents/research_workflow.py
+backend/research-service/app/agents/tool_calling_graph.py
+backend/research-service/app/rag/llamaindex_pipeline.py
 ```
 
 ## 测试
@@ -296,7 +296,7 @@ npm run test:e2e
 ### Research Service 测试
 
 ```bash
-cd src/research-service
+cd backend/research-service
 uv run pytest
 ```
 

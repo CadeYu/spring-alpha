@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: src/research-service
+        working-directory: backend/research-service
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,7 +54,14 @@ jobs:
         run: uv sync --frozen --dev
 
       - name: Run RAG tests
-        run: uv run pytest tests/rag/test_llamaindex_pipeline.py
+        run: >
+          uv run pytest
+          tests/test_llamaindex_pipeline_cache.py
+          tests/test_llamaindex_pipeline_precision.py
+          tests/test_llamaindex_pipeline_rerank.py
+          tests/test_main_pipeline_cache.py
+          tests/test_report_synthesizer_locale.py
+          tests/test_research_workflow_logging.py
 
   frontend:
     runs-on: ubuntu-latest

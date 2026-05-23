@@ -26,7 +26,7 @@ services:
 
   research-service:
     build:
-      context: ../../src/research-service
+      context: ../../backend/research-service
       dockerfile: Dockerfile
     env_file:
       - ./.env.vultr
