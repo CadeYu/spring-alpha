@@ -388,20 +388,25 @@ def _fallback_summary(
     metrics: list[EvidenceBoundMetric],
     source_refs: list[SourceRef],
 ) -> str:
-    metric_text = ", ".join(
-        f"{metric.name}: {metric.value}" for metric in metrics[:3]
+    metric_text = ", ".join(_display_metric(metric) for metric in _present_metrics(metrics)[:3])
+    missing_metrics = _missing_metric_names(metrics)
+    missing_text = _missing_metric_boundary_text(
+        missing_metrics,
+        zh=_is_zh_locale(request.language),
     )
     evidence_text = _clip(source_refs[0].snippet, 180) if source_refs else "evidence was collected"
     base = metric_text or evidence_text
     if _is_zh_locale(request.language):
+        boundary = f"；{missing_text}" if missing_text else ""
         return (
             f"{request.ticker} 的证据收集已完成，"
             "当前报告先以已验证的 SEC 指标和 filing 片段形成保守结论："
-            f"{base}。这份结论应视为证据优先版本，后续需要继续观察同一指标在下一季度是否延续。"
+            f"{base}{boundary}。这份结论应视为证据优先版本，后续需要继续观察同一指标在下一季度是否延续。"
         )
+    boundary = f"; {missing_text}" if missing_text else ""
     return (
         f"{request.ticker} evidence collection completed, and this conservative report "
-        f"uses verified SEC metrics and filing snippets first: {base}. Treat it as an "
+        f"uses verified SEC metrics and filing snippets first: {base}{boundary}. Treat it as an "
         "evidence-first view until the next quarter confirms whether the same signals persist."
     )
 
@@ -485,6 +490,34 @@ def _metric_value(value: object, unit: object) -> str:
     if str(unit or "").strip() == "USD" and not formatted.startswith("$"):
         return f"${formatted}"
     return formatted
+
+
+def _display_metric(metric: EvidenceBoundMetric) -> str:
+    return f"{metric.name}: {metric.value}"
+
+
+def _present_metrics(metrics: list[EvidenceBoundMetric]) -> list[EvidenceBoundMetric]:
+    return [metric for metric in metrics if not _is_missing_metric(metric)]
+
+
+def _missing_metric_names(metrics: list[EvidenceBoundMetric]) -> list[str]:
+    return [metric.name for metric in metrics if _is_missing_metric(metric)]
+
+
+def _is_missing_metric(metric: EvidenceBoundMetric) -> bool:
+    return metric.value.strip().lower() in {"not extracted", "n/a", "na", "none", ""}
+
+
+def _missing_metric_boundary_text(metric_names: list[str], *, zh: bool) -> str:
+    if not metric_names:
+        return ""
+    visible_names = ", ".join(metric_names[:3])
+    if zh:
+        return f"{visible_names} 未在当前证据包中稳定抽取，不能作为强结论"
+    return (
+        f"{visible_names} were not stably extracted from the current evidence pack "
+        "and should not be treated as strong conclusions"
+    )
 
 
 def _compact_number(value: int | float) -> str:
