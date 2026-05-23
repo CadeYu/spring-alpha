@@ -251,6 +251,7 @@ def _fallback_report_from_state(
     if not source_refs and not metrics:
         return None
     summary = _fallback_summary(request, reason, metrics, source_refs)
+    present_metrics = _present_metrics(metrics)
     coverage = TaskSectionCoverage(
         status="partial",
         missing_sections=["llm_final_synthesis"],
@@ -270,8 +271,8 @@ def _fallback_report_from_state(
             ),
             key_takeaways=[_fallback_point(summary, source_refs)],
             financial_dashboard=LatestFinancialDashboard(
-                metrics=metrics[:3],
-                chart_focus=[metric.name for metric in metrics[:3]],
+                metrics=present_metrics[:3],
+                chart_focus=[metric.name for metric in present_metrics[:3]],
             ),
             driver_snapshot=[],
             risk_snapshot=[
@@ -310,7 +311,7 @@ def _fallback_report_from_state(
                 earnings_backed_by_cash="unclear",
                 summary=summary,
             ),
-            cash_metrics=metrics[:3],
+            cash_metrics=present_metrics[:3],
             capital_allocation=CapitalAllocation(liquidity=[point]),
             allocation_discipline=[point],
             red_flags=[

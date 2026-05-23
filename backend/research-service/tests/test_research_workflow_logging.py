@@ -266,3 +266,67 @@ def test_fallback_summary_hides_internal_missing_metric_markers() -> None:
     assert "Not extracted" not in report.sections["summary"]
     assert "未在当前证据包中稳定抽取" in report.sections["summary"]
     assert "revenue: $111.2B" in report.sections["summary"]
+
+
+def test_fallback_report_hides_internal_missing_metric_markers_everywhere() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="BAC",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="BAC",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["toplineVerdict"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "revenue",
+                    "value": 28150000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q2",
+                    "source_id": "src_1",
+                },
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "gross margin",
+                    "value": None,
+                    "unit": "USD",
+                    "fact_period": "2026-Q2",
+                    "source_id": "src_2",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "SEC companyfacts",
+                    "snippet": "Revenue was $28.2B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_2",
+                    "section": "SEC companyfacts",
+                    "snippet": "Gross margin was not stable enough for direct extraction.",
+                    "citation_status": "partial",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Earnings agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    assert "Not extracted" not in serialized
