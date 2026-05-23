@@ -19,10 +19,29 @@ from app.contracts.agent import (
     AgentRunStatus,
     AgentState,
     BoundedAgentResult,
+    EvidenceMemory,
     ToolStatus,
     default_task_policy,
 )
-from app.contracts.report import EvidenceAwareReport
+from app.contracts.report import (
+    BusinessDriverSections,
+    CapitalAllocation,
+    CashFlowCapitalAllocationSections,
+    CashQualityVerdict,
+    CitationStatus,
+    DriverMap,
+    DriverThesis,
+    EvidenceAwareReport,
+    EvidenceBoundClaim,
+    EvidenceBoundMetric,
+    EvidenceBoundPoint,
+    EvidenceRef,
+    LatestEarningsSections,
+    LatestFinancialDashboard,
+    SourceRef,
+    TaskSectionCoverage,
+    ToplineVerdict,
+)
 from app.contracts.research_task import ResearchTaskType
 
 logger = logging.getLogger("uvicorn.error")
@@ -75,21 +94,21 @@ class ResearchAgentWorkflow:
                 f"Earnings research agent failed. {exc}",
                 degraded_reason=f"Earnings research agent failed: {exc}",
             )
-            final_report = None
+            final_report = _fallback_report_from_state(request, state, reason=str(exc))
         except BusinessDriverAgentError as exc:
             state = _append_degraded_event(
                 exc.state,
                 f"Business driver research agent failed. {exc}",
                 degraded_reason=f"Business driver research agent failed: {exc}",
             )
-            final_report = None
+            final_report = _fallback_report_from_state(request, state, reason=str(exc))
         except CashFlowAgentError as exc:
             state = _append_degraded_event(
                 exc.state,
                 f"Cash flow research agent failed. {exc}",
                 degraded_reason=f"Cash flow research agent failed: {exc}",
             )
-            final_report = None
+            final_report = _fallback_report_from_state(request, state, reason=str(exc))
         except Exception as exc:
             state = _append_degraded_event(
                 state,
@@ -219,6 +238,263 @@ def _result(
         retryable=final_report is None,
         final_report=final_report.model_dump(mode="json") if final_report is not None else None,
     )
+
+
+def _fallback_report_from_state(
+    request: AgentRequest,
+    state: AgentState,
+    *,
+    reason: str,
+) -> EvidenceAwareReport | None:
+    source_refs = _source_refs_from_memory(state.evidence_memory)
+    metrics = _fallback_metrics(state.evidence_memory, source_refs)
+    if not source_refs and not metrics:
+        return None
+    summary = _fallback_summary(request, reason, metrics, source_refs)
+    coverage = TaskSectionCoverage(
+        status="partial",
+        missing_sections=["llm_final_synthesis"],
+        evidence_count=len(source_refs),
+    )
+    claims = _fallback_claims(request, summary, source_refs)
+    if request.task_type == ResearchTaskType.LATEST_EARNINGS_READOUT:
+        task_sections = LatestEarningsSections(
+            schema_version="task_sections.v1",
+            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+            coverage=coverage,
+            company_profile=None,
+            topline_verdict=ToplineVerdict(
+                headline="Evidence-backed fallback earnings view",
+                summary=summary,
+                verdict="mixed",
+            ),
+            key_takeaways=[_fallback_point(summary, source_refs)],
+            financial_dashboard=LatestFinancialDashboard(
+                metrics=metrics[:3],
+                chart_focus=[metric.name for metric in metrics[:3]],
+            ),
+            driver_snapshot=[],
+            risk_snapshot=[
+                _fallback_point(
+                    "The final LLM synthesis did not complete, so this section keeps "
+                    "the evidence-backed figures and should be treated as partial.",
+                    source_refs,
+                    title="Synthesis risk",
+                )
+            ],
+        )
+    elif request.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+        point = _fallback_point(summary, source_refs, title="Evidence-backed driver signal")
+        task_sections = BusinessDriverSections(
+            schema_version="task_sections.v1",
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            coverage=coverage,
+            driver_thesis=DriverThesis(
+                headline="Evidence-backed fallback driver view",
+                durability="unclear",
+                summary=summary,
+            ),
+            driver_map=DriverMap(demand=[point]),
+            positive_signals=[point],
+            negative_signals=[],
+            watchlist=["Review the final LLM synthesis once provider latency recovers."],
+        )
+    elif request.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
+        point = _fallback_point(summary, source_refs, title="Cash flow evidence anchor")
+        task_sections = CashFlowCapitalAllocationSections(
+            schema_version="task_sections.v1",
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            coverage=coverage,
+            cash_quality_verdict=CashQualityVerdict(
+                headline="Evidence-backed fallback cash view",
+                earnings_backed_by_cash="unclear",
+                summary=summary,
+            ),
+            cash_metrics=metrics[:3],
+            capital_allocation=CapitalAllocation(liquidity=[point]),
+            allocation_discipline=[point],
+            red_flags=[
+                _fallback_point(
+                    "The final LLM synthesis did not complete, so allocation discipline "
+                    "is partial and should be rechecked when synthesis recovers.",
+                    source_refs,
+                    title="Partial synthesis",
+                )
+            ],
+        )
+    else:
+        return None
+    return EvidenceAwareReport(
+        run_id=request.run_id,
+        ticker=state.ticker,
+        task_type=request.task_type,
+        task_sections=task_sections,
+        sections={"summary": summary, "synthesis": "deterministic_fallback"},
+        claims=claims,
+        retrieval_records=state.retrieval_records,
+    )
+
+
+def _source_refs_from_memory(memory: EvidenceMemory) -> list[SourceRef]:
+    refs: list[SourceRef] = []
+    for ref in memory.source_refs:
+        try:
+            refs.append(
+                SourceRef(
+                    source_id=str(ref.get("source_id", "fallback_source")),
+                    section=str(ref.get("section", "Evidence")),
+                    snippet=str(ref.get("snippet", "")),
+                    citation_status=_citation_status_from_value(ref.get("citation_status")),
+                    filing_type=_optional_str(ref.get("filing_type")),
+                    filing_date=_optional_str(ref.get("filing_date")),
+                    accession_number=_optional_str(ref.get("accession_number")),
+                )
+            )
+        except ValueError:
+            continue
+    return refs
+
+
+def _fallback_metrics(
+    memory: EvidenceMemory,
+    source_refs: list[SourceRef],
+) -> list[EvidenceBoundMetric]:
+    refs_by_id = {source_ref.source_id: source_ref for source_ref in source_refs}
+    metrics: list[EvidenceBoundMetric] = []
+    for record in memory.metric_evidence:
+        name = str(record.get("metric") or record.get("normalized_metric") or "").strip()
+        if not name:
+            continue
+        source_ref = refs_by_id.get(str(record.get("source_id") or ""))
+        metric_refs = [_evidence_ref(source_ref)] if source_ref is not None else []
+        metrics.append(
+            EvidenceBoundMetric(
+                name=name,
+                value=_metric_value(record.get("value"), record.get("unit")),
+                period=_optional_str(record.get("fact_period") or record.get("period")),
+                interpretation=_metric_interpretation(record, source_ref),
+                evidence_refs=metric_refs,
+                citation_status=source_ref.citation_status
+                if source_ref is not None
+                else CitationStatus.UNVERIFIED,
+            )
+        )
+    return metrics[:3]
+
+
+def _fallback_summary(
+    request: AgentRequest,
+    reason: str,
+    metrics: list[EvidenceBoundMetric],
+    source_refs: list[SourceRef],
+) -> str:
+    metric_text = ", ".join(
+        f"{metric.name}: {metric.value}" for metric in metrics[:3]
+    )
+    evidence_text = _clip(source_refs[0].snippet, 180) if source_refs else "evidence was collected"
+    base = metric_text or evidence_text
+    if _is_zh_locale(request.language):
+        return (
+            f"{request.ticker} 已完成证据收集，但最终 LLM 综合失败；"
+            f"当前先保留证据支撑的降级结论：{base}。失败原因：{_clip(reason, 120)}"
+        )
+    return (
+        f"{request.ticker} evidence collection completed, but final LLM synthesis failed. "
+        f"This fallback keeps evidence-backed signals: {base}. Failure reason: {_clip(reason, 120)}"
+    )
+
+
+def _fallback_claims(
+    request: AgentRequest,
+    summary: str,
+    source_refs: list[SourceRef],
+) -> list[EvidenceBoundClaim]:
+    if not source_refs:
+        return []
+    return [
+        EvidenceBoundClaim(
+            claim_id=f"{request.run_id}:fallback_claim:1",
+            text=summary,
+            citation_status=source_refs[0].citation_status,
+            source_refs=source_refs[:1],
+        )
+    ]
+
+
+def _fallback_point(
+    summary: str,
+    source_refs: list[SourceRef],
+    *,
+    title: str = "Evidence-backed fallback",
+) -> EvidenceBoundPoint:
+    return EvidenceBoundPoint(
+        title=title,
+        summary=summary,
+        evidence_refs=[_evidence_ref(source_ref) for source_ref in source_refs[:1]],
+        citation_status=source_refs[0].citation_status if source_refs else CitationStatus.UNVERIFIED,
+    )
+
+
+def _evidence_ref(source_ref: SourceRef) -> EvidenceRef:
+    return EvidenceRef(
+        section=source_ref.section,
+        excerpt=source_ref.snippet,
+        filing_date=source_ref.filing_date,
+        accession_number=source_ref.accession_number,
+        source_id=source_ref.source_id,
+    )
+
+
+def _citation_status_from_value(value: Any) -> CitationStatus:
+    try:
+        return CitationStatus(str(value or CitationStatus.UNVERIFIED.value))
+    except ValueError:
+        return CitationStatus.UNVERIFIED
+
+
+def _metric_interpretation(
+    record: dict[str, Any],
+    source_ref: SourceRef | None,
+) -> str:
+    concept = str(record.get("concept") or "").strip()
+    if concept:
+        return f"SEC companyfacts concept {concept}."
+    if source_ref is not None:
+        return _clip(source_ref.snippet, 220)
+    return "Evidence-backed metric collected before final synthesis failed."
+
+
+def _metric_value(value: object, unit: object) -> str:
+    if value is None:
+        return "Not extracted"
+    formatted = _compact_number(value) if isinstance(value, int | float) else str(value)
+    if str(unit or "").strip() == "USD" and not formatted.startswith("$"):
+        return f"${formatted}"
+    return formatted
+
+
+def _compact_number(value: int | float) -> str:
+    absolute = abs(float(value))
+    if absolute >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.1f}B"
+    if absolute >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    return f"{value:,.0f}"
+
+
+def _optional_str(value: Any) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _clip(text: str, limit: int = 700) -> str:
+    cleaned = " ".join(str(text).split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return f"{cleaned[:limit].rstrip()}..."
+
+
+def _is_zh_locale(language: str | None) -> bool:
+    return str(language or "").lower().startswith("zh")
 
 
 def _stage_latency_summary(events: list[AgentEvent]) -> dict[str, int | str]:

@@ -158,7 +158,7 @@ def run_tool_calling_graph_agent(
         final_result, payload = _invoke_and_parse_final_payload(
             final_chain=final_chain,
             final_messages=final_messages,
-            attempts=1,
+            attempts=2,
             agent_name=agent_name,
             raise_error=_raise,
         )
@@ -292,7 +292,7 @@ def _run_planned_tool_graph(
         final_result, payload = _invoke_and_parse_final_payload(
             final_chain=final_chain,
             final_messages=final_messages,
-            attempts=1,
+            attempts=2,
             agent_name=agent_name,
             raise_error=_raise,
         )
@@ -423,7 +423,7 @@ def _json_response_llm(llm: BaseChatModel) -> BaseChatModel:
                 "tool_choice": None,
                 "max_tokens": 2048 if compact_synthesis else 3072,
                 "response_format": {"type": "json_object"},
-                "timeout_seconds": 60,
+                "timeout_seconds": 35 if compact_synthesis else 45,
             }
         )
     return llm
@@ -454,8 +454,13 @@ def _invoke_and_parse_final_payload(
 ) -> tuple[AIMessage, dict[str, Any]]:
     last_error: Exception | None = None
     for _ in range(max(1, attempts)):
+        attempt_messages = (
+            final_messages
+            if last_error is None
+            else _retry_final_messages(final_messages, last_error)
+        )
         try:
-            final_result = final_chain.invoke({"messages": final_messages})
+            final_result = final_chain.invoke({"messages": attempt_messages})
         except Exception as exc:
             last_error = exc
             continue
@@ -472,6 +477,26 @@ def _invoke_and_parse_final_payload(
     if isinstance(last_error, json.JSONDecodeError):
         raise_error(f"{agent_name} final JSON was invalid: {last_error}")
     raise_error(f"{agent_name} final synthesis failed: {last_error}")
+
+
+def _retry_final_messages(
+    final_messages: list[HumanMessage],
+    last_error: Exception,
+) -> list[HumanMessage]:
+    retry_instruction = (
+        "The previous final synthesis failed before producing usable JSON. "
+        f"Failure: {last_error}. "
+        "Return one smaller valid JSON object only. Keep arrays short: at most two "
+        "points per section and at most three metrics. Do not include markdown, "
+        "comments, code fences, or prose outside the JSON object."
+    )
+    if not final_messages:
+        return [HumanMessage(content=retry_instruction)]
+    retry_messages = list(final_messages)
+    retry_messages[0] = HumanMessage(
+        content=f"{_message_content_to_text(retry_messages[0].content)}\n\n{retry_instruction}"
+    )
+    return retry_messages
 
 
 def _evidence_context(messages: list[BaseMessage], *, compact: bool = False) -> str:

@@ -933,7 +933,7 @@ export default function EarningsAnalystApp({
             <div className="flex items-center gap-2">
               <Bot className="w-4 h-4 text-slate-500" />
               <span className="text-xs text-slate-500">
-                {isZh ? "BYOK Provider:" : "BYOK Provider:"}
+                {isZh ? "BYOK 提供方：" : "BYOK Provider:"}
               </span>
               <div className="flex gap-2 flex-1">
                 {BYOK_PROVIDERS.map((provider) => (
@@ -1855,6 +1855,7 @@ function MarketCandlestickPanel({
             candles={candles}
             interval={interval}
             onHoverCandle={setHoveredCandle}
+            isZh={isZh}
           />
         )}
       </CardContent>
@@ -1866,10 +1867,12 @@ function TradingCandlestickChart({
   candles,
   interval,
   onHoverCandle,
+  isZh,
 }: {
   candles: MarketCandle[];
   interval: MarketChartInterval;
   onHoverCandle: (candle: MarketChartHover | null) => void;
+  isZh: boolean;
 }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -2051,7 +2054,11 @@ function TradingCandlestickChart({
       data-visible-to={defaultVisibleTo}
       data-interval={interval}
       className="h-full w-full cursor-crosshair touch-pan-x select-none"
-      aria-label="Interactive candlestick chart with mouse wheel zoom and drag pan"
+      aria-label={
+        isZh
+          ? "交互式 K 线图，支持滚轮缩放和拖拽平移"
+          : "Interactive candlestick chart with mouse wheel zoom and drag pan"
+      }
     />
   );
 }

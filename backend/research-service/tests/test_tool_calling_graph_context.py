@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import json
 
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.messages import ToolMessage
 
-from app.agents.tool_calling_graph import _evidence_context, _json_response_llm
+from app.agents.tool_calling_graph import (
+    _evidence_context,
+    _invoke_and_parse_final_payload,
+    _json_response_llm,
+)
 
 
 def test_compact_evidence_context_deduplicates_evidence_pack_payload() -> None:
@@ -88,6 +93,48 @@ def test_compact_synthesis_keeps_enough_completion_budget_for_cash_flow_json() -
 
     assert copied.update["max_tokens"] == 2048
     assert copied.update["response_format"] == {"type": "json_object"}
+    assert copied.update["timeout_seconds"] == 35
+
+
+def test_final_payload_retries_after_invalid_json() -> None:
+    final_chain = _FlakyFinalChain(
+        [
+            AIMessage(content='{"driver_thesis": {"headline": "Growth'),
+            AIMessage(content='{"driver_thesis": {"headline": "Growth", "summary": "Revenue improved."}}'),
+        ]
+    )
+
+    final_result, payload = _invoke_and_parse_final_payload(
+        final_chain=final_chain,
+        final_messages=[HumanMessage(content="Return JSON only.")],
+        attempts=2,
+        agent_name="Business driver agent",
+        raise_error=_raise_test_error,
+    )
+
+    assert final_chain.calls == 2
+    assert isinstance(final_result, AIMessage)
+    assert payload["driver_thesis"]["summary"] == "Revenue improved."
+
+
+def test_final_payload_retries_after_provider_timeout() -> None:
+    final_chain = _FlakyFinalChain(
+        [
+            TimeoutError("The read operation timed out"),
+            AIMessage(content='{"cash_quality_verdict": {"summary": "Cash generation recovered."}}'),
+        ]
+    )
+
+    _, payload = _invoke_and_parse_final_payload(
+        final_chain=final_chain,
+        final_messages=[HumanMessage(content="Return JSON only.")],
+        attempts=2,
+        agent_name="Cash flow agent",
+        raise_error=_raise_test_error,
+    )
+
+    assert final_chain.calls == 2
+    assert payload["cash_quality_verdict"]["summary"] == "Cash generation recovered."
 
 
 class _CopyableLlm:
@@ -105,3 +152,21 @@ class _CopyableLlm:
             compact_synthesis=self.compact_synthesis,
             update=update,
         )
+
+
+class _FlakyFinalChain:
+    def __init__(self, results: list[object]) -> None:
+        self.results = results
+        self.calls = 0
+
+    def invoke(self, payload: dict[str, object]) -> object:
+        del payload
+        result = self.results[self.calls]
+        self.calls += 1
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+def _raise_test_error(message: str) -> None:
+    raise AssertionError(message)

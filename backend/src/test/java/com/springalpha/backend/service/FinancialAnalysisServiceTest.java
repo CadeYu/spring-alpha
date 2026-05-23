@@ -250,6 +250,31 @@ class FinancialAnalysisServiceTest {
     }
 
     @Test
+    void analyzeStockUsesTheDefaultFilingBudgetForLiveResearchRequests() {
+        FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
+        FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.success();
+        FakeSecService secService = new FakeSecService("Revenue grew. ".repeat(20_000));
+        FinancialAnalysisService service = new FinancialAnalysisService(
+                secService,
+                credentialValidator,
+                researchAgentClient,
+                new com.springalpha.backend.service.research.ResearchAgentReportMapper());
+
+        service.analyzeStock(
+                "AAPL",
+                "en",
+                "siliconflow",
+                "secret",
+                ResearchTaskType.LATEST_EARNINGS_READOUT)
+                .collectList()
+                .block();
+
+        String text = researchAgentClient.lastRequest.filings().getFirst().text();
+        assertTrue(text.length() <= 72_000);
+        assertTrue(text.endsWith("... [Truncated for live analysis]"));
+    }
+
+    @Test
     void analyzeStockFailsWhenResearchAgentReturnsNoReport() {
         FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
         FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.empty();

@@ -222,6 +222,50 @@ describe("Home page", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows Chinese BYOK and chart accessibility labels in zh mode", async () => {
+    window.localStorage.setItem("spring-alpha-landing-locale", "zh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/market/chart/")) {
+        return new Response(
+          JSON.stringify({
+            candles: Array.from({ length: 20 }, (_, index) => ({
+              date: `2026-05-${String((index % 28) + 1).padStart(2, "0")}`,
+              open: 100 + index,
+              high: 112 + index,
+              low: 98 + index,
+              close: 108 + index,
+              volume: 123456 + index,
+            })),
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return createSseResponse([
+        {
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          citations: [],
+          taskSections: latestTaskSections("Earnings agent verdict"),
+        },
+      ]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+
+    expect(screen.getByText("BYOK 提供方：")).toBeInTheDocument();
+    submitTicker("AAPL");
+    expect(
+      await screen.findByLabelText("交互式 K 线图，支持滚轮缩放和拖拽平移"),
+    ).toBeInTheDocument();
+  });
+
   it("inherits the landing locale when opening the app", async () => {
     window.localStorage.setItem("spring-alpha-landing-locale", "zh");
     vi.stubGlobal("fetch", vi.fn());

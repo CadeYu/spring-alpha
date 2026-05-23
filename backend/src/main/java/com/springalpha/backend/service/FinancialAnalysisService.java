@@ -25,7 +25,7 @@ import java.util.UUID;
 @Slf4j
 @Service
 public class FinancialAnalysisService {
-    private static final int DEFAULT_AGENT_FILING_MAX_CHARS = 120_000;
+    private static final int DEFAULT_AGENT_FILING_MAX_CHARS = 72_000;
     private static final String FILING_TRUNCATION_MARKER = "... [Truncated for live analysis]";
 
     private final SecService secService;

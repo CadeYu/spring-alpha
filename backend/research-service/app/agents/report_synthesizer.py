@@ -863,7 +863,7 @@ def _rewrite_placeholder_availability_text(value: str) -> str:
 
 def _normalize_synthesized_point(point: object) -> object:
     if not isinstance(point, dict):
-        summary = str(point)
+        summary = str(point).strip()
         return {
             "title": _title_from_text(summary),
             "summary": summary,
@@ -871,15 +871,8 @@ def _normalize_synthesized_point(point: object) -> object:
             "citation_status": "unverified",
         }
     point = _clean_mapping_keys(point)
-    if "title" in point and "summary" in point:
-        return {
-            "title": str(point.get("title") or ""),
-            "summary": str(point.get("summary") or ""),
-            "source_ids": _source_ids_from_value(point),
-            "citation_status": str(point.get("citation_status") or "supported"),
-        }
     if "signal" in point:
-        signal = str(point.get("signal") or "")
+        signal = str(point.get("signal") or "").strip()
         return {
             "title": signal or "Evidence signal",
             "summary": signal or "Evidence signal.",
@@ -909,20 +902,28 @@ def _normalize_synthesized_point(point: object) -> object:
         value = point.get("value")
         period = point.get("period")
         text = f"Value was {value}" + (f" for {period}." if period else ".")
-    if not text and {"strengths", "weaknesses", "investor_implication"}.intersection(point):
+    if (
+        not text
+        and not _has_supplemental_point_text(point)
+        and {"strengths", "weaknesses", "investor_implication"}.intersection(point)
+    ):
         text = "Capital allocation discipline."
     if not text:
-        return point
+        summary = _summary_from_provider_point(point, "")
+        if not summary:
+            return point
+    else:
+        summary = _summary_from_provider_point(point, str(text))
     return {
         "title": str(
             title
             or (
                 "Capital allocation item"
                 if "value" in point
-                else _title_from_text(str(text))
+                else _title_from_text(summary or str(text))
             )
         ),
-        "summary": _summary_from_provider_point(point, str(text)),
+        "summary": summary,
         "source_ids": _source_ids_from_value(point),
         "citation_status": str(point.get("citation_status") or "supported"),
     }
@@ -930,6 +931,19 @@ def _normalize_synthesized_point(point: object) -> object:
 
 def _has_point_summary(point: object) -> bool:
     return isinstance(point, dict) and bool(str(point.get("summary") or "").strip())
+
+
+def _has_supplemental_point_text(point: dict[str, object]) -> bool:
+    return any(
+        str(point.get(key) or "").strip()
+        for key in (
+            "investor_relevance",
+            "evidence_limit",
+            "strengths",
+            "weaknesses",
+            "investor_implication",
+        )
+    )
 
 
 def synthesize_cash_flow_report(

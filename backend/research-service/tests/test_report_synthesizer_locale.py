@@ -6,6 +6,7 @@ from app.agents.llm_gateway import LlmClient, LlmRequest, LlmResponse
 from app.agents.report_synthesizer import (
     _business_driver_prompt,
     _cash_flow_prompt,
+    _normalize_cash_flow_payload,
     _company_profile_system_prompt,
     _company_profile_user_prompt,
     _evidence_lines,
@@ -213,6 +214,55 @@ def test_business_driver_single_claim_dict_payload_is_normalized_to_list() -> No
     assert len(payload["claims"]) == 1
     assert payload["claims"][0]["text"] == "Revenue growth remains resilient."
     assert payload["claims"][0]["source_ids"] == ["src_1"]
+
+
+def test_cash_flow_capital_allocation_backfills_empty_point_summaries() -> None:
+    payload = _normalize_cash_flow_payload(
+        {
+            "cash_quality_verdict": {
+                "headline": "Cash flow is mixed.",
+                "earnings_backed_by_cash": "mixed",
+                "summary": "Cash flow is mixed but still supported by operating cash generation.",
+            },
+            "cash_metrics": [],
+            "capital_allocation": {
+                "capex": [
+                    {
+                        "title": "Capex intensity",
+                        "summary": "",
+                        "investor_implication": "Capex remains the main reinvestment use of cash.",
+                        "source_ids": ["src_1"],
+                    }
+                ],
+                "buybacks": [
+                    {
+                        "title": "Buybacks",
+                        "summary": "",
+                        "value": "$0",
+                        "period": "latest quarter",
+                        "source_ids": ["src_2"],
+                    }
+                ],
+            },
+            "allocation_discipline": [
+                {
+                    "title": "Discipline",
+                    "summary": "",
+                    "strengths": "Liquidity remains adequate.",
+                    "weaknesses": "Capital intensity is elevated.",
+                }
+            ],
+            "red_flags": [],
+            "claims": [],
+        }
+    )
+
+    capex = payload["capital_allocation"]["capex"][0]
+    buybacks = payload["capital_allocation"]["buybacks"][0]
+    discipline = payload["allocation_discipline"][0]
+    assert capex["summary"] == "Investor implication: Capex remains the main reinvestment use of cash."
+    assert buybacks["summary"] == "Value was $0 for latest quarter."
+    assert "Liquidity remains adequate" in discipline["summary"]
 
 
 def _make_request(task_type: ResearchTaskType, language: str) -> Any:

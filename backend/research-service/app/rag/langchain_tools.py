@@ -301,13 +301,8 @@ def _evidence_pack_template(
             "queries": [
                 (
                     "latest earnings evidence revenue gross margin operating income "
-                    "net sales cost of sales expense discipline operating drivers"
-                    + focus_terms
-                ),
-                (
-                    "segment evidence products services geography demand pricing mix "
-                    "operating income what changed"
-                    + focus_terms
+                    "net sales cost of sales expense discipline operating drivers "
+                    "segment performance margin mix" + focus_terms
                 ),
             ],
         }
@@ -317,13 +312,9 @@ def _evidence_pack_template(
             "queries": [
                 (
                     "business driver evidence product segment customer demand pricing "
-                    "volume mix channel geography what drove growth"
-                    + focus_terms
-                ),
-                (
-                    "strategy evidence services cloud data center AI subscriptions "
-                    "enterprise customers competitive position"
-                    + focus_terms
+                    "volume mix channel geography what drove growth strategy evidence "
+                    "services cloud data center AI subscriptions enterprise customers "
+                    "competitive position" + focus_terms
                 ),
             ],
         }
@@ -331,9 +322,8 @@ def _evidence_pack_template(
         return {
             "sections": ["Liquidity and Capital Resources", "Cash Flows", "MD&A"],
             "queries": [
-                "cash quality evidence operating cash flow free cash flow working capital"
-                + focus_terms,
                 (
+                    "cash quality evidence operating cash flow free cash flow working capital "
                     "capital allocation evidence capex capital expenditures repurchases "
                     "dividends debt liquidity financing investing"
                 )

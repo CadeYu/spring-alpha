@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from app.agents.domain_tools import LlamaIndexResearchToolService, SecCompanyFactsProvider
+from app.agents.evidence_pack_tool import create_agent_evidence_pack_tool
 from app.contracts.agent import AgentState, EvidenceMemory, TaskPolicy, ToolStatus
 from app.contracts.report import SourceRef
 from app.contracts.research_task import ResearchTaskType
-from app.contracts.tools import CompanyFactsInput, MetricEvidenceInput
+from app.contracts.tools import CompanyFactsInput, FilingSectionSearchInput, MetricEvidenceInput
 from app.rag.llamaindex_pipeline import RetrievalFallbackStatus, RetrieveEvidenceResult
 
 
@@ -44,6 +45,28 @@ class _RecordingPipeline:
             source_id=f"{kwargs['run_id']}:rag:{len(self.queries)}",
             section="Cash Flow Statement",
             snippet=f"Fallback evidence for {kwargs['query']}.",
+        )
+        return RetrieveEvidenceResult(
+            run_id=str(kwargs["run_id"]),
+            ticker=str(kwargs["ticker"]),
+            task_type=kwargs["task_type"],
+            query=str(kwargs["query"]),
+            retrieved_nodes=[],
+            source_refs=[source_ref],
+            fallback_status=RetrievalFallbackStatus.NONE,
+        )
+
+
+class _EvidencePackRecordingPipeline:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def retrieve_evidence(self, **kwargs):
+        self.queries.append(str(kwargs["query"]))
+        source_ref = SourceRef(
+            source_id=f"{kwargs['run_id']}:rag:{len(self.queries)}",
+            section="MD&A",
+            snippet=f"Evidence for {kwargs['query']}.",
         )
         return RetrieveEvidenceResult(
             run_id=str(kwargs["run_id"]),
@@ -158,11 +181,67 @@ def test_search_metric_evidence_retrieves_only_missing_metrics_when_facts_are_pa
     )
 
     assert result.status == ToolStatus.OK
-    assert len(pipeline.queries) == 4
+    assert len(pipeline.queries) == 1
     assert not any(query.startswith("operating cash flow") for query in pipeline.queries)
     assert "operating cash flow" in {
         record["normalized_metric"] for record in result.data["records"]
     }
+
+
+def test_search_filing_sections_uses_a_tighter_cash_flow_query_budget() -> None:
+    pipeline = _RecordingPipeline()
+    service = LlamaIndexResearchToolService(pipeline, facts_provider=None)  # type: ignore[arg-type]
+    state = _state_with_facts(metrics=[])
+
+    result = service.search_filing_sections(
+        FilingSectionSearchInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            sections=["MD&A"],
+            query="cash flow liquidity debt maturities",
+            limit=5,
+        ),
+        state.model_copy(update={"task_type": ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION}),
+    )
+
+    assert result.status == ToolStatus.OK
+    assert len(pipeline.queries) == 2
+
+
+def test_build_evidence_pack_uses_two_task_queries_for_latest_earnings() -> None:
+    pipeline = _EvidencePackRecordingPipeline()
+    state = _state_with_facts(
+        metrics=[
+            {"name": "revenue", "value": 25_500_000_000, "unit": "USD"},
+            {"name": "gross margin", "value": 0.1823, "unit": "pure"},
+            {"name": "operating income", "value": 2_100_000_000, "unit": "USD"},
+        ]
+    ).model_copy(update={"task_type": ResearchTaskType.LATEST_EARNINGS_READOUT})
+    tool = create_agent_evidence_pack_tool(
+        request=type(
+            "Request",
+            (),
+            {
+                "run_id": state.run_id,
+                "ticker": state.ticker,
+                "task_type": state.task_type,
+            },
+        )(),
+        state_getter=lambda: state,
+        state_setter=lambda next_state: None,
+        rag_pipeline=pipeline,  # type: ignore[arg-type]
+        summary="Built SEC filing evidence pack for latest earnings.",
+        run_domain_tool=lambda current_state, tool_name, summary, result, tool_input=None: (
+            current_state,
+            "{}",
+        ),
+    )
+
+    tool.invoke({"focus": "revenue margins", "top_k": 5})
+
+    assert len(pipeline.queries) == 1
+    assert "revenue" in pipeline.queries[0]
 
 
 def _state_with_facts(*, metrics: list[dict[str, object]]) -> AgentState:

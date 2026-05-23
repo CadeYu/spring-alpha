@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from app.agents.llm_gateway import OpenAiCompatibleLlmClient
-from app.agents.research_workflow import ResearchAgentWorkflow
+from app.agents.research_workflow import ResearchAgentWorkflow, _fallback_report_from_state
 from app.contracts.agent import (
     AgentEvent,
     AgentPhase,
@@ -13,6 +13,7 @@ from app.contracts.agent import (
     LlmProvider,
     TaskPolicy,
     ToolStatus,
+    EvidenceMemory,
 )
 from app.contracts.research_task import ResearchTaskType
 
@@ -131,3 +132,57 @@ def test_research_workflow_logs_stage_summary(caplog, monkeypatch) -> None:
         and "synthesis_ms=612" in record.message
         for record in caplog.records
     )
+
+
+def test_cash_flow_timeout_fallback_preserves_typed_sections_from_evidence() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="TSLA",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="TSLA",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["cashQualityVerdict"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "operating cash flow",
+                    "value": 4664000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "concept": "NetCashProvidedByUsedInOperatingActivities",
+                    "source_id": "src_1",
+                }
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "SEC companyfacts",
+                    "snippet": "Operating cash flow was $4.7B in the quarter.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Cash flow agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    assert report.task_sections.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION
+    assert report.task_sections.coverage.status == "partial"
+    assert report.task_sections.cash_metrics[0].value == "$4.7B"
+    assert report.task_sections.capital_allocation.liquidity
+    assert report.sections["synthesis"] == "deterministic_fallback"
