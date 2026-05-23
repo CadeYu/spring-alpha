@@ -9,6 +9,7 @@ from app.agents.report_synthesizer import (
     _company_profile_system_prompt,
     _company_profile_user_prompt,
     _evidence_lines,
+    _normalize_business_driver_payload,
     _sanitize_user_text,
     _system_prompt,
     _user_prompt,
@@ -151,6 +152,67 @@ def test_evidence_lines_are_compact_and_do_not_repeat_large_context() -> None:
     assert len(lines) == 3
     assert all("original_source_id" in line for line in lines)
     assert all(len(line) < 900 for line in lines)
+
+
+def test_business_driver_claims_dict_payload_is_normalized_to_list() -> None:
+    payload = _normalize_business_driver_payload(
+        {
+            "driver_thesis": {
+                "headline": "Operating leverage is improving.",
+                "durability": "durable",
+                "summary": "Operating leverage is improving.",
+            },
+            "driver_map": {"product": []},
+            "positive_signals": [],
+            "negative_signals": [],
+            "watchlist": ["Watch operating margin"],
+            "claims": {
+                "revenue_growth": {
+                    "text": "Revenue growth remains resilient.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                "margin": {
+                    "summary": "Margins are expanding.",
+                    "source_id": "src_2",
+                },
+            },
+        }
+    )
+
+    assert isinstance(payload["claims"], list)
+    assert [claim["text"] for claim in payload["claims"]] == [
+        "Revenue growth remains resilient.",
+        "Margins are expanding.",
+    ]
+    assert payload["claims"][0]["source_ids"] == ["src_1"]
+    assert payload["claims"][1]["source_ids"] == ["src_2"]
+
+
+def test_business_driver_single_claim_dict_payload_is_normalized_to_list() -> None:
+    payload = _normalize_business_driver_payload(
+        {
+            "driver_thesis": {
+                "headline": "Operating leverage is improving.",
+                "durability": "durable",
+                "summary": "Operating leverage is improving.",
+            },
+            "driver_map": {"product": []},
+            "positive_signals": [],
+            "negative_signals": [],
+            "watchlist": [],
+            "claims": {
+                "text": "Revenue growth remains resilient.",
+                "source_id": "src_1",
+                "citation_status": "supported",
+            },
+        }
+    )
+
+    assert isinstance(payload["claims"], list)
+    assert len(payload["claims"]) == 1
+    assert payload["claims"][0]["text"] == "Revenue growth remains resilient."
+    assert payload["claims"][0]["source_ids"] == ["src_1"]
 
 
 def _make_request(task_type: ResearchTaskType, language: str) -> Any:

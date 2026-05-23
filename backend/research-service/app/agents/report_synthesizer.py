@@ -736,41 +736,51 @@ def _metric_name_looks_like_ratio(metric_name: str) -> bool:
 
 
 def _normalize_synthesized_claims(value: object) -> object:
+    if isinstance(value, dict):
+        normalized_claim = _normalize_synthesized_claim(value)
+        if normalized_claim:
+            return [normalized_claim]
+        return [
+            normalized_claim
+            for claim in value.values()
+            if (normalized_claim := _normalize_synthesized_claim(claim))
+        ]
     if not isinstance(value, list):
-        return value
-    normalized_claims: list[object] = []
-    for claim in value:
-        if isinstance(claim, str):
-            if not claim.strip():
-                continue
-            normalized_claims.append(
-                {
-                    "text": claim,
-                    "source_ids": [],
-                    "citation_status": "unverified",
-                }
-            )
-            continue
-        if not isinstance(claim, dict):
-            normalized_claims.append(claim)
-            continue
-        text = str(
-            claim.get("text")
-            or claim.get("claim")
-            or claim.get("statement")
-            or claim.get("summary")
-            or ""
-        ).strip()
+        normalized_claim = _normalize_synthesized_claim(value)
+        return [normalized_claim] if normalized_claim else value
+    return [
+        normalized_claim
+        for claim in value
+        if (normalized_claim := _normalize_synthesized_claim(claim))
+    ]
+
+
+def _normalize_synthesized_claim(value: object) -> dict[str, object] | None:
+    if isinstance(value, str):
+        text = value.strip()
         if not text:
-            continue
-        normalized_claims.append(
-            {
-                "text": text,
-                "source_ids": _source_ids_from_value(claim),
-                "citation_status": str(claim.get("citation_status") or "supported"),
-            }
-        )
-    return normalized_claims
+            return None
+        return {
+            "text": text,
+            "source_ids": [],
+            "citation_status": "unverified",
+        }
+    if not isinstance(value, dict):
+        return None
+    text = str(
+        value.get("text")
+        or value.get("claim")
+        or value.get("statement")
+        or value.get("summary")
+        or ""
+    ).strip()
+    if not text:
+        return None
+    return {
+        "text": text,
+        "source_ids": _source_ids_from_value(value),
+        "citation_status": str(value.get("citation_status") or "supported"),
+    }
 
 
 def _list_of_strings(value: object) -> list[str]:
