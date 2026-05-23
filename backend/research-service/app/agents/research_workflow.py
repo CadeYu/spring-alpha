@@ -467,7 +467,7 @@ def _metric_interpretation(
 def _metric_value(value: object, unit: object) -> str:
     if value is None:
         return "Not extracted"
-    formatted = _compact_number(value) if isinstance(value, int | float) else str(value)
+    formatted = _format_fallback_metric_value(value, unit)
     if str(unit or "").strip() == "USD" and not formatted.startswith("$"):
         return f"${formatted}"
     return formatted
@@ -480,6 +480,16 @@ def _compact_number(value: int | float) -> str:
     if absolute >= 1_000_000:
         return f"{value / 1_000_000:.1f}M"
     return f"{value:,.0f}"
+
+
+def _format_fallback_metric_value(value: object, unit: object) -> str:
+    if isinstance(value, int | float):
+        numeric_value = float(value)
+        unit_text = str(unit or "").strip().lower()
+        if unit_text in {"pure", "ratio", "percent", "percentage"} or abs(numeric_value) <= 1:
+            return f"{numeric_value * 100:.1f}%" if abs(numeric_value) <= 1 else f"{numeric_value:.1f}%"
+        return _compact_number(numeric_value)
+    return str(value)
 
 
 def _optional_str(value: Any) -> str | None:

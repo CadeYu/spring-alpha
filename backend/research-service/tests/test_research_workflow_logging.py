@@ -184,5 +184,9 @@ def test_cash_flow_timeout_fallback_preserves_typed_sections_from_evidence() -> 
     assert report.task_sections.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION
     assert report.task_sections.coverage.status == "partial"
     assert report.task_sections.cash_metrics[0].value == "$4.7B"
+    assert report.task_sections.cash_metrics[0].interpretation.startswith(
+        "SEC companyfacts concept"
+    )
+    assert report.task_sections.cash_metrics[0].evidence_refs
     assert report.task_sections.capital_allocation.liquidity
     assert report.sections["synthesis"] == "deterministic_fallback"
