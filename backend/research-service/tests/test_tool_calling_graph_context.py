@@ -4,7 +4,7 @@ import json
 
 from langchain_core.messages import ToolMessage
 
-from app.agents.tool_calling_graph import _evidence_context
+from app.agents.tool_calling_graph import _evidence_context, _json_response_llm
 
 
 def test_compact_evidence_context_deduplicates_evidence_pack_payload() -> None:
@@ -79,3 +79,29 @@ def test_compact_evidence_context_deduplicates_evidence_pack_payload() -> None:
         len(item["snippet"]) <= 180
         for item in items[0]["content"]["evidence_pack"]["filing_evidence"]
     )
+
+
+def test_compact_synthesis_keeps_enough_completion_budget_for_cash_flow_json() -> None:
+    llm = _CopyableLlm(compact_synthesis=True)
+
+    copied = _json_response_llm(llm)
+
+    assert copied.update["max_tokens"] == 2048
+    assert copied.update["response_format"] == {"type": "json_object"}
+
+
+class _CopyableLlm:
+    def __init__(
+        self,
+        *,
+        compact_synthesis: bool,
+        update: dict[str, object] | None = None,
+    ) -> None:
+        self.compact_synthesis = compact_synthesis
+        self.update = update or {}
+
+    def model_copy(self, *, update: dict[str, object]) -> "_CopyableLlm":
+        return _CopyableLlm(
+            compact_synthesis=self.compact_synthesis,
+            update=update,
+        )

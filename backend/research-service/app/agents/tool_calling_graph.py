@@ -421,7 +421,7 @@ def _json_response_llm(llm: BaseChatModel) -> BaseChatModel:
             update={
                 "tools": [],
                 "tool_choice": None,
-                "max_tokens": 1536 if compact_synthesis else 3072,
+                "max_tokens": 2048 if compact_synthesis else 3072,
                 "response_format": {"type": "json_object"},
                 "timeout_seconds": 60,
             }
