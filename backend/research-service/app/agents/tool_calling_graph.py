@@ -421,7 +421,7 @@ def _json_response_llm(llm: BaseChatModel) -> BaseChatModel:
             update={
                 "tools": [],
                 "tool_choice": None,
-                "max_tokens": 2048 if compact_synthesis else 3072,
+                "max_tokens": 1536 if compact_synthesis else 3072,
                 "response_format": {"type": "json_object"},
                 "timeout_seconds": 60,
             }
@@ -494,7 +494,70 @@ def _compact_tool_content(content: str, *, compact: bool = False) -> Any:
         parsed = json.loads(content)
     except json.JSONDecodeError:
         return content[:800] if compact else content[:2000]
+    if compact:
+        return _compact_json_payload(parsed)
     return _trim_json_value(parsed, compact=compact)
+
+
+def _compact_json_payload(value: Any) -> Any:
+    if isinstance(value, dict) and isinstance(value.get("evidence_pack"), dict):
+        compacted: dict[str, Any] = {
+            "evidence_pack": _compact_evidence_pack(value["evidence_pack"])
+        }
+        for key in ("fallback_status", "degraded_reason"):
+            if value.get(key):
+                compacted[key] = value[key]
+        return compacted
+    return _trim_json_value(value, compact=True)
+
+
+def _compact_evidence_pack(pack: dict[str, Any]) -> dict[str, Any]:
+    compacted: dict[str, Any] = {}
+    for key in ("retrieval_status", "filing_context"):
+        if pack.get(key):
+            compacted[key] = _trim_json_value(pack[key], compact=True)
+    metric_facts = pack.get("metric_facts")
+    if isinstance(metric_facts, list):
+        compacted["metric_facts"] = [
+            _compact_metric_fact(item)
+            for item in metric_facts[:4]
+            if isinstance(item, dict)
+        ]
+    filing_evidence = pack.get("filing_evidence")
+    if isinstance(filing_evidence, list):
+        compacted["filing_evidence"] = [
+            _compact_filing_evidence(item)
+            for item in filing_evidence[:3]
+            if isinstance(item, dict)
+        ]
+    return compacted
+
+
+def _compact_metric_fact(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: _trim_json_value(item[key], compact=True)
+        for key in ("source_type", "metric", "value", "unit", "period", "source_id")
+        if item.get(key) is not None
+    }
+
+
+def _compact_filing_evidence(item: dict[str, Any]) -> dict[str, Any]:
+    compacted = {
+        key: _trim_json_value(item[key], compact=True)
+        for key in (
+            "source_id",
+            "section",
+            "snippet",
+            "filing_type",
+            "filing_date",
+            "score",
+        )
+        if item.get(key) is not None
+    }
+    snippet = compacted.get("snippet")
+    if isinstance(snippet, str):
+        compacted["snippet"] = snippet[:180]
+    return compacted
 
 
 def _trim_json_value(value: Any, *, compact: bool = False) -> Any:
