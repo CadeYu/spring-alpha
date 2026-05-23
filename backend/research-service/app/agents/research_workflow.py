@@ -395,12 +395,14 @@ def _fallback_summary(
     base = metric_text or evidence_text
     if _is_zh_locale(request.language):
         return (
-            f"{request.ticker} 已完成证据收集，但最终 LLM 综合失败；"
-            f"当前先保留证据支撑的降级结论：{base}。失败原因：{_clip(reason, 120)}"
+            f"{request.ticker} 的证据收集已完成，"
+            "当前报告先以已验证的 SEC 指标和 filing 片段形成保守结论："
+            f"{base}。这份结论应视为证据优先版本，后续需要继续观察同一指标在下一季度是否延续。"
         )
     return (
-        f"{request.ticker} evidence collection completed, but final LLM synthesis failed. "
-        f"This fallback keeps evidence-backed signals: {base}. Failure reason: {_clip(reason, 120)}"
+        f"{request.ticker} evidence collection completed, and this conservative report "
+        f"uses verified SEC metrics and filing snippets first: {base}. Treat it as an "
+        "evidence-first view until the next quarter confirms whether the same signals persist."
     )
 
 
@@ -411,14 +413,24 @@ def _fallback_claims(
 ) -> list[EvidenceBoundClaim]:
     if not source_refs:
         return []
-    return [
+    claims = [
         EvidenceBoundClaim(
             claim_id=f"{request.run_id}:fallback_claim:1",
             text=summary,
             citation_status=source_refs[0].citation_status,
-            source_refs=source_refs[:1],
+            source_refs=source_refs[:3],
         )
     ]
+    for index, source_ref in enumerate(source_refs[1:3], start=2):
+        claims.append(
+            EvidenceBoundClaim(
+                claim_id=f"{request.run_id}:fallback_claim:{index}",
+                text=_clip(source_ref.snippet, 220),
+                citation_status=source_ref.citation_status,
+                source_refs=[source_ref],
+            )
+        )
+    return claims
 
 
 def _fallback_point(
@@ -431,7 +443,9 @@ def _fallback_point(
         title=title,
         summary=summary,
         evidence_refs=[_evidence_ref(source_ref) for source_ref in source_refs[:1]],
-        citation_status=source_refs[0].citation_status if source_refs else CitationStatus.UNVERIFIED,
+        citation_status=(
+            source_refs[0].citation_status if source_refs else CitationStatus.UNVERIFIED
+        ),
     )
 
 
@@ -487,7 +501,11 @@ def _format_fallback_metric_value(value: object, unit: object) -> str:
         numeric_value = float(value)
         unit_text = str(unit or "").strip().lower()
         if unit_text in {"pure", "ratio", "percent", "percentage"} or abs(numeric_value) <= 1:
-            return f"{numeric_value * 100:.1f}%" if abs(numeric_value) <= 1 else f"{numeric_value:.1f}%"
+            return (
+                f"{numeric_value * 100:.1f}%"
+                if abs(numeric_value) <= 1
+                else f"{numeric_value:.1f}%"
+            )
         return _compact_number(numeric_value)
     return str(value)
 

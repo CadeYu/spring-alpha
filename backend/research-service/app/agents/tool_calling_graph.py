@@ -146,12 +146,13 @@ def run_tool_calling_graph_agent(
         if graph_state["payload"] is not None:
             return graph_state
         synthesis_started_at = perf_counter()
+        compact_synthesis = bool(getattr(final_llm, "compact_synthesis", False))
         final_messages = [
             HumanMessage(content=final_instruction or initial_instruction),
             HumanMessage(
                 content=_evidence_context(
                     graph_state["messages"],
-                    compact=bool(getattr(final_llm, "compact_synthesis", False)),
+                    compact=compact_synthesis,
                 )
             ),
         ]
@@ -421,9 +422,9 @@ def _json_response_llm(llm: BaseChatModel) -> BaseChatModel:
             update={
                 "tools": [],
                 "tool_choice": None,
-                "max_tokens": 2048 if compact_synthesis else 3072,
+                "max_tokens": 1536 if compact_synthesis else 3072,
                 "response_format": {"type": "json_object"},
-                "timeout_seconds": 35 if compact_synthesis else 45,
+                "timeout_seconds": 24 if compact_synthesis else 45,
             }
         )
     return llm
@@ -463,6 +464,8 @@ def _invoke_and_parse_final_payload(
             final_result = final_chain.invoke({"messages": attempt_messages})
         except Exception as exc:
             last_error = exc
+            if _is_non_retryable_final_error(exc):
+                break
             continue
         if not isinstance(final_result, AIMessage):
             raise_error(f"{agent_name} final LLM did not return an AIMessage")
@@ -477,6 +480,13 @@ def _invoke_and_parse_final_payload(
     if isinstance(last_error, json.JSONDecodeError):
         raise_error(f"{agent_name} final JSON was invalid: {last_error}")
     raise_error(f"{agent_name} final synthesis failed: {last_error}")
+
+
+def _is_non_retryable_final_error(error: Exception) -> bool:
+    if isinstance(error, TimeoutError):
+        return True
+    message = str(error).lower()
+    return "timed out" in message or "timeout" in message
 
 
 def _retry_final_messages(

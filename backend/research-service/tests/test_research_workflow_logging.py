@@ -10,10 +10,10 @@ from app.contracts.agent import (
     AgentRequest,
     AgentRunStatus,
     AgentState,
+    EvidenceMemory,
     LlmProvider,
     TaskPolicy,
     ToolStatus,
-    EvidenceMemory,
 )
 from app.contracts.research_task import ResearchTaskType
 
@@ -169,6 +169,15 @@ def test_cash_flow_timeout_fallback_preserves_typed_sections_from_evidence() -> 
                     "section": "SEC companyfacts",
                     "snippet": "Operating cash flow was $4.7B in the quarter.",
                     "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_2",
+                    "section": "Liquidity and Capital Resources",
+                    "snippet": (
+                        "Capital allocation included disciplined buybacks and "
+                        "liquidity management."
+                    ),
+                    "citation_status": "supported",
                 }
             ],
         ),
@@ -190,3 +199,5 @@ def test_cash_flow_timeout_fallback_preserves_typed_sections_from_evidence() -> 
     assert report.task_sections.cash_metrics[0].evidence_refs
     assert report.task_sections.capital_allocation.liquidity
     assert report.sections["synthesis"] == "deterministic_fallback"
+    assert "final LLM synthesis failed" not in report.sections["summary"]
+    assert len(report.claims) >= 2

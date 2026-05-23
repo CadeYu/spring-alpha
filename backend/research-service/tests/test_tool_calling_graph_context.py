@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import json
 
-from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agents.tool_calling_graph import (
     _evidence_context,
@@ -91,16 +90,21 @@ def test_compact_synthesis_keeps_enough_completion_budget_for_cash_flow_json() -
 
     copied = _json_response_llm(llm)
 
-    assert copied.update["max_tokens"] == 2048
+    assert copied.update["max_tokens"] == 1536
     assert copied.update["response_format"] == {"type": "json_object"}
-    assert copied.update["timeout_seconds"] == 35
+    assert copied.update["timeout_seconds"] == 24
 
 
 def test_final_payload_retries_after_invalid_json() -> None:
     final_chain = _FlakyFinalChain(
         [
             AIMessage(content='{"driver_thesis": {"headline": "Growth'),
-            AIMessage(content='{"driver_thesis": {"headline": "Growth", "summary": "Revenue improved."}}'),
+            AIMessage(
+                content=(
+                    '{"driver_thesis": {"headline": "Growth", '
+                    '"summary": "Revenue improved."}}'
+                )
+            ),
         ]
     )
 
@@ -117,24 +121,33 @@ def test_final_payload_retries_after_invalid_json() -> None:
     assert payload["driver_thesis"]["summary"] == "Revenue improved."
 
 
-def test_final_payload_retries_after_provider_timeout() -> None:
+def test_final_payload_does_not_retry_after_provider_timeout() -> None:
     final_chain = _FlakyFinalChain(
         [
             TimeoutError("The read operation timed out"),
-            AIMessage(content='{"cash_quality_verdict": {"summary": "Cash generation recovered."}}'),
+            AIMessage(
+                content=(
+                    '{"cash_quality_verdict": '
+                    '{"summary": "Cash generation recovered."}}'
+                )
+            ),
         ]
     )
 
-    _, payload = _invoke_and_parse_final_payload(
-        final_chain=final_chain,
-        final_messages=[HumanMessage(content="Return JSON only.")],
-        attempts=2,
-        agent_name="Cash flow agent",
-        raise_error=_raise_test_error,
-    )
+    try:
+        _invoke_and_parse_final_payload(
+            final_chain=final_chain,
+            final_messages=[HumanMessage(content="Return JSON only.")],
+            attempts=2,
+            agent_name="Cash flow agent",
+            raise_error=_raise_test_error,
+        )
+    except AssertionError as error:
+        assert "timed out" in str(error)
+    else:
+        raise AssertionError("expected timeout to stop final synthesis retries")
 
-    assert final_chain.calls == 2
-    assert payload["cash_quality_verdict"]["summary"] == "Cash generation recovered."
+    assert final_chain.calls == 1
 
 
 class _CopyableLlm:
@@ -147,7 +160,7 @@ class _CopyableLlm:
         self.compact_synthesis = compact_synthesis
         self.update = update or {}
 
-    def model_copy(self, *, update: dict[str, object]) -> "_CopyableLlm":
+    def model_copy(self, *, update: dict[str, object]) -> _CopyableLlm:
         return _CopyableLlm(
             compact_synthesis=self.compact_synthesis,
             update=update,
