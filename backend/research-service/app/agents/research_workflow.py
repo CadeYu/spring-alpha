@@ -36,11 +36,8 @@ from app.contracts.report import (
     EvidenceBoundMetric,
     EvidenceBoundPoint,
     EvidenceRef,
-    LatestEarningsSections,
-    LatestFinancialDashboard,
     SourceRef,
     TaskSectionCoverage,
-    ToplineVerdict,
 )
 from app.contracts.research_task import ResearchTaskType
 
@@ -259,30 +256,26 @@ def _fallback_report_from_state(
     )
     claims = _fallback_claims(request, summary, source_refs)
     if request.task_type == ResearchTaskType.LATEST_EARNINGS_READOUT:
-        task_sections = LatestEarningsSections(
-            schema_version="task_sections.v1",
-            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
-            coverage=coverage,
-            company_profile=None,
-            topline_verdict=ToplineVerdict(
-                headline="Evidence-backed fallback earnings view",
+        fallback_report = build_latest_earnings_report_from_payload(
+            request,
+            state,
+            _latest_earnings_fallback_payload(
                 summary=summary,
-                verdict="mixed",
-            ),
-            key_takeaways=[_fallback_point(summary, source_refs)],
-            financial_dashboard=LatestFinancialDashboard(
                 metrics=present_metrics[:3],
-                chart_focus=[metric.name for metric in present_metrics[:3]],
+                source_refs=source_refs,
             ),
-            driver_snapshot=[],
-            risk_snapshot=[
-                _fallback_point(
-                    "The final LLM synthesis did not complete, so this section keeps "
-                    "the evidence-backed figures and should be treated as partial.",
-                    source_refs,
-                    title="Synthesis risk",
-                )
-            ],
+        )
+        return fallback_report.model_copy(
+            update={
+                "task_sections": fallback_report.task_sections.model_copy(
+                    update={"coverage": coverage}
+                ),
+                "sections": {
+                    "summary": summary,
+                    "synthesis": "deterministic_fallback",
+                },
+                "claims": claims,
+            }
         )
     elif request.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
         point = _fallback_point(summary, source_refs, title="Evidence-backed driver signal")
@@ -334,6 +327,104 @@ def _fallback_report_from_state(
         claims=claims,
         retrieval_records=state.retrieval_records,
     )
+
+
+def _latest_earnings_fallback_payload(
+    *,
+    summary: str,
+    metrics: list[EvidenceBoundMetric],
+    source_refs: list[SourceRef],
+) -> dict[str, Any]:
+    fallback_source_ids = [source_ref.source_id for source_ref in source_refs[:3]]
+    primary_source_ids = fallback_source_ids[:1]
+    risk_summary = (
+        "The final LLM synthesis did not complete, so this section keeps the "
+        "evidence-backed figures and should be treated as partial."
+    )
+    return {
+        "company_profile": None,
+        "topline_verdict": {
+            "headline": "Evidence-backed fallback earnings view",
+            "summary": summary,
+            "verdict": "mixed",
+            "confidence": "low",
+        },
+        "key_takeaways": [
+            _fallback_payload_point(
+                title="Evidence-backed fallback",
+                summary=summary,
+                source_ids=primary_source_ids,
+                citation_status=_fallback_citation_status(source_refs),
+            )
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                _fallback_payload_metric(metric)
+                for metric in metrics
+                if not _is_missing_metric(metric)
+            ],
+            "chart_focus": [metric.name for metric in metrics if not _is_missing_metric(metric)],
+        },
+        "driver_snapshot": [
+            _fallback_payload_point(
+                title="Evidence-backed metric signal",
+                summary=summary,
+                source_ids=primary_source_ids,
+                citation_status=_fallback_citation_status(source_refs),
+            )
+        ],
+        "risk_snapshot": [
+            _fallback_payload_point(
+                title="Synthesis risk",
+                summary=risk_summary,
+                source_ids=primary_source_ids,
+                citation_status=_fallback_citation_status(source_refs),
+            )
+        ],
+        "claims": [
+            {
+                "text": summary,
+                "source_ids": primary_source_ids,
+                "citation_status": _fallback_citation_status(source_refs).value,
+            }
+        ],
+    }
+
+
+def _fallback_payload_metric(metric: EvidenceBoundMetric) -> dict[str, Any]:
+    return {
+        "name": metric.name,
+        "value": metric.value,
+        "period": metric.period,
+        "interpretation": metric.interpretation,
+        "source_ids": [
+            evidence_ref.source_id
+            for evidence_ref in metric.evidence_refs
+            if evidence_ref.source_id
+        ],
+        "citation_status": metric.citation_status.value,
+    }
+
+
+def _fallback_payload_point(
+    *,
+    title: str,
+    summary: str,
+    source_ids: list[str],
+    citation_status: CitationStatus,
+) -> dict[str, Any]:
+    return {
+        "title": title,
+        "summary": summary,
+        "source_ids": source_ids,
+        "citation_status": citation_status.value,
+    }
+
+
+def _fallback_citation_status(source_refs: list[SourceRef]) -> CitationStatus:
+    if not source_refs:
+        return CitationStatus.UNVERIFIED
+    return source_refs[0].citation_status
 
 
 def _source_refs_from_memory(memory: EvidenceMemory) -> list[SourceRef]:

@@ -203,6 +203,109 @@ def test_cash_flow_timeout_fallback_preserves_typed_sections_from_evidence() -> 
     assert len(report.claims) >= 2
 
 
+def test_latest_earnings_timeout_fallback_backfills_rich_memo_sections() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="TSLA",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        language="en",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="TSLA",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        language="en",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["toplineVerdict"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "revenue",
+                    "value": 21301000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+                    "source_id": "src_1",
+                },
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "operating income",
+                    "value": 399000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "concept": "OperatingIncomeLoss",
+                    "source_id": "src_2",
+                },
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "operating cash flow",
+                    "value": 2242000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "concept": "NetCashProvidedByUsedInOperatingActivities",
+                    "source_id": "src_3",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "SEC companyfacts",
+                    "snippet": "Revenue was $21.3B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_2",
+                    "section": "SEC companyfacts",
+                    "snippet": "Operating income was $399M in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_3",
+                    "section": "SEC companyfacts",
+                    "snippet": "Operating cash flow was $2.2B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_4",
+                    "section": "Risk Factors",
+                    "snippet": (
+                        "Automotive margin pressure and demand uncertainty remain key risks."
+                    ),
+                    "citation_status": "partial",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Earnings agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    sections = report.task_sections
+    assert sections.task_type == ResearchTaskType.LATEST_EARNINGS_READOUT
+    assert sections.coverage.status == "partial"
+    assert sections.quality_of_quarter is not None
+    assert sections.quality_of_quarter.growth_quality is not None
+    assert sections.quality_of_quarter.margin_quality is not None
+    assert sections.quality_of_quarter.cash_quality is not None
+    assert sections.drivers_and_draggers is not None
+    assert sections.drivers_and_draggers.drivers
+    assert sections.drivers_and_draggers.draggers
+    assert sections.bull_bear_read is not None
+    assert sections.bull_bear_read.bull_case
+    assert sections.bull_bear_read.bear_case
+    assert sections.bull_bear_read.balanced_read is not None
+    assert len(sections.watch_next) == 3
+    assert report.sections["synthesis"] == "deterministic_fallback"
+
+
 def test_fallback_summary_hides_internal_missing_metric_markers() -> None:
     request = AgentRequest(
         run_id="run_1",
