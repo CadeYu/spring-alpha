@@ -2253,7 +2253,6 @@ function TypedLatestEarningsSections({
       ? "当前 typed contract 没有提供完整财报观点。"
       : "The typed contract did not provide a complete earnings thesis.",
   };
-  const qualityPoints = latestEarningsQualityPoints(sections, isZh);
   const watchNextItems = sections.watchNext ?? [];
   const legacyWatchNextPoints =
     watchNextItems.length === 0 ? (sections.riskSnapshot ?? []) : [];
@@ -2277,7 +2276,6 @@ function TypedLatestEarningsSections({
             isZh ? "财报判断" : "Earnings Verdict",
             isZh ? "关键指标条" : "KPI Strip",
             isZh ? "发生了什么变化" : "What Changed",
-            isZh ? "季度质量" : "Quality Of Quarter",
             isZh ? "驱动与拖累" : "Drivers And Draggers",
             isZh ? "多空视角" : "Bull / Bear Read",
           ]}
@@ -2312,13 +2310,6 @@ function TypedLatestEarningsSections({
         ].slice(0, 5)}
         emptyText={isZh ? "没有变化要点。" : "No change points provided."}
       />
-      {qualityPoints.length > 0 && (
-        <LabeledPointListCard
-          title={isZh ? "季度质量" : "Quality Of Quarter"}
-          items={qualityPoints}
-          emptyText={isZh ? "没有季度质量证据。" : "No quarter-quality evidence provided."}
-        />
-      )}
       {sections.driversAndDraggers && (
         <TwoColumnPointListCard
           title={isZh ? "驱动与拖累" : "Drivers And Draggers"}
@@ -2368,35 +2359,6 @@ function CompanyProfileCard({
         </p>
       </CardContent>
     </Card>
-  );
-}
-
-function latestEarningsQualityPoints(
-  sections: LatestEarningsSections,
-  isZh: boolean,
-) {
-  const quality = sections.qualityOfQuarter;
-  if (!quality) return [];
-  return [
-    {
-      label: isZh ? "增长质量" : "Growth Quality",
-      point: quality.growthQuality,
-    },
-    {
-      label: isZh ? "利润率质量" : "Margin Quality",
-      point: quality.marginQuality,
-    },
-    {
-      label: isZh ? "现金质量" : "Cash Quality",
-      point: quality.cashQuality,
-    },
-    {
-      label: isZh ? "一次性项目" : "One-Time Items",
-      point: quality.oneTimeItems,
-    },
-  ].filter(
-    (item): item is { label: string; point: EvidenceBoundPoint } =>
-      Boolean(item.point),
   );
 }
 
@@ -3046,41 +3008,6 @@ function PointListCard({
         {points.length > 0 ? (
           points.map((point, index) => (
             <EvidencePointBlock key={`${point.title}-${index}`} point={point} />
-          ))
-        ) : (
-          <p className="text-sm text-slate-500">{emptyText}</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function LabeledPointListCard({
-  title,
-  items,
-  emptyText,
-}: {
-  title: string;
-  items: { label: string; point: EvidenceBoundPoint }[];
-  emptyText: string;
-}) {
-  return (
-    <Card className="bg-slate-900 border-slate-800">
-      <CardHeader className="border-b border-slate-800">
-        <CardTitle className="text-emerald-400">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 p-6">
-        {items.length > 0 ? (
-          items.map((item, index) => (
-            <div
-              key={`${item.label}-${item.point.title}-${index}`}
-              className="grid min-w-0 gap-3 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4 md:grid-cols-[150px,minmax(0,1fr)]"
-            >
-              <p className="min-w-0 [overflow-wrap:anywhere] text-xs font-semibold uppercase tracking-widest text-emerald-300">
-                {item.label}
-              </p>
-              <EvidencePointBlock point={item.point} />
-            </div>
           ))
         ) : (
           <p className="text-sm text-slate-500">{emptyText}</p>

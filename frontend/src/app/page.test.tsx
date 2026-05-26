@@ -1423,7 +1423,7 @@ describe("Home page", () => {
     expect(screen.getAllByText("Earnings Verdict").length).toBeGreaterThan(0);
     expect(screen.getAllByText("KPI Strip").length).toBeGreaterThan(0);
     expect(screen.getAllByText("What Changed").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Quality Of Quarter").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Quality Of Quarter")).not.toBeInTheDocument();
     expect(screen.getAllByText("Drivers And Draggers").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Bull / Bear Read").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Watch Next").length).toBeGreaterThan(0);
@@ -1436,7 +1436,7 @@ describe("Home page", () => {
     expect(screen.queryByText("Revenue")).not.toBeInTheDocument();
     expect(screen.queryByText("Reported metric.")).not.toBeInTheDocument();
     expect(screen.getByText("Typed services driver")).toBeInTheDocument();
-    expect(screen.getByText("Growth quality improved")).toBeInTheDocument();
+    expect(screen.queryByText("Growth quality improved")).not.toBeInTheDocument();
     expect(screen.getByText("Installed base drove services")).toBeInTheDocument();
     expect(screen.getByText("FX remained a drag")).toBeInTheDocument();
     expect(screen.getByText("Bull case: services durability")).toBeInTheDocument();
