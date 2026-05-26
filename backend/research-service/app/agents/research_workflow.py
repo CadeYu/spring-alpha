@@ -256,14 +256,19 @@ def _fallback_report_from_state(
     metrics = _fallback_metrics(state.evidence_memory, source_refs)
     if not source_refs and not metrics:
         return None
-    summary = _fallback_summary(request, reason, metrics, source_refs)
+    report_source_refs = (
+        _business_driver_report_source_refs(source_refs)
+        if request.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE
+        else source_refs
+    )
+    summary = _fallback_summary(request, reason, metrics, report_source_refs)
     present_metrics = _present_metrics(metrics)
     coverage = TaskSectionCoverage(
         status="partial",
         missing_sections=["llm_final_synthesis"],
         evidence_count=len(source_refs),
     )
-    claims = _fallback_claims(request, summary, source_refs)
+    claims = _fallback_claims(request, summary, report_source_refs)
     if request.task_type == ResearchTaskType.LATEST_EARNINGS_READOUT:
         fallback_report = build_latest_earnings_report_from_payload(
             request,
@@ -590,11 +595,23 @@ _BUSINESS_DRIVER_LENS_TERMS: dict[str, tuple[str, ...]] = {
 }
 
 _BUSINESS_DRIVER_LENS_SIGNAL_TYPES: dict[str, tuple[str, ...]] = {
-    "revenue_bridge": ("demand", "product", "strategy"),
-    "segment_momentum": ("segment", "product", "strategy"),
+    "revenue_bridge": ("demand", "product"),
+    "segment_momentum": ("segment", "product"),
     "margin_and_mix": ("pricing", "product"),
-    "demand_signals": ("demand", "product", "strategy"),
+    "demand_signals": ("demand", "product"),
 }
+
+
+_NOISY_BUSINESS_DRIVER_SNIPPET_PHRASES = (
+    "business metrics utilized by investors",
+    "disaggregate the company's net revenue",
+    "disaggregate net revenue",
+    "following table",
+    "following tables",
+    "government securities",
+    "net revenue by revenue category",
+    "revenue sharing",
+)
 
 
 def _business_driver_fallback_lens_point(
@@ -787,6 +804,8 @@ def _source_refs_matching_terms(
 ) -> list[SourceRef]:
     matches: list[SourceRef] = []
     for source_ref in source_refs:
+        if not _is_clean_business_driver_source_ref(source_ref):
+            continue
         searchable = f"{source_ref.section} {source_ref.snippet}".lower()
         if any(term in searchable for term in terms):
             matches.append(source_ref)
@@ -801,13 +820,22 @@ def _business_driver_lens_refs(
     source_refs: list[SourceRef],
     terms: tuple[str, ...],
 ) -> list[SourceRef]:
-    metric_refs = _source_refs_from_metric(metric, source_refs)
-    signal_refs = _source_refs_from_signals(signal_records, source_refs)
+    metric_refs = _clean_business_driver_source_refs(
+        _source_refs_from_metric(metric, source_refs)
+    )
+    signal_refs = _clean_business_driver_source_refs(
+        _source_refs_from_signals(signal_records, source_refs)
+    )
     term_refs = _source_refs_matching_terms(source_refs, terms)
+    broad_fallback_refs = (
+        _clean_business_driver_source_refs(source_refs[:1])
+        if lens == "revenue_bridge"
+        else []
+    )
     if lens in {"revenue_bridge", "margin_and_mix"}:
-        ordered_refs = [*metric_refs, *signal_refs, *term_refs, *source_refs[:1]]
+        ordered_refs = [*metric_refs, *signal_refs, *term_refs, *broad_fallback_refs]
     else:
-        ordered_refs = [*signal_refs, *term_refs, *metric_refs, *source_refs[:1]]
+        ordered_refs = [*signal_refs, *term_refs, *metric_refs, *broad_fallback_refs]
     return _dedupe_business_driver_refs(ordered_refs)
 
 
@@ -820,10 +848,13 @@ def _business_signal_records(
     keyword_matches: list[dict[str, Any]] = []
     for record in memory.business_signals:
         signal_type = str(record.get("signal_type") or "").strip().lower()
-        searchable = " ".join(
+        searchable_text = " ".join(
             str(record.get(key) or "")
             for key in ("signal", "summary", "section", "snippet")
-        ).lower()
+        )
+        if _is_noisy_business_driver_snippet(searchable_text):
+            continue
+        searchable = searchable_text.lower()
         if signal_type in signal_types:
             exact_matches.append(record)
         elif any(term in searchable for term in terms):
@@ -835,6 +866,8 @@ def _dedupe_business_driver_refs(source_refs: list[SourceRef]) -> list[SourceRef
     seen: set[str] = set()
     deduped: list[SourceRef] = []
     for source_ref in source_refs:
+        if not _is_clean_business_driver_source_ref(source_ref):
+            continue
         key = source_ref.source_id or source_ref.snippet
         if not key or key in seen:
             continue
@@ -844,13 +877,16 @@ def _dedupe_business_driver_refs(source_refs: list[SourceRef]) -> list[SourceRef
 
 
 def _business_driver_source_text(source_refs: list[SourceRef]) -> str:
-    return _clip(source_refs[0].snippet, 220) if source_refs else ""
+    for source_ref in source_refs:
+        if _is_clean_business_driver_source_ref(source_ref):
+            return _clip(source_ref.snippet, 220)
+    return ""
 
 
 def _business_driver_signal_text(signal_records: list[dict[str, Any]]) -> str:
     for record in signal_records:
         text = str(record.get("summary") or record.get("snippet") or "").strip()
-        if text:
+        if text and not _is_noisy_business_driver_snippet(text):
             return _clip(text, 220)
     return ""
 
@@ -873,6 +909,8 @@ def _business_driver_evidence_refs(
     evidence_refs: list[EvidenceRef] = []
     seen: set[str] = set()
     for evidence_ref in metric.evidence_refs if metric is not None else []:
+        if _is_noisy_business_driver_snippet(evidence_ref.excerpt):
+            continue
         key = evidence_ref.source_id or evidence_ref.excerpt
         if key and key not in seen:
             seen.add(key)
@@ -883,6 +921,41 @@ def _business_driver_evidence_refs(
             seen.add(key)
             evidence_refs.append(_evidence_ref(source_ref))
     return evidence_refs[:3]
+
+
+def _business_driver_report_source_refs(source_refs: list[SourceRef]) -> list[SourceRef]:
+    return _clean_business_driver_source_refs(source_refs)
+
+
+def _clean_business_driver_source_refs(source_refs: list[SourceRef]) -> list[SourceRef]:
+    return [
+        source_ref
+        for source_ref in source_refs
+        if _is_clean_business_driver_source_ref(source_ref)
+    ]
+
+
+def _is_clean_business_driver_source_ref(source_ref: SourceRef) -> bool:
+    return not _is_noisy_business_driver_snippet(
+        f"{source_ref.section} {source_ref.snippet}"
+    )
+
+
+def _is_noisy_business_driver_snippet(text: str) -> bool:
+    normalized = " ".join(str(text or "").split())
+    if not normalized:
+        return True
+    lower_text = normalized.lower()
+    if any(phrase in lower_text for phrase in _NOISY_BUSINESS_DRIVER_SNIPPET_PHRASES):
+        return True
+    pipe_count = normalized.count("|")
+    if pipe_count >= 4 or "---|---" in normalized:
+        return True
+    digits = sum(character.isdigit() for character in normalized)
+    separators = sum(1 for character in normalized if character in "|,$%")
+    if digits >= 12 and separators >= 5:
+        return True
+    return False
 
 
 def _risk_source_ref(

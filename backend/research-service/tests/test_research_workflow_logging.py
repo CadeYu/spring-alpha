@@ -619,6 +619,125 @@ def test_business_driver_timeout_with_evidence_returns_grounded_fallback(monkeyp
     assert "final synthesis failed" not in serialized
 
 
+def test_business_driver_timeout_fallback_suppresses_noisy_source_snippets() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="TSLA",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="TSLA",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=[
+                "search_filing_sections",
+                "search_metric_evidence",
+                "get_business_signals",
+            ],
+            required_outputs=["driverThesis", "driverMap"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "revenue",
+                    "value": 19335000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_revenue",
+                }
+            ],
+            business_signals=[
+                {
+                    "signal_type": "strategy",
+                    "summary": (
+                        "Government securities and other investments were discussed "
+                        "alongside autonomy, product roadmap and supply chain planning."
+                    ),
+                    "source_id": "src_strategy",
+                    "citation_status": "supported",
+                },
+                {
+                    "signal_type": "demand",
+                    "summary": (
+                        "Vehicle deliveries and energy storage deployments remained "
+                        "the clearest demand signal."
+                    ),
+                    "source_id": "src_demand",
+                    "citation_status": "supported",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_revenue",
+                    "section": "SEC companyfacts",
+                    "snippet": "Revenue was $19.3B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_table",
+                    "section": "Segment table",
+                    "snippet": (
+                        "| | | 6,402 | | | 15,509 | | | Automotive | Energy "
+                        "generation and storage | Services and other | ---|---"
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_strategy",
+                    "section": "Business strategy",
+                    "snippet": (
+                        "Government securities and other investments were discussed "
+                        "alongside autonomy, product roadmap and supply chain planning."
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_accounting",
+                    "section": "Revenue recognition",
+                    "snippet": (
+                        "The following tables disaggregate the Company's net revenue "
+                        "by revenue category and geography."
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_demand",
+                    "section": "MD&A",
+                    "snippet": (
+                        "Vehicle deliveries and energy storage deployments remained "
+                        "the clearest demand signal."
+                    ),
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Business driver agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    sections = report.task_sections
+    assert sections.driver_map.segment_momentum is not None
+    assert sections.driver_map.margin_and_mix is not None
+    assert sections.driver_map.demand_signals is not None
+    serialized = report.model_dump_json()
+    assert "Vehicle deliveries and energy storage" in serialized
+    assert "| | |" not in serialized
+    assert "---|---" not in serialized
+    assert "Government securities" not in sections.driver_map.segment_momentum.summary
+    assert "Government securities" not in sections.driver_map.demand_signals.summary
+    assert "disaggregate the Company's net revenue" not in serialized
+
+
 def test_fallback_report_hides_internal_missing_metric_markers_everywhere() -> None:
     request = AgentRequest(
         run_id="run_1",
