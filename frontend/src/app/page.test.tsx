@@ -578,6 +578,102 @@ describe("Home page", () => {
     ]);
   });
 
+  it("hides empty business driver map lenses when only one lens has evidence", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const taskType = new URL(`http://test${url}`).searchParams.get(
+        "taskType",
+      );
+      if (taskType === "business_driver_deep_dive") {
+        return createSseResponse([
+          {
+            executiveSummary: "Business driver report.",
+            companyName: "Apple Inc.",
+            period: "Q1 2026",
+            filingDate: "2026-02-01",
+            citations: [],
+            taskSections: {
+              schemaVersion: "task_sections.v1",
+              taskType,
+              coverage: {
+                status: "partial",
+                missingSections: ["llm_final_synthesis"],
+                evidenceCount: 1,
+              },
+              businessDriver: {
+                driverThesis: {
+                  headline: "Revenue demand signal",
+                  durability: "mixed",
+                  summary: "Revenue provides the clearest available demand signal.",
+                },
+                driverMap: {
+                  product: [],
+                  segment: [],
+                  geography: [],
+                  demand: [
+                    {
+                      title: "Revenue demand signal",
+                      summary: "Revenue was $111.2B in the quarter.",
+                      evidenceRefs: [
+                        {
+                          section: "SEC companyfacts",
+                          excerpt: "Revenue was $111.2B in the quarter.",
+                          sourceId: "src_1",
+                        },
+                      ],
+                      citationStatus: "supported",
+                    },
+                  ],
+                  pricing: [],
+                  customer: [],
+                  strategy: [],
+                },
+                positiveSignals: [],
+                negativeSignals: [],
+                watchlist: ["Track whether revenue stays above $111.2B next quarter."],
+              },
+            },
+          },
+        ]);
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Latest earnings report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          citations: [],
+          taskSections: latestTaskSections("Earnings agent verdict"),
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker("AAPL");
+
+    openAgentReport(/business driver deep dive/i);
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Revenue demand signal").length,
+      ).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText("Demand").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Product")).not.toBeInTheDocument();
+    expect(screen.queryByText("No evidence for this lens.")).not.toBeInTheDocument();
+    expect(screen.getByText(/revenue stays above \$111.2B/i)).toBeInTheDocument();
+  });
+
   it("surfaces degraded agent evidence when the backend returns a no-report chunk", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

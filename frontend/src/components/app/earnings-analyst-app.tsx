@@ -2485,6 +2485,9 @@ function TypedBusinessDriverSections({
     { label: isZh ? "客户" : "Customer", items: driverMap.customer },
     { label: isZh ? "战略" : "Strategy", items: driverMap.strategy },
   ];
+  const populatedDriverGroups = driverGroups.filter(
+    (group) => group.items.length > 0,
+  );
 
   return (
     <>
@@ -2523,34 +2526,34 @@ function TypedBusinessDriverSections({
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 p-6 md:grid-cols-2">
-          {driverGroups.map((group) => (
-            <div
-              key={group.label}
-              className="rounded-md border border-slate-800 bg-slate-950/60 p-4"
-            >
-              <p className="text-sm font-semibold text-slate-200">
-                {group.label}
-              </p>
-              <div className="mt-3 space-y-3">
-                {group.items.length > 0 ? (
-                  group.items.map((item, index) => (
+          {populatedDriverGroups.length > 0 ? (
+            populatedDriverGroups.map((group) => (
+              <div
+                key={group.label}
+                className="rounded-md border border-slate-800 bg-slate-950/60 p-4"
+              >
+                <p className="text-sm font-semibold text-slate-200">
+                  {group.label}
+                </p>
+                <div className="mt-3 space-y-3">
+                  {group.items.map((item, index) => (
                     <EvidencePointBlock
                       key={`${item.title}-${index}`}
                       point={item}
                     />
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    {isZh ? "该维度没有证据。" : "No evidence for this lens."}
-                  </p>
-                )}
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            <p className="text-sm text-slate-500">
+              {isZh ? "没有驱动地图证据。" : "No driver-map evidence provided."}
+            </p>
+          )}
         </CardContent>
       </Card>
 
-      <ImpactTableCard groups={driverGroups} lang={lang} />
+      <ImpactTableCard groups={populatedDriverGroups} lang={lang} />
 
       <PointListCard
         title={isZh ? "信号" : "Signals"}

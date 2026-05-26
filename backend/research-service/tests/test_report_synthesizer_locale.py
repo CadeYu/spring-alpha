@@ -386,8 +386,20 @@ def test_latest_earnings_backfills_rich_sections_when_model_omits_them() -> None
     assert sections.quality_of_quarter.cash_quality.title == "Cash quality"
     assert sections.drivers_and_draggers.drivers[0].title == "Services support mix"
     assert sections.drivers_and_draggers.draggers[0].title == "Margin pressure remains visible"
-    assert sections.bull_bear_read.bull_case[0].title == "Services support mix"
-    assert sections.bull_bear_read.bear_case[0].title == "Margin pressure remains visible"
+    assert sections.bull_bear_read.bull_case[0].title == (
+        "Bull case: Services support mix"
+    )
+    assert sections.bull_bear_read.bear_case[0].title == (
+        "Bear case: Margin pressure remains visible"
+    )
+    assert sections.bull_bear_read.bull_case[0].summary != (
+        sections.drivers_and_draggers.drivers[0].summary
+    )
+    assert sections.bull_bear_read.bear_case[0].summary != (
+        sections.drivers_and_draggers.draggers[0].summary
+    )
+    assert "Constructive read:" in sections.bull_bear_read.bull_case[0].summary
+    assert "Cautious read:" in sections.bull_bear_read.bear_case[0].summary
     assert sections.bull_bear_read.balanced_read.title == "Balanced read"
     assert [item.metric for item in sections.watch_next] == [
         "Revenue",

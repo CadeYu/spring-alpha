@@ -1549,18 +1549,21 @@ def _latest_bull_bear_with_backfill(
     source_refs: list[SourceRef],
 ) -> BullBearRead | None:
     existing = bull_bear_read or BullBearRead()
-    bull_case = existing.bull_case or _points_or_backfill(
+    bull_case = existing.bull_case or _scenario_points_or_backfill(
         [*driver_snapshot, *key_takeaways],
         "Bull case",
+        "Constructive read",
         (
-            "The constructive case is based on the supported revenue and operating driver evidence. "
+            "The constructive case is based on the supported revenue and "
+            "operating driver evidence. "
             "It remains a scenario, not a price target or trading recommendation."
         ),
         source_refs,
     )[:2]
-    bear_case = existing.bear_case or _points_or_backfill(
+    bear_case = existing.bear_case or _scenario_points_or_backfill(
         risk_snapshot,
         "Bear case",
+        "Cautious read",
         (
             "The cautious case is based on the supported risk or pressure evidence. "
             "It keeps the final read balanced until follow-up metrics improve."
@@ -1582,6 +1585,27 @@ def _latest_bull_bear_with_backfill(
         bear_case=bear_case,
         balanced_read=balanced_read,
     )
+
+
+def _scenario_points_or_backfill(
+    points: list[EvidenceBoundPoint],
+    title_prefix: str,
+    summary_prefix: str,
+    fallback_summary: str,
+    source_refs: list[SourceRef],
+) -> list[EvidenceBoundPoint]:
+    if not points:
+        point = _point_from_source_refs(title_prefix, fallback_summary, source_refs)
+        return [point] if point is not None else []
+    return [
+        EvidenceBoundPoint(
+            title=f"{title_prefix}: {point.title}",
+            summary=f"{summary_prefix}: {point.summary}",
+            evidence_refs=point.evidence_refs,
+            citation_status=point.citation_status,
+        )
+        for point in points
+    ]
 
 
 def _latest_watch_next_with_backfill(

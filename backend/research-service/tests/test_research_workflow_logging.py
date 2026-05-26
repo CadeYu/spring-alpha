@@ -375,6 +375,69 @@ def test_fallback_summary_hides_internal_missing_metric_markers() -> None:
     assert "revenue: $111.2B" in report.sections["summary"]
 
 
+def test_business_driver_timeout_fallback_uses_actionable_watchlist() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="en",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="en",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["driverThesis"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "revenue",
+                    "value": 111184000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q2",
+                    "source_id": "src_1",
+                }
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "SEC companyfacts",
+                    "snippet": "Revenue was $111.2B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_2",
+                    "section": "Business overview",
+                    "snippet": "Services and installed base strength supported demand.",
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Business driver agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    sections = report.task_sections
+    assert sections.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE
+    assert sections.driver_map.demand
+    assert sections.driver_map.demand[0].title == "Revenue demand signal"
+    assert sections.positive_signals[0].title == "Revenue demand signal"
+    assert sections.watchlist
+    assert "Review the final LLM synthesis" not in report.model_dump_json()
+    assert any("revenue" in item.lower() and "$111.2B" in item for item in sections.watchlist)
+    assert any("Business overview" in item for item in sections.watchlist)
+
+
 def test_fallback_report_hides_internal_missing_metric_markers_everywhere() -> None:
     request = AgentRequest(
         run_id="run_1",

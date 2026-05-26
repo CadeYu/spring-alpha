@@ -278,20 +278,24 @@ def _fallback_report_from_state(
             }
         )
     elif request.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
-        point = _fallback_point(summary, source_refs, title="Evidence-backed driver signal")
+        point = _business_driver_fallback_point(summary, present_metrics, source_refs)
         task_sections = BusinessDriverSections(
             schema_version="task_sections.v1",
             task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
             coverage=coverage,
             driver_thesis=DriverThesis(
-                headline="Evidence-backed fallback driver view",
+                headline=point.title,
                 durability="unclear",
                 summary=summary,
             ),
             driver_map=DriverMap(demand=[point]),
             positive_signals=[point],
             negative_signals=[],
-            watchlist=["Review the final LLM synthesis once provider latency recovers."],
+            watchlist=_business_driver_fallback_watchlist(
+                request,
+                present_metrics,
+                source_refs,
+            ),
         )
     elif request.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
         point = _fallback_point(summary, source_refs, title="Cash flow evidence anchor")
@@ -424,6 +428,68 @@ def _driver_fallback_summary(metric: EvidenceBoundMetric | None, summary: str) -
         f"{metric.name} of {metric.value} is the clearest available earnings driver "
         f"before final synthesis completed. {metric.interpretation}"
     )
+
+
+def _business_driver_fallback_point(
+    summary: str,
+    metrics: list[EvidenceBoundMetric],
+    source_refs: list[SourceRef],
+) -> EvidenceBoundPoint:
+    metric = _primary_fallback_metric(metrics)
+    if metric is None:
+        return _fallback_point(summary, source_refs, title="Evidence-backed demand signal")
+    fallback_refs = [_evidence_ref(source_refs[0])] if source_refs else []
+    return EvidenceBoundPoint(
+        title=f"{_title_case_metric(metric.name)} demand signal",
+        summary=(
+            f"{metric.name} of {metric.value} is the clearest available demand or "
+            f"scale signal in the collected evidence. {metric.interpretation}"
+        ),
+        evidence_refs=metric.evidence_refs or fallback_refs,
+        citation_status=metric.citation_status,
+    )
+
+
+def _business_driver_fallback_watchlist(
+    request: AgentRequest,
+    metrics: list[EvidenceBoundMetric],
+    source_refs: list[SourceRef],
+) -> list[str]:
+    watch_items: list[str] = []
+    for metric in metrics[:2]:
+        if _is_missing_metric(metric):
+            continue
+        if _is_zh_locale(request.language):
+            watch_items.append(
+                f"下季度继续跟踪 {metric.name} 是否维持在 {metric.value} 附近或进一步改善。"
+            )
+        else:
+            watch_items.append(
+                f"Track whether {metric.name} stays near or improves from "
+                f"{metric.value} next quarter."
+            )
+    for source_ref in source_refs[:2]:
+        if not source_ref.snippet.strip():
+            continue
+        if _is_zh_locale(request.language):
+            clipped_snippet = _clip(source_ref.snippet, 140)
+            watch_items.append(
+                f"复核 {source_ref.section} 中的信号是否在下一份 filing 继续出现："
+                f"{clipped_snippet}"
+            )
+        else:
+            clipped_snippet = _clip(source_ref.snippet, 140)
+            watch_items.append(
+                f"Recheck whether the {source_ref.section} signal persists in the "
+                f"next filing: {clipped_snippet}"
+            )
+    if watch_items:
+        return watch_items[:3]
+    if _is_zh_locale(request.language):
+        return [f"下一季度继续跟踪 {request.ticker} 的需求、定价和利润转化证据。"]
+    return [
+        f"Track {request.ticker} demand, pricing, and conversion evidence in the next quarter."
+    ]
 
 
 def _risk_source_ref(
