@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 
+from app.agents.business_driver_agent import BusinessDriverAgentError
 from app.agents.llm_gateway import OpenAiCompatibleLlmClient
 from app.agents.research_workflow import ResearchAgentWorkflow, _fallback_report_from_state
 from app.contracts.agent import (
@@ -546,6 +548,75 @@ def test_business_driver_timeout_fallback_builds_distinct_evidence_paragraphs() 
     serialized = report.model_dump_json()
     assert "not fully synthesized" not in serialized
     assert "final LLM" not in serialized
+
+
+def test_business_driver_timeout_with_evidence_returns_grounded_fallback(monkeypatch) -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="AMD",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        llm_provider=LlmProvider.SILICONFLOW,
+        llm_model="Pro/moonshotai/Kimi-K2.6",
+        llm_api_key="sk-test",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="AMD",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        provider=LlmProvider.SILICONFLOW,
+        model="Pro/moonshotai/Kimi-K2.6",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["driverThesis"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "revenue",
+                    "value": 7438000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_revenue",
+                }
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_revenue",
+                    "section": "SEC companyfacts",
+                    "snippet": "Revenue was $7.4B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_demand",
+                    "section": "MD&A",
+                    "snippet": "Customer demand for AI accelerators remained strong.",
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+    workflow = ResearchAgentWorkflow(llm_client=_make_client())
+
+    def fake_run_task_agent(*args, **kwargs):
+        raise BusinessDriverAgentError(
+            "Business driver agent final synthesis failed: The read operation timed out",
+            state=state,
+        )
+
+    monkeypatch.setattr(workflow, "_run_task_agent", fake_run_task_agent)
+
+    result = workflow.run(request)
+
+    assert result.status == AgentRunStatus.OK
+    assert result.degraded_reasons == []
+    assert result.final_report is not None
+    serialized = json.dumps(result.final_report, ensure_ascii=False)
+    assert "业务驱动结论" in serialized
+    assert "final synthesis failed" not in serialized
 
 
 def test_fallback_report_hides_internal_missing_metric_markers_everywhere() -> None:

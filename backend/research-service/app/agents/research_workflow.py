@@ -93,12 +93,16 @@ class ResearchAgentWorkflow:
             )
             final_report = _fallback_report_from_state(request, state, reason=str(exc))
         except BusinessDriverAgentError as exc:
-            state = _append_degraded_event(
-                exc.state,
-                f"Business driver research agent failed. {exc}",
-                degraded_reason=f"Business driver research agent failed: {exc}",
-            )
-            final_report = _fallback_report_from_state(request, state, reason=str(exc))
+            final_report = _fallback_report_from_state(request, exc.state, reason=str(exc))
+            if final_report is not None and _is_final_synthesis_failure(str(exc)):
+                state = exc.state
+            else:
+                state = _append_degraded_event(
+                    exc.state,
+                    f"Business driver research agent failed. {exc}",
+                    degraded_reason=f"Business driver research agent failed: {exc}",
+                )
+                final_report = _fallback_report_from_state(request, state, reason=str(exc))
         except CashFlowAgentError as exc:
             state = _append_degraded_event(
                 exc.state,
@@ -235,6 +239,11 @@ def _result(
         retryable=final_report is None,
         final_report=final_report.model_dump(mode="json") if final_report is not None else None,
     )
+
+
+def _is_final_synthesis_failure(reason: str) -> bool:
+    normalized = reason.lower()
+    return "final synthesis failed" in normalized or "final json was invalid" in normalized
 
 
 def _fallback_report_from_state(
