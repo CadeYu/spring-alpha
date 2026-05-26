@@ -43,10 +43,11 @@ const TASK_CASES: TaskCase[] = [
     sections: [
       "Business Driver Research View",
       "Thesis",
-      "Driver Map",
-      "Impact Table",
-      "Signals",
-      "Watchlist",
+      "Business Driver Paragraphs",
+      "Revenue Bridge",
+      "Segment Momentum",
+      "Margin And Mix",
+      "Demand Signals",
     ],
   },
   {
@@ -113,17 +114,18 @@ function typedTaskSections(taskType: TaskCase["taskType"]) {
           summary: "Business driver typed summary.",
         },
         driverMap: {
-          product: [supportedPoint],
-          segment: [],
-          geography: [],
-          demand: [],
-          pricing: [],
-          customer: [],
-          strategy: [],
+          revenueBridge: supportedPoint,
+          segmentMomentum: supportedPoint,
+          marginAndMix: supportedPoint,
+          demandSignals: supportedPoint,
         },
-        positiveSignals: [supportedPoint],
-        negativeSignals: [partialPoint],
-        watchlist: ["Track typed business driver watchlist."],
+        claims: [
+          {
+            text: "Typed business driver claim.",
+            evidenceRefs: [],
+            citationStatus: "supported",
+          },
+        ],
       },
     };
   }
