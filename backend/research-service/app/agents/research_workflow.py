@@ -606,10 +606,14 @@ _NOISY_BUSINESS_DRIVER_SNIPPET_PHRASES = (
     "business metrics utilized by investors",
     "disaggregate the company's net revenue",
     "disaggregate net revenue",
+    "foreign currency risk",
     "following table",
     "following tables",
     "government securities",
+    "market risk",
     "net revenue by revenue category",
+    "principal transactions revenue",
+    "revenue is generally recognized",
     "revenue sharing",
 )
 

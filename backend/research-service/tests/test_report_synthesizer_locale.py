@@ -580,6 +580,89 @@ def test_business_driver_report_uses_four_evidence_bound_paragraphs() -> None:
     assert not hasattr(sections, "watchlist")
 
 
+def test_business_driver_report_filters_noisy_synthesis_text_and_refs() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "src_clean",
+                        "section": "MD&A",
+                        "snippet": "Services revenue and installed base demand supported growth.",
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "src_table",
+                        "section": "Segment table",
+                        "snippet": (
+                            "| | | 6,402 | | | 15,509 | | | Services | Products | ---|---"
+                        ),
+                        "citation_status": "supported",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Services demand supports the thesis.",
+                "durability": "mixed",
+                "summary": "Services demand supports the thesis.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": (
+                        "营收增长来自服务业务，但原始表格包含 | | | 6,402 | | | "
+                        "15,509 | | | Services | Products | ---|--- 噪声。"
+                    ),
+                    "source_ids": ["src_table"],
+                    "citation_status": "supported",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Services revenue and installed base demand supported growth.",
+                    "source_ids": ["src_clean"],
+                    "citation_status": "supported",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Mix evidence remains partial.",
+                    "source_ids": ["src_clean"],
+                    "citation_status": "partial",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Installed base demand supported growth.",
+                    "source_ids": ["src_clean"],
+                    "citation_status": "supported",
+                },
+            },
+            "claims": [
+                {
+                    "text": "The same noisy table | | | 6,402 | | | should not leak.",
+                    "source_ids": ["src_table"],
+                    "citation_status": "supported",
+                }
+            ],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    sections = report.task_sections
+    assert sections.driver_map.revenue_bridge is not None
+    assert "| | |" not in serialized
+    assert "---|---" not in serialized
+    assert sections.driver_map.revenue_bridge.evidence_refs == []
+    assert sections.driver_map.revenue_bridge.citation_status == "unverified"
+    assert all("| | |" not in claim.text for claim in report.claims)
+
+
 def test_business_driver_payload_folds_legacy_lenses_into_paragraph_fields() -> None:
     payload = _normalize_business_driver_payload(
         {

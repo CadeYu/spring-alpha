@@ -40,6 +40,21 @@ class ReportSynthesisError(RuntimeError):
 DEFAULT_SYNTHESIS_TIMEOUT_SECONDS = 5
 DEFAULT_SYNTHESIS_ATTEMPTS = 1
 
+_NOISY_BUSINESS_DRIVER_TEXT_PHRASES = (
+    "business metrics utilized by investors",
+    "disaggregate the company's net revenue",
+    "disaggregate net revenue",
+    "foreign currency risk",
+    "following table",
+    "following tables",
+    "government securities",
+    "market risk",
+    "net revenue by revenue category",
+    "principal transactions revenue",
+    "revenue is generally recognized",
+    "revenue sharing",
+)
+
 
 def _is_zh_locale(language: str | None) -> bool:
     return str(language or "").lower().startswith("zh")
@@ -1048,6 +1063,34 @@ def _sanitize_payload_user_text(value: object, *, key: str | None = None) -> obj
     }:
         return _sanitize_user_text(value)
     return value
+
+
+def _strip_noisy_business_driver_fragments(value: str) -> str:
+    text = str(value or "")
+    text = re.sub(r"\|[^。.!?]*?(?:---\|---|\|[^。.!?]*\|)", "", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
+
+
+def _is_noisy_business_driver_source_ref(source_ref: SourceRef) -> bool:
+    return _is_noisy_business_driver_text(
+        f"{source_ref.section} {source_ref.snippet}"
+    )
+
+
+def _is_noisy_business_driver_text(value: str) -> bool:
+    normalized = " ".join(str(value or "").split())
+    if not normalized:
+        return False
+    lower_text = normalized.lower()
+    if any(phrase in lower_text for phrase in _NOISY_BUSINESS_DRIVER_TEXT_PHRASES):
+        return True
+    pipe_count = normalized.count("|")
+    if pipe_count >= 4 or "---|---" in normalized:
+        return True
+    digits = sum(character.isdigit() for character in normalized)
+    separators = sum(1 for character in normalized if character in "|,$%")
+    return digits >= 12 and separators >= 5
 
 
 def _sanitize_user_text(value: str) -> str:
@@ -2542,9 +2585,47 @@ def _sanitize_business_driver_source_ids(
     source_refs_by_id: dict[str, SourceRef],
 ) -> None:
     for point in _driver_map_points(payload.driver_map):
+        _sanitize_business_driver_point_text(point)
         _sanitize_source_ids(point, source_refs_by_id)
+        _sanitize_business_driver_point_source_ids(point, source_refs_by_id)
     for claim in payload.claims:
+        if _is_noisy_business_driver_text(claim.text):
+            claim.source_ids = []
+            claim.citation_status = CitationStatus.UNVERIFIED
         _sanitize_source_ids(claim, source_refs_by_id)
+    payload.claims = [
+        claim for claim in payload.claims if not _is_noisy_business_driver_text(claim.text)
+    ]
+
+
+def _sanitize_business_driver_point_text(point: _SynthesizedPoint) -> None:
+    if not _is_noisy_business_driver_text(point.summary):
+        return
+    point.summary = _strip_noisy_business_driver_fragments(point.summary)
+    if _is_noisy_business_driver_text(point.summary):
+        point.summary = "Evidence for this business-driver lens remains partial."
+        point.source_ids = []
+        point.citation_status = CitationStatus.UNVERIFIED
+
+
+def _sanitize_business_driver_point_source_ids(
+    point: _SynthesizedPoint,
+    source_refs_by_id: dict[str, SourceRef],
+) -> None:
+    original_ids = list(point.source_ids)
+    point.source_ids = [
+        source_id
+        for source_id in original_ids
+        if source_id in source_refs_by_id
+        and not _is_noisy_business_driver_source_ref(source_refs_by_id[source_id])
+    ]
+    if original_ids and not point.source_ids:
+        point.citation_status = CitationStatus.UNVERIFIED
+    elif (
+        len(point.source_ids) < len(original_ids)
+        and point.citation_status == CitationStatus.SUPPORTED
+    ):
+        point.citation_status = CitationStatus.PARTIAL
 
 
 def _sanitize_cash_flow_source_ids(

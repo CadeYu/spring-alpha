@@ -738,6 +738,86 @@ def test_business_driver_timeout_fallback_suppresses_noisy_source_snippets() -> 
     assert "disaggregate the Company's net revenue" not in serialized
 
 
+def test_business_driver_timeout_fallback_rejects_market_risk_and_accounting_refs() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="JPM",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="JPM",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=[
+                "search_filing_sections",
+                "search_metric_evidence",
+                "get_business_signals",
+            ],
+            required_outputs=["driverThesis", "driverMap"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "revenue",
+                    "value": 49833000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_revenue",
+                }
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_revenue",
+                    "section": "SEC companyfacts",
+                    "snippet": "Revenue was $49.8B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_market_risk",
+                    "section": "Quantitative and qualitative disclosures about market risk",
+                    "snippet": (
+                        "Foreign Currency Risk We transact business globally in multiple "
+                        "currencies and hence have foreign currency risks related to our "
+                        "revenue, costs of revenue and operating expenses."
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_recognition",
+                    "section": "Revenue recognition",
+                    "snippet": (
+                        "Revenue is generally recognized in the segment responsible for "
+                        "the related product or service, with allocations to other segments."
+                    ),
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Business driver agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    sections = report.task_sections
+    assert sections.driver_map.margin_and_mix is not None
+    assert sections.driver_map.segment_momentum is not None
+    assert sections.driver_map.demand_signals is not None
+    serialized = report.model_dump_json()
+    assert "Foreign Currency Risk" not in serialized
+    assert "Revenue is generally recognized" not in serialized
+    assert "已收集证据" in sections.driver_map.margin_and_mix.summary
+    assert sections.driver_map.margin_and_mix.evidence_refs == []
+
+
 def test_fallback_report_hides_internal_missing_metric_markers_everywhere() -> None:
     request = AgentRequest(
         run_id="run_1",
