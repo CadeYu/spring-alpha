@@ -321,6 +321,10 @@ public class AnalysisReport {
         private LatestFinancialDashboard financialDashboard;
         private List<EvidenceBoundPoint> driverSnapshot;
         private List<EvidenceBoundPoint> riskSnapshot;
+        private QualityOfQuarter qualityOfQuarter;
+        private DriversAndDraggers driversAndDraggers;
+        private BullBearRead bullBearRead;
+        private List<WatchNextItem> watchNext;
     }
 
     @Data
@@ -343,6 +347,7 @@ public class AnalysisReport {
         private String headline;
         private String summary;
         private String verdict;
+        private String confidence;
     }
 
     @Data
@@ -353,6 +358,52 @@ public class AnalysisReport {
     public static class LatestFinancialDashboard {
         private List<EvidenceBoundMetric> metrics;
         private List<String> chartFocus;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class QualityOfQuarter {
+        private EvidenceBoundPoint growthQuality;
+        private EvidenceBoundPoint marginQuality;
+        private EvidenceBoundPoint cashQuality;
+        private EvidenceBoundPoint oneTimeItems;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class DriversAndDraggers {
+        private List<EvidenceBoundPoint> drivers;
+        private List<EvidenceBoundPoint> draggers;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class BullBearRead {
+        private List<EvidenceBoundPoint> bullCase;
+        private List<EvidenceBoundPoint> bearCase;
+        private EvidenceBoundPoint balancedRead;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class WatchNextItem {
+        private String title;
+        private String metric;
+        private String whyItMatters;
+        private List<EvidenceRef> evidenceRefs;
+        private String citationStatus;
     }
 
     @Data

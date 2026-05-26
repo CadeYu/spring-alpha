@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.agents.llm_gateway import LlmClient, LlmRequest, LlmResponse
 from app.contracts.agent import AgentRequest, AgentState
 from app.contracts.report import (
+    BullBearRead,
     BusinessDriverSections,
     CapitalAllocation,
     CashFlowCapitalAllocationSections,
@@ -15,6 +16,7 @@ from app.contracts.report import (
     CompanyProfileSection,
     DriverMap,
     DriverThesis,
+    DriversAndDraggers,
     EvidenceAwareReport,
     EvidenceBoundClaim,
     EvidenceBoundMetric,
@@ -22,9 +24,11 @@ from app.contracts.report import (
     EvidenceRef,
     LatestEarningsSections,
     LatestFinancialDashboard,
+    QualityOfQuarter,
     SourceRef,
     TaskSectionCoverage,
     ToplineVerdict,
+    WatchNextItem,
 )
 from app.contracts.research_task import ResearchTaskType
 
@@ -124,7 +128,50 @@ class _LatestEarningsSynthesis(BaseModel):
     financial_dashboard: _SynthesizedDashboard
     driver_snapshot: list[_SynthesizedPoint] = Field(default_factory=list)
     risk_snapshot: list[_SynthesizedPoint] = Field(default_factory=list)
+    quality_of_quarter: "_SynthesizedQualityOfQuarter | None" = None
+    drivers_and_draggers: "_SynthesizedDriversAndDraggers | None" = None
+    bull_bear_read: "_SynthesizedBullBearRead | None" = None
+    watch_next: list["_SynthesizedWatchNextItem"] = Field(default_factory=list)
     claims: list[_SynthesizedClaim] = Field(default_factory=list)
+
+
+class _SynthesizedQualityOfQuarter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    growth_quality: _SynthesizedPoint | None = None
+    margin_quality: _SynthesizedPoint | None = None
+    cash_quality: _SynthesizedPoint | None = None
+    one_time_items: _SynthesizedPoint | None = None
+
+
+class _SynthesizedDriversAndDraggers(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    drivers: list[_SynthesizedPoint] = Field(default_factory=list)
+    draggers: list[_SynthesizedPoint] = Field(default_factory=list)
+
+
+class _SynthesizedBullBearRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bull_case: list[_SynthesizedPoint] = Field(default_factory=list)
+    bear_case: list[_SynthesizedPoint] = Field(default_factory=list)
+    balanced_read: _SynthesizedPoint | None = None
+
+
+class _SynthesizedWatchNextItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1)
+    metric: str | None = None
+    why_it_matters: str = Field(min_length=1)
+    source_ids: list[str] = Field(default_factory=list)
+    citation_status: CitationStatus = CitationStatus.UNVERIFIED
+
+    @field_validator("citation_status", mode="before")
+    @classmethod
+    def normalize_citation_status(cls, value: object) -> CitationStatus:
+        return _citation_status_from_value(value)
 
 
 class _SynthesizedDriverMap(BaseModel):
@@ -234,6 +281,22 @@ def build_latest_earnings_report_from_payload(
         risk_snapshot=[
             _point_from_payload(point, source_refs_by_id) for point in payload.risk_snapshot
         ],
+        quality_of_quarter=_quality_of_quarter_from_payload(
+            payload.quality_of_quarter,
+            source_refs_by_id,
+        ),
+        drivers_and_draggers=_drivers_and_draggers_from_payload(
+            payload.drivers_and_draggers,
+            source_refs_by_id,
+        ),
+        bull_bear_read=_bull_bear_read_from_payload(
+            payload.bull_bear_read,
+            source_refs_by_id,
+        ),
+        watch_next=[
+            _watch_next_item_from_payload(item, source_refs_by_id)
+            for item in payload.watch_next
+        ],
     )
     claims = [
         EvidenceBoundClaim(
@@ -274,8 +337,9 @@ def synthesize_latest_earnings_payload(language: str = "en") -> dict[str, Any]:
             },
             "topline_verdict": {
                 "headline": "有证据支撑的简要财报判断。",
-                "summary": "用一到两句话概括最新财报解读。",
+                "summary": "用三到五句话概括最新财报解读。",
                 "verdict": "mixed",
+                "confidence": "medium",
             },
             "key_takeaways": [
                 {
@@ -314,6 +378,19 @@ def synthesize_latest_earnings_payload(language: str = "en") -> dict[str, Any]:
                     "citation_status": "unverified",
                 }
             ],
+            "quality_of_quarter": {
+                "growth_quality": None,
+                "margin_quality": None,
+                "cash_quality": None,
+                "one_time_items": None,
+            },
+            "drivers_and_draggers": {"drivers": [], "draggers": []},
+            "bull_bear_read": {
+                "bull_case": [],
+                "bear_case": [],
+                "balanced_read": None,
+            },
+            "watch_next": [],
             "claims": [
                 {
                     "text": "有证据支撑的判断。",
@@ -330,8 +407,9 @@ def synthesize_latest_earnings_payload(language: str = "en") -> dict[str, Any]:
         },
         "topline_verdict": {
             "headline": "Short evidence-bound earnings verdict.",
-            "summary": "One to two sentences on the latest earnings readout.",
+            "summary": "Three to five sentences on the latest earnings readout.",
             "verdict": "mixed",
+            "confidence": "medium",
         },
         "key_takeaways": [
             {
@@ -370,6 +448,19 @@ def synthesize_latest_earnings_payload(language: str = "en") -> dict[str, Any]:
                 "citation_status": "unverified",
             }
         ],
+        "quality_of_quarter": {
+            "growth_quality": None,
+            "margin_quality": None,
+            "cash_quality": None,
+            "one_time_items": None,
+        },
+        "drivers_and_draggers": {"drivers": [], "draggers": []},
+        "bull_bear_read": {
+            "bull_case": [],
+            "bear_case": [],
+            "balanced_read": None,
+        },
+        "watch_next": [],
         "claims": [
             {
                 "text": "Evidence-bound claim.",
@@ -424,6 +515,7 @@ def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str
                 "verdict": _earnings_verdict_from_text(
                     str(topline_verdict.get("verdict") or summary)
                 ),
+                "confidence": str(topline_verdict.get("confidence") or "medium"),
             }
     normalized["key_takeaways"] = _normalize_synthesized_points(
         normalized.get("key_takeaways", [])
@@ -441,6 +533,18 @@ def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str
             "metrics": _normalize_synthesized_metrics(dashboard.get("metrics", [])),
             "chart_focus": _list_of_strings(dashboard.get("chart_focus")),
         }
+    normalized["quality_of_quarter"] = _normalize_quality_of_quarter(
+        normalized.get("quality_of_quarter")
+    )
+    normalized["drivers_and_draggers"] = _normalize_drivers_and_draggers(
+        normalized.get("drivers_and_draggers")
+    )
+    normalized["bull_bear_read"] = _normalize_bull_bear_read(
+        normalized.get("bull_bear_read")
+    )
+    normalized["watch_next"] = _normalize_watch_next_items(
+        normalized.get("watch_next", [])
+    )
     return _sanitize_payload_user_text(normalized)
 
 
@@ -683,6 +787,85 @@ def _normalize_synthesized_metrics(value: object) -> object:
         for normalized_metric in [_normalize_synthesized_metric(metric)]
         if not _is_unsupported_placeholder_metric(normalized_metric)
     ]
+
+
+def _normalize_quality_of_quarter(value: object) -> object:
+    if not isinstance(value, dict):
+        return None
+    clean_value = _clean_mapping_keys(value)
+    normalized: dict[str, object] = {}
+    for key in ("growth_quality", "margin_quality", "cash_quality", "one_time_items"):
+        normalized[key] = _normalize_optional_synthesized_point(clean_value.get(key))
+    return normalized
+
+
+def _normalize_drivers_and_draggers(value: object) -> object:
+    if not isinstance(value, dict):
+        return None
+    clean_value = _clean_mapping_keys(value)
+    return {
+        "drivers": _ensure_point_list(clean_value.get("drivers", [])),
+        "draggers": _ensure_point_list(clean_value.get("draggers", [])),
+    }
+
+
+def _normalize_bull_bear_read(value: object) -> object:
+    if not isinstance(value, dict):
+        return None
+    clean_value = _clean_mapping_keys(value)
+    return {
+        "bull_case": _ensure_point_list(clean_value.get("bull_case", [])),
+        "bear_case": _ensure_point_list(clean_value.get("bear_case", [])),
+        "balanced_read": _normalize_optional_synthesized_point(
+            clean_value.get("balanced_read")
+        ),
+    }
+
+
+def _normalize_watch_next_items(value: object) -> list[dict[str, object]]:
+    if isinstance(value, dict):
+        value = list(value.values())
+    if not isinstance(value, list):
+        return []
+    normalized_items: list[dict[str, object]] = []
+    for item in value:
+        if isinstance(item, str):
+            item = {"title": _title_from_text(item), "why_it_matters": item}
+        if not isinstance(item, dict):
+            continue
+        clean_item = _clean_mapping_keys(item)
+        title = str(clean_item.get("title") or clean_item.get("metric") or "Watch item")
+        why_it_matters = str(
+            clean_item.get("why_it_matters")
+            or clean_item.get("summary")
+            or clean_item.get("text")
+            or clean_item.get("description")
+            or ""
+        ).strip()
+        if not why_it_matters:
+            why_it_matters = title
+        normalized_items.append(
+            {
+                "title": title,
+                "metric": _optional_str(clean_item.get("metric")),
+                "why_it_matters": why_it_matters,
+                "source_ids": _source_ids_from_value(clean_item),
+                "citation_status": str(clean_item.get("citation_status") or "unverified"),
+            }
+        )
+    return normalized_items
+
+
+def _normalize_optional_synthesized_point(value: object) -> object:
+    if value is None:
+        return None
+    normalized = _normalize_synthesized_point(value)
+    return normalized if _has_point_summary(normalized) else None
+
+
+def _ensure_point_list(value: object) -> list[object]:
+    normalized = _normalize_synthesized_points(value)
+    return normalized if isinstance(normalized, list) else []
 
 
 def _normalize_synthesized_metric(metric: object) -> object:
@@ -1183,6 +1366,88 @@ def _is_qualitative_cash_metric(metric: object) -> bool:
         return False
     name = _clean_key(metric.get("name") or "").strip("_").lower()
     return name in {"cash_conversion_quality", "cash_quality", "cash_flow_quality"}
+
+
+def _quality_of_quarter_from_payload(
+    value: _SynthesizedQualityOfQuarter | None,
+    source_refs_by_id: dict[str, SourceRef],
+) -> QualityOfQuarter | None:
+    if value is None:
+        return None
+    return QualityOfQuarter(
+        growth_quality=_optional_point_from_payload(
+            value.growth_quality,
+            source_refs_by_id,
+        ),
+        margin_quality=_optional_point_from_payload(
+            value.margin_quality,
+            source_refs_by_id,
+        ),
+        cash_quality=_optional_point_from_payload(
+            value.cash_quality,
+            source_refs_by_id,
+        ),
+        one_time_items=_optional_point_from_payload(
+            value.one_time_items,
+            source_refs_by_id,
+        ),
+    )
+
+
+def _drivers_and_draggers_from_payload(
+    value: _SynthesizedDriversAndDraggers | None,
+    source_refs_by_id: dict[str, SourceRef],
+) -> DriversAndDraggers | None:
+    if value is None:
+        return None
+    return DriversAndDraggers(
+        drivers=[_point_from_payload(point, source_refs_by_id) for point in value.drivers],
+        draggers=[_point_from_payload(point, source_refs_by_id) for point in value.draggers],
+    )
+
+
+def _bull_bear_read_from_payload(
+    value: _SynthesizedBullBearRead | None,
+    source_refs_by_id: dict[str, SourceRef],
+) -> BullBearRead | None:
+    if value is None:
+        return None
+    return BullBearRead(
+        bull_case=[
+            _point_from_payload(point, source_refs_by_id) for point in value.bull_case
+        ],
+        bear_case=[
+            _point_from_payload(point, source_refs_by_id) for point in value.bear_case
+        ],
+        balanced_read=_optional_point_from_payload(
+            value.balanced_read,
+            source_refs_by_id,
+        ),
+    )
+
+
+def _watch_next_item_from_payload(
+    item: _SynthesizedWatchNextItem,
+    source_refs_by_id: dict[str, SourceRef],
+) -> WatchNextItem:
+    return WatchNextItem(
+        title=item.title,
+        metric=item.metric,
+        why_it_matters=item.why_it_matters,
+        evidence_refs=[
+            _evidence_ref(source_refs_by_id[source_id]) for source_id in item.source_ids
+        ],
+        citation_status=item.citation_status,
+    )
+
+
+def _optional_point_from_payload(
+    point: _SynthesizedPoint | None,
+    source_refs_by_id: dict[str, SourceRef],
+) -> EvidenceBoundPoint | None:
+    if point is None:
+        return None
+    return _point_from_payload(point, source_refs_by_id)
 
 
 def _normalize_watchlist(value: object) -> list[str]:
@@ -1717,7 +1982,7 @@ def _user_prompt(
     if _is_zh_locale(request.language):
         return (
             "请生成最新财报分析所需的 typed JSON。\n"
-            "只返回 JSON。凡是需要对象或数组的位置，不要用字符串代替。\n"
+            "只返回 evidence-dense JSON。凡是需要对象或数组的位置，不要用字符串代替。\n"
             f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
             "不要编造 source_ids。不要引用上面未列出的事实、概念或 node id。\n"
             "请严格使用以下结构：\n"
@@ -1725,7 +1990,7 @@ def _user_prompt(
             '  "company_profile": {"summary": "...", "source_ids": ["..."], '
             '"citation_status": "supported|partial|missing|unverified"},\n'
             '  "topline_verdict": {"headline": "...", "summary": "...", '
-            '"verdict": "positive|mixed|negative"},\n'
+            '"verdict": "positive|mixed|negative", "confidence": "high|medium|low"},\n'
             '  "key_takeaways": [{"title": "...", "summary": "...", '
             '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
             '  "financial_dashboard": {"metrics": [{"name": "...", "value": "...", '
@@ -1736,6 +2001,12 @@ def _user_prompt(
             '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
             '  "risk_snapshot": [{"title": "...", "summary": "...", '
             '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+            '  "quality_of_quarter": {"growth_quality": null, "margin_quality": null, '
+            '"cash_quality": null, "one_time_items": null},\n'
+            '  "drivers_and_draggers": {"drivers": [], "draggers": []},\n'
+            '  "bull_bear_read": {"bull_case": [], "bear_case": [], "balanced_read": null},\n'
+            '  "watch_next": [{"title": "...", "metric": "...", "why_it_matters": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
             '  "claims": [{"text": "...", "source_ids": ["..."], '
             '"citation_status": "supported|partial|missing|unverified"}]\n'
             "}\n"
@@ -1744,10 +2015,16 @@ def _user_prompt(
             "每个 profile、point、metric 和 claim 都只能使用已提供证据中的 source_ids。\n"
             "如果证据稀薄，也要保持同样的对象/数组结构，但文案要谨慎。\n"
             "当证据稀薄时，请用保守措辞。\n"
+            "topline_verdict.summary 必须是 3-5 句，覆盖方向、核心数字、驱动和疑点。\n"
+            "每个可见 point 的 summary 使用 2-4 句，避免一句话 item。\n"
+            "successful report 尽量包含 3-6 个 KPI metrics、3-5 个变化点、2-4 个 drivers、1-3 个 draggers、2 个 bull_case、2 个 bear_case 和 3 个 watch_next。\n"
             "financial_dashboard.metrics 尽量使用 Metric evidence 里的数值。KPI 数值优先采用 SEC companyfacts 的 metric value，而不是 table snippet。\n"
             "如果 Metric evidence 已经包含数值和单位，不要说这个 metric 没有被提取。\n"
-            "在 latest earnings 中，优先关注 revenue、gross margin 和 operating income。\n"
+            "在 latest earnings 中，优先关注 revenue、gross margin、operating income、net income、EPS、operating cash flow、free cash flow 和 capex。\n"
             "把经营结果证据放进 topline_verdict、key_takeaways、financial_dashboard 和 driver_snapshot。\n"
+            "把季度质量证据放进 quality_of_quarter；把正向驱动和拖累因素拆进 drivers_and_draggers。\n"
+            "bull_bear_read 必须保持平衡，不要输出目标价、买卖建议或交易指令。\n"
+            "watch_next 必须说明下一季要观察的 metric 或 filing clue。\n"
             "风险披露证据默认只放进 risk_snapshot，除非完全没有经营结果证据。\n"
             f"Ticker: {state.ticker}\n"
             f"Task: {request.task_type.value}\n"
@@ -1760,7 +2037,7 @@ def _user_prompt(
         )
     return (
         "Generate typed JSON for the latest earnings task sections.\n"
-        "Return JSON only. Do not use strings where objects or arrays are required.\n"
+        "Return evidence-dense JSON only. Do not use strings where objects or arrays are required.\n"
         f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
         "Do not invent source_ids. Do not reference facts, concepts, or node ids that are not listed above.\n"
         "Use this structure exactly:\n"
@@ -1768,7 +2045,7 @@ def _user_prompt(
         '  "company_profile": {"summary": "...", "source_ids": ["..."], '
         '"citation_status": "supported|partial|missing|unverified"},\n'
         '  "topline_verdict": {"headline": "...", "summary": "...", '
-        '"verdict": "positive|mixed|negative"},\n'
+        '"verdict": "positive|mixed|negative", "confidence": "high|medium|low"},\n'
         '  "key_takeaways": [{"title": "...", "summary": "...", '
         '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
         '  "financial_dashboard": {"metrics": [{"name": "...", "value": "...", '
@@ -1779,6 +2056,12 @@ def _user_prompt(
         '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
         '  "risk_snapshot": [{"title": "...", "summary": "...", '
         '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
+        '  "quality_of_quarter": {"growth_quality": null, "margin_quality": null, '
+        '"cash_quality": null, "one_time_items": null},\n'
+        '  "drivers_and_draggers": {"drivers": [], "draggers": []},\n'
+        '  "bull_bear_read": {"bull_case": [], "bear_case": [], "balanced_read": null},\n'
+        '  "watch_next": [{"title": "...", "metric": "...", "why_it_matters": "...", '
+        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
         '  "claims": [{"text": "...", "source_ids": ["..."], '
         '"citation_status": "supported|partial|missing|unverified"}]\n'
         "}\n"
@@ -1787,10 +2070,16 @@ def _user_prompt(
         "Each profile, point, metric, and claim may only use source_ids already present in the evidence.\n"
         "If evidence is sparse, keep the same object and array structure, but stay cautious in the wording.\n"
         "When evidence is sparse, use conservative phrasing.\n"
+        "topline_verdict.summary must be 3-5 sentences covering direction, core numbers, drivers, and doubts.\n"
+        "Each visible point summary should be 2-4 sentences; avoid one-sentence items.\n"
+        "A successful report should include 3-6 KPI metrics, 3-5 what-changed points, 2-4 drivers, 1-3 draggers, 2 bull_case points, 2 bear_case points, and 3 watch_next items when evidence supports them.\n"
         "financial_dashboard.metrics should prefer the numeric values in Metric evidence. KPI values should come from SEC companyfacts metric values when available, not table snippets.\n"
         "If Metric evidence already contains a value and unit, do not say the metric was not extracted.\n"
-        "For latest earnings, prioritize revenue, gross margin, and operating income.\n"
+        "For latest earnings, prioritize revenue, gross margin, operating income, net income, EPS, operating cash flow, free cash flow, and capex.\n"
         "Place operating result evidence in topline_verdict, key_takeaways, financial_dashboard, and driver_snapshot.\n"
+        "Place quarter-quality evidence in quality_of_quarter; split positive drivers and draggers into drivers_and_draggers.\n"
+        "Do not provide price targets, buy/sell recommendations, or trading instructions.\n"
+        "watch_next must name the next quarter metric or filing clue to monitor.\n"
         "Risk disclosure evidence should default to risk_snapshot unless there is no operating result evidence at all.\n"
         f"Ticker: {state.ticker}\n"
         f"Task: {request.task_type.value}\n"
@@ -1930,12 +2219,54 @@ def _sanitize_latest_earnings_source_ids(
         *payload.key_takeaways,
         *payload.driver_snapshot,
         *payload.risk_snapshot,
+        *_quality_of_quarter_points(payload.quality_of_quarter),
+        *_drivers_and_draggers_points(payload.drivers_and_draggers),
+        *_bull_bear_read_points(payload.bull_bear_read),
     ]:
         _sanitize_source_ids(point, source_refs_by_id)
     for metric in payload.financial_dashboard.metrics:
         _sanitize_source_ids(metric, source_refs_by_id)
+    for item in payload.watch_next:
+        _sanitize_source_ids(item, source_refs_by_id)
     for claim in payload.claims:
         _sanitize_source_ids(claim, source_refs_by_id)
+
+
+def _quality_of_quarter_points(
+    value: _SynthesizedQualityOfQuarter | None,
+) -> list[_SynthesizedPoint]:
+    if value is None:
+        return []
+    return [
+        point
+        for point in [
+            value.growth_quality,
+            value.margin_quality,
+            value.cash_quality,
+            value.one_time_items,
+        ]
+        if point is not None
+    ]
+
+
+def _drivers_and_draggers_points(
+    value: _SynthesizedDriversAndDraggers | None,
+) -> list[_SynthesizedPoint]:
+    if value is None:
+        return []
+    return [*value.drivers, *value.draggers]
+
+
+def _bull_bear_read_points(
+    value: _SynthesizedBullBearRead | None,
+) -> list[_SynthesizedPoint]:
+    if value is None:
+        return []
+    return [
+        *value.bull_case,
+        *value.bear_case,
+        *([value.balanced_read] if value.balanced_read is not None else []),
+    ]
 
 
 def _sanitize_business_driver_source_ids(
@@ -1997,6 +2328,22 @@ def _coverage(
         missing_sections.append("driver_snapshot")
     if not payload.risk_snapshot:
         missing_sections.append("risk_snapshot")
+    if payload.quality_of_quarter is None or not _quality_of_quarter_points(
+        payload.quality_of_quarter
+    ):
+        missing_sections.append("quality_of_quarter")
+    if payload.drivers_and_draggers is None or not (
+        payload.drivers_and_draggers.drivers or payload.drivers_and_draggers.draggers
+    ):
+        missing_sections.append("drivers_and_draggers")
+    if payload.bull_bear_read is None or not (
+        payload.bull_bear_read.bull_case
+        or payload.bull_bear_read.bear_case
+        or payload.bull_bear_read.balanced_read is not None
+    ):
+        missing_sections.append("bull_bear_read")
+    if not payload.watch_next:
+        missing_sections.append("watch_next")
     if not source_refs:
         missing_sections.append("evidence_refs")
     return TaskSectionCoverage(

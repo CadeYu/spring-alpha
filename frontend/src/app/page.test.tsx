@@ -1187,6 +1187,7 @@ describe("Home page", () => {
                 headline: "Typed latest earnings thesis",
                 verdict: "mixed",
                 summary: "Typed latest earnings summary.",
+                confidence: "medium",
               },
               keyTakeaways: [
                 {
@@ -1225,6 +1226,78 @@ describe("Home page", () => {
                   citationStatus: "partial",
                 },
               ],
+              qualityOfQuarter: {
+                growthQuality: {
+                  title: "Growth quality improved",
+                  summary: "Revenue growth came with stronger product demand.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+                marginQuality: {
+                  title: "Margin quality stayed mixed",
+                  summary: "Gross margin improved while operating expense pressure remained visible.",
+                  evidenceRefs: [],
+                  citationStatus: "partial",
+                },
+                cashQuality: {
+                  title: "Cash quality supported earnings",
+                  summary: "Operating cash flow supported the reported earnings direction.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+                oneTimeItems: null,
+              },
+              driversAndDraggers: {
+                drivers: [
+                  {
+                    title: "Installed base drove services",
+                    summary: "Services demand remained the clearest positive driver.",
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                ],
+                draggers: [
+                  {
+                    title: "FX remained a drag",
+                    summary: "Foreign exchange pressure muted part of the growth signal.",
+                    evidenceRefs: [],
+                    citationStatus: "partial",
+                  },
+                ],
+              },
+              bullBearRead: {
+                bullCase: [
+                  {
+                    title: "Bull case: services durability",
+                    summary: "A larger installed base can keep services growth durable.",
+                    evidenceRefs: [],
+                    citationStatus: "supported",
+                  },
+                ],
+                bearCase: [
+                  {
+                    title: "Bear case: margin pressure",
+                    summary: "Operating leverage may stay constrained if expenses outpace revenue.",
+                    evidenceRefs: [],
+                    citationStatus: "partial",
+                  },
+                ],
+                balancedRead: {
+                  title: "Balanced read favors mixed",
+                  summary: "The quarter improved, but margin and FX evidence keep the verdict mixed.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+              },
+              watchNext: [
+                {
+                  title: "Watch operating margin",
+                  metric: "operating_margin",
+                  whyItMatters: "Operating margin will show whether revenue converts into better earnings.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+              ],
             },
           },
           metadata: {
@@ -1254,6 +1327,9 @@ describe("Home page", () => {
     expect(screen.getAllByText("Earnings Verdict").length).toBeGreaterThan(0);
     expect(screen.getAllByText("KPI Strip").length).toBeGreaterThan(0);
     expect(screen.getAllByText("What Changed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Quality Of Quarter").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Drivers And Draggers").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Bull / Bear Read").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Watch Next").length).toBeGreaterThan(0);
     expect(screen.queryByText("Trust Summary")).not.toBeInTheDocument();
     expect(screen.queryByText("Evidence Count")).not.toBeInTheDocument();
@@ -1264,11 +1340,77 @@ describe("Home page", () => {
     expect(screen.queryByText("Revenue")).not.toBeInTheDocument();
     expect(screen.queryByText("Reported metric.")).not.toBeInTheDocument();
     expect(screen.getByText("Typed services driver")).toBeInTheDocument();
-    expect(screen.getByText("Typed risk snapshot")).toBeInTheDocument();
+    expect(screen.getByText("Growth quality improved")).toBeInTheDocument();
+    expect(screen.getByText("Installed base drove services")).toBeInTheDocument();
+    expect(screen.getByText("FX remained a drag")).toBeInTheDocument();
+    expect(screen.getByText("Bull case: services durability")).toBeInTheDocument();
+    expect(screen.getByText("Bear case: margin pressure")).toBeInTheDocument();
+    expect(screen.getByText("Balanced read favors mixed")).toBeInTheDocument();
+    expect(screen.getByText("Watch operating margin")).toBeInTheDocument();
+    expect(screen.getByText("operating_margin")).toBeInTheDocument();
+    expect(screen.queryByText("Typed risk snapshot")).not.toBeInTheDocument();
     expect(
       screen.queryByText(/Waiting for the model/i),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/1970/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps legacy latest earnings risk snapshot as watch-next fallback", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Legacy-compatible latest earnings summary.",
+          companyName: "Apple Inc.",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          bullCase: "Bull case.",
+          bearCase: "Bear case.",
+          taskSections: {
+            ...latestTaskSections("Legacy-compatible latest earnings thesis"),
+            latestEarnings: {
+              ...latestTaskSections("Legacy-compatible latest earnings thesis")
+                .latestEarnings,
+              riskSnapshot: [
+                {
+                  title: "Legacy risk watch item",
+                  summary: "Legacy risk evidence still works as the watch-next fallback.",
+                  evidenceRefs: [],
+                  citationStatus: "partial",
+                },
+              ],
+            },
+          },
+          metadata: {
+            modelName: "python-research-service",
+            language: "en",
+          },
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker();
+
+    openAgentReport(/latest earnings readout|最新财报速读/i);
+
+    expect(
+      await screen.findByText("Legacy-compatible latest earnings thesis"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Watch Next").length).toBeGreaterThan(0);
+    expect(screen.getByText("Legacy risk watch item")).toBeInTheDocument();
+    expect(screen.queryByText("Growth quality improved")).not.toBeInTheDocument();
   });
 
   it("localizes metric strip names and interpretations in chinese reports", async () => {

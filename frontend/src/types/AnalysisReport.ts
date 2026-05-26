@@ -141,6 +141,32 @@ export interface CompanyProfileSection {
     citationStatus: TaskCitationStatus;
 }
 
+export interface QualityOfQuarter {
+    growthQuality?: EvidenceBoundPoint | null;
+    marginQuality?: EvidenceBoundPoint | null;
+    cashQuality?: EvidenceBoundPoint | null;
+    oneTimeItems?: EvidenceBoundPoint | null;
+}
+
+export interface DriversAndDraggers {
+    drivers: EvidenceBoundPoint[];
+    draggers: EvidenceBoundPoint[];
+}
+
+export interface BullBearRead {
+    bullCase: EvidenceBoundPoint[];
+    bearCase: EvidenceBoundPoint[];
+    balancedRead?: EvidenceBoundPoint | null;
+}
+
+export interface WatchNextItem {
+    title: string;
+    metric?: string | null;
+    whyItMatters: string;
+    evidenceRefs: EvidenceRef[];
+    citationStatus: TaskCitationStatus;
+}
+
 export interface BaseTaskSections {
     schemaVersion: TaskSectionSchemaVersion;
     taskType: ResearchTaskType;
@@ -154,6 +180,7 @@ export interface LatestEarningsSections extends BaseTaskSections {
         headline: string;
         summary: string;
         verdict: 'positive' | 'mixed' | 'negative';
+        confidence?: 'high' | 'medium' | 'low';
     };
     keyTakeaways: EvidenceBoundPoint[];
     financialDashboard: {
@@ -162,6 +189,10 @@ export interface LatestEarningsSections extends BaseTaskSections {
     };
     driverSnapshot: EvidenceBoundPoint[];
     riskSnapshot: EvidenceBoundPoint[];
+    qualityOfQuarter?: QualityOfQuarter | null;
+    driversAndDraggers?: DriversAndDraggers | null;
+    bullBearRead?: BullBearRead | null;
+    watchNext?: WatchNextItem[] | null;
 }
 
 export interface BusinessDriverSections extends BaseTaskSections {

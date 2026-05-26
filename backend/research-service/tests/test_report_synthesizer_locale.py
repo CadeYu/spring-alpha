@@ -14,6 +14,7 @@ from app.agents.report_synthesizer import (
     _sanitize_user_text,
     _system_prompt,
     _user_prompt,
+    build_latest_earnings_report_from_payload,
     synthesize_latest_earnings_payload,
 )
 from app.contracts.agent import AgentState, CoverageState, EvidenceMemory, TaskPolicy
@@ -125,6 +126,193 @@ def test_synthesis_payload_switches_to_chinese_for_zh_language() -> None:
     assert payload["company_profile"]["summary"] == "简洁的面向投资者的公司画像。"
     assert payload["topline_verdict"]["headline"] == "有证据支撑的简要财报判断。"
     assert payload["financial_dashboard"]["metrics"][0]["interpretation"] == "这个 KPI 的含义。"
+
+
+def test_latest_earnings_rich_sections_are_preserved_in_typed_contract() -> None:
+    state = _make_state(language="zh")
+    payload = {
+        "company_profile": {
+            "summary": "Apple designs consumer electronics and services.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "Revenue growth improved but margin pressure kept the quarter mixed.",
+            "summary": (
+                "Revenue improved because demand was resilient. Gross margin still needs "
+                "watching because cost pressure remains visible. Operating income gives "
+                "the quarter enough support, but the next quarter needs confirmation."
+            ),
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "Revenue improved",
+                "summary": "Revenue grew against a mixed demand backdrop. The improvement is useful, but it needs confirmation from segment trends.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "revenue",
+                    "value": "$94.0B",
+                    "period": "latest_quarter",
+                    "interpretation": "Revenue is the main top-line anchor.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "operating_income",
+                    "value": "$28.0B",
+                    "period": "latest_quarter",
+                    "interpretation": "Operating income shows profit conversion.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "operating_cash_flow",
+                    "value": "$24.0B",
+                    "period": "latest_quarter",
+                    "interpretation": "Cash flow checks earnings quality.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+            ],
+            "chart_focus": ["revenue", "operating_income", "operating_cash_flow"],
+        },
+        "driver_snapshot": [
+            {
+                "title": "Services support mix",
+                "summary": "Services provide a steadier contribution than hardware. This helps offset uneven device demand.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "risk_snapshot": [
+            {
+                "title": "Margin pressure remains visible",
+                "summary": "The quarter still has pressure points. Investors should check whether cost pressure eases next quarter.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "quality_of_quarter": {
+            "growth_quality": {
+                "title": "Growth quality",
+                "summary": "Growth looks useful but not one-dimensional. It should be judged together with margin and cash conversion.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            },
+            "margin_quality": {
+                "title": "Margin quality",
+                "summary": "Margin quality is mixed because revenue improved while cost pressure still matters.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            },
+            "cash_quality": {
+                "title": "Cash quality",
+                "summary": "Cash conversion supports the quarter because operating cash flow remains visible.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            },
+            "one_time_items": None,
+        },
+        "drivers_and_draggers": {
+            "drivers": [
+                {
+                    "title": "Demand resilience",
+                    "summary": "Demand was resilient enough to support revenue. The point is strongest when paired with KPI evidence.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+            "draggers": [
+                {
+                    "title": "Cost pressure",
+                    "summary": "Cost pressure still limits the quality of the quarter. It keeps the verdict from being cleanly positive.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+        },
+        "bull_bear_read": {
+            "bull_case": [
+                {
+                    "title": "Revenue base is durable",
+                    "summary": "The bull case is that revenue has enough support to remain durable. Services mix can make that support less cyclical.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+            "bear_case": [
+                {
+                    "title": "Margin recovery is not proven",
+                    "summary": "The bear case is that margin pressure can absorb revenue upside. That keeps the investment read balanced.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+            "balanced_read": {
+                "title": "Balanced read",
+                "summary": "The quarter is mixed because growth and cash support are real, but margin pressure remains unresolved.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            },
+        },
+        "watch_next": [
+            {
+                "title": "Watch operating margin",
+                "metric": "operating_margin",
+                "why_it_matters": "Operating margin will show whether revenue growth converts into higher quality earnings.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "claims": [
+            {
+                "text": "The quarter was mixed but evidence-backed.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    sections = report.task_sections
+    assert sections.topline_verdict.confidence == "medium"
+    assert sections.quality_of_quarter.growth_quality.title == "Growth quality"
+    assert sections.quality_of_quarter.one_time_items is None
+    assert sections.drivers_and_draggers.drivers[0].title == "Demand resilience"
+    assert sections.drivers_and_draggers.draggers[0].title == "Cost pressure"
+    assert sections.bull_bear_read.bull_case[0].title == "Revenue base is durable"
+    assert sections.bull_bear_read.bear_case[0].title == "Margin recovery is not proven"
+    assert sections.bull_bear_read.balanced_read.title == "Balanced read"
+    assert sections.watch_next[0].metric == "operating_margin"
+    assert sections.watch_next[0].evidence_refs[0].source_id == "src_1"
+
+
+def test_latest_earnings_prompt_requests_evidence_dense_memo_sections() -> None:
+    prompt = _user_prompt(
+        request=_make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "en"),
+        state=_make_state(language="en"),
+        source_refs=[],
+    )
+
+    assert "Return evidence-dense JSON only" in prompt
+    assert "Return compact JSON" not in prompt
+    assert "quality_of_quarter" in prompt
+    assert "drivers_and_draggers" in prompt
+    assert "bull_bear_read" in prompt
+    assert "watch_next" in prompt
+    assert "Do not provide price targets, buy/sell recommendations" in prompt
 
 
 def test_sanitize_user_text_rewrites_placeholder_availability_language() -> None:

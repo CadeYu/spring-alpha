@@ -36,6 +36,7 @@ import {
   CashFlowCapitalAllocationSections,
   EvidenceBoundPoint,
   EvidenceBoundMetric,
+  WatchNextItem,
   LatestEarningsSections,
   CompanyProfileSection,
 } from "@/types/AnalysisReport";
@@ -2247,10 +2248,15 @@ function TypedLatestEarningsSections({
   const toplineVerdict = sections.toplineVerdict ?? {
     headline: isZh ? "财报观点待补充" : "Latest earnings thesis pending",
     verdict: "mixed" as const,
+    confidence: "medium" as const,
     summary: isZh
       ? "当前 typed contract 没有提供完整财报观点。"
       : "The typed contract did not provide a complete earnings thesis.",
   };
+  const qualityPoints = latestEarningsQualityPoints(sections, isZh);
+  const watchNextItems = sections.watchNext ?? [];
+  const legacyWatchNextPoints =
+    watchNextItems.length === 0 ? (sections.riskSnapshot ?? []) : [];
 
   return (
     <>
@@ -2271,7 +2277,9 @@ function TypedLatestEarningsSections({
             isZh ? "财报判断" : "Earnings Verdict",
             isZh ? "关键指标条" : "KPI Strip",
             isZh ? "发生了什么变化" : "What Changed",
-            isZh ? "下一步观察" : "Watch Next",
+            isZh ? "季度质量" : "Quality Of Quarter",
+            isZh ? "驱动与拖累" : "Drivers And Draggers",
+            isZh ? "多空视角" : "Bull / Bear Read",
           ]}
         />
         {sections.companyProfile && (
@@ -2280,7 +2288,11 @@ function TypedLatestEarningsSections({
         <AnalystVerdictCard
           eyebrow={isZh ? "财报判断" : "Earnings Verdict"}
           headline={toplineVerdict.headline}
-          status={toplineVerdict.verdict}
+          status={formatLatestVerdictStatus(
+            toplineVerdict.verdict,
+            toplineVerdict.confidence ?? "medium",
+            isZh,
+          )}
           summary={toplineVerdict.summary}
         />
       </div>
@@ -2300,11 +2312,35 @@ function TypedLatestEarningsSections({
         ].slice(0, 5)}
         emptyText={isZh ? "没有变化要点。" : "No change points provided."}
       />
-      <PointListCard
-        title={isZh ? "下一步观察" : "Watch Next"}
-        points={sections.riskSnapshot ?? []}
-        emptyText={isZh ? "没有观察项。" : "No watch items provided."}
-      />
+      {qualityPoints.length > 0 && (
+        <LabeledPointListCard
+          title={isZh ? "季度质量" : "Quality Of Quarter"}
+          items={qualityPoints}
+          emptyText={isZh ? "没有季度质量证据。" : "No quarter-quality evidence provided."}
+        />
+      )}
+      {sections.driversAndDraggers && (
+        <TwoColumnPointListCard
+          title={isZh ? "驱动与拖累" : "Drivers And Draggers"}
+          leftTitle={isZh ? "驱动" : "Drivers"}
+          leftPoints={sections.driversAndDraggers.drivers ?? []}
+          rightTitle={isZh ? "拖累" : "Draggers"}
+          rightPoints={sections.driversAndDraggers.draggers ?? []}
+          emptyText={isZh ? "没有驱动或拖累证据。" : "No drivers or draggers provided."}
+        />
+      )}
+      {sections.bullBearRead && (
+        <BullBearReadCard read={sections.bullBearRead} lang={lang} />
+      )}
+      {watchNextItems.length > 0 ? (
+        <WatchNextCard items={watchNextItems} lang={lang} />
+      ) : (
+        <PointListCard
+          title={isZh ? "下一步观察" : "Watch Next"}
+          points={legacyWatchNextPoints}
+          emptyText={isZh ? "没有观察项。" : "No watch items provided."}
+        />
+      )}
     </>
   );
 }
@@ -2333,6 +2369,50 @@ function CompanyProfileCard({
       </CardContent>
     </Card>
   );
+}
+
+function latestEarningsQualityPoints(
+  sections: LatestEarningsSections,
+  isZh: boolean,
+) {
+  const quality = sections.qualityOfQuarter;
+  if (!quality) return [];
+  return [
+    {
+      label: isZh ? "增长质量" : "Growth Quality",
+      point: quality.growthQuality,
+    },
+    {
+      label: isZh ? "利润率质量" : "Margin Quality",
+      point: quality.marginQuality,
+    },
+    {
+      label: isZh ? "现金质量" : "Cash Quality",
+      point: quality.cashQuality,
+    },
+    {
+      label: isZh ? "一次性项目" : "One-Time Items",
+      point: quality.oneTimeItems,
+    },
+  ].filter(
+    (item): item is { label: string; point: EvidenceBoundPoint } =>
+      Boolean(item.point),
+  );
+}
+
+function formatLatestVerdictStatus(
+  verdict: string,
+  confidence: string,
+  isZh: boolean,
+) {
+  if (!isZh) {
+    return `${verdict} · ${confidence} confidence`;
+  }
+  const verdictLabel =
+    verdict === "positive" ? "偏正面" : verdict === "negative" ? "偏负面" : "分化";
+  const confidenceLabel =
+    confidence === "high" ? "高置信度" : confidence === "low" ? "低置信度" : "中等置信度";
+  return `${verdictLabel} · ${confidenceLabel}`;
 }
 
 function BusinessDriverReportSections({
@@ -2966,6 +3046,198 @@ function PointListCard({
           ))
         ) : (
           <p className="text-sm text-slate-500">{emptyText}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LabeledPointListCard({
+  title,
+  items,
+  emptyText,
+}: {
+  title: string;
+  items: { label: string; point: EvidenceBoundPoint }[];
+  emptyText: string;
+}) {
+  return (
+    <Card className="bg-slate-900 border-slate-800">
+      <CardHeader className="border-b border-slate-800">
+        <CardTitle className="text-emerald-400">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 p-6">
+        {items.length > 0 ? (
+          items.map((item, index) => (
+            <div
+              key={`${item.label}-${item.point.title}-${index}`}
+              className="grid min-w-0 gap-3 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4 md:grid-cols-[150px,minmax(0,1fr)]"
+            >
+              <p className="min-w-0 [overflow-wrap:anywhere] text-xs font-semibold uppercase tracking-widest text-emerald-300">
+                {item.label}
+              </p>
+              <EvidencePointBlock point={item.point} />
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-slate-500">{emptyText}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TwoColumnPointListCard({
+  title,
+  leftTitle,
+  leftPoints,
+  rightTitle,
+  rightPoints,
+  emptyText,
+}: {
+  title: string;
+  leftTitle: string;
+  leftPoints: EvidenceBoundPoint[];
+  rightTitle: string;
+  rightPoints: EvidenceBoundPoint[];
+  emptyText: string;
+}) {
+  const hasContent = leftPoints.length > 0 || rightPoints.length > 0;
+  return (
+    <Card className="bg-slate-900 border-slate-800">
+      <CardHeader className="border-b border-slate-800">
+        <CardTitle className="text-emerald-400">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="p-6">
+        {hasContent ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <PointColumn title={leftTitle} points={leftPoints} />
+            <PointColumn title={rightTitle} points={rightPoints} />
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">{emptyText}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PointColumn({
+  title,
+  points,
+  emptyText,
+}: {
+  title: string;
+  points: EvidenceBoundPoint[];
+  emptyText?: string;
+}) {
+  return (
+    <div className="min-w-0 space-y-3">
+      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+        {title}
+      </p>
+      {points.length > 0 ? (
+        points.map((point, index) => (
+          <EvidencePointBlock key={`${title}-${point.title}-${index}`} point={point} />
+        ))
+      ) : (
+        <p className="rounded-md border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-500">
+          {emptyText ?? "No evidence provided."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function BullBearReadCard({
+  read,
+  lang,
+}: {
+  read: NonNullable<LatestEarningsSections["bullBearRead"]>;
+  lang: string;
+}) {
+  const isZh = lang === "zh";
+  const hasCases = read.bullCase.length > 0 || read.bearCase.length > 0;
+  return (
+    <Card className="bg-slate-900 border-slate-800">
+      <CardHeader className="border-b border-slate-800">
+        <CardTitle className="text-emerald-400">
+          {isZh ? "多空视角" : "Bull / Bear Read"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 p-6">
+        {hasCases ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <PointColumn
+              title={isZh ? "Bull Case" : "Bull Case"}
+              points={read.bullCase ?? []}
+              emptyText={isZh ? "没有 Bull Case 证据。" : "No bull-case evidence provided."}
+            />
+            <PointColumn
+              title={isZh ? "Bear Case" : "Bear Case"}
+              points={read.bearCase ?? []}
+              emptyText={isZh ? "没有 Bear Case 证据。" : "No bear-case evidence provided."}
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">
+            {isZh ? "没有多空证据。" : "No bull or bear evidence provided."}
+          </p>
+        )}
+        {read.balancedRead && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              {isZh ? "综合判断" : "Balanced Read"}
+            </p>
+            <EvidencePointBlock point={read.balancedRead} />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function WatchNextCard({
+  items,
+  lang,
+}: {
+  items: WatchNextItem[];
+  lang: string;
+}) {
+  const isZh = lang === "zh";
+  return (
+    <Card className="bg-slate-900 border-slate-800">
+      <CardHeader className="border-b border-slate-800">
+        <CardTitle className="text-emerald-400">
+          {isZh ? "下一季观察" : "Watch Next"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 p-6">
+        {items.length > 0 ? (
+          items.map((item, index) => (
+            <div
+              key={`${item.title}-${index}`}
+              className="min-w-0 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4"
+            >
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <p className="min-w-0 [overflow-wrap:anywhere] font-semibold text-slate-200">
+                  {item.title}
+                </p>
+                {item.metric && (
+                  <Badge className="w-fit border-slate-700 bg-slate-900 text-slate-300">
+                    {item.metric}
+                  </Badge>
+                )}
+              </div>
+              <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400">
+                {item.whyItMatters}
+              </p>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-slate-500">
+            {isZh ? "没有观察项。" : "No watch items provided."}
+          </p>
         )}
       </CardContent>
     </Card>

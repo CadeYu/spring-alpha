@@ -341,23 +341,24 @@ class ResearchAgentReportMapperTest {
                         "period", "FY2026 Q2",
                         "report_type", "quarterly",
                         "sections", Map.of("summary", "Typed summary.", "synthesis", "llm"),
-                        "task_sections", Map.of(
-                                "schema_version", "task_sections.v1",
-                                "task_type", "latest_earnings_readout",
-                                "coverage", Map.of(
-                                "status", "complete",
-                                "missing_sections", List.of(),
-                                "evidence_count", 3),
-                                "company_profile", Map.of(
+                        "task_sections", Map.ofEntries(
+                                Map.entry("schema_version", "task_sections.v1"),
+                                Map.entry("task_type", "latest_earnings_readout"),
+                                Map.entry("coverage", Map.of(
+                                        "status", "complete",
+                                        "missing_sections", List.of(),
+                                        "evidence_count", 3)),
+                                Map.entry("company_profile", Map.of(
                                         "summary", "Apple Inc. designs devices, software, and services for a global installed base.",
                                         "evidence_refs", List.of(sourceRef),
-                                        "citation_status", "supported"),
-                                "topline_verdict", Map.of(
+                                        "citation_status", "supported")),
+                                Map.entry("topline_verdict", Map.of(
                                         "headline", "Revenue growth with mixed margin signals",
                                         "summary", "Revenue improved, but margin evidence was mixed.",
-                                        "verdict", "mixed"),
-                                "key_takeaways", List.of(point),
-                                "financial_dashboard", Map.of(
+                                        "verdict", "mixed",
+                                        "confidence", "medium")),
+                                Map.entry("key_takeaways", List.of(point)),
+                                Map.entry("financial_dashboard", Map.of(
                                         "metrics", List.of(Map.of(
                                                 "name", "Revenue",
                                                 "value", "higher year over year",
@@ -365,9 +366,26 @@ class ResearchAgentReportMapperTest {
                                                 "interpretation", "Topline improved.",
                                                 "evidence_refs", List.of(sourceRef),
                                                 "citation_status", "supported")),
-                                        "chart_focus", List.of("revenue")),
-                                "driver_snapshot", List.of(point),
-                                "risk_snapshot", List.of(point)),
+                                        "chart_focus", List.of("revenue"))),
+                                Map.entry("driver_snapshot", List.of(point)),
+                                Map.entry("risk_snapshot", List.of(point)),
+                                Map.entry("quality_of_quarter", Map.of(
+                                        "growth_quality", point,
+                                        "margin_quality", point,
+                                        "cash_quality", point)),
+                                Map.entry("drivers_and_draggers", Map.of(
+                                        "drivers", List.of(point),
+                                        "draggers", List.of(point))),
+                                Map.entry("bull_bear_read", Map.of(
+                                        "bull_case", List.of(point),
+                                        "bear_case", List.of(point),
+                                        "balanced_read", point)),
+                                Map.entry("watch_next", List.of(Map.of(
+                                        "title", "Watch operating margin",
+                                        "metric", "operating_margin",
+                                        "why_it_matters", "Operating margin will show whether revenue converts into better earnings.",
+                                        "evidence_refs", List.of(sourceRef),
+                                        "citation_status", "supported")))),
                         "claims", List.of(Map.of(
                                 "source_refs", List.of(Map.of(
                                         "section", "Management Discussion and Analysis",
@@ -382,10 +400,26 @@ class ResearchAgentReportMapperTest {
                 latest.getCompanyProfile().getSummary());
         assertEquals("supported", latest.getCompanyProfile().getCitationStatus());
         assertEquals("Revenue growth with mixed margin signals", latest.getToplineVerdict().getHeadline());
+        assertEquals("medium", latest.getToplineVerdict().getConfidence());
         assertEquals("Revenue improved", latest.getKeyTakeaways().get(0).getTitle());
         assertEquals("Revenue", latest.getFinancialDashboard().getMetrics().get(0).getName());
         assertEquals("Revenue improved", latest.getDriverSnapshot().get(0).getTitle());
         assertEquals("Revenue improved", latest.getRiskSnapshot().get(0).getTitle());
+        assertEquals("Revenue improved", latest.getQualityOfQuarter().getGrowthQuality().getTitle());
+        assertEquals("Revenue improved", latest.getQualityOfQuarter().getCashQuality().getTitle());
+        assertNull(latest.getQualityOfQuarter().getOneTimeItems());
+        assertEquals("Revenue improved",
+                latest.getDriversAndDraggers().getDrivers().get(0).getTitle());
+        assertEquals("Revenue improved",
+                latest.getDriversAndDraggers().getDraggers().get(0).getTitle());
+        assertEquals("Revenue improved",
+                latest.getBullBearRead().getBullCase().get(0).getTitle());
+        assertEquals("Revenue improved",
+                latest.getBullBearRead().getBearCase().get(0).getTitle());
+        assertEquals("Revenue improved", latest.getBullBearRead().getBalancedRead().getTitle());
+        assertEquals("Watch operating margin", latest.getWatchNext().get(0).getTitle());
+        assertEquals("operating_margin", latest.getWatchNext().get(0).getMetric());
+        assertEquals("supported", latest.getWatchNext().get(0).getCitationStatus());
         assertNotNull(report.getMetadata().getGeneratedAt());
         assertFalse(report.getMetadata().getGeneratedAt().isBlank());
         assertEquals("2026-04-30", report.getFilingDate());

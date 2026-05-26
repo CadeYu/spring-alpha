@@ -94,6 +94,7 @@ class ToplineVerdict(BaseModel):
     headline: str
     summary: str
     verdict: Literal["positive", "mixed", "negative"]
+    confidence: Literal["high", "medium", "low"] = "medium"
 
 
 class LatestFinancialDashboard(BaseModel):
@@ -101,6 +102,40 @@ class LatestFinancialDashboard(BaseModel):
 
     metrics: list[EvidenceBoundMetric] = Field(default_factory=list)
     chart_focus: list[str] = Field(default_factory=list)
+
+
+class QualityOfQuarter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    growth_quality: EvidenceBoundPoint | None = None
+    margin_quality: EvidenceBoundPoint | None = None
+    cash_quality: EvidenceBoundPoint | None = None
+    one_time_items: EvidenceBoundPoint | None = None
+
+
+class DriversAndDraggers(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    drivers: list[EvidenceBoundPoint] = Field(default_factory=list)
+    draggers: list[EvidenceBoundPoint] = Field(default_factory=list)
+
+
+class BullBearRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bull_case: list[EvidenceBoundPoint] = Field(default_factory=list)
+    bear_case: list[EvidenceBoundPoint] = Field(default_factory=list)
+    balanced_read: EvidenceBoundPoint | None = None
+
+
+class WatchNextItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    metric: str | None = None
+    why_it_matters: str
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list)
+    citation_status: CitationStatus
 
 
 class LatestEarningsSections(BaseTaskSections):
@@ -111,6 +146,10 @@ class LatestEarningsSections(BaseTaskSections):
     financial_dashboard: LatestFinancialDashboard
     driver_snapshot: list[EvidenceBoundPoint] = Field(default_factory=list)
     risk_snapshot: list[EvidenceBoundPoint] = Field(default_factory=list)
+    quality_of_quarter: QualityOfQuarter | None = None
+    drivers_and_draggers: DriversAndDraggers | None = None
+    bull_bear_read: BullBearRead | None = None
+    watch_next: list[WatchNextItem] = Field(default_factory=list)
 
 
 class DriverThesis(BaseModel):
