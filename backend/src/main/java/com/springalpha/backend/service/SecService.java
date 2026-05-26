@@ -10,7 +10,6 @@ import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -23,7 +22,7 @@ public class SecService {
     private static final String SEC_BASE_URL = "https://www.sec.gov";
     private static final String[] QUARTERLY_FILING_TYPES = new String[] { "10-Q", "10-Q/A" };
     private final com.springalpha.backend.financial.service.FinancialDataService financialDataService;
-    private final ConcurrentHashMap<String, CompletableFuture<String>> inFlightFilingRequests =
+    private final ConcurrentHashMap<String, Mono<String>> inFlightFilingRequests =
             new ConcurrentHashMap<>();
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SecService.class);
@@ -42,44 +41,39 @@ public class SecService {
 
     public Mono<String> getLatestFilingContent(String ticker) {
         String normalizedTicker = ticker.toUpperCase();
-        return Mono.fromCallable(() -> {
-            String cacheKey = normalizedTicker;
-            CompletableFuture<String> created = new CompletableFuture<>();
-            CompletableFuture<String> existing = inFlightFilingRequests.putIfAbsent(cacheKey, created);
-            if (existing != null) {
-                return existing.join();
-            }
+        String cacheKey = normalizedTicker;
+        return inFlightFilingRequests.computeIfAbsent(cacheKey, key -> Mono
+                .fromCallable(() -> fetchLatestFilingContent(normalizedTicker, ticker))
+                .doFinally(signal -> inFlightFilingRequests.remove(key))
+                .cache());
+    }
 
-            if (!financialDataService.isSupported(normalizedTicker)) {
-                RuntimeException error = new RuntimeException("SEC filing search is unavailable because ticker is not mapped in SEC company_tickers.json: " + ticker);
-                created.completeExceptionally(error);
+    private String fetchLatestFilingContent(String normalizedTicker, String originalTicker) {
+        if (!financialDataService.isSupported(normalizedTicker)) {
+            throw new RuntimeException(
+                    "SEC filing search is unavailable because ticker is not mapped in SEC company_tickers.json: "
+                            + originalTicker);
+        }
+
+        try {
+            log.info("sec_filing_fetch_start ticker={}", normalizedTicker);
+            String indexUrl = findLatestFilingIndexUrl(normalizedTicker, QUARTERLY_FILING_TYPES);
+
+            String docUrl = findPrimaryDocumentUrl(indexUrl, QUARTERLY_FILING_TYPES);
+
+            String content = fetchAndCleanHtml(docUrl);
+            log.info("sec_filing_fetch_complete ticker={} chars={}", normalizedTicker, content.length());
+
+            return content;
+        } catch (Throwable t) {
+            if (t instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (t instanceof Error error) {
                 throw error;
             }
-
-            try {
-                log.info("sec_filing_fetch_start ticker={}", normalizedTicker);
-                String indexUrl = findLatestFilingIndexUrl(normalizedTicker, QUARTERLY_FILING_TYPES);
-
-                String docUrl = findPrimaryDocumentUrl(indexUrl, QUARTERLY_FILING_TYPES);
-
-                String content = fetchAndCleanHtml(docUrl);
-                log.info("sec_filing_fetch_complete ticker={} chars={}", normalizedTicker, content.length());
-
-                created.complete(content);
-                return content;
-            } catch (Throwable t) {
-                created.completeExceptionally(t);
-                if (t instanceof RuntimeException runtimeException) {
-                    throw runtimeException;
-                }
-                if (t instanceof Error error) {
-                    throw error;
-                }
-                throw new RuntimeException(t);
-            } finally {
-                inFlightFilingRequests.remove(cacheKey, created);
-            }
-        });
+            throw new RuntimeException(t);
+        }
     }
 
     String findLatestFilingIndexUrl(String ticker, String[] docTypes) {
