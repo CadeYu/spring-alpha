@@ -645,6 +645,7 @@ def build_business_driver_report_from_payload(
         payload,
         source_refs,
         backfill_excluded_points,
+        request.language,
     )
     task_sections = BusinessDriverSections(
         schema_version="task_sections.v1",
@@ -2594,7 +2595,8 @@ def _sanitize_business_driver_source_ids(
 ) -> set[int]:
     backfill_excluded_points: set[int] = set()
     for point in _driver_map_points(payload.driver_map):
-        _sanitize_business_driver_point_text(point)
+        if _sanitize_business_driver_point_text(point):
+            backfill_excluded_points.add(id(point))
         _sanitize_source_ids(point, source_refs_by_id)
         if _sanitize_business_driver_point_source_ids(point, source_refs_by_id):
             backfill_excluded_points.add(id(point))
@@ -2609,14 +2611,16 @@ def _sanitize_business_driver_source_ids(
     return backfill_excluded_points
 
 
-def _sanitize_business_driver_point_text(point: _SynthesizedPoint) -> None:
+def _sanitize_business_driver_point_text(point: _SynthesizedPoint) -> bool:
     if not _is_noisy_business_driver_text(point.summary):
-        return
+        return False
     point.summary = _strip_noisy_business_driver_fragments(point.summary)
     if _is_noisy_business_driver_text(point.summary):
         point.summary = "Evidence for this business-driver lens remains partial."
         point.source_ids = []
         point.citation_status = CitationStatus.UNVERIFIED
+        return True
+    return False
 
 
 def _sanitize_business_driver_point_source_ids(
@@ -2645,6 +2649,7 @@ def _backfill_business_driver_point_source_ids(
     payload: _BusinessDriverSynthesis,
     source_refs: list[SourceRef],
     excluded_point_ids: set[int],
+    language: str | None,
 ) -> None:
     lens_terms = {
         "revenue_bridge": (
@@ -2664,12 +2669,21 @@ def _backfill_business_driver_point_source_ids(
         ),
         "margin_and_mix": (
             "margin",
+            "gross margin",
+            "operating margin",
+            "net margin",
             "gross profit",
             "mix",
             "pricing",
             "price",
             "cost",
+            "costs",
+            "expense",
+            "expenses",
+            "cost of revenue",
             "operating income",
+            "profit",
+            "profitability",
         ),
         "demand_signals": (
             "demand",
@@ -2692,30 +2706,37 @@ def _backfill_business_driver_point_source_ids(
         ("margin_and_mix", payload.driver_map.margin_and_mix),
         ("demand_signals", payload.driver_map.demand_signals),
     ):
-        if (
-            point is None
-            or point.source_ids
-            or id(point) in excluded_point_ids
-            or _is_business_driver_partial_placeholder(point)
-        ):
+        if point is None or point.source_ids or id(point) in excluded_point_ids:
             continue
-        point.source_ids = _business_driver_backfill_source_ids(
+        placeholder_summary = _is_business_driver_partial_placeholder(point)
+        matched_refs = _business_driver_backfill_source_refs(
             clean_refs,
             lens_terms[lens_name],
         )
-        if point.source_ids and point.citation_status in {
+        point.source_ids = [
+            source_ref.source_id for source_ref in matched_refs if source_ref.source_id
+        ][:3]
+        if not point.source_ids:
+            continue
+        if placeholder_summary:
+            point.summary = _business_driver_backfill_summary(
+                lens_name,
+                matched_refs,
+                language,
+            )
+        if point.citation_status in {
             CitationStatus.SUPPORTED,
             CitationStatus.UNVERIFIED,
         }:
             point.citation_status = CitationStatus.PARTIAL
 
 
-def _business_driver_backfill_source_ids(
+def _business_driver_backfill_source_refs(
     source_refs: list[SourceRef],
     terms: tuple[str, ...],
-) -> list[str]:
+) -> list[SourceRef]:
     matches = [
-        source_ref.source_id
+        source_ref
         for source_ref in source_refs
         if source_ref.source_id
         and any(
@@ -2725,7 +2746,79 @@ def _business_driver_backfill_source_ids(
     ]
     if matches:
         return matches[:3]
-    return [source_ref.source_id for source_ref in source_refs[:1] if source_ref.source_id]
+    return [source_ref for source_ref in source_refs[:1] if source_ref.source_id]
+
+
+def _business_driver_backfill_summary(
+    lens_name: str,
+    source_refs: list[SourceRef],
+    language: str | None,
+) -> str:
+    evidence_hint = _business_driver_evidence_hint(source_refs)
+    if _is_zh_locale(language):
+        summaries = {
+            "revenue_bridge": (
+                "收入桥接证据仍然不完整，但现有 filing 证据指向"
+                f"{evidence_hint}。在缺少完整分业务收入拆分前，"
+                "这应被视为有证据约束的方向性判断。"
+            ),
+            "segment_momentum": (
+                "分部动能证据仍然不完整，但现有 filing 证据指向"
+                f"{evidence_hint}。在缺少完整分部增速与利润率前，"
+                "这应被视为有证据约束的方向性判断。"
+            ),
+            "margin_and_mix": (
+                "利润率与组合证据仍然不完整，但现有 filing 证据指向"
+                f"{evidence_hint}。在缺少完整分部利润率或产品组合拆分前，"
+                "这应被视为有证据约束的方向性判断。"
+            ),
+            "demand_signals": (
+                "需求信号证据仍然不完整，但现有 filing 证据指向"
+                f"{evidence_hint}。在缺少订单、积压、销量或留存数据前，"
+                "这应被视为有证据约束的方向性判断。"
+            ),
+        }
+        return summaries[lens_name]
+
+    summaries = {
+        "revenue_bridge": (
+            "Revenue bridge evidence remains partial, but the available filing evidence "
+            f"points to {evidence_hint}. Treat this as a directional read until "
+            "segment-level revenue detail is available."
+        ),
+        "segment_momentum": (
+            "Segment momentum evidence remains partial, but the available filing evidence "
+            f"points to {evidence_hint}. Treat this as a directional read until "
+            "complete segment growth detail is available."
+        ),
+        "margin_and_mix": (
+            "Margin and mix evidence remains partial, but the available filing evidence "
+            f"points to {evidence_hint}. Treat this as a directional read until "
+            "complete segment margin or product mix detail is available."
+        ),
+        "demand_signals": (
+            "Demand evidence remains partial, but the available filing evidence "
+            f"points to {evidence_hint}. Treat this as a directional read until "
+            "orders, backlog, volume, or retention detail is available."
+        ),
+    }
+    return summaries[lens_name]
+
+
+def _business_driver_evidence_hint(source_refs: list[SourceRef]) -> str:
+    for source_ref in source_refs:
+        snippet = source_ref.snippet.strip()
+        if not snippet:
+            continue
+        return _trim_sentence(snippet, max_chars=180)
+    return "the clean evidence currently retrieved"
+
+
+def _trim_sentence(text: str, *, max_chars: int) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 1].rstrip() + "…"
 
 
 def _is_business_driver_partial_placeholder(point: _SynthesizedPoint) -> bool:

@@ -670,6 +670,142 @@ def test_business_driver_report_backfills_clean_refs_when_synthesis_omits_source
     )
 
 
+def test_business_driver_report_recovers_partial_placeholder_with_clean_lens_refs() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "src_margin",
+                        "section": "Margins and expenses",
+                        "snippet": (
+                            "Gross margin expanded as operating expenses grew slower "
+                            "than revenue and product mix improved."
+                        ),
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "src_revenue",
+                        "section": "Results of operations",
+                        "snippet": "Revenue increased because enterprise customer demand improved.",
+                        "citation_status": "supported",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Revenue growth and margin discipline both matter.",
+                "durability": "mixed",
+                "summary": "Revenue growth is constructive, while margin evidence is partial.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue growth came from enterprise demand.",
+                    "source_ids": ["src_revenue"],
+                    "citation_status": "supported",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Enterprise customer demand remained the cleaner segment signal.",
+                    "source_ids": ["src_revenue"],
+                    "citation_status": "supported",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Evidence for this business-driver lens remains partial.",
+                    "citation_status": "unverified",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Enterprise customer demand remained constructive.",
+                    "source_ids": ["src_revenue"],
+                    "citation_status": "supported",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    point = report.task_sections.driver_map.margin_and_mix
+    assert point is not None
+    assert point.evidence_refs
+    assert point.evidence_refs[0].source_id == "src_margin"
+    assert point.citation_status == "partial"
+    assert point.summary != "Evidence for this business-driver lens remains partial."
+    assert "利润率" in point.summary
+
+
+def test_business_driver_placeholder_recovery_respects_english_locale() -> None:
+    state = _make_state(language="en").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "src_margin",
+                        "section": "Margins and expenses",
+                        "snippet": (
+                            "Operating margin improved because operating expenses "
+                            "grew slower than revenue."
+                        ),
+                        "citation_status": "supported",
+                    }
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "en"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Margin discipline matters.",
+                "durability": "mixed",
+                "summary": "Margin evidence is partial but useful.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Segment evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Evidence for this business-driver lens remains partial.",
+                    "citation_status": "unverified",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Demand evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    point = report.task_sections.driver_map.margin_and_mix
+    assert point is not None
+    assert point.evidence_refs
+    assert point.citation_status == "partial"
+    assert "Margin and mix evidence remains partial" in point.summary
+    assert "利润率" not in point.summary
+
+
 def test_business_driver_report_filters_noisy_synthesis_text_and_refs() -> None:
     state = _make_state(language="zh").model_copy(
         update={
