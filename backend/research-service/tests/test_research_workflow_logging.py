@@ -298,6 +298,10 @@ def test_latest_earnings_timeout_fallback_backfills_rich_memo_sections() -> None
     assert sections.drivers_and_draggers is not None
     assert sections.drivers_and_draggers.drivers
     assert sections.drivers_and_draggers.draggers
+    assert sections.drivers_and_draggers.drivers[0].title == "Revenue evidence anchor"
+    assert sections.drivers_and_draggers.draggers[0].title == "Risk Factors risk watch"
+    assert "Evidence-backed metric signal" not in report.model_dump_json()
+    assert "Synthesis risk" not in report.model_dump_json()
     assert sections.bull_bear_read is not None
     assert sections.bull_bear_read.bull_case
     assert sections.bull_bear_read.bear_case

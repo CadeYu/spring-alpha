@@ -337,10 +337,8 @@ def _latest_earnings_fallback_payload(
 ) -> dict[str, Any]:
     fallback_source_ids = [source_ref.source_id for source_ref in source_refs[:3]]
     primary_source_ids = fallback_source_ids[:1]
-    risk_summary = (
-        "The final LLM synthesis did not complete, so this section keeps the "
-        "evidence-backed figures and should be treated as partial."
-    )
+    primary_metric = _primary_fallback_metric(metrics)
+    risk_source = _risk_source_ref(source_refs, primary_source_ids)
     return {
         "company_profile": None,
         "topline_verdict": {
@@ -367,18 +365,26 @@ def _latest_earnings_fallback_payload(
         },
         "driver_snapshot": [
             _fallback_payload_point(
-                title="Evidence-backed metric signal",
-                summary=summary,
-                source_ids=primary_source_ids,
+                title=_driver_fallback_title(primary_metric),
+                summary=_driver_fallback_summary(primary_metric, summary),
+                source_ids=_metric_source_ids(primary_metric) or primary_source_ids,
                 citation_status=_fallback_citation_status(source_refs),
             )
         ],
         "risk_snapshot": [
             _fallback_payload_point(
-                title="Synthesis risk",
-                summary=risk_summary,
-                source_ids=primary_source_ids,
-                citation_status=_fallback_citation_status(source_refs),
+                title=_risk_fallback_title(risk_source),
+                summary=_risk_fallback_summary(risk_source),
+                source_ids=(
+                    [risk_source.source_id]
+                    if risk_source is not None
+                    else primary_source_ids
+                ),
+                citation_status=(
+                    risk_source.citation_status
+                    if risk_source is not None
+                    else _fallback_citation_status(source_refs)
+                ),
             )
         ],
         "claims": [
@@ -389,6 +395,83 @@ def _latest_earnings_fallback_payload(
             }
         ],
     }
+
+
+def _primary_fallback_metric(
+    metrics: list[EvidenceBoundMetric],
+) -> EvidenceBoundMetric | None:
+    present_metrics = [metric for metric in metrics if not _is_missing_metric(metric)]
+    if not present_metrics:
+        return None
+    priority_terms = ("revenue", "sales", "operating income", "margin", "cash flow")
+    for term in priority_terms:
+        for metric in present_metrics:
+            if term in metric.name.strip().lower():
+                return metric
+    return present_metrics[0]
+
+
+def _driver_fallback_title(metric: EvidenceBoundMetric | None) -> str:
+    if metric is None:
+        return "Evidence anchor"
+    return f"{_title_case_metric(metric.name)} evidence anchor"
+
+
+def _driver_fallback_summary(metric: EvidenceBoundMetric | None, summary: str) -> str:
+    if metric is None:
+        return summary
+    return (
+        f"{metric.name} of {metric.value} is the clearest available earnings driver "
+        f"before final synthesis completed. {metric.interpretation}"
+    )
+
+
+def _risk_source_ref(
+    source_refs: list[SourceRef],
+    primary_source_ids: list[str],
+) -> SourceRef | None:
+    for source_ref in source_refs:
+        section = source_ref.section.strip().lower()
+        snippet = source_ref.snippet.strip().lower()
+        if (
+            "risk" in section
+            or "risk" in snippet
+            or "pressure" in snippet
+            or "uncertainty" in snippet
+        ):
+            return source_ref
+    for source_ref in source_refs:
+        if source_ref.source_id not in primary_source_ids:
+            return source_ref
+    return source_refs[0] if source_refs else None
+
+
+def _risk_fallback_title(source_ref: SourceRef | None) -> str:
+    if source_ref is None:
+        return "Evidence risk watch"
+    return f"{_clip_title(source_ref.section)} risk watch"
+
+
+def _risk_fallback_summary(source_ref: SourceRef | None) -> str:
+    if source_ref is None:
+        return (
+            "The final LLM synthesis did not complete, so risk framing remains "
+            "partial until the next full analysis run."
+        )
+    return (
+        f"{_clip(source_ref.snippet, 180)} This keeps the earnings read balanced "
+        "until final synthesis can reconcile the driver and risk evidence."
+    )
+
+
+def _metric_source_ids(metric: EvidenceBoundMetric | None) -> list[str]:
+    if metric is None:
+        return []
+    return [
+        evidence_ref.source_id
+        for evidence_ref in metric.evidence_refs
+        if evidence_ref.source_id
+    ]
 
 
 def _fallback_payload_metric(metric: EvidenceBoundMetric) -> dict[str, Any]:
@@ -425,6 +508,15 @@ def _fallback_citation_status(source_refs: list[SourceRef]) -> CitationStatus:
     if not source_refs:
         return CitationStatus.UNVERIFIED
     return source_refs[0].citation_status
+
+
+def _title_case_metric(value: str) -> str:
+    return " ".join(part.capitalize() for part in value.strip().split())
+
+
+def _clip_title(value: str) -> str:
+    title = " ".join(value.strip().split())
+    return _clip(title, 64) if title else "Evidence"
 
 
 def _source_refs_from_memory(memory: EvidenceMemory) -> list[SourceRef]:
