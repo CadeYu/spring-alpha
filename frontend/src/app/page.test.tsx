@@ -99,6 +99,63 @@ function latestTaskSections(headline: string, summary = `${headline} summary.`) 
   };
 }
 
+function businessDriverTaskSections({
+  thesisHeadline = "Business driver agent thesis",
+  thesisSummary = "Business driver agent summary.",
+  revenueBridgeTitle = "Revenue bridge",
+  revenueBridgeSummary = "Revenue bridge paragraph.",
+  segmentMomentumTitle,
+  segmentMomentumSummary,
+  marginAndMixTitle,
+  marginAndMixSummary,
+  demandSignalsTitle,
+  demandSignalsSummary,
+}: {
+  thesisHeadline?: string;
+  thesisSummary?: string;
+  revenueBridgeTitle?: string;
+  revenueBridgeSummary?: string;
+  segmentMomentumTitle?: string;
+  segmentMomentumSummary?: string;
+  marginAndMixTitle?: string;
+  marginAndMixSummary?: string;
+  demandSignalsTitle?: string;
+  demandSignalsSummary?: string;
+} = {}) {
+  const point = (title?: string, summary?: string) =>
+    title && summary
+      ? {
+          title,
+          summary,
+          evidenceRefs: [],
+          citationStatus: "supported",
+        }
+      : null;
+
+  return {
+    schemaVersion: "task_sections.v1",
+    taskType: "business_driver_deep_dive",
+    coverage: {
+      status: "complete",
+      missingSections: [],
+      evidenceCount: 1,
+    },
+    businessDriver: {
+      driverThesis: {
+        headline: thesisHeadline,
+        durability: "durable",
+        summary: thesisSummary,
+      },
+      driverMap: {
+        revenueBridge: point(revenueBridgeTitle, revenueBridgeSummary),
+        segmentMomentum: point(segmentMomentumTitle, segmentMomentumSummary),
+        marginAndMix: point(marginAndMixTitle, marginAndMixSummary),
+        demandSignals: point(demandSignalsTitle, demandSignalsSummary),
+      },
+    },
+  };
+}
+
 function openAgentReport(name: RegExp) {
   fireEvent.click(screen.getByRole("tab", { name }));
 }
@@ -472,34 +529,7 @@ describe("Home page", () => {
             businessDrivers: [],
             riskFactors: [],
             citations: [],
-            taskSections: {
-              schemaVersion: "task_sections.v1",
-              taskType,
-              coverage: {
-                status: "complete",
-                missingSections: [],
-                evidenceCount: 1,
-              },
-              businessDriver: {
-                driverThesis: {
-                  headline: "Business driver agent thesis",
-                  durability: "durable",
-                  summary: "Business driver agent summary.",
-                },
-                driverMap: {
-                  product: [],
-                  segment: [],
-                  geography: [],
-                  demand: [],
-                  pricing: [],
-                  customer: [],
-                  strategy: [],
-                },
-                positiveSignals: [],
-                negativeSignals: [],
-                watchlist: [],
-              },
-            },
+            taskSections: businessDriverTaskSections(),
           },
         ]);
       }
@@ -599,47 +629,14 @@ describe("Home page", () => {
             period: "Q1 2026",
             filingDate: "2026-02-01",
             citations: [],
-            taskSections: {
-              schemaVersion: "task_sections.v1",
-              taskType,
-              coverage: {
-                status: "partial",
-                missingSections: ["llm_final_synthesis"],
-                evidenceCount: 1,
-              },
-              businessDriver: {
-                driverThesis: {
-                  headline: "Revenue demand signal",
-                  durability: "mixed",
-                  summary: "Revenue provides the clearest available demand signal.",
-                },
-                driverMap: {
-                  product: [],
-                  segment: [],
-                  geography: [],
-                  demand: [
-                    {
-                      title: "Revenue demand signal",
-                      summary: "Revenue was $111.2B in the quarter.",
-                      evidenceRefs: [
-                        {
-                          section: "SEC companyfacts",
-                          excerpt: "Revenue was $111.2B in the quarter.",
-                          sourceId: "src_1",
-                        },
-                      ],
-                      citationStatus: "supported",
-                    },
-                  ],
-                  pricing: [],
-                  customer: [],
-                  strategy: [],
-                },
-                positiveSignals: [],
-                negativeSignals: [],
-                watchlist: ["Track whether revenue stays above $111.2B next quarter."],
-              },
-            },
+            taskSections: businessDriverTaskSections({
+              thesisHeadline: "Revenue demand signal",
+              thesisSummary: "Revenue provides the clearest available demand signal.",
+              revenueBridgeTitle: "Revenue bridge",
+              revenueBridgeSummary: "Revenue was $111.2B in the quarter.",
+              demandSignalsTitle: "Demand signal",
+              demandSignalsSummary: "Revenue was the clearest available demand signal.",
+            }),
           },
         ]);
       }
@@ -668,10 +665,12 @@ describe("Home page", () => {
         screen.getAllByText("Revenue demand signal").length,
       ).toBeGreaterThan(0),
     );
-    expect(screen.getAllByText("Demand").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Revenue Bridge").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Demand Signals").length).toBeGreaterThan(0);
     expect(screen.queryByText("Product")).not.toBeInTheDocument();
+    expect(screen.queryByText("Driver Map")).not.toBeInTheDocument();
     expect(screen.queryByText("No evidence for this lens.")).not.toBeInTheDocument();
-    expect(screen.getByText(/revenue stays above \$111.2B/i)).toBeInTheDocument();
+    expect(screen.queryByText(/revenue stays above \$111.2B/i)).not.toBeInTheDocument();
   });
 
   it("surfaces degraded agent evidence when the backend returns a no-report chunk", async () => {
@@ -696,34 +695,7 @@ describe("Home page", () => {
             period: "Q1 2026",
             filingDate: "2026-02-01",
             citations: [],
-            taskSections: {
-              schemaVersion: "task_sections.v1",
-              taskType,
-              coverage: {
-                status: "complete",
-                missingSections: [],
-                evidenceCount: 1,
-              },
-              businessDriver: {
-                driverThesis: {
-                  headline: "Business driver agent thesis",
-                  durability: "durable",
-                  summary: "Business driver agent summary.",
-                },
-                driverMap: {
-                  product: [],
-                  segment: [],
-                  geography: [],
-                  demand: [],
-                  pricing: [],
-                  customer: [],
-                  strategy: [],
-                },
-                positiveSignals: [],
-                negativeSignals: [],
-                watchlist: [],
-              },
-            },
+            taskSections: businessDriverTaskSections(),
           },
         ]);
       }
@@ -840,34 +812,7 @@ describe("Home page", () => {
             period: "Q1 2026",
             filingDate: "2026-02-01",
             citations: [],
-            taskSections: {
-              schemaVersion: "task_sections.v1",
-              taskType,
-              coverage: {
-                status: "complete",
-                missingSections: [],
-                evidenceCount: 1,
-              },
-              businessDriver: {
-                driverThesis: {
-                  headline: "Business driver agent thesis",
-                  durability: "durable",
-                  summary: "Business driver agent summary.",
-                },
-                driverMap: {
-                  product: [],
-                  segment: [],
-                  geography: [],
-                  demand: [],
-                  pricing: [],
-                  customer: [],
-                  strategy: [],
-                },
-                positiveSignals: [],
-                negativeSignals: [],
-                watchlist: [],
-              },
-            },
+            taskSections: businessDriverTaskSections(),
           },
         ]);
       }
@@ -1178,41 +1123,14 @@ describe("Home page", () => {
           citations: [],
           bullCase: "Bull case.",
           bearCase: "Bear case.",
-          taskSections: {
-            schemaVersion: "task_sections.v1",
-            taskType: "business_driver_deep_dive",
-            coverage: {
-              status: "complete",
-              missingSections: [],
-              evidenceCount: 1,
-            },
-            businessDriver: {
-              driverThesis: {
-                headline: "Typed driver thesis",
-                durability: "durable",
-                summary: "Typed driver summary.",
-              },
-              driverMap: {
-                product: [
-                  {
-                    title: "Typed product signal",
-                    summary: "Typed product evidence.",
-                    evidenceRefs: [],
-                    citationStatus: "supported",
-                  },
-                ],
-                segment: [],
-                geography: [],
-                demand: [],
-                pricing: [],
-                customer: [],
-                strategy: [],
-              },
-              positiveSignals: [],
-              negativeSignals: [],
-              watchlist: ["Track typed product adoption."],
-            },
-          },
+          taskSections: businessDriverTaskSections({
+            thesisHeadline: "Typed driver thesis",
+            thesisSummary: "Typed driver summary.",
+            revenueBridgeTitle: "Typed revenue bridge",
+            revenueBridgeSummary: "Typed revenue bridge evidence.",
+            segmentMomentumTitle: "Typed segment momentum",
+            segmentMomentumSummary: "Typed segment momentum evidence.",
+          }),
           metadata: {
             modelName: "gpt-4o-mini",
             generatedAt: "2026-03-09T10:00:00",
@@ -1231,12 +1149,10 @@ describe("Home page", () => {
     openAgentReport(/business driver deep dive/i);
 
     expect(await screen.findByText("Typed driver thesis")).toBeInTheDocument();
-    expect(screen.getAllByText("Typed product signal").length).toBeGreaterThan(
+    expect(screen.getAllByText("Typed revenue bridge").length).toBeGreaterThan(
       0,
     );
-    expect(
-      screen.getByText("Track typed product adoption."),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("Track typed product adoption.")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Legacy services momentum"),
     ).not.toBeInTheDocument();
@@ -1818,30 +1734,10 @@ describe("Home page", () => {
             companyName: "Apple Inc.",
             period: "Q1 2026",
             filingDate: "2026-02-01",
-            taskSections: {
-              schemaVersion: "task_sections.v1",
-              taskType,
-              coverage: { status: "complete", missingSections: [], evidenceCount: 1 },
-              businessDriver: {
-                driverThesis: {
-                  headline: "Business thesis",
-                  durability: "durable",
-                  summary: "Business summary.",
-                },
-                driverMap: {
-                  product: [],
-                  segment: [],
-                  geography: [],
-                  demand: [],
-                  pricing: [],
-                  customer: [],
-                  strategy: [],
-                },
-                positiveSignals: [],
-                negativeSignals: [],
-                watchlist: [],
-              },
-            },
+            taskSections: businessDriverTaskSections({
+              thesisHeadline: "Business thesis",
+              thesisSummary: "Business summary.",
+            }),
             metadata: {
               agentEvents: [
                 {
@@ -2452,34 +2348,7 @@ describe("Home page", () => {
           businessDrivers: [],
           riskFactors: [],
           citations: [],
-          taskSections: {
-            schemaVersion: "task_sections.v1",
-            taskType: "business_driver_deep_dive",
-            coverage: {
-              status: "complete",
-              missingSections: [],
-              evidenceCount: 1,
-            },
-            businessDriver: {
-              driverThesis: {
-                headline: "Business driver agent thesis",
-                durability: "durable",
-                summary: "Business driver agent summary.",
-              },
-              driverMap: {
-                product: [],
-                segment: [],
-                geography: [],
-                demand: [],
-                pricing: [],
-                customer: [],
-                strategy: [],
-              },
-              positiveSignals: [],
-              negativeSignals: [],
-              watchlist: [],
-            },
-          },
+          taskSections: businessDriverTaskSections(),
         },
       ]),
     );

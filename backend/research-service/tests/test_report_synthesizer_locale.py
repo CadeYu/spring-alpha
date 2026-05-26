@@ -14,6 +14,7 @@ from app.agents.report_synthesizer import (
     _sanitize_user_text,
     _system_prompt,
     _user_prompt,
+    build_business_driver_report_from_payload,
     build_latest_earnings_report_from_payload,
     synthesize_latest_earnings_payload,
 )
@@ -511,6 +512,157 @@ def test_business_driver_single_claim_dict_payload_is_normalized_to_list() -> No
     assert len(payload["claims"]) == 1
     assert payload["claims"][0]["text"] == "Revenue growth remains resilient."
     assert payload["claims"][0]["source_ids"] == ["src_1"]
+
+
+def test_business_driver_report_uses_four_evidence_bound_paragraphs() -> None:
+    state = _make_state(language="en").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "src_1",
+                        "section": "MD&A",
+                        "snippet": "Services revenue and margin mix supported growth.",
+                        "citation_status": "supported",
+                    }
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "en"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Services mix supports the operating thesis.",
+                "durability": "mixed",
+                "summary": "Services and mix explain the current operating setup.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue growth was anchored by Services and product mix.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Services carried the cleaner segment signal.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Mix was the clearest margin bridge.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Demand evidence was constructive but not complete.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "partial",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    sections = report.task_sections
+    assert sections.driver_map.revenue_bridge is not None
+    assert sections.driver_map.revenue_bridge.title == "Revenue bridge"
+    assert sections.driver_map.segment_momentum is not None
+    assert sections.driver_map.margin_and_mix is not None
+    assert sections.driver_map.demand_signals is not None
+    assert sections.coverage.missing_sections == []
+    assert not hasattr(sections, "watchlist")
+
+
+def test_business_driver_payload_folds_legacy_lenses_into_paragraph_fields() -> None:
+    payload = _normalize_business_driver_payload(
+        {
+            "driver_thesis": {
+                "headline": "Demand improved.",
+                "durability": "mixed",
+                "summary": "Demand improved.",
+            },
+            "driver_map": {
+                "product": [
+                    {
+                        "title": "Product demand",
+                        "summary": "Product demand supported revenue.",
+                        "source_id": "src_1",
+                    }
+                ],
+                "segment": [
+                    {
+                        "title": "Services",
+                        "summary": "Services were the cleaner segment signal.",
+                        "source_id": "src_2",
+                    }
+                ],
+                "pricing": [
+                    {
+                        "title": "Mix",
+                        "summary": "Mix supported margin.",
+                        "source_id": "src_3",
+                    }
+                ],
+                "demand": [
+                    {
+                        "title": "Demand",
+                        "summary": "Demand remained resilient.",
+                        "source_id": "src_4",
+                    }
+                ],
+            },
+            "positive_signals": [],
+            "negative_signals": [],
+            "watchlist": ["Track demand."],
+            "claims": [],
+        }
+    )
+
+    assert payload["driver_map"]["revenue_bridge"]["title"] == "Product demand"
+    assert payload["driver_map"]["segment_momentum"]["title"] == "Services"
+    assert payload["driver_map"]["margin_and_mix"]["title"] == "Mix"
+    assert payload["driver_map"]["demand_signals"]["title"] == "Demand"
+    assert "positive_signals" not in payload
+    assert "watchlist" not in payload
+
+
+def test_business_driver_payload_accepts_camel_case_driver_map() -> None:
+    payload = _normalize_business_driver_payload(
+        {
+            "driverThesis": {
+                "headline": "Revenue mix improved.",
+                "durability": "mixed",
+                "summary": "Revenue mix improved with partial evidence.",
+            },
+            "driverMap": {
+                "revenueBridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue bridge improved.",
+                    "sourceIds": ["src_1"],
+                    "citationStatus": "supported",
+                },
+                "demandSignals": {
+                    "title": "Demand",
+                    "summary": "Demand evidence was constructive.",
+                    "sourceIds": ["src_2"],
+                    "citationStatus": "partial",
+                },
+            },
+            "claims": [],
+        }
+    )
+
+    assert payload["driver_map"]["revenue_bridge"]["title"] == "Revenue bridge"
+    assert payload["driver_map"]["revenue_bridge"]["source_ids"] == ["src_1"]
+    assert payload["driver_map"]["demand_signals"]["title"] == "Demand"
+    assert payload["driver_map"]["demand_signals"]["citation_status"] == "partial"
 
 
 def test_cash_flow_capital_allocation_backfills_empty_point_summaries() -> None:

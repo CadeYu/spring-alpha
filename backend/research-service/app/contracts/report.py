@@ -163,22 +163,16 @@ class DriverThesis(BaseModel):
 class DriverMap(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    product: list[EvidenceBoundPoint] = Field(default_factory=list)
-    segment: list[EvidenceBoundPoint] = Field(default_factory=list)
-    geography: list[EvidenceBoundPoint] = Field(default_factory=list)
-    demand: list[EvidenceBoundPoint] = Field(default_factory=list)
-    pricing: list[EvidenceBoundPoint] = Field(default_factory=list)
-    customer: list[EvidenceBoundPoint] = Field(default_factory=list)
-    strategy: list[EvidenceBoundPoint] = Field(default_factory=list)
+    revenue_bridge: EvidenceBoundPoint | None = None
+    segment_momentum: EvidenceBoundPoint | None = None
+    margin_and_mix: EvidenceBoundPoint | None = None
+    demand_signals: EvidenceBoundPoint | None = None
 
 
 class BusinessDriverSections(BaseTaskSections):
     task_type: Literal[ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE]
     driver_thesis: DriverThesis
     driver_map: DriverMap
-    positive_signals: list[EvidenceBoundPoint] = Field(default_factory=list)
-    negative_signals: list[EvidenceBoundPoint] = Field(default_factory=list)
-    watchlist: list[str] = Field(default_factory=list)
 
 
 class CashQualityVerdict(BaseModel):

@@ -177,13 +177,10 @@ class _SynthesizedWatchNextItem(BaseModel):
 class _SynthesizedDriverMap(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    product: list[_SynthesizedPoint] = Field(default_factory=list)
-    segment: list[_SynthesizedPoint] = Field(default_factory=list)
-    geography: list[_SynthesizedPoint] = Field(default_factory=list)
-    demand: list[_SynthesizedPoint] = Field(default_factory=list)
-    pricing: list[_SynthesizedPoint] = Field(default_factory=list)
-    customer: list[_SynthesizedPoint] = Field(default_factory=list)
-    strategy: list[_SynthesizedPoint] = Field(default_factory=list)
+    revenue_bridge: _SynthesizedPoint | None = None
+    segment_momentum: _SynthesizedPoint | None = None
+    margin_and_mix: _SynthesizedPoint | None = None
+    demand_signals: _SynthesizedPoint | None = None
 
 
 class _BusinessDriverSynthesis(BaseModel):
@@ -191,9 +188,6 @@ class _BusinessDriverSynthesis(BaseModel):
 
     driver_thesis: DriverThesis
     driver_map: _SynthesizedDriverMap
-    positive_signals: list[_SynthesizedPoint] = Field(default_factory=list)
-    negative_signals: list[_SynthesizedPoint] = Field(default_factory=list)
-    watchlist: list[str] = Field(default_factory=list)
     claims: list[_SynthesizedClaim] = Field(default_factory=list)
 
 
@@ -635,41 +629,23 @@ def build_business_driver_report_from_payload(
         coverage=_business_driver_coverage(payload, source_refs),
         driver_thesis=payload.driver_thesis,
         driver_map=DriverMap(
-            product=[
-                _point_from_payload(point, source_refs_by_id)
-                for point in payload.driver_map.product
-            ],
-            segment=[
-                _point_from_payload(point, source_refs_by_id)
-                for point in payload.driver_map.segment
-            ],
-            geography=[
-                _point_from_payload(point, source_refs_by_id)
-                for point in payload.driver_map.geography
-            ],
-            demand=[
-                _point_from_payload(point, source_refs_by_id) for point in payload.driver_map.demand
-            ],
-            pricing=[
-                _point_from_payload(point, source_refs_by_id)
-                for point in payload.driver_map.pricing
-            ],
-            customer=[
-                _point_from_payload(point, source_refs_by_id)
-                for point in payload.driver_map.customer
-            ],
-            strategy=[
-                _point_from_payload(point, source_refs_by_id)
-                for point in payload.driver_map.strategy
-            ],
+            revenue_bridge=_optional_point_from_payload(
+                payload.driver_map.revenue_bridge,
+                source_refs_by_id,
+            ),
+            segment_momentum=_optional_point_from_payload(
+                payload.driver_map.segment_momentum,
+                source_refs_by_id,
+            ),
+            margin_and_mix=_optional_point_from_payload(
+                payload.driver_map.margin_and_mix,
+                source_refs_by_id,
+            ),
+            demand_signals=_optional_point_from_payload(
+                payload.driver_map.demand_signals,
+                source_refs_by_id,
+            ),
         ),
-        positive_signals=[
-            _point_from_payload(point, source_refs_by_id) for point in payload.positive_signals
-        ],
-        negative_signals=[
-            _point_from_payload(point, source_refs_by_id) for point in payload.negative_signals
-        ],
-        watchlist=payload.watchlist,
     )
     return EvidenceAwareReport(
         run_id=request.run_id,
@@ -704,33 +680,26 @@ def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str
                 ),
                 "summary": summary,
             }
-    driver_map = payload_data.get("driver_map")
+    driver_map = normalized.get("driver_map")
     if not isinstance(driver_map, dict):
         normalized["driver_map"] = _empty_driver_map()
     else:
         normalized["driver_map"] = _normalize_driver_map(driver_map)
     if not _has_complete_driver_thesis(normalized.get("driver_thesis")):
         normalized["driver_thesis"] = _driver_thesis_from_normalized_payload(normalized)
-    normalized["positive_signals"] = _normalize_synthesized_points(
-        normalized.get("positive_signals", [])
-    )
-    normalized["negative_signals"] = _normalize_synthesized_points(
-        normalized.get("negative_signals", [])
-    )
     normalized["claims"] = _normalize_synthesized_claims(normalized.get("claims", []))
-    normalized["watchlist"] = _normalize_watchlist(normalized.get("watchlist", []))
+    normalized.pop("positive_signals", None)
+    normalized.pop("negative_signals", None)
+    normalized.pop("watchlist", None)
     return _sanitize_payload_user_text(normalized)
 
 
-def _empty_driver_map() -> dict[str, list[object]]:
+def _empty_driver_map() -> dict[str, object | None]:
     return {
-        "product": [],
-        "segment": [],
-        "geography": [],
-        "demand": [],
-        "pricing": [],
-        "customer": [],
-        "strategy": [],
+        "revenue_bridge": None,
+        "segment_momentum": None,
+        "margin_and_mix": None,
+        "demand_signals": None,
     }
 
 
@@ -740,8 +709,40 @@ def _normalize_driver_map(driver_map: dict[str, object]) -> dict[str, object]:
         clean_key = _clean_key(key).strip("_")
         if clean_key not in normalized:
             continue
-        normalized[clean_key] = _normalize_synthesized_points(value)
+        normalized[clean_key] = _normalize_synthesized_point_or_none(value)
+    _fold_legacy_driver_lenses(driver_map, normalized)
     return normalized
+
+
+def _normalize_synthesized_point_or_none(value: object) -> dict[str, Any] | None:
+    if isinstance(value, list):
+        points = _normalize_synthesized_points(value)
+        return points[0] if points else None
+    if value is None:
+        return None
+    points = _normalize_synthesized_points([value])
+    return points[0] if points else None
+
+
+def _fold_legacy_driver_lenses(
+    driver_map: dict[str, object],
+    normalized: dict[str, object | None],
+) -> None:
+    legacy_groups = {
+        "revenue_bridge": ("product", "geography"),
+        "segment_momentum": ("segment", "strategy"),
+        "margin_and_mix": ("pricing",),
+        "demand_signals": ("demand", "customer"),
+    }
+    for target_key, source_keys in legacy_groups.items():
+        if normalized.get(target_key):
+            continue
+        for source_key in source_keys:
+            legacy_value = driver_map.get(source_key)
+            point = _normalize_synthesized_point_or_none(legacy_value)
+            if point:
+                normalized[target_key] = point
+                break
 
 
 def _has_complete_driver_thesis(value: object) -> bool:
@@ -755,30 +756,11 @@ def _driver_thesis_from_normalized_payload(payload: dict[str, Any]) -> dict[str,
     headline = ""
     driver_map = payload.get("driver_map")
     if isinstance(driver_map, dict):
-        for points in driver_map.values():
-            if not isinstance(points, list):
+        for point in driver_map.values():
+            if not isinstance(point, dict):
                 continue
-            for point in points:
-                if not isinstance(point, dict):
-                    continue
-                summary = str(point.get("summary") or "").strip()
-                headline = str(point.get("title") or "").strip()
-                if summary:
-                    break
-            if summary:
-                break
-    if not summary:
-        for key in ("positive_signals", "negative_signals"):
-            points = _normalize_synthesized_points(payload.get(key, []))
-            if not isinstance(points, list):
-                continue
-            for point in points:
-                if not isinstance(point, dict):
-                    continue
-                summary = str(point.get("summary") or "").strip()
-                headline = str(point.get("title") or "").strip()
-                if summary:
-                    break
+            summary = str(point.get("summary") or "").strip()
+            headline = str(point.get("title") or "").strip()
             if summary:
                 break
     if not summary:
@@ -1870,7 +1852,8 @@ def _clean_mapping_keys(value: dict[str, Any]) -> dict[str, Any]:
 
 def _clean_key(value: object) -> str:
     normalized = " ".join(str(value).strip().strip(".:").split())
-    return normalized.replace(" ", "_")
+    normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", normalized)
+    return normalized.replace(" ", "_").lower()
 
 
 def _title_from_provider_point(point: dict[str, object]) -> str | None:
@@ -2106,21 +2089,26 @@ def _business_driver_prompt(
             "{\n"
             '  "driver_thesis": {"headline": "...", "durability": '
             '"durable|mixed|temporary|unclear", "summary": "..."},\n'
-            '  "driver_map": {"product": [], "segment": [], "geography": [], '
-            '"demand": [], "pricing": [], "customer": [], "strategy": []},\n'
-            '  "positive_signals": [{"title": "...", "summary": "...", '
-            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
-            '  "negative_signals": [{"title": "...", "summary": "...", '
-            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
-            '  "watchlist": ["..."],\n'
+            '  "driver_map": {\n'
+            '    "revenue_bridge": {"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
+            '    "segment_momentum": {"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
+            '    "margin_and_mix": {"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
+            '    "demand_signals": {"title": "...", "summary": "...", '
+            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}\n'
+            "  },\n"
             '  "claims": [{"text": "...", "source_ids": ["..."], '
             '"citation_status": "supported|partial|missing|unverified"}]\n'
             "}\n"
-            "driver_map 的每个分类都必须是 point 数组，每个 point 包含 title、summary、source_ids 和 citation_status。\n"
+            "driver_map 的四个字段都是单个段落 point，不要返回数组。"
+            "每段 summary 写 3-5 句，说明结论、证据、投资含义和证据限制。\n"
             "所有 source_ids 都必须来自已提供的证据。\n"
             "如果证据稀薄，也要保持同样的对象/数组结构，但文案要谨慎。\n"
-            "优先围绕经营驱动因素：产品、服务、分部、需求、定价、客户、渠道库存、组合和战略。\n"
-            "监管、合规、法律或市场风险证据应放在 risks、negative_signals 或 watchlist 中，除非完全没有经营驱动证据，否则不要把它们写成 driver_thesis 的主结论。\n"
+            "四段分别回答 revenue bridge、segment momentum、margin and mix、demand signals。"
+            "SEC filing、company facts、market data 和已收集第三方来源都可以作为补充证据，"
+            "但必须使用 allowed source_ids。监管、法律或市场风险只能作为反证写入相关段落。\n"
             f"Ticker: {state.ticker}\n"
             f"Task: {request.task_type.value}\n"
             f"Business signals: {_json_safe(state.evidence_memory.business_signals)}\n"
@@ -2138,21 +2126,27 @@ def _business_driver_prompt(
         "{\n"
         '  "driver_thesis": {"headline": "...", "durability": '
         '"durable|mixed|temporary|unclear", "summary": "..."},\n'
-        '  "driver_map": {"product": [], "segment": [], "geography": [], '
-        '"demand": [], "pricing": [], "customer": [], "strategy": []},\n'
-        '  "positive_signals": [{"title": "...", "summary": "...", '
-        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
-        '  "negative_signals": [{"title": "...", "summary": "...", '
-        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}],\n'
-        '  "watchlist": ["..."],\n'
+        '  "driver_map": {\n'
+        '    "revenue_bridge": {"title": "...", "summary": "...", '
+        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
+        '    "segment_momentum": {"title": "...", "summary": "...", '
+        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
+        '    "margin_and_mix": {"title": "...", "summary": "...", '
+        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
+        '    "demand_signals": {"title": "...", "summary": "...", '
+        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}\n'
+        "  },\n"
         '  "claims": [{"text": "...", "source_ids": ["..."], '
         '"citation_status": "supported|partial|missing|unverified"}]\n'
         "}\n"
-        "Each driver_map category must be a point array, and each point must include title, summary, source_ids, and citation_status.\n"
+        "Each driver_map field is one paragraph point, not an array. Each summary should "
+        "be 3-5 sentences covering conclusion, evidence, investor relevance, and evidence limits.\n"
         "All source_ids must come from the evidence provided.\n"
         "If evidence is sparse, keep the same object and array structure, but stay cautious in the wording.\n"
-        "Focus on operating drivers: products, services, segments, demand, pricing, customers, channel inventory, mix, and strategy.\n"
-        "Regulatory, compliance, legal, or market-risk evidence should live in risks, negative_signals, or watchlist unless there is no operating driver evidence at all.\n"
+        "The four paragraphs must cover revenue bridge, segment momentum, margin and mix, "
+        "and demand signals. SEC filing, company facts, market data, and collected third-party "
+        "sources may all supplement the analysis, but every cited fact must use an allowed source_id. "
+        "Regulatory, legal, or market-risk evidence should be used only as counter-evidence inside the relevant paragraph.\n"
         f"Ticker: {state.ticker}\n"
         f"Task: {request.task_type.value}\n"
         f"Business signals: {_json_safe(state.evidence_memory.business_signals)}\n"
@@ -2547,11 +2541,7 @@ def _sanitize_business_driver_source_ids(
     payload: _BusinessDriverSynthesis,
     source_refs_by_id: dict[str, SourceRef],
 ) -> None:
-    for point in [
-        *_driver_map_points(payload.driver_map),
-        *payload.positive_signals,
-        *payload.negative_signals,
-    ]:
+    for point in _driver_map_points(payload.driver_map):
         _sanitize_source_ids(point, source_refs_by_id)
     for claim in payload.claims:
         _sanitize_source_ids(claim, source_refs_by_id)
@@ -2738,12 +2728,14 @@ def _business_driver_coverage(
     source_refs: list[SourceRef],
 ) -> TaskSectionCoverage:
     missing_sections = []
-    if not any(_driver_map_points(payload.driver_map)):
-        missing_sections.append("driver_map")
-    if not payload.positive_signals and not payload.negative_signals:
-        missing_sections.append("signals")
-    if not payload.watchlist:
-        missing_sections.append("watchlist")
+    for field_name in (
+        "revenue_bridge",
+        "segment_momentum",
+        "margin_and_mix",
+        "demand_signals",
+    ):
+        if getattr(payload.driver_map, field_name) is None:
+            missing_sections.append(field_name)
     if not source_refs:
         missing_sections.append("evidence_refs")
     return TaskSectionCoverage(
@@ -2755,13 +2747,14 @@ def _business_driver_coverage(
 
 def _driver_map_points(driver_map: _SynthesizedDriverMap) -> list[_SynthesizedPoint]:
     return [
-        *driver_map.product,
-        *driver_map.segment,
-        *driver_map.geography,
-        *driver_map.demand,
-        *driver_map.pricing,
-        *driver_map.customer,
-        *driver_map.strategy,
+        point
+        for point in [
+            driver_map.revenue_bridge,
+            driver_map.segment_momentum,
+            driver_map.margin_and_mix,
+            driver_map.demand_signals,
+        ]
+        if point is not None
     ]
 
 

@@ -375,7 +375,7 @@ def test_fallback_summary_hides_internal_missing_metric_markers() -> None:
     assert "revenue: $111.2B" in report.sections["summary"]
 
 
-def test_business_driver_timeout_fallback_uses_actionable_watchlist() -> None:
+def test_business_driver_timeout_fallback_uses_paragraph_sections() -> None:
     request = AgentRequest(
         run_id="run_1",
         ticker="AAPL",
@@ -429,13 +429,17 @@ def test_business_driver_timeout_fallback_uses_actionable_watchlist() -> None:
     assert report is not None
     sections = report.task_sections
     assert sections.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE
-    assert sections.driver_map.demand
-    assert sections.driver_map.demand[0].title == "Revenue demand signal"
-    assert sections.positive_signals[0].title == "Revenue demand signal"
-    assert sections.watchlist
+    assert sections.driver_map.revenue_bridge is not None
+    assert sections.driver_map.revenue_bridge.title == "Revenue demand signal"
+    assert sections.driver_map.segment_momentum is not None
+    assert sections.driver_map.segment_momentum.title == "Segment momentum evidence"
+    assert sections.driver_map.margin_and_mix is not None
+    assert sections.driver_map.margin_and_mix.title == "Margin and mix evidence"
+    assert sections.driver_map.demand_signals is not None
+    assert sections.driver_map.demand_signals.title == "Revenue demand signal"
     assert "Review the final LLM synthesis" not in report.model_dump_json()
-    assert any("revenue" in item.lower() and "$111.2B" in item for item in sections.watchlist)
-    assert any("Business overview" in item for item in sections.watchlist)
+    assert "watchlist" not in report.model_dump_json()
+    assert "positive_signals" not in report.model_dump_json()
 
 
 def test_fallback_report_hides_internal_missing_metric_markers_everywhere() -> None:

@@ -288,13 +288,27 @@ def _fallback_report_from_state(
                 durability="unclear",
                 summary=summary,
             ),
-            driver_map=DriverMap(demand=[point]),
-            positive_signals=[point],
-            negative_signals=[],
-            watchlist=_business_driver_fallback_watchlist(
-                request,
-                present_metrics,
-                source_refs,
+            driver_map=DriverMap(
+                revenue_bridge=point,
+                segment_momentum=_business_driver_context_point(
+                    source_refs,
+                    title="Segment momentum evidence",
+                    summary=(
+                        "Segment momentum was not fully synthesized before the final LLM step "
+                        "failed. Use the collected filing and metric evidence as a partial "
+                        "view until the agent can complete the segment bridge."
+                    ),
+                ),
+                margin_and_mix=_business_driver_context_point(
+                    source_refs,
+                    title="Margin and mix evidence",
+                    summary=(
+                        "Margin and mix were not fully synthesized before the final LLM step "
+                        "failed. Treat any margin read as provisional unless the retrieved "
+                        "evidence explicitly separates price, cost, and product mix."
+                    ),
+                ),
+                demand_signals=point,
             ),
         )
     elif request.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
@@ -450,46 +464,22 @@ def _business_driver_fallback_point(
     )
 
 
-def _business_driver_fallback_watchlist(
-    request: AgentRequest,
-    metrics: list[EvidenceBoundMetric],
+def _business_driver_context_point(
     source_refs: list[SourceRef],
-) -> list[str]:
-    watch_items: list[str] = []
-    for metric in metrics[:2]:
-        if _is_missing_metric(metric):
-            continue
-        if _is_zh_locale(request.language):
-            watch_items.append(
-                f"下季度继续跟踪 {metric.name} 是否维持在 {metric.value} 附近或进一步改善。"
-            )
-        else:
-            watch_items.append(
-                f"Track whether {metric.name} stays near or improves from "
-                f"{metric.value} next quarter."
-            )
-    for source_ref in source_refs[:2]:
-        if not source_ref.snippet.strip():
-            continue
-        if _is_zh_locale(request.language):
-            clipped_snippet = _clip(source_ref.snippet, 140)
-            watch_items.append(
-                f"复核 {source_ref.section} 中的信号是否在下一份 filing 继续出现："
-                f"{clipped_snippet}"
-            )
-        else:
-            clipped_snippet = _clip(source_ref.snippet, 140)
-            watch_items.append(
-                f"Recheck whether the {source_ref.section} signal persists in the "
-                f"next filing: {clipped_snippet}"
-            )
-    if watch_items:
-        return watch_items[:3]
-    if _is_zh_locale(request.language):
-        return [f"下一季度继续跟踪 {request.ticker} 的需求、定价和利润转化证据。"]
-    return [
-        f"Track {request.ticker} demand, pricing, and conversion evidence in the next quarter."
-    ]
+    *,
+    title: str,
+    summary: str,
+) -> EvidenceBoundPoint:
+    return EvidenceBoundPoint(
+        title=title,
+        summary=summary,
+        evidence_refs=[_evidence_ref(source_refs[0])] if source_refs else [],
+        citation_status=(
+            source_refs[0].citation_status
+            if source_refs
+            else CitationStatus.UNVERIFIED
+        ),
+    )
 
 
 def _risk_source_ref(

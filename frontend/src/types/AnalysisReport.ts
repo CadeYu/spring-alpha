@@ -203,17 +203,11 @@ export interface BusinessDriverSections extends BaseTaskSections {
         summary: string;
     };
     driverMap: {
-        product: EvidenceBoundPoint[];
-        segment: EvidenceBoundPoint[];
-        geography: EvidenceBoundPoint[];
-        demand: EvidenceBoundPoint[];
-        pricing: EvidenceBoundPoint[];
-        customer: EvidenceBoundPoint[];
-        strategy: EvidenceBoundPoint[];
+        revenueBridge?: EvidenceBoundPoint | null;
+        segmentMomentum?: EvidenceBoundPoint | null;
+        marginAndMix?: EvidenceBoundPoint | null;
+        demandSignals?: EvidenceBoundPoint | null;
     };
-    positiveSignals: EvidenceBoundPoint[];
-    negativeSignals: EvidenceBoundPoint[];
-    watchlist: string[];
 }
 
 export interface CashFlowCapitalAllocationSections extends BaseTaskSections {

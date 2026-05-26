@@ -414,9 +414,6 @@ public class AnalysisReport {
     public static class BusinessDriverSections {
         private DriverThesis driverThesis;
         private DriverMap driverMap;
-        private List<EvidenceBoundPoint> positiveSignals;
-        private List<EvidenceBoundPoint> negativeSignals;
-        private List<String> watchlist;
     }
 
     @Data
@@ -436,13 +433,10 @@ public class AnalysisReport {
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class DriverMap {
-        private List<EvidenceBoundPoint> product;
-        private List<EvidenceBoundPoint> segment;
-        private List<EvidenceBoundPoint> geography;
-        private List<EvidenceBoundPoint> demand;
-        private List<EvidenceBoundPoint> pricing;
-        private List<EvidenceBoundPoint> customer;
-        private List<EvidenceBoundPoint> strategy;
+        private EvidenceBoundPoint revenueBridge;
+        private EvidenceBoundPoint segmentMomentum;
+        private EvidenceBoundPoint marginAndMix;
+        private EvidenceBoundPoint demandSignals;
     }
 
     @Data

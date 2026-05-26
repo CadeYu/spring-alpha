@@ -52,20 +52,11 @@ class ResearchAgentReportMapperTest {
                                         "durability", "durable",
                                         "summary", "Services momentum appears durable."),
                                 "driver_map", Map.of(
-                                        "product", List.of(Map.of(
+                                        "revenue_bridge", Map.of(
                                                 "title", "Services",
                                                 "summary", "Services revenue increased.",
                                                 "evidence_refs", List.of(),
-                                                "citation_status", "supported")),
-                                        "segment", List.of(),
-                                        "geography", List.of(),
-                                        "demand", List.of(),
-                                        "pricing", List.of(),
-                                        "customer", List.of(),
-                                        "strategy", List.of()),
-                                "positive_signals", List.of(),
-                                "negative_signals", List.of(),
-                                "watchlist", List.of("Track Services adoption."))));
+                                                "citation_status", "supported")))));
 
         AnalysisReport report = mapper.toAnalysisReport(result, "en");
 
@@ -76,7 +67,7 @@ class ResearchAgentReportMapperTest {
         assertEquals("Services drove growth",
                 report.getTaskSections().getBusinessDriver().getDriverThesis().getHeadline());
         assertEquals("Services",
-                report.getTaskSections().getBusinessDriver().getDriverMap().getProduct().get(0).getTitle());
+                report.getTaskSections().getBusinessDriver().getDriverMap().getRevenueBridge().getTitle());
         assertNotNull(report.getMetadata().getAgentEvents());
         assertEquals("build_evidence_plan", report.getMetadata().getAgentEvents().get(0).getPhase());
         assertEquals("Plan next step.", report.getMetadata().getAgentEvents().get(0).getSummary());

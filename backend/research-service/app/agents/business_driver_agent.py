@@ -111,7 +111,10 @@ def run_business_driver_agent(
             {"name": "search_metric_evidence", "args": {}},
             {
                 "name": "build_evidence_pack",
-                "args": {"focus": "product segment demand pricing strategy", "top_k": 5},
+                "args": {
+                    "focus": "revenue bridge segment momentum margin mix demand signals",
+                    "top_k": 5,
+                },
             },
             {"name": "get_business_signals", "args": {}},
         ],
@@ -240,8 +243,8 @@ def _business_driver_tools(
             search_filing_sections,
             name="search_filing_sections",
             description=(
-                "Search SEC filing sections for product, segment, geography, demand, "
-                "pricing, customer, and strategy evidence."
+                "Search SEC filing sections for revenue bridge, segment momentum, "
+                "margin and mix, and demand signals evidence."
             ),
             args_schema=FilingSearchInput,
         ),
@@ -398,8 +401,8 @@ def _tool_prompt() -> ChatPromptTemplate:
                 "You are a business analyst in a multi-agent financial research team. "
                 "Work like a TradingAgents fundamentals analyst: gather enough tool "
                 "evidence to explain what actually moved the business and why it matters "
-                "to investors. Focus on product, segment, geography, demand, pricing, "
-                "customer behavior, competitive position, and strategy. Do not over-index "
+                "to investors. Focus on revenue bridge, segment momentum, margin and mix, "
+                "and demand signals. Do not over-index "
                 "on generic risk or compliance language. Call one useful tool at a time.",
             ),
             MessagesPlaceholder(variable_name="messages"),
@@ -416,7 +419,7 @@ def _final_prompt() -> ChatPromptTemplate:
                 "JSON object only. Do not call tools. Do not invent source_ids. Write like "
                 "a concise investment memo: make the operating thesis explicit, explain "
                 "the so what for investors, include counter-evidence where the evidence is "
-                "mixed, and make uncertainty actionable through the watchlist. Keep prose "
+                "mixed, and make uncertainty explicit inside the relevant paragraph. Keep prose "
                 "investor-facing.",
             ),
             MessagesPlaceholder(variable_name="messages"),
@@ -431,24 +434,25 @@ def _business_driver_instruction(request: AgentRequest, state: AgentState) -> st
             "Required workflow:\n"
             "1. 调用 get_company_facts 获取 company profile 和核心 revenue facts。\n"
             "2. 调用 search_metric_evidence 获取 revenue、segment revenue 和任何可用的 driver KPIs。\n"
-            "3. 调用 build_evidence_pack 获取 product、segment、geography、demand、pricing、"
-            "customer 和 strategy 证据。\n"
+            "3. 调用 build_evidence_pack 获取 revenue bridge、segment momentum、margin and mix "
+            "和 demand signals 证据。\n"
             "4. 在 filing 或 metric evidence 已存在后调用 get_business_signals。\n"
             "Final JSON shape:\n"
             "{"
             '"driver_thesis":{"headline":"...","durability":"durable|mixed|temporary|unclear",'
             '"summary":"..."},'
-            '"driver_map":{"product":[],"segment":[],"geography":[],"demand":[],"pricing":[],'
-            '"customer":[],"strategy":[]},'
-            '"positive_signals":[{"title":"...","summary":"...","source_ids":["..."],'
-            '"citation_status":"supported|partial|missing|unverified"}],'
-            '"negative_signals":[{"title":"...","summary":"...","source_ids":["..."],'
-            '"citation_status":"supported|partial|missing|unverified"}],'
-            '"watchlist":["..."],'
+            '"driver_map":{"revenue_bridge":{"title":"...","summary":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"},'
+            '"segment_momentum":{"title":"...","summary":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"},'
+            '"margin_and_mix":{"title":"...","summary":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"},'
+            '"demand_signals":{"title":"...","summary":"...","source_ids":["..."],'
+            '"citation_status":"supported|partial|missing|unverified"}},'
             '"claims":[{"text":"...","source_ids":["..."],'
             '"citation_status":"supported|partial|missing|unverified"}]'
             "}\n"
-            "只能使用工具返回的 source_ids。"
+            "driver_map 的四个字段都是单段 point，不要返回数组。只能使用工具返回的 source_ids。"
             f"Language: {request.language}"
         )
     return (
@@ -457,23 +461,25 @@ def _business_driver_instruction(request: AgentRequest, state: AgentState) -> st
         "1. Call get_company_facts for company profile and core revenue facts.\n"
         "2. Call search_metric_evidence for revenue, segment revenue, and any available "
         "driver KPIs.\n"
-        "3. Call build_evidence_pack for product, segment, geography, demand, pricing, "
-        "customer, and strategy evidence.\n"
+        "3. Call build_evidence_pack for revenue bridge, segment momentum, margin and mix, "
+        "and demand signals evidence.\n"
         "4. Call get_business_signals after filing or metric evidence exists.\n"
         "Final JSON shape:\n"
         "{"
         '"driver_thesis":{"headline":"...","durability":"durable|mixed|temporary|unclear",'
         '"summary":"..."},'
-        '"driver_map":{"product":[],"segment":[],"geography":[],"demand":[],"pricing":[],'
-        '"customer":[],"strategy":[]},'
-        '"positive_signals":[{"title":"...","summary":"...","source_ids":["..."],'
-        '"citation_status":"supported|partial|missing|unverified"}],'
-        '"negative_signals":[{"title":"...","summary":"...","source_ids":["..."],'
-        '"citation_status":"supported|partial|missing|unverified"}],'
-        '"watchlist":["..."],'
+        '"driver_map":{"revenue_bridge":{"title":"...","summary":"...","source_ids":["..."],'
+        '"citation_status":"supported|partial|missing|unverified"},'
+        '"segment_momentum":{"title":"...","summary":"...","source_ids":["..."],'
+        '"citation_status":"supported|partial|missing|unverified"},'
+        '"margin_and_mix":{"title":"...","summary":"...","source_ids":["..."],'
+        '"citation_status":"supported|partial|missing|unverified"},'
+        '"demand_signals":{"title":"...","summary":"...","source_ids":["..."],'
+        '"citation_status":"supported|partial|missing|unverified"}},'
         '"claims":[{"text":"...","source_ids":["..."],'
         '"citation_status":"supported|partial|missing|unverified"}]'
         "}\n"
+        "Each driver_map field is a single paragraph point, not an array. "
         "Use only source_ids returned by tools. "
         f"Language: {request.language}"
     )
@@ -483,36 +489,29 @@ def _final_business_driver_instruction(request: AgentRequest, state: AgentState)
     if _is_zh_locale(request.language):
         return (
             f"请基于 evidence context 为 {state.ticker} 写出 business driver report JSON。\n"
-            "只返回这些顶层 keys: driver_thesis, driver_map, positive_signals, "
-            "negative_signals, watchlist, claims。\n"
+            "只返回这些顶层 keys: driver_thesis, driver_map, claims。\n"
             "写成投资备忘录，而不是简单复述。driver_thesis.summary 必须说明经营结论、"
-            "对投资者的意义，以及如果证据 mixed 时最强的反证。watchlist 必须包括下季度什么变化会改变结论。\n"
-            "driver_map 必须包含 product, segment, geography, demand, pricing, customer, "
-            "strategy arrays。如果证据存在，至少覆盖四个 driver_map 视角；没有证据的视角保持空数组，不要编造事实。"
-            "positive_signals 应是偏 bullish 的证据；negative_signals 应是偏 bearish 的证据或反证。"
+            "对投资者的意义，以及如果证据 mixed 时最强的反证。\n"
+            "driver_map 必须包含 revenue_bridge, segment_momentum, margin_and_mix, "
+            "demand_signals 四个单段 point。每段 summary 写 3-5 句，覆盖结论、证据、"
+            "投资含义和证据限制。不要编造事实。"
             "不要把 schema labels 或 placeholders 写进正文，包括 Evidence point, Business driver thesis, "
-            "driver_map, positive_signals 或 N/A。每个 section 都应解释结论、投资者相关性，以及重要的证据限制或反证。"
-            "每个数组最多 2 个简洁条目。任何引用证据的分析点都只能使用 evidence context 中存在的 source_ids。\n"
+            "driver_map 或 N/A。任何引用证据的分析点都只能使用 evidence context 中存在的 source_ids。\n"
             f"Language: {request.language}"
         )
     return (
         f"Write the business driver report JSON for {state.ticker} from the evidence context.\n"
-        "Return exactly these top-level keys: driver_thesis, driver_map, positive_signals, "
-        "negative_signals, watchlist, claims.\n"
+        "Return exactly these top-level keys: driver_thesis, driver_map, claims.\n"
         "Write it as an investment memo, not a recap. driver_thesis.summary must state "
         "the operating conclusion, the so what for investors, and the strongest "
-        "counter-evidence if the evidence is mixed. The watchlist must include what would "
-        "change the conclusion next quarter.\n"
-        "driver_map must contain product, segment, geography, demand, pricing, customer, "
-        "strategy arrays. Cover at least four driver_map lenses when evidence exists, "
-        "and leave unsupported lenses empty rather than inventing facts. positive_signals "
-        "should be bullish evidence; negative_signals should be bearish evidence or "
-        "counter-evidence. Do not use schema labels or placeholders as prose, including "
-        "Evidence point, Business driver thesis, driver_map, positive_signals, or N/A. "
-        "Every section should explain conclusion, investor relevance, and the evidence "
-        "limit or counter-evidence when material. Keep each array to at most 2 concise "
-        "items. Every analytical point that cites evidence must use only source_ids "
-        "present in evidence context.\n"
+        "counter-evidence if the evidence is mixed.\n"
+        "driver_map must contain four single paragraph points: revenue_bridge, "
+        "segment_momentum, margin_and_mix, and demand_signals. Each summary should be "
+        "3-5 sentences covering conclusion, evidence, investor relevance, and evidence "
+        "limits. Do not invent facts. Do not use schema labels or placeholders as prose, "
+        "including Evidence point, Business driver thesis, driver_map, or N/A. "
+        "Every analytical point that cites evidence must use only source_ids present in "
+        "evidence context.\n"
         f"Language: {request.language}"
     )
 

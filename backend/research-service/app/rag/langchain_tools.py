@@ -311,8 +311,8 @@ def _evidence_pack_template(
             "sections": ["MD&A", "Business", "Net Sales", "Segment Information"],
             "queries": [
                 (
-                    "business driver evidence product segment customer demand pricing "
-                    "volume mix channel geography what drove growth strategy evidence "
+                    "business driver evidence revenue bridge segment momentum margin mix "
+                    "demand signals volume price product mix geography what drove growth "
                     "services cloud data center AI subscriptions enterprise customers "
                     "competitive position" + focus_terms
                 ),

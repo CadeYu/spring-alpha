@@ -2438,18 +2438,24 @@ function TypedBusinessDriverSections({
       ? "当前 typed contract 没有提供完整驱动论点。"
       : "The typed contract did not provide a complete driver thesis.",
   };
-  const driverGroups = [
-    { label: isZh ? "产品" : "Product", items: driverMap.product },
-    { label: isZh ? "分部" : "Segment", items: driverMap.segment },
-    { label: isZh ? "地区" : "Geography", items: driverMap.geography },
-    { label: isZh ? "需求" : "Demand", items: driverMap.demand },
-    { label: isZh ? "定价" : "Pricing", items: driverMap.pricing },
-    { label: isZh ? "客户" : "Customer", items: driverMap.customer },
-    { label: isZh ? "战略" : "Strategy", items: driverMap.strategy },
+  const driverParagraphs = [
+    {
+      label: isZh ? "收入桥" : "Revenue Bridge",
+      point: driverMap.revenueBridge,
+    },
+    {
+      label: isZh ? "分部动能" : "Segment Momentum",
+      point: driverMap.segmentMomentum,
+    },
+    {
+      label: isZh ? "利润率与结构" : "Margin And Mix",
+      point: driverMap.marginAndMix,
+    },
+    {
+      label: isZh ? "需求信号" : "Demand Signals",
+      point: driverMap.demandSignals,
+    },
   ];
-  const populatedDriverGroups = driverGroups.filter(
-    (group) => group.items.length > 0,
-  );
 
   return (
     <>
@@ -2468,9 +2474,9 @@ function TypedBusinessDriverSections({
           }
           labels={[
             isZh ? "论点" : "Thesis",
-            isZh ? "驱动地图" : "Driver Map",
-            isZh ? "影响表" : "Impact Table",
-            isZh ? "信号" : "Signals",
+            isZh ? "收入桥" : "Revenue Bridge",
+            isZh ? "分部动能" : "Segment Momentum",
+            isZh ? "需求信号" : "Demand Signals",
           ]}
         />
         <AnalystVerdictCard
@@ -2484,48 +2490,24 @@ function TypedBusinessDriverSections({
       <Card className="bg-slate-900 border-slate-800">
         <CardHeader className="border-b border-slate-800">
           <CardTitle className="text-emerald-400">
-            {isZh ? "驱动因素地图" : "Driver Map"}
+            {isZh ? "业务驱动四段分析" : "Business Driver Paragraphs"}
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 p-6 md:grid-cols-2">
-          {populatedDriverGroups.length > 0 ? (
-            populatedDriverGroups.map((group) => (
-              <div
-                key={group.label}
-                className="rounded-md border border-slate-800 bg-slate-950/60 p-4"
-              >
-                <p className="text-sm font-semibold text-slate-200">
-                  {group.label}
-                </p>
-                <div className="mt-3 space-y-3">
-                  {group.items.map((item, index) => (
-                    <EvidencePointBlock
-                      key={`${item.title}-${index}`}
-                      point={item}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-slate-500">
-              {isZh ? "没有驱动地图证据。" : "No driver-map evidence provided."}
-            </p>
-          )}
+        <CardContent className="space-y-5 p-6">
+          {driverParagraphs.map((paragraph) => (
+            <BusinessDriverParagraphBlock
+              key={paragraph.label}
+              label={paragraph.label}
+              point={paragraph.point}
+              emptyText={
+                isZh
+                  ? "当前证据不足，暂不展开这一段。"
+                  : "Current evidence is too thin to expand this paragraph."
+              }
+            />
+          ))}
         </CardContent>
       </Card>
-
-      <ImpactTableCard groups={populatedDriverGroups} lang={lang} />
-
-      <PointListCard
-        title={isZh ? "信号" : "Signals"}
-        points={[
-          ...(sections.positiveSignals ?? []),
-          ...(sections.negativeSignals ?? []),
-        ]}
-        emptyText={isZh ? "没有信号。" : "No signals provided."}
-      />
-      <WatchlistCard items={sections.watchlist ?? []} lang={lang} />
     </>
   );
 }
@@ -2732,13 +2714,10 @@ function withTaskSectionEnvelopeFields<
 
 function emptyDriverMap(): BusinessDriverSections["driverMap"] {
   return {
-    product: [],
-    segment: [],
-    geography: [],
-    demand: [],
-    pricing: [],
-    customer: [],
-    strategy: [],
+    revenueBridge: null,
+    segmentMomentum: null,
+    marginAndMix: null,
+    demandSignals: null,
   };
 }
 
@@ -2857,56 +2836,33 @@ function EvidencePointBlock({ point }: { point: EvidenceBoundPoint }) {
   );
 }
 
-function ImpactTableCard({
-  groups,
-  lang,
+function BusinessDriverParagraphBlock({
+  label,
+  point,
+  emptyText,
 }: {
-  groups: { label: string; items: EvidenceBoundPoint[] }[];
-  lang: string;
+  label: string;
+  point?: EvidenceBoundPoint | null;
+  emptyText: string;
 }) {
-  const isZh = lang === "zh";
-  const rows = groups.flatMap((group) =>
-    group.items.map((item) => ({
-      category: group.label,
-      title: item.title,
-      summary: item.summary,
-    })),
-  );
-
   return (
-    <Card className="bg-slate-900 border-slate-800">
-      <CardHeader className="border-b border-slate-800">
-        <CardTitle className="text-emerald-400">
-          {isZh ? "影响表" : "Impact Table"}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 p-6">
-        {rows.length > 0 ? (
-          rows.slice(0, 8).map((row, index) => (
-            <div
-              key={`${row.category}-${row.title}-${index}`}
-              className="grid min-w-0 gap-3 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4 md:grid-cols-[140px,minmax(0,1fr)]"
-            >
-              <p className="min-w-0 [overflow-wrap:anywhere] text-sm font-semibold text-slate-200">
-                {row.category}
-              </p>
-              <div className="min-w-0">
-                <p className="min-w-0 [overflow-wrap:anywhere] text-sm font-semibold text-slate-100">
-                  {row.title}
-                </p>
-                <p className="mt-1 min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400">
-                  {row.summary}
-                </p>
-              </div>
-            </div>
-          ))
-        ) : (
-          <p className="text-sm text-slate-500">
-            {isZh ? "没有可评分的驱动项。" : "No driver impact items provided."}
+    <section className="border-b border-slate-800/80 pb-5 last:border-b-0 last:pb-0">
+      <p className="text-sm font-semibold uppercase tracking-[0.08em] text-emerald-300">
+        {label}
+      </p>
+      {point ? (
+        <>
+          <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-base font-semibold leading-7 text-slate-100">
+            {point.title}
           </p>
-        )}
-      </CardContent>
-    </Card>
+          <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-sm leading-7 text-slate-400">
+            {point.summary}
+          </p>
+        </>
+      ) : (
+        <p className="mt-2 text-sm leading-6 text-slate-500">{emptyText}</p>
+      )}
+    </section>
   );
 }
 
@@ -3167,36 +3123,6 @@ function WatchNextCard({
         ) : (
           <p className="text-sm text-slate-500">
             {isZh ? "没有观察项。" : "No watch items provided."}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function WatchlistCard({ items, lang }: { items: string[]; lang: string }) {
-  const isZh = lang === "zh";
-
-  return (
-    <Card className="bg-slate-900 border-slate-800">
-      <CardHeader className="border-b border-slate-800">
-        <CardTitle className="text-emerald-400">
-          {isZh ? "跟踪清单" : "Watchlist"}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 p-6">
-        {items.length > 0 ? (
-          items.map((item) => (
-            <div
-              key={item}
-              className="rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-300"
-            >
-              {item}
-            </div>
-          ))
-        ) : (
-          <p className="text-sm text-slate-500">
-            {isZh ? "没有跟踪项。" : "No watch items provided."}
           </p>
         )}
       </CardContent>

@@ -308,9 +308,6 @@ def default_task_policy(task_type: ResearchTaskType) -> TaskPolicy:
             required_outputs=[
                 "driverThesis",
                 "driverMap",
-                "positiveSignals",
-                "negativeSignals",
-                "watchlist",
             ],
             max_steps=7,
             max_tool_calls=7,
