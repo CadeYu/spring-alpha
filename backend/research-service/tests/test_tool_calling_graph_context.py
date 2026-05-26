@@ -85,14 +85,14 @@ def test_compact_evidence_context_deduplicates_evidence_pack_payload() -> None:
     )
 
 
-def test_compact_synthesis_keeps_enough_completion_budget_for_cash_flow_json() -> None:
+def test_compact_synthesis_keeps_provider_friendly_timeout_for_final_json() -> None:
     llm = _CopyableLlm(compact_synthesis=True)
 
     copied = _json_response_llm(llm)
 
     assert copied.update["max_tokens"] == 1536
     assert copied.update["response_format"] == {"type": "json_object"}
-    assert copied.update["timeout_seconds"] == 24
+    assert copied.update["timeout_seconds"] == 45
 
 
 def test_final_payload_retries_after_invalid_json() -> None:
