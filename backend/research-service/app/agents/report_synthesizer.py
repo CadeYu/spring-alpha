@@ -1099,9 +1099,17 @@ def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]
             "summary": top_level_summary,
         }
     cash_metrics = normalized.get("cash_metrics", [])
-    normalized["cash_metrics"] = _normalize_synthesized_metrics(
+    normalized_cash_metrics = _normalize_synthesized_metrics(
         cash_metrics if isinstance(cash_metrics, list | dict) else []
     )
+    if not isinstance(normalized_cash_metrics, list):
+        normalized_cash_metrics = []
+    cash_metric_points = _qualitative_cash_metric_points(normalized_cash_metrics)
+    normalized["cash_metrics"] = [
+        metric
+        for metric in normalized_cash_metrics
+        if not _is_qualitative_cash_metric(metric)
+    ]
     capital_allocation = normalized.get("capital_allocation")
     if isinstance(capital_allocation, dict):
         normalized["capital_allocation"] = _normalize_capital_allocation(capital_allocation)
@@ -1113,9 +1121,12 @@ def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]
             "debt": [],
             "liquidity": [],
         }
-    normalized["allocation_discipline"] = _normalize_synthesized_points(
+    discipline_points = _normalize_synthesized_points(
         normalized.get("allocation_discipline", [])
     )
+    if not isinstance(discipline_points, list):
+        discipline_points = []
+    normalized["allocation_discipline"] = [*cash_metric_points, *discipline_points]
     normalized["red_flags"] = _normalize_synthesized_points(normalized.get("red_flags", []))
     claims = normalized.get("claims", [])
     normalized["claims"] = _normalize_synthesized_claims(
@@ -1150,6 +1161,28 @@ def _normalize_capital_allocation(value: dict[str, object]) -> dict[str, object]
             continue
         normalized[clean_key] = _normalize_synthesized_points(item)
     return normalized
+
+
+def _qualitative_cash_metric_points(metrics: object) -> list[dict[str, object]]:
+    if not isinstance(metrics, list):
+        return []
+    return [
+        {
+            "title": str(metric.get("name") or "Cash conversion quality"),
+            "summary": str(metric.get("value") or metric.get("interpretation") or ""),
+            "source_ids": _source_ids_from_value(metric),
+            "citation_status": str(metric.get("citation_status") or "supported"),
+        }
+        for metric in metrics
+        if _is_qualitative_cash_metric(metric)
+    ]
+
+
+def _is_qualitative_cash_metric(metric: object) -> bool:
+    if not isinstance(metric, dict):
+        return False
+    name = _clean_key(metric.get("name") or "").strip("_").lower()
+    return name in {"cash_conversion_quality", "cash_quality", "cash_flow_quality"}
 
 
 def _normalize_watchlist(value: object) -> list[str]:

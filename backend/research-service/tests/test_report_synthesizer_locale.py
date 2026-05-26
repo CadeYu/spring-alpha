@@ -317,6 +317,49 @@ def test_cash_flow_metric_object_values_are_normalized_to_display_values() -> No
     assert all("value" not in value and "unit" not in value for value in metric_values)
 
 
+def test_cash_flow_qualitative_metric_is_moved_to_allocation_discipline() -> None:
+    payload = _normalize_cash_flow_payload(
+        {
+            "cash_quality_verdict": {
+                "headline": "Cash conversion is mixed.",
+                "earnings_backed_by_cash": "mixed",
+                "summary": "Cash conversion is mixed.",
+            },
+            "cash_metrics": [
+                {
+                    "name": "operating_cash_flow",
+                    "value": {
+                        "value": 2156000000,
+                        "unit": "USD",
+                        "period": "2026Q1",
+                    },
+                    "interpretation": "Operating cash flow anchors cash conversion.",
+                    "source_ids": ["src_1"],
+                },
+                {
+                    "name": "cash_conversion_quality",
+                    "value": "mixed - cash flow exists but quality remains thin.",
+                    "interpretation": "Qualitative assessment should not render as a KPI.",
+                    "source_ids": ["src_2"],
+                },
+            ],
+            "capital_allocation": {},
+            "allocation_discipline": [],
+            "red_flags": [],
+            "claims": [],
+        }
+    )
+
+    metric_names = [metric["name"] for metric in payload["cash_metrics"]]
+    assert metric_names == ["operating_cash_flow"]
+    assert payload["cash_metrics"][0]["value"] == "$2.2B"
+    assert payload["allocation_discipline"][0]["title"] == "cash_conversion_quality"
+    assert (
+        payload["allocation_discipline"][0]["summary"]
+        == "mixed - cash flow exists but quality remains thin."
+    )
+
+
 def _make_request(task_type: ResearchTaskType, language: str) -> Any:
     return type(
         "Request",
