@@ -50,7 +50,6 @@ _NOISY_BUSINESS_DRIVER_TEXT_PHRASES = (
     "government securities",
     "market risk",
     "net revenue by revenue category",
-    "principal transactions revenue",
     "revenue is generally recognized",
     "revenue sharing",
 )
@@ -646,6 +645,7 @@ def build_business_driver_report_from_payload(
         source_refs,
         backfill_excluded_points,
         request.language,
+        source_refs_by_id,
     )
     task_sections = BusinessDriverSections(
         schema_version="task_sections.v1",
@@ -2650,6 +2650,7 @@ def _backfill_business_driver_point_source_ids(
     source_refs: list[SourceRef],
     excluded_point_ids: set[int],
     language: str | None,
+    source_refs_by_id: dict[str, SourceRef],
 ) -> None:
     lens_terms = {
         "revenue_bridge": (
@@ -2706,17 +2707,25 @@ def _backfill_business_driver_point_source_ids(
         ("margin_and_mix", payload.driver_map.margin_and_mix),
         ("demand_signals", payload.driver_map.demand_signals),
     ):
-        if point is None or point.source_ids or id(point) in excluded_point_ids:
+        if point is None or id(point) in excluded_point_ids:
             continue
         placeholder_summary = _is_business_driver_partial_placeholder(point)
-        matched_refs = _business_driver_backfill_source_refs(
-            clean_refs,
-            lens_terms[lens_name],
-        )
-        point.source_ids = [
-            source_ref.source_id for source_ref in matched_refs if source_ref.source_id
-        ][:3]
-        if not point.source_ids:
+        if point.source_ids:
+            matched_refs = [
+                source_refs_by_id[source_id]
+                for source_id in point.source_ids
+                if source_id in source_refs_by_id
+                and not _is_noisy_business_driver_source_ref(source_refs_by_id[source_id])
+            ][:3]
+        else:
+            matched_refs = _business_driver_backfill_source_refs(
+                clean_refs,
+                lens_terms[lens_name],
+            )
+            point.source_ids = [
+                source_ref.source_id for source_ref in matched_refs if source_ref.source_id
+            ][:3]
+        if not point.source_ids or not matched_refs:
             continue
         if placeholder_summary:
             point.summary = _business_driver_backfill_summary(
@@ -2724,6 +2733,7 @@ def _backfill_business_driver_point_source_ids(
                 matched_refs,
                 language,
             )
+            point.citation_status = CitationStatus.PARTIAL
         if point.citation_status in {
             CitationStatus.SUPPORTED,
             CitationStatus.UNVERIFIED,

@@ -806,6 +806,135 @@ def test_business_driver_placeholder_recovery_respects_english_locale() -> None:
     assert "利润率" not in point.summary
 
 
+def test_business_driver_report_recovers_placeholder_after_invalid_source_ids() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "src_bank_margin",
+                        "section": "Business segment highlights",
+                        "snippet": (
+                            "Net interest income and provision expense drove the "
+                            "banking profitability mix."
+                        ),
+                        "citation_status": "supported",
+                    }
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Banking profitability mix needs evidence.",
+                "durability": "mixed",
+                "summary": "The bank margin read is partial.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Segment evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Evidence for this business-driver lens remains partial.",
+                    "source_ids": ["missing_source_id"],
+                    "citation_status": "supported",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Demand evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    point = report.task_sections.driver_map.margin_and_mix
+    assert point is not None
+    assert point.evidence_refs
+    assert point.evidence_refs[0].source_id == "src_bank_margin"
+    assert point.citation_status == "partial"
+    assert point.summary != "Evidence for this business-driver lens remains partial."
+
+
+def test_business_driver_report_recovers_bank_margin_refs_not_accounting_noise() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "src_bank_margin",
+                        "section": "Business segment highlights",
+                        "snippet": (
+                            "Principal transactions revenue, net interest income, "
+                            "provision expense, and noninterest expense shape the "
+                            "banking profitability mix."
+                        ),
+                        "citation_status": "supported",
+                    }
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Bank margin mix needs segment evidence.",
+                "durability": "mixed",
+                "summary": "Bank profitability depends on net interest and fee mix.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Segment evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Evidence for this business-driver lens remains partial.",
+                    "source_ids": ["src_bank_margin"],
+                    "citation_status": "supported",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Demand evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    point = report.task_sections.driver_map.margin_and_mix
+    assert point is not None
+    assert point.evidence_refs
+    assert point.evidence_refs[0].source_id == "src_bank_margin"
+    assert point.citation_status == "partial"
+    assert point.summary != "Evidence for this business-driver lens remains partial."
+
+
 def test_business_driver_report_filters_noisy_synthesis_text_and_refs() -> None:
     state = _make_state(language="zh").model_copy(
         update={
