@@ -637,7 +637,15 @@ def build_business_driver_report_from_payload(
     source_refs_by_id = _alias_source_refs_by_id(source_refs)
     payload_data = _normalize_business_driver_payload(payload_data)
     payload = _BusinessDriverSynthesis.model_validate(payload_data)
-    _sanitize_business_driver_source_ids(payload, source_refs_by_id)
+    backfill_excluded_points = _sanitize_business_driver_source_ids(
+        payload,
+        source_refs_by_id,
+    )
+    _backfill_business_driver_point_source_ids(
+        payload,
+        source_refs,
+        backfill_excluded_points,
+    )
     task_sections = BusinessDriverSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
@@ -2583,11 +2591,13 @@ def _bull_bear_read_points(
 def _sanitize_business_driver_source_ids(
     payload: _BusinessDriverSynthesis,
     source_refs_by_id: dict[str, SourceRef],
-) -> None:
+) -> set[int]:
+    backfill_excluded_points: set[int] = set()
     for point in _driver_map_points(payload.driver_map):
         _sanitize_business_driver_point_text(point)
         _sanitize_source_ids(point, source_refs_by_id)
-        _sanitize_business_driver_point_source_ids(point, source_refs_by_id)
+        if _sanitize_business_driver_point_source_ids(point, source_refs_by_id):
+            backfill_excluded_points.add(id(point))
     for claim in payload.claims:
         if _is_noisy_business_driver_text(claim.text):
             claim.source_ids = []
@@ -2596,6 +2606,7 @@ def _sanitize_business_driver_source_ids(
     payload.claims = [
         claim for claim in payload.claims if not _is_noisy_business_driver_text(claim.text)
     ]
+    return backfill_excluded_points
 
 
 def _sanitize_business_driver_point_text(point: _SynthesizedPoint) -> None:
@@ -2611,7 +2622,7 @@ def _sanitize_business_driver_point_text(point: _SynthesizedPoint) -> None:
 def _sanitize_business_driver_point_source_ids(
     point: _SynthesizedPoint,
     source_refs_by_id: dict[str, SourceRef],
-) -> None:
+) -> bool:
     original_ids = list(point.source_ids)
     point.source_ids = [
         source_id
@@ -2621,11 +2632,104 @@ def _sanitize_business_driver_point_source_ids(
     ]
     if original_ids and not point.source_ids:
         point.citation_status = CitationStatus.UNVERIFIED
+        return True
     elif (
         len(point.source_ids) < len(original_ids)
         and point.citation_status == CitationStatus.SUPPORTED
     ):
         point.citation_status = CitationStatus.PARTIAL
+    return False
+
+
+def _backfill_business_driver_point_source_ids(
+    payload: _BusinessDriverSynthesis,
+    source_refs: list[SourceRef],
+    excluded_point_ids: set[int],
+) -> None:
+    lens_terms = {
+        "revenue_bridge": (
+            "revenue",
+            "sales",
+            "growth",
+            "increased",
+            "declined",
+        ),
+        "segment_momentum": (
+            "segment",
+            "services",
+            "service",
+            "product",
+            "geography",
+            "region",
+        ),
+        "margin_and_mix": (
+            "margin",
+            "gross profit",
+            "mix",
+            "pricing",
+            "price",
+            "cost",
+            "operating income",
+        ),
+        "demand_signals": (
+            "demand",
+            "customer",
+            "installed base",
+            "orders",
+            "backlog",
+            "unit",
+            "growth",
+        ),
+    }
+    clean_refs = [
+        source_ref
+        for source_ref in source_refs
+        if not _is_noisy_business_driver_source_ref(source_ref)
+    ]
+    for lens_name, point in (
+        ("revenue_bridge", payload.driver_map.revenue_bridge),
+        ("segment_momentum", payload.driver_map.segment_momentum),
+        ("margin_and_mix", payload.driver_map.margin_and_mix),
+        ("demand_signals", payload.driver_map.demand_signals),
+    ):
+        if (
+            point is None
+            or point.source_ids
+            or id(point) in excluded_point_ids
+            or _is_business_driver_partial_placeholder(point)
+        ):
+            continue
+        point.source_ids = _business_driver_backfill_source_ids(
+            clean_refs,
+            lens_terms[lens_name],
+        )
+        if point.source_ids and point.citation_status in {
+            CitationStatus.SUPPORTED,
+            CitationStatus.UNVERIFIED,
+        }:
+            point.citation_status = CitationStatus.PARTIAL
+
+
+def _business_driver_backfill_source_ids(
+    source_refs: list[SourceRef],
+    terms: tuple[str, ...],
+) -> list[str]:
+    matches = [
+        source_ref.source_id
+        for source_ref in source_refs
+        if source_ref.source_id
+        and any(
+            term in f"{source_ref.section} {source_ref.snippet}".lower()
+            for term in terms
+        )
+    ]
+    if matches:
+        return matches[:3]
+    return [source_ref.source_id for source_ref in source_refs[:1] if source_ref.source_id]
+
+
+def _is_business_driver_partial_placeholder(point: _SynthesizedPoint) -> bool:
+    return point.summary.strip() == "Evidence for this business-driver lens remains partial."
 
 
 def _sanitize_cash_flow_source_ids(

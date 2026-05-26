@@ -573,11 +573,101 @@ def test_business_driver_report_uses_four_evidence_bound_paragraphs() -> None:
     sections = report.task_sections
     assert sections.driver_map.revenue_bridge is not None
     assert sections.driver_map.revenue_bridge.title == "Revenue bridge"
+    assert sections.driver_map.revenue_bridge.evidence_refs
+    assert sections.driver_map.revenue_bridge.evidence_refs[0].source_id == "src_1"
     assert sections.driver_map.segment_momentum is not None
+    assert sections.driver_map.segment_momentum.evidence_refs
     assert sections.driver_map.margin_and_mix is not None
+    assert sections.driver_map.margin_and_mix.evidence_refs
     assert sections.driver_map.demand_signals is not None
+    assert sections.driver_map.demand_signals.evidence_refs
     assert sections.coverage.missing_sections == []
     assert not hasattr(sections, "watchlist")
+
+
+def test_business_driver_report_backfills_clean_refs_when_synthesis_omits_source_ids() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "src_revenue",
+                        "section": "SEC companyfacts",
+                        "snippet": "Revenue increased because cloud demand improved.",
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "src_segment",
+                        "section": "Segment information",
+                        "snippet": "Services segment revenue grew faster than products.",
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "src_table",
+                        "section": "Segment table",
+                        "snippet": "| | | 6,402 | | | 15,509 | | | Services | Products | ---|---",
+                        "citation_status": "supported",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Cloud demand supports the thesis.",
+                "durability": "mixed",
+                "summary": (
+                    "Cloud demand and services mix support the current business-driver read."
+                ),
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue growth was anchored by cloud demand.",
+                    "citation_status": "supported",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Services segment momentum was the cleaner growth signal.",
+                    "citation_status": "supported",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Services mix provided the margin signal.",
+                    "citation_status": "supported",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Cloud demand remains the clearest demand signal.",
+                    "citation_status": "unverified",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    points = [
+        report.task_sections.driver_map.revenue_bridge,
+        report.task_sections.driver_map.segment_momentum,
+        report.task_sections.driver_map.margin_and_mix,
+        report.task_sections.driver_map.demand_signals,
+    ]
+    assert all(point is not None for point in points)
+    assert all(point.evidence_refs for point in points if point is not None)
+    assert {
+        evidence_ref.source_id
+        for point in points
+        if point is not None
+        for evidence_ref in point.evidence_refs
+    } <= {"src_revenue", "src_segment"}
+    assert all(
+        point.citation_status == "partial" for point in points if point is not None
+    )
 
 
 def test_business_driver_report_filters_noisy_synthesis_text_and_refs() -> None:
