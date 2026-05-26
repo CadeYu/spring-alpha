@@ -265,6 +265,58 @@ def test_cash_flow_capital_allocation_backfills_empty_point_summaries() -> None:
     assert "Liquidity remains adequate" in discipline["summary"]
 
 
+def test_cash_flow_metric_object_values_are_normalized_to_display_values() -> None:
+    payload = _normalize_cash_flow_payload(
+        {
+            "cash_quality_verdict": {
+                "headline": "Cash generation remains positive.",
+                "earnings_backed_by_cash": "yes",
+                "summary": "Cash generation remains positive.",
+            },
+            "cash_metrics": [
+                {
+                    "name": "operating_cash_flow",
+                    "value": {
+                        "value": 2156000000,
+                        "unit": "USD",
+                        "period": "2026Q1",
+                    },
+                    "interpretation": "Operating cash flow anchors cash conversion.",
+                    "source_ids": ["src_1"],
+                },
+                {
+                    "name": "free_cash_flow",
+                    "value": {
+                        "value": 664000000,
+                        "unit": "USD",
+                        "period": "2026Q1",
+                    },
+                    "interpretation": "Free cash flow remains positive.",
+                    "source_ids": ["src_2"],
+                },
+                {
+                    "name": "share_repurchases",
+                    "value": {
+                        "value": 0,
+                        "unit": "USD",
+                        "period": "2026Q1",
+                    },
+                    "interpretation": "No share repurchases were reported.",
+                    "source_ids": ["src_3"],
+                },
+            ],
+            "capital_allocation": {},
+            "allocation_discipline": [],
+            "red_flags": [],
+            "claims": [],
+        }
+    )
+
+    metric_values = [metric["value"] for metric in payload["cash_metrics"]]
+    assert metric_values == ["$2.2B", "$664.0M", "$0"]
+    assert all("value" not in value and "unit" not in value for value in metric_values)
+
+
 def _make_request(task_type: ResearchTaskType, language: str) -> Any:
     return type(
         "Request",

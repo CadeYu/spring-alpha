@@ -696,11 +696,15 @@ def _normalize_synthesized_metric(metric: object) -> object:
             "citation_status": "unverified",
         }
     name = str(metric.get("name") or metric.get("metric") or metric.get("label") or "Metric")
-    value = _normalize_metric_value_for_name(name, metric.get("value"))
+    raw_value = metric.get("value")
+    value = _normalize_metric_value_for_name(name, raw_value)
+    period = metric.get("period")
+    if not period and isinstance(raw_value, dict):
+        period = raw_value.get("period") or raw_value.get("fact_period")
     return {
         "name": name,
         "value": str(value or "Not extracted"),
-        "period": metric.get("period"),
+        "period": period,
         "interpretation": str(
             metric.get("interpretation") or metric.get("summary") or "Reported metric."
         ),
@@ -722,6 +726,29 @@ def _is_metric_object_metadata_key(key: object) -> bool:
 
 
 def _normalize_metric_value_for_name(metric_name: str, value: object) -> object:
+    if isinstance(value, dict):
+        clean_value = _clean_mapping_keys(value)
+        raw_value = next(
+            (
+                clean_value[key]
+                for key in ("value", "amount", "numeric_value")
+                if key in clean_value
+            ),
+            None,
+        )
+        if raw_value is None:
+            return value
+        normalized_value = _normalize_metric_value_for_name(metric_name, raw_value)
+        unit = str(clean_value.get("unit") or clean_value.get("currency") or "").strip()
+        if unit == "%":
+            formatted_value = _format_metric_display_value(normalized_value)
+            return formatted_value if formatted_value.endswith("%") else f"{formatted_value}%"
+        if unit.upper() in {"USD", "EUR", "GBP", "JPY", "CNY"}:
+            if isinstance(normalized_value, int | float):
+                return f"{_currency_symbol(unit)}{_compact_number(normalized_value)}"
+            formatted_value = _format_metric_display_value(f"{normalized_value} {unit}")
+            return formatted_value
+        return _format_metric_display_value(normalized_value)
     if isinstance(value, int | float) and _metric_name_looks_like_ratio(metric_name):
         numeric_value = float(value)
         if -1 <= numeric_value <= 1:
