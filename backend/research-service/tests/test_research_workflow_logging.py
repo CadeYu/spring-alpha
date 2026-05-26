@@ -430,16 +430,122 @@ def test_business_driver_timeout_fallback_uses_paragraph_sections() -> None:
     sections = report.task_sections
     assert sections.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE
     assert sections.driver_map.revenue_bridge is not None
-    assert sections.driver_map.revenue_bridge.title == "Revenue demand signal"
+    assert sections.driver_map.revenue_bridge.title == "Revenue bridge evidence"
     assert sections.driver_map.segment_momentum is not None
     assert sections.driver_map.segment_momentum.title == "Segment momentum evidence"
     assert sections.driver_map.margin_and_mix is not None
     assert sections.driver_map.margin_and_mix.title == "Margin and mix evidence"
     assert sections.driver_map.demand_signals is not None
-    assert sections.driver_map.demand_signals.title == "Revenue demand signal"
+    assert sections.driver_map.demand_signals.title == "Demand signal evidence"
+    assert "Revenue was $111.2B" in sections.driver_map.revenue_bridge.summary
+    assert "Services and installed base" in sections.driver_map.demand_signals.summary
     assert "Review the final LLM synthesis" not in report.model_dump_json()
     assert "watchlist" not in report.model_dump_json()
     assert "positive_signals" not in report.model_dump_json()
+
+
+def test_business_driver_timeout_fallback_builds_distinct_evidence_paragraphs() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="AMD",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="AMD",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["driverThesis"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "revenue",
+                    "value": 7438000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+                    "source_id": "src_revenue",
+                },
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "gross margin",
+                    "value": 0.52,
+                    "unit": "pure",
+                    "fact_period": "2026-Q1",
+                    "concept": "GrossProfitMargin",
+                    "source_id": "src_margin",
+                },
+            ],
+            business_signals=[
+                {
+                    "signal_type": "segment",
+                    "summary": "Data Center segment revenue increased as EPYC demand improved.",
+                    "source_id": "src_segment",
+                    "citation_status": "supported",
+                },
+                {
+                    "signal_type": "demand",
+                    "summary": "Customer demand for AI accelerators remained strong.",
+                    "source_id": "src_demand",
+                    "citation_status": "supported",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_revenue",
+                    "section": "SEC companyfacts",
+                    "snippet": "Revenue was $7.4B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_segment",
+                    "section": "Segment Information",
+                    "snippet": "Data Center segment revenue increased as EPYC demand improved.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_margin",
+                    "section": "Results of Operations",
+                    "snippet": "Gross margin expanded because product mix improved.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_demand",
+                    "section": "MD&A",
+                    "snippet": "Customer demand for AI accelerators remained strong.",
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Business driver agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    sections = report.task_sections
+    assert sections.driver_thesis.summary.startswith("AMD 的业务驱动结论")
+    assert sections.driver_map.revenue_bridge is not None
+    assert "revenue: $7.4B" in sections.driver_map.revenue_bridge.summary
+    assert "Revenue was $7.4B" in sections.driver_map.revenue_bridge.summary
+    assert sections.driver_map.segment_momentum is not None
+    assert "Data Center segment" in sections.driver_map.segment_momentum.summary
+    assert sections.driver_map.margin_and_mix is not None
+    assert "Gross margin expanded" in sections.driver_map.margin_and_mix.summary
+    assert sections.driver_map.demand_signals is not None
+    assert "AI accelerators" in sections.driver_map.demand_signals.summary
+    serialized = report.model_dump_json()
+    assert "not fully synthesized" not in serialized
+    assert "final LLM" not in serialized
 
 
 def test_fallback_report_hides_internal_missing_metric_markers_everywhere() -> None:

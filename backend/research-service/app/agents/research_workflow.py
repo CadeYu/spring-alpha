@@ -278,38 +278,13 @@ def _fallback_report_from_state(
             }
         )
     elif request.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
-        point = _business_driver_fallback_point(summary, present_metrics, source_refs)
-        task_sections = BusinessDriverSections(
-            schema_version="task_sections.v1",
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        task_sections = _business_driver_fallback_sections(
+            request=request,
+            state=state,
+            summary=summary,
+            metrics=present_metrics,
+            source_refs=source_refs,
             coverage=coverage,
-            driver_thesis=DriverThesis(
-                headline=point.title,
-                durability="unclear",
-                summary=summary,
-            ),
-            driver_map=DriverMap(
-                revenue_bridge=point,
-                segment_momentum=_business_driver_context_point(
-                    source_refs,
-                    title="Segment momentum evidence",
-                    summary=(
-                        "Segment momentum was not fully synthesized before the final LLM step "
-                        "failed. Use the collected filing and metric evidence as a partial "
-                        "view until the agent can complete the segment bridge."
-                    ),
-                ),
-                margin_and_mix=_business_driver_context_point(
-                    source_refs,
-                    title="Margin and mix evidence",
-                    summary=(
-                        "Margin and mix were not fully synthesized before the final LLM step "
-                        "failed. Treat any margin read as provisional unless the retrieved "
-                        "evidence explicitly separates price, cost, and product mix."
-                    ),
-                ),
-                demand_signals=point,
-            ),
         )
     elif request.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
         point = _fallback_point(summary, source_refs, title="Cash flow evidence anchor")
@@ -480,6 +455,425 @@ def _business_driver_context_point(
             else CitationStatus.UNVERIFIED
         ),
     )
+
+
+def _business_driver_fallback_sections(
+    *,
+    request: AgentRequest,
+    state: AgentState,
+    summary: str,
+    metrics: list[EvidenceBoundMetric],
+    source_refs: list[SourceRef],
+    coverage: TaskSectionCoverage,
+) -> BusinessDriverSections:
+    revenue_metric = _metric_by_terms(metrics, ("revenue", "sales", "net sales"))
+    margin_metric = _metric_by_terms(
+        metrics,
+        ("margin", "gross profit", "operating income", "operating profit"),
+    )
+    revenue_point = _business_driver_fallback_lens_point(
+        request=request,
+        state=state,
+        title_zh="收入桥接证据",
+        title_en="Revenue bridge evidence",
+        lens="revenue_bridge",
+        metric=revenue_metric,
+        source_refs=source_refs,
+    )
+    segment_point = _business_driver_fallback_lens_point(
+        request=request,
+        state=state,
+        title_zh="分部动能证据",
+        title_en="Segment momentum evidence",
+        lens="segment_momentum",
+        metric=_metric_by_terms(metrics, ("segment", "product", "service")),
+        source_refs=source_refs,
+    )
+    margin_point = _business_driver_fallback_lens_point(
+        request=request,
+        state=state,
+        title_zh="利润率与组合证据",
+        title_en="Margin and mix evidence",
+        lens="margin_and_mix",
+        metric=margin_metric,
+        source_refs=source_refs,
+    )
+    demand_point = _business_driver_fallback_lens_point(
+        request=request,
+        state=state,
+        title_zh="需求信号证据",
+        title_en="Demand signal evidence",
+        lens="demand_signals",
+        metric=revenue_metric,
+        source_refs=source_refs,
+    )
+    thesis_summary = _business_driver_fallback_thesis_summary(
+        request=request,
+        summary=summary,
+        points=[revenue_point, segment_point, margin_point, demand_point],
+    )
+    thesis_title = (
+        "业务驱动证据优先结论"
+        if _is_zh_locale(request.language)
+        else "Evidence-backed business driver thesis"
+    )
+    return BusinessDriverSections(
+        schema_version="task_sections.v1",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        coverage=coverage,
+        driver_thesis=DriverThesis(
+            headline=thesis_title,
+            durability="mixed" if source_refs else "unclear",
+            summary=thesis_summary,
+        ),
+        driver_map=DriverMap(
+            revenue_bridge=revenue_point,
+            segment_momentum=segment_point,
+            margin_and_mix=margin_point,
+            demand_signals=demand_point,
+        ),
+    )
+
+
+_BUSINESS_DRIVER_LENS_TERMS: dict[str, tuple[str, ...]] = {
+    "revenue_bridge": (
+        "revenue",
+        "sales",
+        "net sales",
+        "growth",
+        "increased",
+        "declined",
+    ),
+    "segment_momentum": (
+        "segment",
+        "services",
+        "service",
+        "product",
+        "data center",
+        "client",
+        "gaming",
+        "embedded",
+        "geography",
+        "region",
+    ),
+    "margin_and_mix": (
+        "margin",
+        "gross margin",
+        "gross profit",
+        "mix",
+        "pricing",
+        "price",
+        "cost",
+        "operating income",
+    ),
+    "demand_signals": (
+        "demand",
+        "customer",
+        "installed base",
+        "engagement",
+        "orders",
+        "backlog",
+        "unit",
+        "shipment",
+        "accelerator",
+        "growth",
+    ),
+}
+
+_BUSINESS_DRIVER_LENS_SIGNAL_TYPES: dict[str, tuple[str, ...]] = {
+    "revenue_bridge": ("demand", "product", "strategy"),
+    "segment_momentum": ("segment", "product", "strategy"),
+    "margin_and_mix": ("pricing", "product"),
+    "demand_signals": ("demand", "product", "strategy"),
+}
+
+
+def _business_driver_fallback_lens_point(
+    *,
+    request: AgentRequest,
+    state: AgentState,
+    title_zh: str,
+    title_en: str,
+    lens: str,
+    metric: EvidenceBoundMetric | None,
+    source_refs: list[SourceRef],
+) -> EvidenceBoundPoint:
+    terms = _BUSINESS_DRIVER_LENS_TERMS[lens]
+    signal_types = _BUSINESS_DRIVER_LENS_SIGNAL_TYPES[lens]
+    signal_records = _business_signal_records(state.evidence_memory, signal_types, terms)
+    lens_refs = _business_driver_lens_refs(
+        lens=lens,
+        metric=metric,
+        signal_records=signal_records,
+        source_refs=source_refs,
+        terms=terms,
+    )
+    summary = _business_driver_fallback_lens_summary(
+        request=request,
+        lens=lens,
+        metric=metric,
+        source_refs=lens_refs,
+        signal_records=signal_records,
+    )
+    citation_status = _business_driver_citation_status(metric, lens_refs)
+    return EvidenceBoundPoint(
+        title=title_zh if _is_zh_locale(request.language) else title_en,
+        summary=summary,
+        evidence_refs=_business_driver_evidence_refs(metric, lens_refs),
+        citation_status=citation_status,
+    )
+
+
+def _business_driver_fallback_lens_summary(
+    *,
+    request: AgentRequest,
+    lens: str,
+    metric: EvidenceBoundMetric | None,
+    source_refs: list[SourceRef],
+    signal_records: list[dict[str, Any]],
+) -> str:
+    zh = _is_zh_locale(request.language)
+    metric_text = _display_metric(metric) if metric is not None else ""
+    source_text = _business_driver_source_text(source_refs)
+    signal_text = _business_driver_signal_text(signal_records)
+    if lens in {"revenue_bridge", "margin_and_mix"}:
+        evidence_text = source_text or signal_text or metric_text
+    else:
+        evidence_text = signal_text or source_text or metric_text
+    evidence_text = evidence_text or ("已收集证据" if zh else "collected evidence")
+    if zh:
+        if lens == "revenue_bridge":
+            anchor = (
+                f"以 {metric_text} 作为量化锚点"
+                if metric_text
+                else "主要依赖已检索的 filing 证据"
+            )
+            return (
+                f"{request.ticker} 的 revenue bridge {anchor}；对应证据显示：{evidence_text}。"
+                "这说明收入侧仍是判断业务动能的第一层证据，投资上需要继续和分部表现、利润率转化一起验证。"
+                "当前结论只限定在已检索证据内，不外推未被 source_ids 支持的需求叙事。"
+            )
+        if lens == "segment_momentum":
+            return (
+                f"{request.ticker} 的 segment momentum 主要来自这条证据：{evidence_text}。"
+                "如果分部或产品线层面的动能能和总收入同向，它会提高收入质量；如果只靠单一业务拉动，则后续季度需要验证可持续性。"
+                "这段判断优先使用 segment、product 或 geography 相关 filing 片段，"
+                "因此比通用宏观叙事更可追溯。"
+            )
+        if lens == "margin_and_mix":
+            anchor = f"量化锚点是 {metric_text}；" if metric_text else ""
+            return (
+                f"{request.ticker} 的 margin and mix 线索中，{anchor}关键证据是：{evidence_text}。"
+                "这说明投资者不能只看收入方向，还要看产品组合、定价和成本是否把收入转成利润。"
+                "如果证据没有明确拆出 price、cost 和 mix，这里应保持 partial 结论。"
+            )
+        return (
+            f"{request.ticker} 的 demand signals 来自：{evidence_text}。"
+            "这类信号能帮助判断收入是由真实客户需求、装机基础或订单动能驱动，还是仅由短期价格和渠道变化支撑。"
+            "在当前证据范围内，需求结论应和 revenue bridge 交叉验证，避免把单个片段解读成完整趋势。"
+        )
+    if lens == "revenue_bridge":
+        anchor = (
+            f"uses {metric_text} as the quantitative anchor"
+            if metric_text
+            else "rests on the retrieved filing evidence"
+        )
+        return (
+            f"{request.ticker}'s revenue bridge {anchor}. Evidence: {evidence_text}. "
+            "This keeps revenue as the first operating signal, while still requiring "
+            "confirmation from segment momentum and margin conversion."
+        )
+    if lens == "segment_momentum":
+        return (
+            f"{request.ticker}'s segment momentum is anchored by this evidence: {evidence_text}. "
+            "A segment-level signal matters because it shows whether revenue strength is broad "
+            "or concentrated in one business line."
+        )
+    if lens == "margin_and_mix":
+        anchor = f"The metric anchor is {metric_text}. " if metric_text else ""
+        return (
+            f"{anchor}{request.ticker}'s margin and mix read comes from: {evidence_text}. "
+            "This keeps the investment read tied to whether revenue converts into better "
+            "profitability through product mix, pricing, or cost control."
+        )
+    return (
+        f"{request.ticker}'s demand signals come from: {evidence_text}. "
+        "The signal is useful only when it cross-checks against revenue and segment evidence, "
+        "so the conclusion remains bounded to the retrieved sources."
+    )
+
+
+def _business_driver_fallback_thesis_summary(
+    *,
+    request: AgentRequest,
+    summary: str,
+    points: list[EvidenceBoundPoint],
+) -> str:
+    snippets = [
+        _clip(point.summary, 140)
+        for point in points
+        if point.summary.strip()
+    ]
+    if _is_zh_locale(request.language):
+        return (
+            f"{request.ticker} 的业务驱动结论应以已检索证据为边界："
+            f"{summary} 四个核心观察分别是：{' '.join(snippets[:4])}"
+        )
+    return (
+        f"{request.ticker}'s business driver thesis is bounded by the retrieved evidence: "
+        f"{summary} The four operating observations are: {' '.join(snippets[:4])}"
+    )
+
+
+def _metric_by_terms(
+    metrics: list[EvidenceBoundMetric],
+    terms: tuple[str, ...],
+) -> EvidenceBoundMetric | None:
+    for metric in metrics:
+        metric_name = metric.name.strip().lower()
+        if any(term in metric_name for term in terms):
+            return metric
+    return None
+
+
+def _source_refs_from_metric(
+    metric: EvidenceBoundMetric | None,
+    source_refs: list[SourceRef],
+) -> list[SourceRef]:
+    if metric is None:
+        return []
+    source_ids = {
+        evidence_ref.source_id
+        for evidence_ref in metric.evidence_refs
+        if evidence_ref.source_id
+    }
+    return [source_ref for source_ref in source_refs if source_ref.source_id in source_ids]
+
+
+def _source_refs_from_signals(
+    signal_records: list[dict[str, Any]],
+    source_refs: list[SourceRef],
+) -> list[SourceRef]:
+    refs_by_id = {source_ref.source_id: source_ref for source_ref in source_refs}
+    refs: list[SourceRef] = []
+    for record in signal_records:
+        source_id = str(record.get("source_id") or "").strip()
+        if source_id in refs_by_id:
+            refs.append(refs_by_id[source_id])
+        elif source_id:
+            refs.append(
+                SourceRef(
+                    source_id=source_id,
+                    section=str(record.get("section") or "Business signal"),
+                    snippet=str(record.get("snippet") or record.get("summary") or ""),
+                    citation_status=_citation_status_from_value(record.get("citation_status")),
+                )
+            )
+    return refs
+
+
+def _source_refs_matching_terms(
+    source_refs: list[SourceRef],
+    terms: tuple[str, ...],
+) -> list[SourceRef]:
+    matches: list[SourceRef] = []
+    for source_ref in source_refs:
+        searchable = f"{source_ref.section} {source_ref.snippet}".lower()
+        if any(term in searchable for term in terms):
+            matches.append(source_ref)
+    return matches
+
+
+def _business_driver_lens_refs(
+    *,
+    lens: str,
+    metric: EvidenceBoundMetric | None,
+    signal_records: list[dict[str, Any]],
+    source_refs: list[SourceRef],
+    terms: tuple[str, ...],
+) -> list[SourceRef]:
+    metric_refs = _source_refs_from_metric(metric, source_refs)
+    signal_refs = _source_refs_from_signals(signal_records, source_refs)
+    term_refs = _source_refs_matching_terms(source_refs, terms)
+    if lens in {"revenue_bridge", "margin_and_mix"}:
+        ordered_refs = [*metric_refs, *signal_refs, *term_refs, *source_refs[:1]]
+    else:
+        ordered_refs = [*signal_refs, *term_refs, *metric_refs, *source_refs[:1]]
+    return _dedupe_business_driver_refs(ordered_refs)
+
+
+def _business_signal_records(
+    memory: EvidenceMemory,
+    signal_types: tuple[str, ...],
+    terms: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    exact_matches: list[dict[str, Any]] = []
+    keyword_matches: list[dict[str, Any]] = []
+    for record in memory.business_signals:
+        signal_type = str(record.get("signal_type") or "").strip().lower()
+        searchable = " ".join(
+            str(record.get(key) or "")
+            for key in ("signal", "summary", "section", "snippet")
+        ).lower()
+        if signal_type in signal_types:
+            exact_matches.append(record)
+        elif any(term in searchable for term in terms):
+            keyword_matches.append(record)
+    return [*exact_matches, *keyword_matches]
+
+
+def _dedupe_business_driver_refs(source_refs: list[SourceRef]) -> list[SourceRef]:
+    seen: set[str] = set()
+    deduped: list[SourceRef] = []
+    for source_ref in source_refs:
+        key = source_ref.source_id or source_ref.snippet
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(source_ref)
+    return deduped[:3]
+
+
+def _business_driver_source_text(source_refs: list[SourceRef]) -> str:
+    return _clip(source_refs[0].snippet, 220) if source_refs else ""
+
+
+def _business_driver_signal_text(signal_records: list[dict[str, Any]]) -> str:
+    for record in signal_records:
+        text = str(record.get("summary") or record.get("snippet") or "").strip()
+        if text:
+            return _clip(text, 220)
+    return ""
+
+
+def _business_driver_citation_status(
+    metric: EvidenceBoundMetric | None,
+    source_refs: list[SourceRef],
+) -> CitationStatus:
+    if source_refs:
+        return source_refs[0].citation_status
+    if metric is not None:
+        return metric.citation_status
+    return CitationStatus.UNVERIFIED
+
+
+def _business_driver_evidence_refs(
+    metric: EvidenceBoundMetric | None,
+    source_refs: list[SourceRef],
+) -> list[EvidenceRef]:
+    evidence_refs: list[EvidenceRef] = []
+    seen: set[str] = set()
+    for evidence_ref in metric.evidence_refs if metric is not None else []:
+        key = evidence_ref.source_id or evidence_ref.excerpt
+        if key and key not in seen:
+            seen.add(key)
+            evidence_refs.append(evidence_ref)
+    for source_ref in source_refs:
+        key = source_ref.source_id or source_ref.snippet
+        if key and key not in seen:
+            seen.add(key)
+            evidence_refs.append(_evidence_ref(source_ref))
+    return evidence_refs[:3]
 
 
 def _risk_source_ref(
