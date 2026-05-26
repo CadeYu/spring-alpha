@@ -299,6 +299,103 @@ def test_latest_earnings_rich_sections_are_preserved_in_typed_contract() -> None
     assert sections.watch_next[0].evidence_refs[0].source_id == "src_1"
 
 
+def test_latest_earnings_backfills_rich_sections_when_model_omits_them() -> None:
+    state = _make_state(language="en")
+    payload = {
+        "company_profile": {
+            "summary": "Apple designs consumer electronics and services.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "Revenue growth improved but margin pressure kept the read balanced.",
+            "summary": (
+                "Revenue improved and gave the quarter a stronger top-line anchor. "
+                "Margin pressure still needs monitoring. The next quarter should confirm "
+                "whether the improvement converts into better earnings quality."
+            ),
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "Revenue improved",
+                "summary": "Revenue growth gave the quarter a stronger top-line anchor. It should still be checked against margin conversion.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$94.0B",
+                    "period": "latest_quarter",
+                    "interpretation": "Revenue is the main growth anchor.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Operating margin",
+                    "value": "28.4%",
+                    "period": "latest_quarter",
+                    "interpretation": "Operating margin checks conversion quality.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Operating cash flow",
+                    "value": "$24.0B",
+                    "period": "latest_quarter",
+                    "interpretation": "Operating cash flow checks earnings quality.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+            ],
+            "chart_focus": ["revenue", "operating_margin", "operating_cash_flow"],
+        },
+        "driver_snapshot": [
+            {
+                "title": "Services support mix",
+                "summary": "Services provided a steadier operating driver. That helps offset uneven hardware demand.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "risk_snapshot": [
+            {
+                "title": "Margin pressure remains visible",
+                "summary": "Margin pressure remains the main drag on earnings quality. It keeps the read balanced rather than cleanly positive.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "en"),
+        state,
+        payload,
+    )
+
+    sections = report.task_sections
+    assert sections.coverage.status == "complete"
+    assert sections.quality_of_quarter.growth_quality.title == "Growth quality"
+    assert sections.quality_of_quarter.margin_quality.title == "Margin quality"
+    assert sections.quality_of_quarter.cash_quality.title == "Cash quality"
+    assert sections.drivers_and_draggers.drivers[0].title == "Services support mix"
+    assert sections.drivers_and_draggers.draggers[0].title == "Margin pressure remains visible"
+    assert sections.bull_bear_read.bull_case[0].title == "Services support mix"
+    assert sections.bull_bear_read.bear_case[0].title == "Margin pressure remains visible"
+    assert sections.bull_bear_read.balanced_read.title == "Balanced read"
+    assert [item.metric for item in sections.watch_next] == [
+        "Revenue",
+        "Operating margin",
+        "Operating cash flow",
+    ]
+
+
 def test_latest_earnings_prompt_requests_evidence_dense_memo_sections() -> None:
     prompt = _user_prompt(
         request=_make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "en"),

@@ -256,7 +256,70 @@ def build_latest_earnings_report_from_payload(
     payload_data = _normalize_latest_earnings_payload(payload_data)
     payload = _LatestEarningsSynthesis.model_validate(payload_data)
     _sanitize_latest_earnings_source_ids(payload, source_refs_by_id)
-    coverage = _coverage(payload, source_refs)
+    dashboard_metrics = _final_dashboard_metrics(
+        payload.financial_dashboard.metrics,
+        state,
+        source_refs_by_id,
+    )
+    quality_of_quarter = _quality_of_quarter_from_payload(
+        payload.quality_of_quarter,
+        source_refs_by_id,
+    )
+    drivers_and_draggers = _drivers_and_draggers_from_payload(
+        payload.drivers_and_draggers,
+        source_refs_by_id,
+    )
+    bull_bear_read = _bull_bear_read_from_payload(
+        payload.bull_bear_read,
+        source_refs_by_id,
+    )
+    watch_next = [
+        _watch_next_item_from_payload(item, source_refs_by_id)
+        for item in payload.watch_next
+    ]
+    key_takeaways = [
+        _point_from_payload(point, source_refs_by_id) for point in payload.key_takeaways
+    ]
+    driver_snapshot = [
+        _point_from_payload(point, source_refs_by_id) for point in payload.driver_snapshot
+    ]
+    risk_snapshot = [
+        _point_from_payload(point, source_refs_by_id) for point in payload.risk_snapshot
+    ]
+    quality_of_quarter = _latest_quality_with_backfill(
+        quality_of_quarter,
+        dashboard_metrics,
+        key_takeaways,
+        source_refs,
+    )
+    drivers_and_draggers = _latest_drivers_with_backfill(
+        drivers_and_draggers,
+        driver_snapshot,
+        risk_snapshot,
+    )
+    bull_bear_read = _latest_bull_bear_with_backfill(
+        bull_bear_read,
+        payload.topline_verdict,
+        key_takeaways,
+        driver_snapshot,
+        risk_snapshot,
+        source_refs,
+    )
+    watch_next = _latest_watch_next_with_backfill(
+        watch_next,
+        dashboard_metrics,
+        risk_snapshot,
+        source_refs,
+    )
+    coverage = _latest_coverage(
+        payload,
+        source_refs,
+        quality_of_quarter,
+        drivers_and_draggers,
+        bull_bear_read,
+        watch_next,
+        dashboard_metrics,
+    )
     company_profile = _company_profile_from_synthesis(payload, state, source_refs_by_id)
     task_sections = LatestEarningsSections(
         schema_version="task_sections.v1",
@@ -264,39 +327,17 @@ def build_latest_earnings_report_from_payload(
         coverage=coverage,
         company_profile=company_profile,
         topline_verdict=payload.topline_verdict,
-        key_takeaways=[
-            _point_from_payload(point, source_refs_by_id) for point in payload.key_takeaways
-        ],
+        key_takeaways=key_takeaways,
         financial_dashboard=LatestFinancialDashboard(
-            metrics=_final_dashboard_metrics(
-                payload.financial_dashboard.metrics,
-                state,
-                source_refs_by_id,
-            ),
+            metrics=dashboard_metrics,
             chart_focus=payload.financial_dashboard.chart_focus,
         ),
-        driver_snapshot=[
-            _point_from_payload(point, source_refs_by_id) for point in payload.driver_snapshot
-        ],
-        risk_snapshot=[
-            _point_from_payload(point, source_refs_by_id) for point in payload.risk_snapshot
-        ],
-        quality_of_quarter=_quality_of_quarter_from_payload(
-            payload.quality_of_quarter,
-            source_refs_by_id,
-        ),
-        drivers_and_draggers=_drivers_and_draggers_from_payload(
-            payload.drivers_and_draggers,
-            source_refs_by_id,
-        ),
-        bull_bear_read=_bull_bear_read_from_payload(
-            payload.bull_bear_read,
-            source_refs_by_id,
-        ),
-        watch_next=[
-            _watch_next_item_from_payload(item, source_refs_by_id)
-            for item in payload.watch_next
-        ],
+        driver_snapshot=driver_snapshot,
+        risk_snapshot=risk_snapshot,
+        quality_of_quarter=quality_of_quarter,
+        drivers_and_draggers=drivers_and_draggers,
+        bull_bear_read=bull_bear_read,
+        watch_next=watch_next,
     )
     claims = [
         EvidenceBoundClaim(
@@ -1450,6 +1491,215 @@ def _optional_point_from_payload(
     return _point_from_payload(point, source_refs_by_id)
 
 
+def _latest_quality_with_backfill(
+    quality: QualityOfQuarter | None,
+    metrics: list[EvidenceBoundMetric],
+    key_takeaways: list[EvidenceBoundPoint],
+    source_refs: list[SourceRef],
+) -> QualityOfQuarter | None:
+    existing = quality or QualityOfQuarter()
+    return QualityOfQuarter(
+        growth_quality=existing.growth_quality
+        or _quality_point_from_metric(
+            "Growth quality",
+            "Growth quality is anchored by the reported revenue evidence. Use this lens to judge whether the quarter is expanding from durable top-line demand rather than only narrative momentum.",
+            _metric_by_name(metrics, ("revenue", "sales", "net sales")),
+            key_takeaways,
+            source_refs,
+        ),
+        margin_quality=existing.margin_quality
+        or _quality_point_from_metric(
+            "Margin quality",
+            "Margin quality is anchored by the available margin or operating income evidence. Use this lens to judge whether revenue is converting into operating leverage.",
+            _metric_by_name(metrics, ("margin", "operating income", "gross profit")),
+            key_takeaways,
+            source_refs,
+        ),
+        cash_quality=existing.cash_quality
+        or _quality_point_from_metric(
+            "Cash quality",
+            "Cash quality is anchored by operating cash flow or free cash flow evidence. Use this lens to judge whether accounting earnings are supported by cash generation.",
+            _metric_by_name(metrics, ("cash flow", "free cash flow", "operating cash")),
+            key_takeaways,
+            source_refs,
+        ),
+        one_time_items=existing.one_time_items,
+    )
+
+
+def _latest_drivers_with_backfill(
+    drivers_and_draggers: DriversAndDraggers | None,
+    driver_snapshot: list[EvidenceBoundPoint],
+    risk_snapshot: list[EvidenceBoundPoint],
+) -> DriversAndDraggers | None:
+    existing = drivers_and_draggers or DriversAndDraggers()
+    drivers = existing.drivers or driver_snapshot[:3]
+    draggers = existing.draggers or risk_snapshot[:3]
+    if not drivers and not draggers:
+        return None
+    return DriversAndDraggers(drivers=drivers, draggers=draggers)
+
+
+def _latest_bull_bear_with_backfill(
+    bull_bear_read: BullBearRead | None,
+    topline: ToplineVerdict,
+    key_takeaways: list[EvidenceBoundPoint],
+    driver_snapshot: list[EvidenceBoundPoint],
+    risk_snapshot: list[EvidenceBoundPoint],
+    source_refs: list[SourceRef],
+) -> BullBearRead | None:
+    existing = bull_bear_read or BullBearRead()
+    bull_case = existing.bull_case or _points_or_backfill(
+        [*driver_snapshot, *key_takeaways],
+        "Bull case",
+        (
+            "The constructive case is based on the supported revenue and operating driver evidence. "
+            "It remains a scenario, not a price target or trading recommendation."
+        ),
+        source_refs,
+    )[:2]
+    bear_case = existing.bear_case or _points_or_backfill(
+        risk_snapshot,
+        "Bear case",
+        (
+            "The cautious case is based on the supported risk or pressure evidence. "
+            "It keeps the final read balanced until follow-up metrics improve."
+        ),
+        source_refs,
+    )[:2]
+    balanced_read = existing.balanced_read or _point_from_source_refs(
+        "Balanced read",
+        (
+            f"The reported quarter screens as {topline.verdict} with "
+            f"{topline.confidence} confidence. {topline.summary}"
+        ),
+        source_refs,
+    )
+    if not bull_case and not bear_case and balanced_read is None:
+        return None
+    return BullBearRead(
+        bull_case=bull_case,
+        bear_case=bear_case,
+        balanced_read=balanced_read,
+    )
+
+
+def _latest_watch_next_with_backfill(
+    watch_next: list[WatchNextItem],
+    metrics: list[EvidenceBoundMetric],
+    risk_snapshot: list[EvidenceBoundPoint],
+    source_refs: list[SourceRef],
+) -> list[WatchNextItem]:
+    if watch_next:
+        return watch_next
+    metric_items = [
+        WatchNextItem(
+            title=f"Watch {metric.name}",
+            metric=metric.name,
+            why_it_matters=(
+                f"{metric.name} is already part of the latest-quarter evidence; "
+                "the next report should show whether this signal improves, fades, or reverses."
+            ),
+            evidence_refs=metric.evidence_refs,
+            citation_status=metric.citation_status,
+        )
+        for metric in metrics[:3]
+    ]
+    if metric_items:
+        return metric_items
+    return [
+        WatchNextItem(
+            title=f"Watch {point.title}",
+            metric=None,
+            why_it_matters=point.summary,
+            evidence_refs=point.evidence_refs,
+            citation_status=point.citation_status,
+        )
+        for point in risk_snapshot[:3]
+    ] or [
+        WatchNextItem(
+            title="Watch next filing evidence",
+            metric=None,
+            why_it_matters=(
+                "The next filing should confirm whether the current earnings read is "
+                "supported by fresh KPI, driver, and risk evidence."
+            ),
+            evidence_refs=[_evidence_ref(source_refs[0])] if source_refs else [],
+            citation_status=source_refs[0].citation_status
+            if source_refs
+            else CitationStatus.UNVERIFIED,
+        )
+    ]
+
+
+def _quality_point_from_metric(
+    title: str,
+    fallback_summary: str,
+    metric: EvidenceBoundMetric | None,
+    key_takeaways: list[EvidenceBoundPoint],
+    source_refs: list[SourceRef],
+) -> EvidenceBoundPoint | None:
+    if metric is not None:
+        return EvidenceBoundPoint(
+            title=title,
+            summary=(
+                f"{metric.name} of {metric.value} is the evidence anchor. "
+                f"{metric.interpretation}"
+            ),
+            evidence_refs=metric.evidence_refs,
+            citation_status=metric.citation_status,
+        )
+    if key_takeaways:
+        point = key_takeaways[0]
+        return EvidenceBoundPoint(
+            title=title,
+            summary=f"{fallback_summary} Supporting context: {point.summary}",
+            evidence_refs=point.evidence_refs,
+            citation_status=point.citation_status,
+        )
+    return _point_from_source_refs(title, fallback_summary, source_refs)
+
+
+def _metric_by_name(
+    metrics: list[EvidenceBoundMetric],
+    needles: tuple[str, ...],
+) -> EvidenceBoundMetric | None:
+    for metric in metrics:
+        normalized = _normalize_metric_name(metric.name)
+        if any(needle in normalized for needle in needles):
+            return metric
+    return metrics[0] if metrics else None
+
+
+def _points_or_backfill(
+    points: list[EvidenceBoundPoint],
+    title: str,
+    summary: str,
+    source_refs: list[SourceRef],
+) -> list[EvidenceBoundPoint]:
+    return points or ([point] if (point := _point_from_source_refs(title, summary, source_refs)) else [])
+
+
+def _point_from_source_refs(
+    title: str,
+    summary: str,
+    source_refs: list[SourceRef],
+) -> EvidenceBoundPoint | None:
+    if not source_refs:
+        return EvidenceBoundPoint(
+            title=title,
+            summary=summary,
+            evidence_refs=[],
+            citation_status=CitationStatus.UNVERIFIED,
+        )
+    return EvidenceBoundPoint(
+        title=title,
+        summary=summary,
+        evidence_refs=[_evidence_ref(source_refs[0])],
+        citation_status=source_refs[0].citation_status,
+    )
+
+
 def _normalize_watchlist(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -2317,32 +2567,60 @@ def _coverage(
     payload: _LatestEarningsSynthesis,
     source_refs: list[SourceRef],
 ) -> TaskSectionCoverage:
+    return _latest_coverage(
+        payload,
+        source_refs,
+        _quality_of_quarter_from_payload(payload.quality_of_quarter, {}),
+        _drivers_and_draggers_from_payload(payload.drivers_and_draggers, {}),
+        _bull_bear_read_from_payload(payload.bull_bear_read, {}),
+        payload.watch_next,
+        [
+            EvidenceBoundMetric(
+                name=metric.name,
+                value=metric.value,
+                period=metric.period,
+                interpretation=metric.interpretation,
+                evidence_refs=[],
+                citation_status=metric.citation_status,
+            )
+            for metric in payload.financial_dashboard.metrics
+        ],
+    )
+
+
+def _latest_coverage(
+    payload: _LatestEarningsSynthesis,
+    source_refs: list[SourceRef],
+    quality_of_quarter: QualityOfQuarter | None,
+    drivers_and_draggers: DriversAndDraggers | None,
+    bull_bear_read: BullBearRead | None,
+    watch_next: list[WatchNextItem],
+    dashboard_metrics: list[EvidenceBoundMetric],
+) -> TaskSectionCoverage:
     missing_sections = []
     if payload.company_profile is None:
         missing_sections.append("company_profile")
     if not payload.key_takeaways:
         missing_sections.append("key_takeaways")
-    if not payload.financial_dashboard.metrics:
+    if not dashboard_metrics:
         missing_sections.append("financial_dashboard.metrics")
     if not payload.driver_snapshot:
         missing_sections.append("driver_snapshot")
     if not payload.risk_snapshot:
         missing_sections.append("risk_snapshot")
-    if payload.quality_of_quarter is None or not _quality_of_quarter_points(
-        payload.quality_of_quarter
-    ):
+    if quality_of_quarter is None or not _quality_of_quarter_points(quality_of_quarter):
         missing_sections.append("quality_of_quarter")
-    if payload.drivers_and_draggers is None or not (
-        payload.drivers_and_draggers.drivers or payload.drivers_and_draggers.draggers
+    if drivers_and_draggers is None or not (
+        drivers_and_draggers.drivers or drivers_and_draggers.draggers
     ):
         missing_sections.append("drivers_and_draggers")
-    if payload.bull_bear_read is None or not (
-        payload.bull_bear_read.bull_case
-        or payload.bull_bear_read.bear_case
-        or payload.bull_bear_read.balanced_read is not None
+    if bull_bear_read is None or not (
+        bull_bear_read.bull_case
+        or bull_bear_read.bear_case
+        or bull_bear_read.balanced_read is not None
     ):
         missing_sections.append("bull_bear_read")
-    if not payload.watch_next:
+    if not watch_next:
         missing_sections.append("watch_next")
     if not source_refs:
         missing_sections.append("evidence_refs")
