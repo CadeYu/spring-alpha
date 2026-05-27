@@ -12,9 +12,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class ResearchAgentReportMapper {
+
+    private static final Pattern LOW_INFORMATION_PIPE_PATTERN = Pattern.compile("\\|\\s*\\|\\s*\\|");
+    private static final List<String> NOISY_BUSINESS_DRIVER_EVIDENCE_PHRASES = List.of(
+            "business metrics utilized by investors",
+            "comparable sales percentage changes by revenue category",
+            "disaggregate the company's net revenue",
+            "disaggregate net revenue",
+            "foreign currency risk",
+            "following table",
+            "following tables",
+            "government securities",
+            "market risk",
+            "net revenue by revenue category",
+            "other revenue primarily includes",
+            "principal transactions revenue",
+            "revenue and contract costs",
+            "revenue is generally recognized",
+            "revenue sharing",
+            "table of contents");
 
     private final ObjectMapper snakeCaseMapper;
 
@@ -109,9 +129,13 @@ public class ResearchAgentReportMapper {
                 .coverage(convert(rawSections.get("coverage"), AnalysisReport.TaskSectionCoverage.class));
 
         return switch (taskType) {
-            case BUSINESS_DRIVER_DEEP_DIVE -> builder
-                    .businessDriver(convert(rawSections, AnalysisReport.BusinessDriverSections.class))
-                    .build();
+            case BUSINESS_DRIVER_DEEP_DIVE -> {
+                AnalysisReport.BusinessDriverSections businessDriverSections = convert(
+                        rawSections,
+                        AnalysisReport.BusinessDriverSections.class);
+                sanitizeBusinessDriverEvidenceRefs(businessDriverSections);
+                yield builder.businessDriver(businessDriverSections).build();
+            }
             case CASH_FLOW_CAPITAL_ALLOCATION -> builder
                     .cashFlowCapitalAllocation(convert(rawSections,
                             AnalysisReport.CashFlowCapitalAllocationSections.class))
@@ -284,6 +308,79 @@ public class ResearchAgentReportMapper {
                         .verificationStatus(verificationStatus(stringValue(sourceRef.get("citation_status"))))
                         .build())
                 .toList();
+    }
+
+    private void sanitizeBusinessDriverEvidenceRefs(AnalysisReport.BusinessDriverSections sections) {
+        if (sections == null || sections.getDriverMap() == null) {
+            return;
+        }
+        sanitizeEvidenceBoundPoint(sections.getDriverMap().getRevenueBridge());
+        sanitizeEvidenceBoundPoint(sections.getDriverMap().getSegmentMomentum());
+        sanitizeEvidenceBoundPoint(sections.getDriverMap().getMarginAndMix());
+        sanitizeEvidenceBoundPoint(sections.getDriverMap().getDemandSignals());
+    }
+
+    private void sanitizeEvidenceBoundPoint(AnalysisReport.EvidenceBoundPoint point) {
+        if (point == null || point.getEvidenceRefs() == null || point.getEvidenceRefs().isEmpty()) {
+            return;
+        }
+        int originalSize = point.getEvidenceRefs().size();
+        List<AnalysisReport.EvidenceRef> cleanRefs = point.getEvidenceRefs().stream()
+                .filter(ref -> !isNoisyBusinessDriverEvidenceRef(ref))
+                .toList();
+        point.setEvidenceRefs(cleanRefs);
+        if (cleanRefs.isEmpty()) {
+            point.setCitationStatus("unverified");
+        } else if (cleanRefs.size() < originalSize && "supported".equalsIgnoreCase(point.getCitationStatus())) {
+            point.setCitationStatus("partial");
+        }
+    }
+
+    private boolean isNoisyBusinessDriverEvidenceRef(AnalysisReport.EvidenceRef evidenceRef) {
+        if (evidenceRef == null) {
+            return false;
+        }
+        String normalized = normalizeEvidenceText(
+                String.join(" ",
+                        Optional.ofNullable(evidenceRef.getSection()).orElse(""),
+                        Optional.ofNullable(evidenceRef.getExcerpt()).orElse("")));
+        if (normalized.isBlank()) {
+            return false;
+        }
+        String lowerText = normalized.toLowerCase();
+        if (NOISY_BUSINESS_DRIVER_EVIDENCE_PHRASES.stream().anyMatch(lowerText::contains)) {
+            return true;
+        }
+        int pipeCount = countChar(normalized, '|');
+        if (pipeCount >= 4 || normalized.contains("---|---") || LOW_INFORMATION_PIPE_PATTERN.matcher(normalized).find()) {
+            return true;
+        }
+        int digits = 0;
+        int separators = 0;
+        for (int index = 0; index < normalized.length(); index++) {
+            char character = normalized.charAt(index);
+            if (Character.isDigit(character)) {
+                digits++;
+            }
+            if (character == '|' || character == ',' || character == '$' || character == '%') {
+                separators++;
+            }
+        }
+        return digits >= 12 && separators >= 5;
+    }
+
+    private String normalizeEvidenceText(String value) {
+        return value == null ? "" : value.replaceAll("\\s+", " ").trim();
+    }
+
+    private int countChar(String value, char target) {
+        int count = 0;
+        for (int index = 0; index < value.length(); index++) {
+            if (value.charAt(index) == target) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private String verificationStatus(String citationStatus) {

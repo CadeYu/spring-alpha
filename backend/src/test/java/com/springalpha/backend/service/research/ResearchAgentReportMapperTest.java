@@ -79,6 +79,62 @@ class ResearchAgentReportMapperTest {
     }
 
     @Test
+    void filtersLowInformationBusinessDriverEvidenceRefsAtTheResponseBoundary() {
+        Map<String, Object> cleanRef = Map.of(
+                "section", "MD&A demand",
+                "excerpt", "Online sales increased as customer demand improved.",
+                "source_id", "src_clean");
+        Map<String, Object> noisyRef = Map.of(
+                "section", "Table of Contents",
+                "excerpt",
+                "23 Table of Contents International segment revenue mix percentages and comparable sales percentage changes by revenue category were as follows: | | | | | | | | | |---|---|---|",
+                "source_id", "src_table");
+        ResearchAgentResult result = new ResearchAgentResult(
+                "run_java_002",
+                ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+                "ok",
+                List.of(),
+                List.of(),
+                List.of(),
+                Map.of(
+                        "company_name", "Best Buy Co.",
+                        "sections", Map.of("summary", "Business drivers were mixed."),
+                        "task_sections", Map.of(
+                                "schema_version", "task_sections.v1",
+                                "task_type", "business_driver_deep_dive",
+                                "coverage", Map.of(
+                                        "status", "partial",
+                                        "missing_sections", List.of(),
+                                        "evidence_count", 2),
+                                "driver_thesis", Map.of(
+                                        "headline", "Demand evidence is mixed",
+                                        "durability", "mixed",
+                                        "summary", "Demand evidence is mixed."),
+                                "driver_map", Map.of(
+                                        "segment_momentum", Map.of(
+                                                "title", "Segment momentum",
+                                                "summary", "Segment momentum has partial support.",
+                                                "evidence_refs", List.of(cleanRef, noisyRef),
+                                                "citation_status", "supported"),
+                                        "demand_signals", Map.of(
+                                                "title", "Demand signals",
+                                                "summary", "Demand signals remain partial.",
+                                                "evidence_refs", List.of(noisyRef),
+                                                "citation_status", "supported")))));
+
+        AnalysisReport report = mapper.toAnalysisReport(result, "en");
+
+        AnalysisReport.DriverMap driverMap = report.getTaskSections().getBusinessDriver().getDriverMap();
+        assertNotNull(driverMap.getSegmentMomentum());
+        assertEquals(1, driverMap.getSegmentMomentum().getEvidenceRefs().size());
+        assertEquals("src_clean", driverMap.getSegmentMomentum().getEvidenceRefs().get(0).getSourceId());
+        assertEquals("partial", driverMap.getSegmentMomentum().getCitationStatus());
+        assertNotNull(driverMap.getDemandSignals());
+        assertTrue(driverMap.getDemandSignals().getEvidenceRefs().isEmpty());
+        assertEquals("unverified", driverMap.getDemandSignals().getCitationStatus());
+    }
+
+    @Test
     void mapsCashFlowLlmSynthesisTaskSectionsIntoJavaContract() {
         Map<String, Object> sourceRef = Map.of(
                 "section", "Liquidity and Capital Resources",
