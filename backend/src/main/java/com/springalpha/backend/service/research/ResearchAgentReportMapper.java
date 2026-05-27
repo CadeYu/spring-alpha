@@ -137,11 +137,12 @@ public class ResearchAgentReportMapper {
                 yield builder.businessDriver(businessDriverSections).build();
             }
             case CASH_FLOW_CAPITAL_ALLOCATION -> builder
-                    .cashFlowCapitalAllocation(convert(rawSections,
-                            AnalysisReport.CashFlowCapitalAllocationSections.class))
+                    .cashFlowCapitalAllocation(sanitizeCashFlowEvidenceRefs(convert(rawSections,
+                            AnalysisReport.CashFlowCapitalAllocationSections.class)))
                     .build();
             case LATEST_EARNINGS_READOUT -> builder
-                    .latestEarnings(convert(rawSections, AnalysisReport.LatestEarningsSections.class))
+                    .latestEarnings(sanitizeLatestEarningsEvidenceRefs(convert(rawSections,
+                            AnalysisReport.LatestEarningsSections.class)))
                     .build();
         };
     }
@@ -323,20 +324,142 @@ public class ResearchAgentReportMapper {
         sanitizeEvidenceBoundPoint(sections.getDriverMap().getDemandSignals());
     }
 
+    private AnalysisReport.LatestEarningsSections sanitizeLatestEarningsEvidenceRefs(
+            AnalysisReport.LatestEarningsSections sections) {
+        if (sections == null) {
+            return null;
+        }
+        sanitizeEvidenceRefs(sections.getCompanyProfile());
+        sanitizeEvidenceBoundPoints(sections.getKeyTakeaways());
+        if (sections.getFinancialDashboard() != null) {
+            sanitizeEvidenceBoundMetrics(sections.getFinancialDashboard().getMetrics());
+        }
+        sanitizeEvidenceBoundPoints(sections.getDriverSnapshot());
+        sanitizeEvidenceBoundPoints(sections.getRiskSnapshot());
+        sanitizeQualityOfQuarter(sections.getQualityOfQuarter());
+        sanitizeDriversAndDraggers(sections.getDriversAndDraggers());
+        sanitizeBullBearRead(sections.getBullBearRead());
+        sanitizeWatchNextItems(sections.getWatchNext());
+        return sections;
+    }
+
+    private AnalysisReport.CashFlowCapitalAllocationSections sanitizeCashFlowEvidenceRefs(
+            AnalysisReport.CashFlowCapitalAllocationSections sections) {
+        if (sections == null) {
+            return null;
+        }
+        sanitizeEvidenceBoundMetrics(sections.getCashMetrics());
+        sanitizeCapitalAllocation(sections.getCapitalAllocation());
+        sanitizeEvidenceBoundPoints(sections.getAllocationDiscipline());
+        sanitizeEvidenceBoundPoints(sections.getRedFlags());
+        return sections;
+    }
+
+    private void sanitizeQualityOfQuarter(AnalysisReport.QualityOfQuarter qualityOfQuarter) {
+        if (qualityOfQuarter == null) {
+            return;
+        }
+        sanitizeEvidenceBoundPoint(qualityOfQuarter.getGrowthQuality());
+        sanitizeEvidenceBoundPoint(qualityOfQuarter.getMarginQuality());
+        sanitizeEvidenceBoundPoint(qualityOfQuarter.getCashQuality());
+        sanitizeEvidenceBoundPoint(qualityOfQuarter.getOneTimeItems());
+    }
+
+    private void sanitizeDriversAndDraggers(AnalysisReport.DriversAndDraggers driversAndDraggers) {
+        if (driversAndDraggers == null) {
+            return;
+        }
+        sanitizeEvidenceBoundPoints(driversAndDraggers.getDrivers());
+        sanitizeEvidenceBoundPoints(driversAndDraggers.getDraggers());
+    }
+
+    private void sanitizeBullBearRead(AnalysisReport.BullBearRead bullBearRead) {
+        if (bullBearRead == null) {
+            return;
+        }
+        sanitizeEvidenceBoundPoints(bullBearRead.getBullCase());
+        sanitizeEvidenceBoundPoints(bullBearRead.getBearCase());
+        sanitizeEvidenceBoundPoint(bullBearRead.getBalancedRead());
+    }
+
+    private void sanitizeCapitalAllocation(AnalysisReport.CapitalAllocation capitalAllocation) {
+        if (capitalAllocation == null) {
+            return;
+        }
+        sanitizeEvidenceBoundPoints(capitalAllocation.getCapex());
+        sanitizeEvidenceBoundPoints(capitalAllocation.getBuybacks());
+        sanitizeEvidenceBoundPoints(capitalAllocation.getDividends());
+        sanitizeEvidenceBoundPoints(capitalAllocation.getDebt());
+        sanitizeEvidenceBoundPoints(capitalAllocation.getLiquidity());
+    }
+
+    private void sanitizeEvidenceBoundPoints(List<AnalysisReport.EvidenceBoundPoint> points) {
+        if (points == null || points.isEmpty()) {
+            return;
+        }
+        points.forEach(this::sanitizeEvidenceBoundPoint);
+    }
+
+    private void sanitizeEvidenceBoundMetrics(List<AnalysisReport.EvidenceBoundMetric> metrics) {
+        if (metrics == null || metrics.isEmpty()) {
+            return;
+        }
+        metrics.forEach(this::sanitizeEvidenceBoundMetric);
+    }
+
+    private void sanitizeWatchNextItems(List<AnalysisReport.WatchNextItem> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        items.forEach(this::sanitizeEvidenceRefs);
+    }
+
     private void sanitizeEvidenceBoundPoint(AnalysisReport.EvidenceBoundPoint point) {
         if (point == null || point.getEvidenceRefs() == null || point.getEvidenceRefs().isEmpty()) {
             return;
         }
-        int originalSize = point.getEvidenceRefs().size();
-        List<AnalysisReport.EvidenceRef> cleanRefs = point.getEvidenceRefs().stream()
+        String status = sanitizeEvidenceRefs(point.getEvidenceRefs(), point.getCitationStatus());
+        point.setCitationStatus(status);
+    }
+
+    private void sanitizeEvidenceBoundMetric(AnalysisReport.EvidenceBoundMetric metric) {
+        if (metric == null || metric.getEvidenceRefs() == null || metric.getEvidenceRefs().isEmpty()) {
+            return;
+        }
+        String status = sanitizeEvidenceRefs(metric.getEvidenceRefs(), metric.getCitationStatus());
+        metric.setCitationStatus(status);
+    }
+
+    private void sanitizeEvidenceRefs(AnalysisReport.CompanyProfileSection section) {
+        if (section == null || section.getEvidenceRefs() == null || section.getEvidenceRefs().isEmpty()) {
+            return;
+        }
+        String status = sanitizeEvidenceRefs(section.getEvidenceRefs(), section.getCitationStatus());
+        section.setCitationStatus(status);
+    }
+
+    private void sanitizeEvidenceRefs(AnalysisReport.WatchNextItem item) {
+        if (item == null || item.getEvidenceRefs() == null || item.getEvidenceRefs().isEmpty()) {
+            return;
+        }
+        String status = sanitizeEvidenceRefs(item.getEvidenceRefs(), item.getCitationStatus());
+        item.setCitationStatus(status);
+    }
+
+    private String sanitizeEvidenceRefs(List<AnalysisReport.EvidenceRef> refs, String citationStatus) {
+        int originalSize = refs.size();
+        List<AnalysisReport.EvidenceRef> cleanRefs = refs.stream()
                 .filter(ref -> !isNoisyBusinessDriverEvidenceRef(ref))
                 .toList();
-        point.setEvidenceRefs(cleanRefs);
+        refs.clear();
+        refs.addAll(cleanRefs);
         if (cleanRefs.isEmpty()) {
-            point.setCitationStatus("unverified");
-        } else if (cleanRefs.size() < originalSize && "supported".equalsIgnoreCase(point.getCitationStatus())) {
-            point.setCitationStatus("partial");
+            return "unverified";
         }
+        if (cleanRefs.size() < originalSize && "supported".equalsIgnoreCase(citationStatus)) {
+            return "partial";
+        }
+        return citationStatus;
     }
 
     private boolean isNoisyBusinessDriverEvidenceRef(AnalysisReport.EvidenceRef evidenceRef) {

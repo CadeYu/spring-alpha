@@ -188,6 +188,143 @@ class ResearchAgentReportMapperTest {
     }
 
     @Test
+    void filtersLowInformationTypedLatestEarningsEvidenceRefsAtTheResponseBoundary() {
+        Map<String, Object> cleanRef = Map.of(
+                "section", "Management Discussion and Analysis",
+                "excerpt", "Revenue increased because product and services demand improved.",
+                "source_id", "src_clean");
+        Map<String, Object> noisyRef = Map.of(
+                "section", "Net sales table",
+                "excerpt", "976 | | | 26,645 | | | 60,989 | | | Total net sales | 111,184 | | |",
+                "source_id", "src_table");
+        Map<String, Object> point = Map.of(
+                "title", "Revenue improved",
+                "summary", "Revenue increased because demand improved.",
+                "evidence_refs", List.of(cleanRef, noisyRef),
+                "citation_status", "supported");
+        ResearchAgentResult result = new ResearchAgentResult(
+                "run_java_latest_refs_001",
+                ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "ok",
+                List.of(),
+                List.of(),
+                List.of(),
+                Map.of(
+                        "company_name", "Apple Inc.",
+                        "sections", Map.of("summary", "Revenue improved and margins were mixed."),
+                        "task_sections", Map.ofEntries(
+                                Map.entry("schema_version", "task_sections.v1"),
+                                Map.entry("task_type", "latest_earnings_readout"),
+                                Map.entry("coverage", Map.of(
+                                        "status", "complete",
+                                        "missing_sections", List.of(),
+                                        "evidence_count", 2)),
+                                Map.entry("topline_verdict", Map.of(
+                                        "headline", "Revenue improved",
+                                        "summary", "Revenue improved and margins were mixed.",
+                                        "verdict", "mixed")),
+                                Map.entry("key_takeaways", List.of(point)),
+                                Map.entry("financial_dashboard", Map.of(
+                                        "metrics", List.of(Map.of(
+                                                "name", "Revenue",
+                                                "value", "$111.2B",
+                                                "interpretation", "Revenue improved.",
+                                                "evidence_refs", List.of(cleanRef, noisyRef),
+                                                "citation_status", "supported")),
+                                        "chart_focus", List.of("revenue"))),
+                                Map.entry("driver_snapshot", List.of(point)),
+                                Map.entry("risk_snapshot", List.of()),
+                                Map.entry("quality_of_quarter", Map.of("growth_quality", point)),
+                                Map.entry("drivers_and_draggers", Map.of(
+                                        "drivers", List.of(point),
+                                        "draggers", List.of())),
+                                Map.entry("bull_bear_read", Map.of(
+                                        "bull_case", List.of(point),
+                                        "bear_case", List.of(),
+                                        "balanced_read", point)),
+                                Map.entry("watch_next", List.of(Map.of(
+                                        "title", "Watch revenue",
+                                        "metric", "Revenue",
+                                        "why_it_matters", "Revenue trend confirms demand.",
+                                        "evidence_refs", List.of(cleanRef, noisyRef),
+                                        "citation_status", "supported"))))));
+
+        AnalysisReport report = mapper.toAnalysisReport(result, "en");
+
+        AnalysisReport.LatestEarningsSections latest = report.getTaskSections().getLatestEarnings();
+        assertEquals(1, latest.getKeyTakeaways().get(0).getEvidenceRefs().size());
+        assertEquals("src_clean", latest.getKeyTakeaways().get(0).getEvidenceRefs().get(0).getSourceId());
+        assertEquals("partial", latest.getKeyTakeaways().get(0).getCitationStatus());
+        assertEquals(1, latest.getFinancialDashboard().getMetrics().get(0).getEvidenceRefs().size());
+        assertEquals("partial", latest.getFinancialDashboard().getMetrics().get(0).getCitationStatus());
+        assertEquals(1, latest.getWatchNext().get(0).getEvidenceRefs().size());
+        assertEquals("partial", latest.getWatchNext().get(0).getCitationStatus());
+    }
+
+    @Test
+    void filtersLowInformationTypedCashFlowEvidenceRefsAtTheResponseBoundary() {
+        Map<String, Object> cleanRef = Map.of(
+                "section", "Liquidity and Capital Resources",
+                "excerpt", "Operating cash flow funded capital expenditures and dividends.",
+                "source_id", "src_clean");
+        Map<String, Object> noisyRef = Map.of(
+                "section", "Cash flow table",
+                "excerpt", "489 | | | Common stock repurchased | | | (4,627 | ) | | | Dividends paid | | |",
+                "source_id", "src_table");
+        Map<String, Object> point = Map.of(
+                "title", "Buybacks used cash",
+                "summary", "Capital returns were funded by operating cash flow.",
+                "evidence_refs", List.of(cleanRef, noisyRef),
+                "citation_status", "supported");
+        ResearchAgentResult result = new ResearchAgentResult(
+                "run_java_cash_refs_001",
+                ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+                "ok",
+                List.of(),
+                List.of(),
+                List.of(),
+                Map.of(
+                        "company_name", "Microsoft Corp.",
+                        "sections", Map.of("summary", "Cash flow supported capital allocation."),
+                        "task_sections", Map.of(
+                                "schema_version", "task_sections.v1",
+                                "task_type", "cash_flow_capital_allocation",
+                                "coverage", Map.of(
+                                        "status", "complete",
+                                        "missing_sections", List.of(),
+                                        "evidence_count", 2),
+                                "cash_quality_verdict", Map.of(
+                                        "headline", "Cash conversion remains useful",
+                                        "earnings_backed_by_cash", "yes",
+                                        "summary", "Operating cash flow supported capital allocation."),
+                                "cash_metrics", List.of(Map.of(
+                                        "name", "Operating cash flow",
+                                        "value", "$30.0B",
+                                        "interpretation", "Operating cash flow funded allocation.",
+                                        "evidence_refs", List.of(cleanRef, noisyRef),
+                                        "citation_status", "supported")),
+                                "capital_allocation", Map.of(
+                                        "capex", List.of(),
+                                        "buybacks", List.of(point),
+                                        "dividends", List.of(point),
+                                        "debt", List.of(),
+                                        "liquidity", List.of()),
+                                "allocation_discipline", List.of(point),
+                                "red_flags", List.of())));
+
+        AnalysisReport report = mapper.toAnalysisReport(result, "en");
+
+        AnalysisReport.CashFlowCapitalAllocationSections cashFlow = report.getTaskSections()
+                .getCashFlowCapitalAllocation();
+        assertEquals(1, cashFlow.getCashMetrics().get(0).getEvidenceRefs().size());
+        assertEquals("partial", cashFlow.getCashMetrics().get(0).getCitationStatus());
+        assertEquals(1, cashFlow.getCapitalAllocation().getBuybacks().get(0).getEvidenceRefs().size());
+        assertEquals("partial", cashFlow.getCapitalAllocation().getBuybacks().get(0).getCitationStatus());
+        assertEquals(1, cashFlow.getAllocationDiscipline().get(0).getEvidenceRefs().size());
+        assertEquals("partial", cashFlow.getAllocationDiscipline().get(0).getCitationStatus());
+    }
+
+    @Test
     void mapsCashFlowLlmSynthesisTaskSectionsIntoJavaContract() {
         Map<String, Object> sourceRef = Map.of(
                 "section", "Liquidity and Capital Resources",
