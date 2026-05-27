@@ -302,6 +302,9 @@ public class ResearchAgentReportMapper {
         List<Map<String, Object>> claims = listOfMaps(finalReport.get("claims"));
         return claims.stream()
                 .flatMap(claim -> listOfMaps(claim.get("source_refs")).stream())
+                .filter(sourceRef -> !isNoisyEvidenceText(
+                        stringValue(sourceRef.get("section")),
+                        stringValue(sourceRef.get("snippet"))))
                 .map(sourceRef -> AnalysisReport.Citation.builder()
                         .section(stringValue(sourceRef.get("section")))
                         .excerpt(stringValue(sourceRef.get("snippet")))
@@ -340,10 +343,14 @@ public class ResearchAgentReportMapper {
         if (evidenceRef == null) {
             return false;
         }
+        return isNoisyEvidenceText(evidenceRef.getSection(), evidenceRef.getExcerpt());
+    }
+
+    private boolean isNoisyEvidenceText(String section, String excerpt) {
         String normalized = normalizeEvidenceText(
                 String.join(" ",
-                        Optional.ofNullable(evidenceRef.getSection()).orElse(""),
-                        Optional.ofNullable(evidenceRef.getExcerpt()).orElse("")));
+                        Optional.ofNullable(section).orElse(""),
+                        Optional.ofNullable(excerpt).orElse("")));
         if (normalized.isBlank()) {
             return false;
         }

@@ -374,12 +374,19 @@ def build_latest_earnings_report_from_payload(
                 source_refs=source_refs[:1],
             )
         ]
+    summary = _latest_earnings_report_summary(
+        payload.topline_verdict.summary,
+        key_takeaways,
+        driver_snapshot,
+        risk_snapshot,
+        dashboard_metrics,
+    )
     return EvidenceAwareReport(
         run_id=request.run_id,
         ticker=state.ticker,
         task_type=request.task_type,
         task_sections=task_sections,
-        sections={"summary": payload.topline_verdict.summary, "synthesis": "llm"},
+        sections={"summary": summary, "synthesis": "llm"},
         claims=claims,
         retrieval_records=state.retrieval_records,
     )
@@ -1207,6 +1214,31 @@ def _normalize_synthesized_point(point: object) -> object:
 
 def _has_point_summary(point: object) -> bool:
     return isinstance(point, dict) and bool(str(point.get("summary") or "").strip())
+
+
+def _latest_earnings_report_summary(
+    summary: str,
+    key_takeaways: list[EvidenceBoundPoint],
+    driver_snapshot: list[EvidenceBoundPoint],
+    risk_snapshot: list[EvidenceBoundPoint],
+    dashboard_metrics: list[EvidenceBoundMetric],
+) -> str:
+    normalized = " ".join(str(summary or "").split())
+    if len(normalized) >= 80:
+        return normalized
+
+    candidates: list[str] = []
+    for point in [*key_takeaways, *driver_snapshot, *risk_snapshot]:
+        if point.summary:
+            candidates.append(f"{point.title}: {point.summary}")
+    for metric in dashboard_metrics:
+        if metric.interpretation:
+            candidates.append(f"{metric.name}: {metric.interpretation}")
+
+    rich_summary = " ".join(candidates)
+    if len(rich_summary) < 80:
+        return normalized or rich_summary
+    return _trim_sentence(rich_summary, max_chars=520)
 
 
 def _has_supplemental_point_text(point: dict[str, object]) -> bool:

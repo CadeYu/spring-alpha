@@ -413,6 +413,95 @@ def test_latest_earnings_backfills_rich_sections_when_model_omits_them() -> None
     ]
 
 
+def test_latest_earnings_backfills_top_level_summary_when_model_summary_is_too_short() -> None:
+    state = _make_state(language="zh")
+    payload = {
+        "company_profile": {
+            "summary": "Best Buy sells consumer electronics and services through stores and digital channels.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "BBY FY26 Q3业绩呈现",
+            "summary": "BBY FY26 Q3业绩呈现",
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "Revenue pressure remained visible",
+                "summary": (
+                    "Revenue pressure remained visible, but the quarter still showed "
+                    "enough operating evidence to separate demand weakness from execution."
+                ),
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$9.67B",
+                    "period": "latest_quarter",
+                    "interpretation": (
+                        "Revenue remains the main pressure point and should be read "
+                        "against comparable sales and operating margin."
+                    ),
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Operating income",
+                    "value": "$198M",
+                    "period": "latest_quarter",
+                    "interpretation": (
+                        "Operating income shows whether cost discipline is offsetting "
+                        "weaker sales momentum."
+                    ),
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+            ],
+            "chart_focus": ["Revenue", "Operating income"],
+        },
+        "driver_snapshot": [
+            {
+                "title": "Comparable sales pressure",
+                "summary": (
+                    "Comparable sales pressure remains the central operating driver. "
+                    "The next read should test whether demand stabilizes across categories."
+                ),
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "risk_snapshot": [
+            {
+                "title": "Margin conversion risk",
+                "summary": (
+                    "Margin conversion remains a risk because lower sales can absorb "
+                    "cost discipline and limit earnings recovery."
+                ),
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    assert report.sections["summary"] != "BBY FY26 Q3业绩呈现"
+    assert len(report.sections["summary"]) > 120
+    assert "Revenue pressure remained visible" in report.sections["summary"]
+    assert "Comparable sales pressure" in report.sections["summary"]
+
+
 def test_latest_earnings_prompt_requests_evidence_dense_memo_sections() -> None:
     prompt = _user_prompt(
         request=_make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "en"),

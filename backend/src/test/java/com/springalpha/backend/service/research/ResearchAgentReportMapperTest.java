@@ -135,6 +135,59 @@ class ResearchAgentReportMapperTest {
     }
 
     @Test
+    void filtersLowInformationTopLevelCitationsForAllResearchTasks() {
+        ResearchAgentResult result = new ResearchAgentResult(
+                "run_java_citations_001",
+                ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+                "ok",
+                List.of(),
+                List.of(),
+                List.of(),
+                Map.of(
+                        "company_name", "Microsoft Corp.",
+                        "sections", Map.of("summary", "Cash flow remained supported by operating cash flow."),
+                        "task_sections", Map.of(
+                                "schema_version", "task_sections.v1",
+                                "task_type", "cash_flow_capital_allocation",
+                                "coverage", Map.of(
+                                        "status", "complete",
+                                        "missing_sections", List.of(),
+                                        "evidence_count", 2),
+                                "cash_quality_verdict", Map.of(
+                                        "headline", "Cash conversion remains useful",
+                                        "earnings_backed_by_cash", "yes",
+                                        "summary", "Operating cash flow supported capital allocation."),
+                                "cash_metrics", List.of(),
+                                "capital_allocation", Map.of(
+                                        "capex", List.of(),
+                                        "buybacks", List.of(),
+                                        "dividends", List.of(),
+                                        "debt", List.of(),
+                                        "liquidity", List.of()),
+                                "allocation_discipline", List.of(),
+                                "red_flags", List.of()),
+                        "claims", List.of(Map.of(
+                                "source_refs", List.of(
+                                        Map.of(
+                                                "section", "Liquidity and Capital Resources",
+                                                "snippet", "Operating cash flow funded investments and shareholder returns.",
+                                                "citation_status", "supported"),
+                                        Map.of(
+                                                "section", "Table of Contents",
+                                                "snippet",
+                                                "23 Table of Contents Cash flow table | | | 6,402 | | | 15,509 | | | ---|---",
+                                                "citation_status", "supported"))))));
+
+        AnalysisReport report = mapper.toAnalysisReport(result, "en");
+
+        assertEquals(1, report.getCitations().size());
+        assertEquals("Liquidity and Capital Resources", report.getCitations().get(0).getSection());
+        assertEquals("Operating cash flow funded investments and shareholder returns.",
+                report.getCitations().get(0).getExcerpt());
+        assertEquals("VERIFIED", report.getCitations().get(0).getVerificationStatus());
+    }
+
+    @Test
     void mapsCashFlowLlmSynthesisTaskSectionsIntoJavaContract() {
         Map<String, Object> sourceRef = Map.of(
                 "section", "Liquidity and Capital Resources",
