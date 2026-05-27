@@ -935,6 +935,129 @@ def test_business_driver_report_recovers_bank_margin_refs_not_accounting_noise()
     assert point.summary != "Evidence for this business-driver lens remains partial."
 
 
+def test_business_driver_noisy_ref_placeholder_recovery_uses_zh_backfill() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "src_margin",
+                        "section": "Margins and expenses",
+                        "snippet": (
+                            "Operating margin improved because expenses, cost "
+                            "discipline, and profit mix grew slower than revenue."
+                        ),
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "src_table",
+                        "section": "Noisy table",
+                        "snippet": "| | | 6,402 | | | 15,509 | | | ---|---",
+                        "citation_status": "supported",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Margin evidence needs cleanup.",
+                "durability": "mixed",
+                "summary": "Margin evidence needs cleanup.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Segment evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Evidence for this business-driver lens remains partial.",
+                    "source_ids": ["src_table"],
+                    "citation_status": "supported",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Demand evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    point = report.task_sections.driver_map.margin_and_mix
+    assert point is not None
+    assert point.evidence_refs
+    assert point.evidence_refs[0].source_id == "src_margin"
+    assert point.citation_status == "partial"
+    assert "Evidence for this business-driver lens remains partial" not in point.summary
+    assert "利润率" in point.summary
+    assert "| | |" not in point.model_dump_json()
+
+
+def test_business_driver_zh_placeholder_without_refs_is_localized() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(source_refs=[]),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Evidence is thin.",
+                "durability": "mixed",
+                "summary": "Evidence is thin.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Segment evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Evidence for this business-driver lens remains partial.",
+                    "citation_status": "unverified",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Demand evidence remains partial.",
+                    "citation_status": "unverified",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    point = report.task_sections.driver_map.margin_and_mix
+    assert point is not None
+    assert point.evidence_refs == []
+    assert point.citation_status == "unverified"
+    assert "Evidence for this business-driver lens remains partial" not in point.summary
+    assert "利润率" in point.summary
+
+
 def test_business_driver_report_filters_noisy_synthesis_text_and_refs() -> None:
     state = _make_state(language="zh").model_copy(
         update={

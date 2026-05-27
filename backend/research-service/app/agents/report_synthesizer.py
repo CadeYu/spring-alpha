@@ -54,6 +54,10 @@ _NOISY_BUSINESS_DRIVER_TEXT_PHRASES = (
     "revenue sharing",
 )
 
+_BUSINESS_DRIVER_PARTIAL_PLACEHOLDER = (
+    "Evidence for this business-driver lens remains partial."
+)
+
 
 def _is_zh_locale(language: str | None) -> bool:
     return str(language or "").lower().startswith("zh")
@@ -2599,6 +2603,8 @@ def _sanitize_business_driver_source_ids(
             backfill_excluded_points.add(id(point))
         _sanitize_source_ids(point, source_refs_by_id)
         if _sanitize_business_driver_point_source_ids(point, source_refs_by_id):
+            if _is_business_driver_partial_placeholder(point):
+                continue
             backfill_excluded_points.add(id(point))
     for claim in payload.claims:
         if _is_noisy_business_driver_text(claim.text):
@@ -2616,10 +2622,10 @@ def _sanitize_business_driver_point_text(point: _SynthesizedPoint) -> bool:
         return False
     point.summary = _strip_noisy_business_driver_fragments(point.summary)
     if _is_noisy_business_driver_text(point.summary):
-        point.summary = "Evidence for this business-driver lens remains partial."
+        point.summary = _BUSINESS_DRIVER_PARTIAL_PLACEHOLDER
         point.source_ids = []
         point.citation_status = CitationStatus.UNVERIFIED
-        return True
+        return False
     return False
 
 
@@ -2739,6 +2745,7 @@ def _backfill_business_driver_point_source_ids(
             CitationStatus.UNVERIFIED,
         }:
             point.citation_status = CitationStatus.PARTIAL
+    _localize_business_driver_placeholders(payload, language)
 
 
 def _business_driver_backfill_source_refs(
@@ -2832,7 +2839,23 @@ def _trim_sentence(text: str, *, max_chars: int) -> str:
 
 
 def _is_business_driver_partial_placeholder(point: _SynthesizedPoint) -> bool:
-    return point.summary.strip() == "Evidence for this business-driver lens remains partial."
+    return point.summary.strip() == _BUSINESS_DRIVER_PARTIAL_PLACEHOLDER
+
+
+def _localize_business_driver_placeholders(
+    payload: _BusinessDriverSynthesis,
+    language: str | None,
+) -> None:
+    if not _is_zh_locale(language):
+        return
+    for lens_name, point in (
+        ("revenue_bridge", payload.driver_map.revenue_bridge),
+        ("segment_momentum", payload.driver_map.segment_momentum),
+        ("margin_and_mix", payload.driver_map.margin_and_mix),
+        ("demand_signals", payload.driver_map.demand_signals),
+    ):
+        if point is not None and _is_business_driver_partial_placeholder(point):
+            point.summary = _business_driver_backfill_summary(lens_name, [], language)
 
 
 def _sanitize_cash_flow_source_ids(
