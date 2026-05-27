@@ -15,7 +15,7 @@ Frontend:
   npm run dev
 
 Research Service:
-  cd "$ROOT_DIR/src/research-service"
+  cd "$ROOT_DIR/backend/research-service"
   uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8090
 
 Verification:

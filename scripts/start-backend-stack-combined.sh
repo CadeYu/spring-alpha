@@ -11,7 +11,7 @@ export RESEARCH_SERVICE_TIMEOUT="${RESEARCH_SERVICE_TIMEOUT:-PT300S}"
 export PYTHON_BIN="${PYTHON_BIN:-/opt/backend-venv/bin/python}"
 
 start_research_service() {
-  local research_venv="${APP_ROOT}/src/research-service/.venv/bin"
+  local research_venv="${APP_ROOT}/backend/research-service/.venv/bin"
   export PATH="${research_venv}:${PATH}"
 
   if [[ ! -x "${research_venv}/python" ]]; then
@@ -21,7 +21,7 @@ start_research_service() {
 
   echo "Starting Python Research Service on ${RESEARCH_SERVICE_BASE_URL}"
   (
-    cd "${APP_ROOT}/src/research-service"
+    cd "${APP_ROOT}/backend/research-service"
     exec "${research_venv}/python" -m uvicorn app.main:app --host 127.0.0.1 --port "${RESEARCH_PORT}"
   ) >"${APP_ROOT}/tmp/research-service.log" 2>&1 &
   RESEARCH_PID=$!

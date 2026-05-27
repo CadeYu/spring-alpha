@@ -60,7 +60,7 @@ Mocked mode:
   BACKEND_URL="${BACKEND_URL}" npm run test:e2e
 
 Services mode:
-  cd "${ROOT_DIR}/src/research-service"
+  cd "${ROOT_DIR}/backend/research-service"
   uv run uvicorn app.main:app --host 127.0.0.1 --port "${RESEARCH_SERVICE_PORT}"
 
   cd "${ROOT_DIR}/backend"
@@ -193,7 +193,7 @@ run_services() {
   fi
 
   start_background "Python Research Service" \
-    bash -lc "cd '${ROOT_DIR}/src/research-service' && uv run uvicorn app.main:app --host 127.0.0.1 --port '${RESEARCH_SERVICE_PORT}'"
+    bash -lc "cd '${ROOT_DIR}/backend/research-service' && uv run uvicorn app.main:app --host 127.0.0.1 --port '${RESEARCH_SERVICE_PORT}'"
   wait_for_http "${RESEARCH_SERVICE_BASE_URL}/health" "Python Research Service"
 
   start_background "Spring Boot backend" \

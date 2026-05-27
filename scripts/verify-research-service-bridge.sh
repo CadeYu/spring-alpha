@@ -39,7 +39,7 @@ fi
 trap cleanup EXIT
 
 echo "Starting Python Research Service on ${RESEARCH_SERVICE_BASE_URL}..."
-bash -lc "cd '${ROOT_DIR}/src/research-service' && uv run uvicorn app.main:app --host 127.0.0.1 --port '${RESEARCH_SERVICE_PORT}'" &
+bash -lc "cd '${ROOT_DIR}/backend/research-service' && uv run uvicorn app.main:app --host 127.0.0.1 --port '${RESEARCH_SERVICE_PORT}'" &
 STARTED_PID="$!"
 
 wait_for_http "${RESEARCH_SERVICE_BASE_URL}/health"

@@ -17,7 +17,7 @@ if [[ -z "${PROVIDER:-}" && -z "${PROVIDER_TOOL_E2E_PROVIDER:-}" ]]; then
   fi
 fi
 
-cd "${ROOT_DIR}/src/research-service"
+cd "${ROOT_DIR}/backend/research-service"
 
 echo "Writing provider tool E2E artifact for ${PROVIDER:-${PROVIDER_TOOL_E2E_PROVIDER}}..."
 uv run python scripts/write_provider_tool_e2e_artifact.py "${ARTIFACT_PATH}" >/dev/null

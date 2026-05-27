@@ -17,7 +17,7 @@ if [[ -z "${PROVIDER:-}" && -z "${PROVIDER_REPORT_SYNTHESIS_PROVIDER:-}" ]]; the
   fi
 fi
 
-cd "${ROOT_DIR}/src/research-service"
+cd "${ROOT_DIR}/backend/research-service"
 
 echo "Writing provider report synthesis artifact for ${PROVIDER:-${PROVIDER_REPORT_SYNTHESIS_PROVIDER}}..."
 uv run python scripts/write_provider_report_synthesis_artifact.py "${ARTIFACT_PATH}" >/dev/null

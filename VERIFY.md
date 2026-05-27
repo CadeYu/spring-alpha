@@ -111,7 +111,7 @@ mvn spring-boot:run
 目录规划：
 
 ```bash
-cd src/research-service
+cd backend/research-service
 ```
 
 初始化后建议使用：
@@ -242,7 +242,7 @@ SEC/provider 网络波动、provider 成本和输出波动影响基础验证。P
 Release readiness dashboard artifact：
 
 ```bash
-cd src/research-service
+cd backend/research-service
 uv run python scripts/write_release_readiness_artifact.py \
   ../../frontend/src/data/rag-eval/stage1-hard.json \
   /path/to/provider-rag-summary.json \
@@ -269,7 +269,7 @@ npm run lint
 npm run test
 npm run build
 
-cd ../src/research-service
+cd ../backend/research-service
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy app tests
@@ -396,7 +396,7 @@ export SPRING_DATASOURCE_PASSWORD="..."
 实现 Agent loop contract 或 tool registry 时至少运行：
 
 ```bash
-cd src/research-service
+cd backend/research-service
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy app tests

@@ -18,7 +18,7 @@ require_online_env() {
 start_research_service() {
   echo "Starting Python Research Service with Qdrant RAG on ${RESEARCH_SERVICE_BASE_URL}"
   (
-    cd "${ROOT_DIR}/src/research-service"
+    cd "${ROOT_DIR}/backend/research-service"
     RAG_VECTOR_STORE_PROVIDER=qdrant \
       QDRANT_URL="${QDRANT_URL}" \
       QDRANT_API_KEY="${QDRANT_API_KEY}" \

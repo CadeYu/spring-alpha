@@ -25,7 +25,7 @@ required_files=(
   "scripts/verify-gemini-pgvector-rag.sh"
   "scripts/verify-pgvector-rag-eval.sh"
   "scripts/verify-provider-mini-rag-eval.sh"
-  "src/research-service/Dockerfile"
+  "backend/research-service/Dockerfile"
   ".github/workflows/ci.yml"
   ".github/workflows/deploy-vultr.yml"
 )
@@ -41,7 +41,7 @@ echo "Checking required directories..."
 required_dirs=(
   "docs"
   "planning"
-  "src"
+  "backend/research-service"
   "tests"
   "scripts"
   ".github/workflows"
@@ -135,7 +135,7 @@ const requiredSnippets = [
   "github.event.workflow_run.conclusion == 'success'",
   'Check deploy secrets',
   "Missing required deployment secrets:",
-  "VULTR_PORT: ${{ secrets.VULTR_PORT || '22' }}",
+  "VULTR_PORT: ${{ secrets.VULTR_PORT || '2222' }}",
   'appleboy/ssh-action@v1.0.3',
   'docker compose -f deploy/vultr/docker-compose.yml up -d --build --remove-orphans',
   'curl -fsS http://127.0.0.1/health >/dev/null',
@@ -186,9 +186,9 @@ echo "Checking Python RAG production readiness gates..."
 node - <<'NODE'
 const fs = require('fs');
 
-const evalScript = fs.readFileSync('src/research-service/scripts/write_pgvector_eval_artifact.py', 'utf8');
-const releaseScript = fs.readFileSync('src/research-service/scripts/write_release_readiness_artifact.py', 'utf8');
-const evalModule = fs.readFileSync('src/research-service/app/evals/baseline.py', 'utf8');
+const evalScript = fs.readFileSync('backend/research-service/scripts/write_pgvector_eval_artifact.py', 'utf8');
+const releaseScript = fs.readFileSync('backend/research-service/scripts/write_release_readiness_artifact.py', 'utf8');
+const evalModule = fs.readFileSync('backend/research-service/app/evals/baseline.py', 'utf8');
 const readinessLib = fs.readFileSync('frontend/src/lib/releaseReadiness.ts', 'utf8');
 const readinessComponent = fs.readFileSync('frontend/src/components/app/release-readiness-checklist.tsx', 'utf8');
 const readinessFixture = fs.readFileSync('frontend/src/data/release-readiness.json', 'utf8');
@@ -225,13 +225,13 @@ echo "Checking tool-calling agent production telemetry contract..."
 node - <<'NODE'
 const fs = require('fs');
 
-const agentContract = fs.readFileSync('src/research-service/app/contracts/agent.py', 'utf8');
-const workflow = fs.readFileSync('src/research-service/app/agents/research_workflow.py', 'utf8');
-const toolGraph = fs.readFileSync('src/research-service/app/agents/tool_calling_graph.py', 'utf8');
-const toolCallingScript = fs.readFileSync('src/research-service/scripts/write_provider_tool_calling_agent_artifact.py', 'utf8');
+const agentContract = fs.readFileSync('backend/research-service/app/contracts/agent.py', 'utf8');
+const workflow = fs.readFileSync('backend/research-service/app/agents/research_workflow.py', 'utf8');
+const toolGraph = fs.readFileSync('backend/research-service/app/agents/tool_calling_graph.py', 'utf8');
+const toolCallingScript = fs.readFileSync('backend/research-service/scripts/write_provider_tool_calling_agent_artifact.py', 'utf8');
 const toolE2EGate = fs.readFileSync('scripts/verify-provider-tool-e2e.sh', 'utf8');
-const reportSynthesis = fs.readFileSync('src/research-service/app/agents/report_synthesizer.py', 'utf8');
-const reportSynthesisScript = fs.readFileSync('src/research-service/scripts/write_provider_report_synthesis_artifact.py', 'utf8');
+const reportSynthesis = fs.readFileSync('backend/research-service/app/agents/report_synthesizer.py', 'utf8');
+const reportSynthesisScript = fs.readFileSync('backend/research-service/scripts/write_provider_report_synthesis_artifact.py', 'utf8');
 const reportSynthesisGate = fs.readFileSync('scripts/verify-provider-report-synthesis.sh', 'utf8');
 const verifyDocs = fs.readFileSync('VERIFY.md', 'utf8');
 

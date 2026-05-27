@@ -28,7 +28,6 @@ spring-alpha/
     FEATURES.json
     TASKS.md
     PROGRESS.md
-  src/
   tests/
   scripts/
     verify.sh
@@ -38,6 +37,10 @@ spring-alpha/
   backend/
     src/main/java/com/springalpha/backend/
     src/main/resources/
+    research-service/
+      app/
+      tests/
+      pyproject.toml
     pom.xml
   frontend/
     src/
@@ -49,7 +52,7 @@ spring-alpha/
 
 ```text
 spring-alpha/
-  src/research-service/
+  backend/research-service/
     app/
       api/
       agents/
@@ -72,19 +75,19 @@ frontend/src/
 backend/src/main/java/com/springalpha/backend/
   API gateway, SSE relay, SEC filing fetch, financial data APIs, Python Agent client.
 
-src/research-service/app/agents/
+backend/research-service/app/agents/
   LangGraph state machines and bounded agent workflows.
 
-src/research-service/app/rag/
+backend/research-service/app/rag/
   LlamaIndex ingestion, parsing, retrieval, rerank, source packaging.
 
-src/research-service/app/evals/
+backend/research-service/app/evals/
   RAG datasets, metrics, experiment runners, report artifacts.
 
-src/research-service/app/contracts/
+backend/research-service/app/contracts/
   Typed request, response, event, and report schemas shared with Java.
 
-src/research-service/app/persistence/
+backend/research-service/app/persistence/
   SQLAlchemy models, repositories, and migration boundaries.
 ```
 

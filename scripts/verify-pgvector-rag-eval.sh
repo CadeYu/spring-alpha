@@ -58,7 +58,7 @@ STARTED_CONTAINER="${CONTAINER_NAME}"
 wait_for_postgres
 
 echo "Writing PGVector-backed RAG eval artifact..."
-cd "${ROOT_DIR}/src/research-service"
+cd "${ROOT_DIR}/backend/research-service"
 RAG_PGVECTOR_TEST_DATABASE_URL="${DATABASE_URL}" \
 PYTHONPATH=. \
 uv run python scripts/write_pgvector_eval_artifact.py "${ARTIFACT_PATH}" >/dev/null

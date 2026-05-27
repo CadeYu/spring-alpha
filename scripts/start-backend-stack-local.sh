@@ -26,7 +26,7 @@ start_pgvector() {
 start_research_service() {
   echo "Starting Python Research Service with local PGVector RAG on ${RESEARCH_SERVICE_BASE_URL}"
   (
-    cd "${ROOT_DIR}/src/research-service"
+    cd "${ROOT_DIR}/backend/research-service"
     RAG_VECTOR_STORE_PROVIDER=pgvector \
       RAG_VECTOR_DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_HOST_PORT}/${POSTGRES_DB}" \
       RAG_VECTOR_TABLE_NAME="${RAG_VECTOR_TABLE_NAME}" \

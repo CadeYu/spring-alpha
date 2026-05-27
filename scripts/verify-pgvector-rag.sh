@@ -57,7 +57,7 @@ STARTED_CONTAINER="${CONTAINER_NAME}"
 wait_for_postgres
 
 echo "Running Python RAG PGVector integration test..."
-cd "${ROOT_DIR}/src/research-service"
+cd "${ROOT_DIR}/backend/research-service"
 RAG_PGVECTOR_TEST_DATABASE_URL="${DATABASE_URL}" \
 uv run pytest tests/rag/test_pgvector_integration.py -q
 
