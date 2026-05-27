@@ -42,6 +42,7 @@ DEFAULT_SYNTHESIS_ATTEMPTS = 1
 
 _NOISY_BUSINESS_DRIVER_TEXT_PHRASES = (
     "business metrics utilized by investors",
+    "comparable sales percentage changes by revenue category",
     "disaggregate the company's net revenue",
     "disaggregate net revenue",
     "foreign currency risk",
@@ -50,8 +51,10 @@ _NOISY_BUSINESS_DRIVER_TEXT_PHRASES = (
     "government securities",
     "market risk",
     "net revenue by revenue category",
+    "other revenue primarily includes",
     "revenue is generally recognized",
     "revenue sharing",
+    "table of contents",
 )
 
 _BUSINESS_DRIVER_PARTIAL_PLACEHOLDER = (

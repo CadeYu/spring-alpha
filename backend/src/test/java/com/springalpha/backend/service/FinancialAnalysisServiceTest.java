@@ -199,6 +199,41 @@ class FinancialAnalysisServiceTest {
     }
 
     @Test
+    void analyzeStockContinuesWithEmptyFilingWhenTickerIsMissingFromSecDirectory() {
+        FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
+        FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.success();
+        FinancialAnalysisService service = new FinancialAnalysisService(
+                new FakeSecService() {
+                    @Override
+                    public Mono<String> getLatestFilingContent(String ticker) {
+                        this.lastTicker = ticker;
+                        return Mono.error(new RuntimeException(
+                                "SEC filing search is unavailable because ticker is not mapped in SEC company_tickers.json: "
+                                        + ticker));
+                    }
+                },
+                credentialValidator,
+                researchAgentClient,
+                new com.springalpha.backend.service.research.ResearchAgentReportMapper());
+
+        List<AnalysisReport> reports = service.analyzeStock(
+                "para",
+                "zh",
+                "siliconflow",
+                "secret",
+                ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE)
+                .collectList()
+                .block();
+
+        assertNotNull(reports);
+        assertEquals(1, reports.size());
+        assertEquals(1, researchAgentClient.calls);
+        assertEquals("PARA", researchAgentClient.lastRequest.ticker());
+        assertTrue(researchAgentClient.lastRequest.filings().isEmpty());
+        assertEquals("Tesla, Inc.", researchAgentClient.lastRequest.facts().get("company_name"));
+    }
+
+    @Test
     void analyzeStockRunsSecFilingFetchOffReactiveEventLoop() {
         FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
         FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.success();
@@ -394,10 +429,10 @@ class FinancialAnalysisServiceTest {
         }
     }
 
-    private static final class FakeSecService extends SecService {
+    private static class FakeSecService extends SecService {
 
         private final String filingContent;
-        private String lastTicker;
+        protected String lastTicker;
         private String lastThreadName;
 
         private FakeSecService() {

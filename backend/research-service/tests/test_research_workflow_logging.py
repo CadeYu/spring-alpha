@@ -738,6 +738,125 @@ def test_business_driver_timeout_fallback_suppresses_noisy_source_snippets() -> 
     assert "disaggregate the Company's net revenue" not in serialized
 
 
+def test_business_driver_timeout_fallback_filters_footnote_and_table_of_contents_refs() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="VZ",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="VZ",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=[
+                "search_filing_sections",
+                "search_metric_evidence",
+                "get_business_signals",
+            ],
+            required_outputs=["driverThesis", "driverMap"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "revenue",
+                    "value": 33000000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_revenue",
+                }
+            ],
+            business_signals=[
+                {
+                    "signal_type": "demand",
+                    "summary": (
+                        "Wireless service revenue increased as fixed wireless access "
+                        "and fiber broadband demand supported customer additions."
+                    ),
+                    "source_id": "src_clean",
+                    "citation_status": "supported",
+                },
+                {
+                    "signal_type": "segment",
+                    "summary": (
+                        "23 Table of Contents International segment revenue mix "
+                        "percentages and comparable sales percentage changes by "
+                        "revenue category were as follows: | | | Computing and Mobile "
+                        "Phones | Consumer Electronics | Appliances | Entertainment |"
+                    ),
+                    "source_id": "src_bby_table",
+                    "citation_status": "supported",
+                },
+                {
+                    "signal_type": "pricing",
+                    "summary": (
+                        "FWA broadband, Fios internet and other fiber-based services. "
+                        "(2) Other revenue primarily includes revenue from wireline "
+                        "products, wholesale and other services."
+                    ),
+                    "source_id": "src_vz_footnote",
+                    "citation_status": "supported",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_revenue",
+                    "section": "SEC companyfacts",
+                    "snippet": "Revenue was $33.0B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_clean",
+                    "section": "MD&A demand",
+                    "snippet": (
+                        "Wireless service revenue increased as fixed wireless access "
+                        "and fiber broadband demand supported customer additions."
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_bby_table",
+                    "section": "Table of Contents",
+                    "snippet": (
+                        "23 Table of Contents International segment revenue mix "
+                        "percentages and comparable sales percentage changes by "
+                        "revenue category were as follows: | | | Computing and Mobile "
+                        "Phones | Consumer Electronics | Appliances | Entertainment |"
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_vz_footnote",
+                    "section": "Segment footnotes",
+                    "snippet": (
+                        "FWA broadband, Fios internet and other fiber-based services. "
+                        "(2) Other revenue primarily includes revenue from wireline "
+                        "products, wholesale and other services."
+                    ),
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Business driver agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    assert "Wireless service revenue increased" in serialized
+    assert "Other revenue primarily includes" not in serialized
+    assert "Table of Contents" not in serialized
+    assert "| | |" not in serialized
+
+
 def test_business_driver_timeout_fallback_rejects_market_risk_and_accounting_refs() -> None:
     request = AgentRequest(
         run_id="run_1",

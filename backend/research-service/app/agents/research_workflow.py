@@ -604,6 +604,7 @@ _BUSINESS_DRIVER_LENS_SIGNAL_TYPES: dict[str, tuple[str, ...]] = {
 
 _NOISY_BUSINESS_DRIVER_SNIPPET_PHRASES = (
     "business metrics utilized by investors",
+    "comparable sales percentage changes by revenue category",
     "disaggregate the company's net revenue",
     "disaggregate net revenue",
     "foreign currency risk",
@@ -612,9 +613,11 @@ _NOISY_BUSINESS_DRIVER_SNIPPET_PHRASES = (
     "government securities",
     "market risk",
     "net revenue by revenue category",
+    "other revenue primarily includes",
     "principal transactions revenue",
     "revenue is generally recognized",
     "revenue sharing",
+    "table of contents",
 )
 
 

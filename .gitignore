@@ -47,6 +47,7 @@ backend/.env
 deploy/vultr/.env.vultr
 backend/test_run.sh
 **/application-local.yml
+!backend/src/main/resources/application-local.yml
 
 # Local scripts (git-ignored, contains secrets)
 start_backend.sh

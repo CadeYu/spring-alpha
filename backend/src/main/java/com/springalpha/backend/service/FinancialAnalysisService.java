@@ -98,7 +98,7 @@ public class FinancialAnalysisService {
         return providerCredentialValidator.validate(provider, providerApiKey)
                 .thenMany(Mono.fromCallable(() -> agentFacts(normalizedTicker))
                         .subscribeOn(Schedulers.boundedElastic())
-                        .flatMapMany(facts -> secService.getLatestFilingContent(normalizedTicker)
+                        .flatMapMany(facts -> latestFilingContentForAgent(normalizedTicker)
                         .subscribeOn(Schedulers.boundedElastic())
                         .flatMapMany(filingText -> runResearchAgent(normalizedTicker, language, provider,
                                 selectedLlmModel,
@@ -127,12 +127,7 @@ public class FinancialAnalysisService {
                 llmModel,
                 providerApiKey,
                 facts,
-                List.of(new ResearchAgentRequest.FilingDocument(
-                        ticker,
-                        "10-Q",
-                        null,
-                        null,
-                        capFilingText(filingText))));
+                filingDocuments(ticker, filingText));
 
         log.info("research_agent_start runId={} ticker={} taskType={} provider={} llmModel={}",
                 runId, ticker, taskType, provider, llmModel);
@@ -156,6 +151,43 @@ public class FinancialAnalysisService {
                         runId, elapsedMillis(startedAtNanos), error.getClass().getSimpleName(),
                         safeLogMessage(error.getMessage())))
                 .flux();
+    }
+
+    private Mono<String> latestFilingContentForAgent(String ticker) {
+        return secService.getLatestFilingContent(ticker)
+                .onErrorResume(error -> {
+                    if (!isSecFilingUnavailableForTicker(error)) {
+                        return Mono.error(error);
+                    }
+                    log.warn("agent_filing_unavailable ticker={} reason={}", ticker, safeLogMessage(error.getMessage()));
+                    return Mono.just("");
+                });
+    }
+
+    private List<ResearchAgentRequest.FilingDocument> filingDocuments(String ticker, String filingText) {
+        if (filingText == null || filingText.isBlank()) {
+            return List.of();
+        }
+        return List.of(new ResearchAgentRequest.FilingDocument(
+                ticker,
+                "10-Q",
+                null,
+                null,
+                capFilingText(filingText)));
+    }
+
+    private boolean isSecFilingUnavailableForTicker(Throwable error) {
+        Throwable cursor = error;
+        while (cursor != null) {
+            String message = cursor.getMessage();
+            if (message != null
+                    && (message.contains("not mapped in SEC company_tickers.json")
+                            || message.contains("No supported SEC filing found for ticker"))) {
+                return true;
+            }
+            cursor = cursor.getCause();
+        }
+        return false;
     }
 
     private Map<String, Object> agentFacts(String ticker) {

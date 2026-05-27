@@ -1141,6 +1141,113 @@ def test_business_driver_report_filters_noisy_synthesis_text_and_refs() -> None:
     assert all("| | |" not in claim.text for claim in report.claims)
 
 
+def test_business_driver_report_filters_footnote_and_table_of_contents_refs() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "src_vz_clean",
+                        "section": "MD&A demand",
+                        "snippet": (
+                            "Wireless service revenue increased as fixed wireless access "
+                            "and fiber broadband demand supported customer additions."
+                        ),
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "src_vz_footnote",
+                        "section": "Segment footnotes",
+                        "snippet": (
+                            "FWA broadband, Fios internet and other fiber-based services. "
+                            "(2) Other revenue primarily includes revenue from wireline "
+                            "products, wholesale and other services."
+                        ),
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "src_bby_table",
+                        "section": "Table of Contents",
+                        "snippet": (
+                            "23 Table of Contents International segment revenue mix "
+                            "percentages and comparable sales percentage changes by "
+                            "revenue category were as follows: | | | Computing and Mobile "
+                            "Phones | Consumer Electronics | Appliances | Entertainment |"
+                        ),
+                        "citation_status": "supported",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Demand evidence is mixed.",
+                "durability": "mixed",
+                "summary": "Demand evidence is mixed.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Wireless service revenue increased on broadband demand.",
+                    "source_ids": ["src_vz_clean"],
+                    "citation_status": "supported",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": (
+                        "International segment revenue mix percentages were listed in a "
+                        "Table of Contents fragment."
+                    ),
+                    "source_ids": ["src_bby_table"],
+                    "citation_status": "supported",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": (
+                        "Other revenue primarily includes revenue from wireline products "
+                        "and wholesale services."
+                    ),
+                    "source_ids": ["src_vz_footnote"],
+                    "citation_status": "supported",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Broadband demand supported customer additions.",
+                    "source_ids": ["src_vz_clean", "src_vz_footnote"],
+                    "citation_status": "supported",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    assert "Other revenue primarily includes" not in serialized
+    assert "Table of Contents" not in serialized
+    assert "Wireless service revenue increased" in serialized
+    sections = report.task_sections.driver_map
+    assert sections.segment_momentum is not None
+    assert all(
+        ref.source_id != "src_bby_table"
+        for ref in sections.segment_momentum.evidence_refs
+    )
+    assert sections.margin_and_mix is not None
+    assert all(
+        ref.source_id != "src_vz_footnote"
+        for ref in sections.margin_and_mix.evidence_refs
+    )
+    assert sections.demand_signals is not None
+    assert [ref.source_id for ref in sections.demand_signals.evidence_refs] == [
+        "src_vz_clean"
+    ]
+
+
 def test_business_driver_payload_folds_legacy_lenses_into_paragraph_fields() -> None:
     payload = _normalize_business_driver_payload(
         {
