@@ -229,16 +229,68 @@ def _result(
     final_report: EvidenceAwareReport | None,
 ) -> BoundedAgentResult:
     status = AgentRunStatus.DEGRADED if final_report is None else AgentRunStatus.OK
+    retrieval_records = _report_retrieval_records(request, state)
     return BoundedAgentResult(
         run_id=request.run_id,
         task_type=request.task_type,
         status=status,
         events=state.tool_events,
         degraded_reasons=state.degraded_reasons,
-        retrieval_records=state.retrieval_records,
+        retrieval_records=retrieval_records,
         retryable=final_report is None,
-        final_report=final_report.model_dump(mode="json") if final_report is not None else None,
+        final_report=_report_payload(final_report, retrieval_records)
+        if final_report is not None
+        else None,
     )
+
+
+def _report_payload(
+    final_report: EvidenceAwareReport,
+    retrieval_records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    payload = final_report.model_dump(mode="json")
+    payload["retrieval_records"] = retrieval_records
+    return payload
+
+
+def _report_retrieval_records(
+    request: AgentRequest,
+    state: AgentState,
+) -> list[dict[str, Any]]:
+    if request.task_type != ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+        return state.retrieval_records
+    return [_clean_business_driver_retrieval_record(record) for record in state.retrieval_records]
+
+
+def _clean_business_driver_retrieval_record(record: dict[str, Any]) -> dict[str, Any]:
+    cleaned = dict(record)
+    retrieved_nodes = cleaned.get("retrieved_nodes")
+    if isinstance(retrieved_nodes, list):
+        cleaned["retrieved_nodes"] = [
+            node
+            for node in retrieved_nodes
+            if not _is_noisy_business_driver_retrieved_node(node)
+        ]
+    return cleaned
+
+
+def _is_noisy_business_driver_retrieved_node(node: object) -> bool:
+    if not isinstance(node, dict):
+        return False
+    metadata = node.get("metadata")
+    metadata_section = ""
+    if isinstance(metadata, dict):
+        metadata_section = str(metadata.get("section") or metadata.get("section_name") or "")
+    searchable_text = " ".join(
+        str(value or "")
+        for value in (
+            node.get("section"),
+            metadata_section,
+            node.get("text"),
+            node.get("snippet"),
+        )
+    )
+    return _is_noisy_business_driver_snippet(searchable_text)
 
 
 def _is_final_synthesis_failure(reason: str) -> bool:

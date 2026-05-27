@@ -24,6 +24,21 @@ class _FailingFactsProvider(SecCompanyFactsProvider):
         raise AssertionError("preloaded complete facts should be reused")
 
 
+class _MissingMappingFactsProvider(SecCompanyFactsProvider):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def fetch_company_facts(
+        self,
+        *,
+        ticker: str,
+        period: str | None,
+        metrics: list[str],
+    ) -> dict[str, object]:
+        self.calls += 1
+        raise ValueError(f"SEC ticker mapping not found for {ticker}")
+
+
 class _CountingPipeline:
     def __init__(self) -> None:
         self.calls = 0
@@ -105,6 +120,64 @@ def test_get_company_facts_reuses_preloaded_complete_facts_without_fetching() ->
     assert provider.calls == 0
     assert result.data["source"] == "preloaded_financial_facts"
     assert result.data["metrics"] == state.evidence_memory.facts["metrics"]
+
+
+def test_get_company_facts_returns_preloaded_partial_facts_when_sec_mapping_is_missing() -> None:
+    provider = _MissingMappingFactsProvider()
+    service = LlamaIndexResearchToolService(_CountingPipeline(), facts_provider=provider)  # type: ignore[arg-type]
+    state = _state_with_facts(
+        metrics=[
+            {"name": "revenue", "value": 7_100_000_000, "unit": "USD"},
+        ]
+    ).model_copy(update={"ticker": "PARA"})
+
+    result = service.get_company_facts(
+        CompanyFactsInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            period="latest_quarter",
+            metrics=["revenue", "gross margin", "operating income"],
+        ),
+        state.model_copy(update={"task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE}),
+    )
+
+    assert provider.calls == 1
+    assert result.status == ToolStatus.PARTIAL
+    assert result.data["ticker"] == "PARA"
+    assert result.data["source"] == "preloaded_financial_facts"
+    assert result.data["metrics"] == state.evidence_memory.facts["metrics"]
+    assert result.data["missing_metrics"] == ["gross margin", "operating income"]
+    assert "SEC ticker mapping not found for PARA" in result.degraded_reasons[0]
+
+
+def test_get_company_facts_returns_empty_when_sec_mapping_is_missing_without_preloaded_facts() -> None:
+    provider = _MissingMappingFactsProvider()
+    service = LlamaIndexResearchToolService(_CountingPipeline(), facts_provider=provider)  # type: ignore[arg-type]
+    state = _state_with_facts(metrics=[]).model_copy(
+        update={
+            "ticker": "DFS",
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(facts={}),
+        }
+    )
+
+    result = service.get_company_facts(
+        CompanyFactsInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            period="latest_quarter",
+            metrics=["revenue", "gross margin"],
+        ),
+        state,
+    )
+
+    assert provider.calls == 1
+    assert result.status == ToolStatus.EMPTY
+    assert result.data["ticker"] == "DFS"
+    assert result.data["metrics"] == ["revenue", "gross margin"]
+    assert "SEC ticker mapping not found for DFS" in result.degraded_reasons[0]
 
 
 def test_search_metric_evidence_uses_preloaded_facts_without_rag_when_all_metrics_exist() -> None:

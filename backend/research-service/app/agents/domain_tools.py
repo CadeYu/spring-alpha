@@ -169,11 +169,20 @@ class ResearchToolService:
         if preloaded_facts is not None:
             return ToolResult.ok(data=preloaded_facts)
         if self._facts_provider is not None:
-            facts = self._facts_provider.fetch_company_facts(
-                ticker=state.ticker,
-                period=tool_input.period,
-                metrics=tool_input.metrics,
-            )
+            try:
+                facts = self._facts_provider.fetch_company_facts(
+                    ticker=state.ticker,
+                    period=tool_input.period,
+                    metrics=tool_input.metrics,
+                )
+            except ValueError as error:
+                if not _is_missing_sec_ticker_mapping_error(error):
+                    raise
+                return _company_facts_from_preloaded_after_sec_mapping_miss(
+                    tool_input,
+                    state,
+                    reason=str(error),
+                )
             facts = {**state.evidence_memory.facts, **facts}
             raw_missing_metrics = facts.get("missing_metrics", [])
             missing_metric_values = (
@@ -406,6 +415,53 @@ def _complete_preloaded_facts(
         "source": "preloaded_financial_facts",
         "missing_metrics": [],
     }
+
+
+def _partial_preloaded_facts(
+    tool_input: CompanyFactsInput,
+    state: AgentState,
+) -> dict[str, object] | None:
+    facts = state.evidence_memory.facts
+    if not facts:
+        return None
+    requested_metrics = tool_input.metrics or ["revenue", "gross margin", "operating income"]
+    facts_by_metric = _facts_by_metric(state)
+    missing_metrics = [
+        metric
+        for metric in requested_metrics
+        if _normalize_metric_name(metric) not in facts_by_metric
+    ]
+    return {
+        **facts,
+        "ticker": state.ticker.upper(),
+        "period": tool_input.period or str(facts.get("period") or "latest_quarter"),
+        "source": "preloaded_financial_facts",
+        "missing_metrics": missing_metrics,
+    }
+
+
+def _company_facts_from_preloaded_after_sec_mapping_miss(
+    tool_input: CompanyFactsInput,
+    state: AgentState,
+    *,
+    reason: str,
+) -> ToolResult:
+    preloaded_facts = _partial_preloaded_facts(tool_input, state)
+    if preloaded_facts is not None:
+        return ToolResult.partial(data=preloaded_facts, degraded_reason=reason)
+    return ToolResult.empty(
+        data={
+            "ticker": state.ticker,
+            "task_type": state.task_type.value,
+            "period": tool_input.period or "latest_quarter",
+            "metrics": tool_input.metrics,
+        },
+        degraded_reason=reason,
+    )
+
+
+def _is_missing_sec_ticker_mapping_error(error: ValueError) -> bool:
+    return "SEC ticker mapping not found for" in str(error)
 
 
 def _metric_evidence_from_preloaded_facts(

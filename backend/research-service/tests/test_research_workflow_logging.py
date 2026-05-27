@@ -21,8 +21,8 @@ from app.contracts.research_task import ResearchTaskType
 
 
 class _FakeReport:
-    def model_dump(self, mode: str = "json") -> dict[str, str]:
-        return {"summary": "ok"}
+    def model_dump(self, mode: str = "json") -> dict[str, object]:
+        return {"summary": "ok", "retrieval_records": []}
 
 
 def _fake_transport(
@@ -134,6 +134,85 @@ def test_research_workflow_logs_stage_summary(caplog, monkeypatch) -> None:
         and "synthesis_ms=612" in record.message
         for record in caplog.records
     )
+
+
+def test_business_driver_result_suppresses_noisy_retrieval_records(monkeypatch) -> None:
+    workflow = ResearchAgentWorkflow(llm_client=_make_client())
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="BBY",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        llm_provider=LlmProvider.SILICONFLOW,
+        llm_model="Pro/moonshotai/Kimi-K2.6",
+        llm_api_key="sk-test",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="BBY",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=[
+                "search_filing_sections",
+                "search_metric_evidence",
+                "get_business_signals",
+            ],
+            required_outputs=["driverThesis", "driverMap"],
+        ),
+        retrieval_records=[
+            {
+                "tool_name": "search_filing_sections",
+                "status": "ok",
+                "retrieved_nodes": [
+                    {
+                        "node_id": "node_table",
+                        "text": (
+                            "23 Table of Contents International segment revenue mix "
+                            "percentages and comparable sales percentage changes by "
+                            "revenue category were as follows: | | | Computing and Mobile "
+                            "Phones | Consumer Electronics | Appliances | Entertainment |"
+                        ),
+                        "metadata": {"section": "Table of Contents"},
+                    },
+                    {
+                        "node_id": "node_clean",
+                        "text": (
+                            "Comparable sales improved as customer demand stabilized "
+                            "across computing and services categories."
+                        ),
+                        "metadata": {"section": "MD&A"},
+                    },
+                ],
+            }
+        ],
+    )
+
+    def fake_run_task_agent(request_arg, state_arg, llm_client_arg):
+        report = _FakeReport()
+        return report, state
+
+    monkeypatch.setattr(workflow, "_run_task_agent", fake_run_task_agent)
+
+    result = workflow.run(request)
+
+    serialized = json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
+    assert result.final_report is not None
+    assert result.final_report["retrieval_records"] == result.retrieval_records
+    assert result.retrieval_records[0]["retrieved_nodes"] == [
+        {
+            "node_id": "node_clean",
+            "text": (
+                "Comparable sales improved as customer demand stabilized "
+                "across computing and services categories."
+            ),
+            "metadata": {"section": "MD&A"},
+        }
+    ]
+    assert "Comparable sales improved" in serialized
+    assert "Table of Contents" not in serialized
+    assert "| | |" not in serialized
 
 
 def test_cash_flow_timeout_fallback_preserves_typed_sections_from_evidence() -> None:
