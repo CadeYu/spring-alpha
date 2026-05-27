@@ -1248,6 +1248,98 @@ def test_business_driver_report_filters_footnote_and_table_of_contents_refs() ->
     ]
 
 
+def test_business_driver_report_filters_low_information_pipe_refs_and_claim_citations() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "src_clean",
+                        "section": "MD&A demand",
+                        "snippet": (
+                            "Wireless service revenue increased as broadband demand "
+                            "supported customer additions."
+                        ),
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "src_pipe",
+                        "section": "Revenue and Contract Costs",
+                        "snippet": (
+                            "Revenue and Contract Costs | | | We earn revenue from "
+                            "contracts with customers, primarily through the provision "
+                            "of telecommunications and other services."
+                        ),
+                        "citation_status": "supported",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Demand evidence is mixed.",
+                "durability": "mixed",
+                "summary": "Demand evidence is mixed.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Wireless service revenue increased on broadband demand.",
+                    "source_ids": ["src_clean", "src_pipe"],
+                    "citation_status": "supported",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Segment evidence remains partial.",
+                    "source_ids": ["src_pipe"],
+                    "citation_status": "supported",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": (
+                        "利润率证据指向 Revenue and Contract Costs | | | We earn "
+                        "revenue from contracts with customers."
+                    ),
+                    "source_ids": ["src_pipe"],
+                    "citation_status": "supported",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Broadband demand supported customer additions.",
+                    "source_ids": ["src_clean"],
+                    "citation_status": "supported",
+                },
+            },
+            "claims": [
+                {
+                    "text": "Wireless service revenue increased on broadband demand.",
+                    "source_ids": ["src_clean", "src_pipe"],
+                    "citation_status": "supported",
+                }
+            ],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    assert "| | |" not in serialized
+    assert "Revenue and Contract Costs" not in serialized
+    assert len(report.claims) == 1
+    assert [ref.source_id for ref in report.claims[0].source_refs] == ["src_clean"]
+    assert report.claims[0].citation_status == "partial"
+    sections = report.task_sections.driver_map
+    assert sections.revenue_bridge is not None
+    assert [ref.source_id for ref in sections.revenue_bridge.evidence_refs] == ["src_clean"]
+    assert sections.revenue_bridge.citation_status == "partial"
+    assert sections.margin_and_mix is not None
+    assert sections.margin_and_mix.citation_status == "unverified"
+
+
 def test_business_driver_payload_folds_legacy_lenses_into_paragraph_fields() -> None:
     payload = _normalize_business_driver_payload(
         {

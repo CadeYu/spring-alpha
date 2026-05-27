@@ -52,6 +52,7 @@ _NOISY_BUSINESS_DRIVER_TEXT_PHRASES = (
     "market risk",
     "net revenue by revenue category",
     "other revenue primarily includes",
+    "revenue and contract costs",
     "revenue is generally recognized",
     "revenue sharing",
     "table of contents",
@@ -1102,7 +1103,11 @@ def _is_noisy_business_driver_text(value: str) -> bool:
     if any(phrase in lower_text for phrase in _NOISY_BUSINESS_DRIVER_TEXT_PHRASES):
         return True
     pipe_count = normalized.count("|")
-    if pipe_count >= 4 or "---|---" in normalized:
+    if (
+        pipe_count >= 4
+        or "---|---" in normalized
+        or re.search(r"\|\s*\|\s*\|", normalized)
+    ):
         return True
     digits = sum(character.isdigit() for character in normalized)
     separators = sum(1 for character in normalized if character in "|,$%")
@@ -2614,6 +2619,7 @@ def _sanitize_business_driver_source_ids(
             claim.source_ids = []
             claim.citation_status = CitationStatus.UNVERIFIED
         _sanitize_source_ids(claim, source_refs_by_id)
+        _sanitize_business_driver_claim_source_ids(claim, source_refs_by_id)
     payload.claims = [
         claim for claim in payload.claims if not _is_noisy_business_driver_text(claim.text)
     ]
@@ -2628,7 +2634,7 @@ def _sanitize_business_driver_point_text(point: _SynthesizedPoint) -> bool:
         point.summary = _BUSINESS_DRIVER_PARTIAL_PLACEHOLDER
         point.source_ids = []
         point.citation_status = CitationStatus.UNVERIFIED
-        return False
+        return True
     return False
 
 
@@ -2652,6 +2658,26 @@ def _sanitize_business_driver_point_source_ids(
     ):
         point.citation_status = CitationStatus.PARTIAL
     return False
+
+
+def _sanitize_business_driver_claim_source_ids(
+    claim: _SynthesizedClaim,
+    source_refs_by_id: dict[str, SourceRef],
+) -> None:
+    original_ids = list(claim.source_ids)
+    claim.source_ids = [
+        source_id
+        for source_id in original_ids
+        if source_id in source_refs_by_id
+        and not _is_noisy_business_driver_source_ref(source_refs_by_id[source_id])
+    ]
+    if original_ids and not claim.source_ids:
+        claim.citation_status = CitationStatus.UNVERIFIED
+    elif (
+        len(claim.source_ids) < len(original_ids)
+        and claim.citation_status == CitationStatus.SUPPORTED
+    ):
+        claim.citation_status = CitationStatus.PARTIAL
 
 
 def _backfill_business_driver_point_source_ids(
