@@ -27,6 +27,11 @@ public record MarketSupplementalData(
             BigDecimal operatingIncome,
             BigDecimal netIncome,
             BigDecimal operatingCashFlow,
-            BigDecimal freeCashFlow) {
+            BigDecimal capitalExpenditures,
+            BigDecimal freeCashFlow,
+            BigDecimal cashAndShortTermInvestments,
+            BigDecimal currentAssets,
+            BigDecimal currentLiabilities,
+            BigDecimal totalDebt) {
     }
 }

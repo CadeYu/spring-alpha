@@ -226,7 +226,16 @@ public class FinancialAnalysisService {
             putIfPresent(facts, "net_margin", financialFacts.getNetMargin());
             putIfPresent(facts, "earnings_per_share", financialFacts.getEarningsPerShare());
             putIfPresent(facts, "operating_cash_flow", financialFacts.getOperatingCashFlow());
+            putIfPresent(facts, "capital_expenditures", financialFacts.getCapitalExpenditures());
             putIfPresent(facts, "free_cash_flow", financialFacts.getFreeCashFlow());
+            putIfPresent(
+                    facts,
+                    "cash_and_short_term_investments",
+                    financialFacts.getCashAndShortTermInvestments());
+            putIfPresent(facts, "current_assets", financialFacts.getCurrentAssets());
+            putIfPresent(facts, "current_liabilities", financialFacts.getCurrentLiabilities());
+            putIfPresent(facts, "current_ratio", financialFacts.getCurrentRatio());
+            putIfPresent(facts, "total_debt", financialFacts.getTotalDebt());
             putIfPresent(facts, "total_assets", financialFacts.getTotalAssets());
             putIfPresent(facts, "total_liabilities", financialFacts.getTotalLiabilities());
             putIfPresent(facts, "total_equity", financialFacts.getTotalEquity());
@@ -263,7 +272,18 @@ public class FinancialAnalysisService {
                 financialFacts.getCurrency(),
                 financialFacts);
         addMetricFact(metrics, "operating cash flow", financialFacts.getOperatingCashFlow(), "USD", financialFacts);
+        addMetricFact(metrics, "capital expenditures", financialFacts.getCapitalExpenditures(), "USD", financialFacts);
         addMetricFact(metrics, "free cash flow", financialFacts.getFreeCashFlow(), "USD", financialFacts);
+        addMetricFact(
+                metrics,
+                "cash and short term investments",
+                financialFacts.getCashAndShortTermInvestments(),
+                "USD",
+                financialFacts);
+        addMetricFact(metrics, "current assets", financialFacts.getCurrentAssets(), "USD", financialFacts);
+        addMetricFact(metrics, "current liabilities", financialFacts.getCurrentLiabilities(), "USD", financialFacts);
+        addMetricFact(metrics, "current ratio", financialFacts.getCurrentRatio(), "x", financialFacts);
+        addMetricFact(metrics, "total debt", financialFacts.getTotalDebt(), "USD", financialFacts);
         addMetricFact(metrics, "total assets", financialFacts.getTotalAssets(), "USD", financialFacts);
         addMetricFact(metrics, "total liabilities", financialFacts.getTotalLiabilities(), "USD", financialFacts);
         addMetricFact(metrics, "total equity", financialFacts.getTotalEquity(), "USD", financialFacts);

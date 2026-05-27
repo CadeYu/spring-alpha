@@ -255,11 +255,10 @@ def test_cash_flow_timeout_fallback_preserves_typed_sections_from_evidence() -> 
                     "source_id": "src_2",
                     "section": "Liquidity and Capital Resources",
                     "snippet": (
-                        "Capital allocation included disciplined buybacks and "
-                        "liquidity management."
+                        "Capital allocation included disciplined buybacks and liquidity management."
                     ),
                     "citation_status": "supported",
-                }
+                },
             ],
         ),
     )
@@ -282,6 +281,122 @@ def test_cash_flow_timeout_fallback_preserves_typed_sections_from_evidence() -> 
     assert report.sections["synthesis"] == "deterministic_fallback"
     assert "final LLM synthesis failed" not in report.sections["summary"]
     assert len(report.claims) >= 2
+
+
+def test_cash_flow_timeout_fallback_uses_structured_cash_report_shape() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="INTC",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="INTC",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["cashQualityVerdict"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "yfinance",
+                    "metric": "net income",
+                    "value": -3728000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_net_income",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "operating cash flow",
+                    "value": 1100000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_ocf",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "capital expenditures",
+                    "value": 3640000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_capex",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "free cash flow",
+                    "value": -2540000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_fcf",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "current ratio",
+                    "value": 2.31,
+                    "unit": "x",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_current_ratio",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_net_income",
+                    "section": "yfinance income statement",
+                    "snippet": "Net income was -$3.7B.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_ocf",
+                    "section": "yfinance cash flow statement",
+                    "snippet": "Operating cash flow was $1.1B.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_capex",
+                    "section": "yfinance cash flow statement",
+                    "snippet": "Capital expenditures were $3.6B.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_fcf",
+                    "section": "yfinance cash flow statement",
+                    "snippet": "Free cash flow was -$2.5B.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_current_ratio",
+                    "section": "yfinance balance sheet",
+                    "snippet": "Current ratio was 2.31x.",
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Cash flow agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    assert "Evidence-backed fallback cash view" not in serialized
+    assert "Cash flow evidence anchor" not in serialized
+    assert report.task_sections.capital_allocation.buybacks == []
+    assert report.task_sections.capital_allocation.dividends == []
+    assert (
+        report.task_sections.cash_quality_verdict.headline == "Cash quality is pressured by capex."
+    )
+    assert len(report.task_sections.cash_metrics) >= 4
+    assert report.task_sections.capital_allocation.capex
+    assert report.task_sections.capital_allocation.liquidity
+    assert report.task_sections.red_flags
 
 
 def test_latest_earnings_timeout_fallback_backfills_rich_memo_sections() -> None:

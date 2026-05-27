@@ -267,9 +267,7 @@ def _clean_business_driver_retrieval_record(record: dict[str, Any]) -> dict[str,
     retrieved_nodes = cleaned.get("retrieved_nodes")
     if isinstance(retrieved_nodes, list):
         cleaned["retrieved_nodes"] = [
-            node
-            for node in retrieved_nodes
-            if not _is_noisy_business_driver_retrieved_node(node)
+            node for node in retrieved_nodes if not _is_noisy_business_driver_retrieved_node(node)
         ]
     return cleaned
 
@@ -353,27 +351,12 @@ def _fallback_report_from_state(
             coverage=coverage,
         )
     elif request.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
-        point = _fallback_point(summary, source_refs, title="Cash flow evidence anchor")
-        task_sections = CashFlowCapitalAllocationSections(
-            schema_version="task_sections.v1",
-            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        task_sections = _cash_flow_fallback_sections(
+            request=request,
+            summary=summary,
+            metrics=present_metrics,
+            source_refs=source_refs,
             coverage=coverage,
-            cash_quality_verdict=CashQualityVerdict(
-                headline="Evidence-backed fallback cash view",
-                earnings_backed_by_cash="unclear",
-                summary=summary,
-            ),
-            cash_metrics=present_metrics[:3],
-            capital_allocation=CapitalAllocation(liquidity=[point]),
-            allocation_discipline=[point],
-            red_flags=[
-                _fallback_point(
-                    "The final LLM synthesis did not complete, so allocation discipline "
-                    "is partial and should be rechecked when synthesis recovers.",
-                    source_refs,
-                    title="Partial synthesis",
-                )
-            ],
         )
     else:
         return None
@@ -435,9 +418,7 @@ def _latest_earnings_fallback_payload(
                 title=_risk_fallback_title(risk_source),
                 summary=_risk_fallback_summary(risk_source),
                 source_ids=(
-                    [risk_source.source_id]
-                    if risk_source is not None
-                    else primary_source_ids
+                    [risk_source.source_id] if risk_source is not None else primary_source_ids
                 ),
                 citation_status=(
                     risk_source.citation_status
@@ -516,9 +497,7 @@ def _business_driver_context_point(
         summary=summary,
         evidence_refs=[_evidence_ref(source_refs[0])] if source_refs else [],
         citation_status=(
-            source_refs[0].citation_status
-            if source_refs
-            else CitationStatus.UNVERIFIED
+            source_refs[0].citation_status if source_refs else CitationStatus.UNVERIFIED
         ),
     )
 
@@ -729,9 +708,7 @@ def _business_driver_fallback_lens_summary(
     if zh:
         if lens == "revenue_bridge":
             anchor = (
-                f"以 {metric_text} 作为量化锚点"
-                if metric_text
-                else "主要依赖已检索的 filing 证据"
+                f"以 {metric_text} 作为量化锚点" if metric_text else "主要依赖已检索的 filing 证据"
             )
             return (
                 f"{request.ticker} 的 revenue bridge {anchor}；对应证据显示：{evidence_text}。"
@@ -794,11 +771,7 @@ def _business_driver_fallback_thesis_summary(
     summary: str,
     points: list[EvidenceBoundPoint],
 ) -> str:
-    snippets = [
-        _clip(point.summary, 140)
-        for point in points
-        if point.summary.strip()
-    ]
+    snippets = [_clip(point.summary, 140) for point in points if point.summary.strip()]
     if _is_zh_locale(request.language):
         return (
             f"{request.ticker} 的业务驱动结论应以已检索证据为边界："
@@ -828,9 +801,7 @@ def _source_refs_from_metric(
     if metric is None:
         return []
     source_ids = {
-        evidence_ref.source_id
-        for evidence_ref in metric.evidence_refs
-        if evidence_ref.source_id
+        evidence_ref.source_id for evidence_ref in metric.evidence_refs if evidence_ref.source_id
     }
     return [source_ref for source_ref in source_refs if source_ref.source_id in source_ids]
 
@@ -879,17 +850,13 @@ def _business_driver_lens_refs(
     source_refs: list[SourceRef],
     terms: tuple[str, ...],
 ) -> list[SourceRef]:
-    metric_refs = _clean_business_driver_source_refs(
-        _source_refs_from_metric(metric, source_refs)
-    )
+    metric_refs = _clean_business_driver_source_refs(_source_refs_from_metric(metric, source_refs))
     signal_refs = _clean_business_driver_source_refs(
         _source_refs_from_signals(signal_records, source_refs)
     )
     term_refs = _source_refs_matching_terms(source_refs, terms)
     broad_fallback_refs = (
-        _clean_business_driver_source_refs(source_refs[:1])
-        if lens == "revenue_bridge"
-        else []
+        _clean_business_driver_source_refs(source_refs[:1]) if lens == "revenue_bridge" else []
     )
     if lens in {"revenue_bridge", "margin_and_mix"}:
         ordered_refs = [*metric_refs, *signal_refs, *term_refs, *broad_fallback_refs]
@@ -908,8 +875,7 @@ def _business_signal_records(
     for record in memory.business_signals:
         signal_type = str(record.get("signal_type") or "").strip().lower()
         searchable_text = " ".join(
-            str(record.get(key) or "")
-            for key in ("signal", "summary", "section", "snippet")
+            str(record.get(key) or "") for key in ("signal", "summary", "section", "snippet")
         )
         if _is_noisy_business_driver_snippet(searchable_text):
             continue
@@ -988,16 +954,12 @@ def _business_driver_report_source_refs(source_refs: list[SourceRef]) -> list[So
 
 def _clean_business_driver_source_refs(source_refs: list[SourceRef]) -> list[SourceRef]:
     return [
-        source_ref
-        for source_ref in source_refs
-        if _is_clean_business_driver_source_ref(source_ref)
+        source_ref for source_ref in source_refs if _is_clean_business_driver_source_ref(source_ref)
     ]
 
 
 def _is_clean_business_driver_source_ref(source_ref: SourceRef) -> bool:
-    return not _is_noisy_business_driver_snippet(
-        f"{source_ref.section} {source_ref.snippet}"
-    )
+    return not _is_noisy_business_driver_snippet(f"{source_ref.section} {source_ref.snippet}")
 
 
 def _is_noisy_business_driver_snippet(text: str) -> bool:
@@ -1059,9 +1021,7 @@ def _metric_source_ids(metric: EvidenceBoundMetric | None) -> list[str]:
     if metric is None:
         return []
     return [
-        evidence_ref.source_id
-        for evidence_ref in metric.evidence_refs
-        if evidence_ref.source_id
+        evidence_ref.source_id for evidence_ref in metric.evidence_refs if evidence_ref.source_id
     ]
 
 
@@ -1154,7 +1114,282 @@ def _fallback_metrics(
                 else CitationStatus.UNVERIFIED,
             )
         )
-    return metrics[:3]
+    return metrics
+
+
+def _cash_flow_fallback_sections(
+    *,
+    request: AgentRequest,
+    summary: str,
+    metrics: list[EvidenceBoundMetric],
+    source_refs: list[SourceRef],
+    coverage: TaskSectionCoverage,
+) -> CashFlowCapitalAllocationSections:
+    metric_map = {
+        _normalize_metric_lookup_key(metric.name): metric
+        for metric in metrics
+        if not _is_missing_metric(metric)
+    }
+    cash_metrics = [
+        metric
+        for metric in [
+            _lookup_metric(metric_map, "net income"),
+            _lookup_metric(metric_map, "operating cash flow"),
+            _lookup_metric(metric_map, "capital expenditures"),
+            _lookup_metric(metric_map, "free cash flow"),
+            _lookup_metric(metric_map, "current ratio"),
+            _lookup_metric(metric_map, "total debt"),
+            _lookup_metric(metric_map, "cash and short term investments"),
+        ]
+        if metric is not None
+    ]
+    cash_quality = _cash_quality_verdict(request, metric_map, summary)
+    capex_point = _cash_flow_metric_point(
+        metric_map,
+        "capital expenditures",
+        title="Capex and reinvestment",
+        fallback_summary=(
+            "Capital expenditure data was collected as the main reinvestment signal."
+        ),
+    )
+    debt_point = _cash_flow_metric_point(
+        metric_map,
+        "total debt",
+        title="Debt load",
+        fallback_summary="Debt data was collected as the main balance sheet risk signal.",
+    )
+    liquidity_point = _cash_flow_liquidity_point(metric_map, source_refs)
+    red_flags = _cash_flow_red_flags(metric_map, source_refs)
+    outlook = _fallback_point(
+        _cash_flow_outlook_summary(request, metric_map, summary),
+        source_refs,
+        title="Final analyst outlook",
+    )
+    return CashFlowCapitalAllocationSections(
+        schema_version="task_sections.v1",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        coverage=coverage,
+        cash_quality_verdict=cash_quality,
+        cash_metrics=cash_metrics[:7],
+        capital_allocation=CapitalAllocation(
+            capex=[capex_point] if capex_point is not None else [],
+            buybacks=[],
+            dividends=[],
+            debt=[debt_point] if debt_point is not None else [],
+            liquidity=[liquidity_point] if liquidity_point is not None else [],
+        ),
+        allocation_discipline=[outlook],
+        red_flags=red_flags,
+    )
+
+
+def _normalize_metric_lookup_key(value: str) -> str:
+    normalized = value.strip().lower().replace("_", " ")
+    aliases = {
+        "capex": "capital expenditures",
+        "capital expenditure": "capital expenditures",
+        "cash and equivalents": "cash and short term investments",
+        "cash and cash equivalents": "cash and short term investments",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _lookup_metric(
+    metric_map: dict[str, EvidenceBoundMetric],
+    name: str,
+) -> EvidenceBoundMetric | None:
+    return metric_map.get(_normalize_metric_lookup_key(name))
+
+
+def _cash_quality_verdict(
+    request: AgentRequest,
+    metric_map: dict[str, EvidenceBoundMetric],
+    fallback_summary: str,
+) -> CashQualityVerdict:
+    net_income = _metric_float(_lookup_metric(metric_map, "net income"))
+    ocf = _metric_float(_lookup_metric(metric_map, "operating cash flow"))
+    fcf = _metric_float(_lookup_metric(metric_map, "free cash flow"))
+    capex = _metric_float(_lookup_metric(metric_map, "capital expenditures"))
+    if ocf is not None and capex is not None and fcf is not None and fcf < 0 < ocf:
+        return CashQualityVerdict(
+            headline="Cash quality is pressured by capex.",
+            earnings_backed_by_cash="mixed",
+            summary=(
+                f"{request.ticker} generated positive operating cash flow, but capex "
+                "absorbed that cash and left free cash flow negative. The cash story "
+                "therefore depends on whether reinvestment starts converting into durable "
+                "operating cash recovery."
+            ),
+        )
+    if ocf is not None and net_income is not None and ocf > 0 and net_income <= 0:
+        return CashQualityVerdict(
+            headline="Cash flow is stronger than reported earnings.",
+            earnings_backed_by_cash="mixed",
+            summary=(
+                f"{request.ticker} reported weak earnings, but operating cash flow stayed "
+                "positive. That supports liquidity, while free cash flow and capex still "
+                "decide whether the cash profile is improving."
+            ),
+        )
+    if ocf is not None and fcf is not None and ocf > 0 and fcf > 0:
+        return CashQualityVerdict(
+            headline="Earnings are supported by cash generation.",
+            earnings_backed_by_cash="yes",
+            summary=(
+                f"{request.ticker} produced positive operating cash flow and free cash "
+                "flow, giving management real capital allocation capacity."
+            ),
+        )
+    return CashQualityVerdict(
+        headline="Cash quality needs more evidence.",
+        earnings_backed_by_cash="unclear",
+        summary=fallback_summary,
+    )
+
+
+def _cash_flow_metric_point(
+    metric_map: dict[str, EvidenceBoundMetric],
+    metric_name: str,
+    *,
+    title: str,
+    fallback_summary: str,
+) -> EvidenceBoundPoint | None:
+    metric = _lookup_metric(metric_map, metric_name)
+    if metric is None:
+        return None
+    return EvidenceBoundPoint(
+        title=title,
+        summary=f"{metric.name} was {metric.value}. {metric.interpretation or fallback_summary}",
+        evidence_refs=metric.evidence_refs,
+        citation_status=metric.citation_status,
+    )
+
+
+def _cash_flow_liquidity_point(
+    metric_map: dict[str, EvidenceBoundMetric],
+    source_refs: list[SourceRef],
+) -> EvidenceBoundPoint | None:
+    current_ratio = _lookup_metric(metric_map, "current ratio")
+    cash = _lookup_metric(metric_map, "cash and short term investments")
+    liquidity_refs = _cash_flow_source_refs_matching_terms(
+        source_refs,
+        ("liquidity", "cash", "working capital", "current ratio"),
+    )
+    if current_ratio is None and cash is None and not liquidity_refs:
+        return None
+    parts = []
+    evidence_refs: list[EvidenceRef] = []
+    citation_status = CitationStatus.UNVERIFIED
+    if current_ratio is not None:
+        parts.append(f"current ratio was {current_ratio.value}")
+        evidence_refs.extend(current_ratio.evidence_refs)
+        citation_status = current_ratio.citation_status
+    if cash is not None:
+        parts.append(f"cash and short-term investments were {cash.value}")
+        evidence_refs.extend(cash.evidence_refs)
+        citation_status = cash.citation_status
+    if not parts and liquidity_refs:
+        parts.append(_clip(liquidity_refs[0].snippet, 160))
+        citation_status = liquidity_refs[0].citation_status
+    return EvidenceBoundPoint(
+        title="Balance sheet resilience",
+        summary=(
+            "Liquidity context: "
+            + " and ".join(parts)
+            + ". This determines how much time management has to convert investment into cash returns."
+        ),
+        evidence_refs=evidence_refs
+        or [_evidence_ref(source_ref) for source_ref in liquidity_refs[:2]],
+        citation_status=citation_status,
+    )
+
+
+def _cash_flow_source_refs_matching_terms(
+    source_refs: list[SourceRef],
+    terms: tuple[str, ...],
+) -> list[SourceRef]:
+    matches: list[SourceRef] = []
+    for source_ref in source_refs:
+        searchable = f"{source_ref.section} {source_ref.snippet}".lower()
+        if any(term in searchable for term in terms):
+            matches.append(source_ref)
+    return matches
+
+
+def _cash_flow_red_flags(
+    metric_map: dict[str, EvidenceBoundMetric],
+    source_refs: list[SourceRef],
+) -> list[EvidenceBoundPoint]:
+    flags: list[EvidenceBoundPoint] = []
+    ocf = _metric_float(_lookup_metric(metric_map, "operating cash flow"))
+    fcf = _metric_float(_lookup_metric(metric_map, "free cash flow"))
+    capex = _metric_float(_lookup_metric(metric_map, "capital expenditures"))
+    if fcf is not None and fcf < 0:
+        flags.append(
+            _fallback_point(
+                "Free cash flow is negative, so the next quarter should show whether "
+                "operating cash flow can rise above capex.",
+                source_refs,
+                title="Negative free cash flow",
+            )
+        )
+    if ocf is not None and capex is not None and capex > ocf > 0:
+        flags.append(
+            _fallback_point(
+                "Capex is larger than operating cash flow, which keeps reinvestment "
+                "from translating into near-term free cash flow.",
+                source_refs,
+                title="Capex exceeds operating cash flow",
+            )
+        )
+    return flags or [
+        _fallback_point(
+            "Watch whether operating cash flow, capex, and liquidity move in the same "
+            "direction next quarter.",
+            source_refs,
+            title="Watch next",
+        )
+    ]
+
+
+def _cash_flow_outlook_summary(
+    request: AgentRequest,
+    metric_map: dict[str, EvidenceBoundMetric],
+    fallback_summary: str,
+) -> str:
+    ocf = _lookup_metric(metric_map, "operating cash flow")
+    fcf = _lookup_metric(metric_map, "free cash flow")
+    capex = _lookup_metric(metric_map, "capital expenditures")
+    if ocf is None and fcf is None and capex is None:
+        return fallback_summary
+    pieces = [
+        f"{metric.name} at {metric.value}" for metric in [ocf, capex, fcf] if metric is not None
+    ]
+    return (
+        f"{request.ticker} should be read as a cash conversion story: "
+        + ", ".join(pieces)
+        + ". The investment case improves only if operating cash flow can cover reinvestment "
+        "and sustain positive free cash flow."
+    )
+
+
+def _metric_float(metric: EvidenceBoundMetric | None) -> float | None:
+    if metric is None:
+        return None
+    raw = metric.value.strip().replace("$", "").replace(",", "")
+    multiplier = 1.0
+    if raw.endswith("B"):
+        multiplier = 1_000_000_000.0
+        raw = raw[:-1]
+    elif raw.endswith("M"):
+        multiplier = 1_000_000.0
+        raw = raw[:-1]
+    elif raw.endswith("%") or raw.endswith("x"):
+        raw = raw[:-1]
+    try:
+        return float(raw) * multiplier
+    except ValueError:
+        return None
 
 
 def _fallback_summary(

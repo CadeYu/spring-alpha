@@ -58,10 +58,16 @@ public class FinancialFacts {
     // Cash Flow Metrics
     private BigDecimal operatingCashFlow;
     private BigDecimal operatingCashFlowYoY;
+    private BigDecimal capitalExpenditures;
     private BigDecimal freeCashFlow;
     private BigDecimal freeCashFlowYoY;
 
     // Balance Sheet Metrics
+    private BigDecimal cashAndShortTermInvestments;
+    private BigDecimal currentAssets;
+    private BigDecimal currentLiabilities;
+    private BigDecimal currentRatio;
+    private BigDecimal totalDebt;
     private BigDecimal totalAssets;
     private BigDecimal totalLiabilities;
     private BigDecimal totalEquity;

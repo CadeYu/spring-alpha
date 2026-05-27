@@ -2535,13 +2535,14 @@ function TypedCashFlowSections({
       ? "当前 typed contract 没有提供完整现金质量判断。"
       : "The typed contract did not provide a complete cash quality verdict.",
   };
-  const allocationGroups = [
-    { label: "Capex", items: capitalAllocation.capex },
-    { label: "Buybacks", items: capitalAllocation.buybacks },
-    { label: "Dividends", items: capitalAllocation.dividends },
-    { label: "Debt", items: capitalAllocation.debt },
-    { label: "Liquidity", items: capitalAllocation.liquidity },
+  const capexPoints = capitalAllocation.capex ?? [];
+  const resiliencePoints = [
+    ...(capitalAllocation.debt ?? []),
+    ...(capitalAllocation.liquidity ?? []),
   ];
+  const redFlagPoints = sections.redFlags ?? [];
+  const outlookPoints = sections.allocationDiscipline ?? [];
+  const cashMetrics = sections.cashMetrics ?? [];
 
   return (
     <>
@@ -2561,7 +2562,9 @@ function TypedCashFlowSections({
           labels={[
             isZh ? "现金质量" : "Cash Quality",
             isZh ? "现金流桥" : "Cash Flow Bridge",
-            isZh ? "资本配置评分卡" : "Capital Allocation Scorecard",
+            isZh ? "资本开支与再投资" : "Capex and Reinvestment",
+            isZh ? "资产负债表韧性与债务" : "Balance Sheet Resilience and Debt",
+            isZh ? "风险信号与后续观察" : "Risk Signals and Watch Next",
           ]}
         />
         <AnalystVerdictCard
@@ -2572,61 +2575,46 @@ function TypedCashFlowSections({
         />
       </div>
 
-      <MetricStripCard
-        title={isZh ? "现金流桥" : "Cash Flow Bridge"}
-        metrics={sections.cashMetrics ?? []}
-        emptyText={isZh ? "没有现金流指标。" : "No cash flow metrics provided."}
-        lang={metricLocale}
-      />
-
-      <Card className="bg-slate-900 border-slate-800">
-        <CardHeader className="border-b border-slate-800">
-          <CardTitle className="text-emerald-400">
-            {isZh ? "资本配置评分卡" : "Capital Allocation Scorecard"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 p-6 md:grid-cols-2">
-          {allocationGroups.map((group) => (
-            <div
-              key={group.label}
-              className="rounded-md border border-slate-800 bg-slate-950/60 p-4"
-            >
-              <p className="text-sm font-semibold text-slate-200">
-                {group.label}
-              </p>
-              <div className="mt-3 space-y-3">
-                {group.items.length > 0 ? (
-                  group.items.map((item, index) => (
-                    <EvidencePointBlock
-                      key={`${item.title}-${index}`}
-                      point={item}
-                    />
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    {isZh ? "该维度没有证据。" : "No evidence for this lens."}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <PointListCard
-        title={isZh ? "配置纪律" : "Allocation Discipline"}
-        points={sections.allocationDiscipline ?? []}
-        emptyText={
-          isZh
-            ? "没有配置纪律信号。"
-            : "No allocation discipline points provided."
-        }
-      />
-      <PointListCard
-        title={isZh ? "风险信号" : "Red Flags"}
-        points={sections.redFlags ?? []}
-        emptyText={isZh ? "没有风险信号。" : "No red flags provided."}
-      />
+      {capexPoints.length > 0 ? (
+        <PointListCard
+          title={isZh ? "资本开支与再投资" : "Capex and Reinvestment"}
+          points={capexPoints}
+          emptyText=""
+        />
+      ) : null}
+      {resiliencePoints.length > 0 ? (
+        <PointListCard
+          title={
+            isZh
+              ? "资产负债表韧性与债务"
+              : "Balance Sheet Resilience and Debt"
+          }
+          points={resiliencePoints}
+          emptyText=""
+        />
+      ) : null}
+      {redFlagPoints.length > 0 ? (
+        <PointListCard
+          title={isZh ? "风险信号与后续观察" : "Risk Signals and Watch Next"}
+          points={redFlagPoints}
+          emptyText=""
+        />
+      ) : null}
+      {cashMetrics.length > 0 ? (
+        <MetricStripCard
+          title={isZh ? "关键现金指标表" : "Key Cash Metrics Table"}
+          metrics={cashMetrics}
+          emptyText=""
+          lang={metricLocale}
+        />
+      ) : null}
+      {outlookPoints.length > 0 ? (
+        <PointListCard
+          title={isZh ? "最终分析师观点" : "Final Analyst Outlook"}
+          points={outlookPoints}
+          emptyText=""
+        />
+      ) : null}
     </>
   );
 }

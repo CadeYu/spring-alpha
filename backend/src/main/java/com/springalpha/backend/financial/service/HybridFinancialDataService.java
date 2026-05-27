@@ -328,8 +328,26 @@ public class HybridFinancialDataService implements FinancialDataService {
         if (facts.getOperatingCashFlow() == null && snapshot.operatingCashFlow() != null) {
             facts.setOperatingCashFlow(snapshot.operatingCashFlow());
         }
+        if (facts.getCapitalExpenditures() == null && snapshot.capitalExpenditures() != null) {
+            facts.setCapitalExpenditures(snapshot.capitalExpenditures());
+        }
         if (facts.getFreeCashFlow() == null && snapshot.freeCashFlow() != null) {
             facts.setFreeCashFlow(snapshot.freeCashFlow());
+        }
+        if (facts.getCashAndShortTermInvestments() == null && snapshot.cashAndShortTermInvestments() != null) {
+            facts.setCashAndShortTermInvestments(snapshot.cashAndShortTermInvestments());
+        }
+        if (facts.getCurrentAssets() == null && snapshot.currentAssets() != null) {
+            facts.setCurrentAssets(snapshot.currentAssets());
+        }
+        if (facts.getCurrentLiabilities() == null && snapshot.currentLiabilities() != null) {
+            facts.setCurrentLiabilities(snapshot.currentLiabilities());
+        }
+        if (facts.getCurrentRatio() == null) {
+            facts.setCurrentRatio(divide(snapshot.currentAssets(), snapshot.currentLiabilities()));
+        }
+        if (facts.getTotalDebt() == null && snapshot.totalDebt() != null) {
+            facts.setTotalDebt(snapshot.totalDebt());
         }
 
         applyQuarterlyGrowthFallbacks(facts, snapshot, supplementalData.quarterlyFinancials());
@@ -397,7 +415,13 @@ public class HybridFinancialDataService implements FinancialDataService {
                     .netIncome(snapshot.netIncome())
                     .netMargin(divide(snapshot.netIncome(), snapshot.revenue()))
                     .operatingCashFlow(snapshot.operatingCashFlow())
+                    .capitalExpenditures(snapshot.capitalExpenditures())
                     .freeCashFlow(snapshot.freeCashFlow())
+                    .cashAndShortTermInvestments(snapshot.cashAndShortTermInvestments())
+                    .currentAssets(snapshot.currentAssets())
+                    .currentLiabilities(snapshot.currentLiabilities())
+                    .currentRatio(divide(snapshot.currentAssets(), snapshot.currentLiabilities()))
+                    .totalDebt(snapshot.totalDebt())
                     .priceToEarningsRatio(supplementalData.priceToEarningsRatio())
                     .priceToBookRatio(supplementalData.priceToBookRatio())
                     .build();

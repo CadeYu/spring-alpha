@@ -3,6 +3,10 @@ import re
 from collections.abc import Callable, Iterable, Mapping
 from urllib import request as url_request
 
+from app.agents.structured_facts import (
+    normalize_metric_name,
+    structured_metric_records_from_facts,
+)
 from app.contracts.agent import AgentState, ToolResult
 from app.contracts.research_task import ResearchTaskType
 from app.contracts.tools import (
@@ -109,7 +113,7 @@ class SecCompanyFactsProvider:
         missing_metrics = [
             metric
             for metric in requested_metrics
-            if _normalize_metric_name(metric) not in found_metric_names
+            if normalize_metric_name(metric) not in found_metric_names
         ]
         facts: dict[str, object] = {
             "ticker": ticker.upper(),
@@ -237,6 +241,9 @@ class ResearchToolService:
         tool_input: MetricEvidenceInput,
         state: AgentState,
     ) -> ToolResult:
+        fact_only_result = _metric_evidence_from_preloaded_facts(tool_input, state)
+        if fact_only_result is not None:
+            return fact_only_result
         metric = tool_input.metrics[0]
         source_ref = {
             "source_id": f"{state.run_id}:metric:1",
@@ -404,7 +411,7 @@ def _complete_preloaded_facts(
     missing_metrics = [
         metric
         for metric in requested_metrics
-        if _normalize_metric_name(metric) not in facts_by_metric
+        if normalize_metric_name(metric) not in facts_by_metric
     ]
     if missing_metrics:
         return None
@@ -429,7 +436,7 @@ def _partial_preloaded_facts(
     missing_metrics = [
         metric
         for metric in requested_metrics
-        if _normalize_metric_name(metric) not in facts_by_metric
+        if normalize_metric_name(metric) not in facts_by_metric
     ]
     return {
         **facts,
@@ -474,7 +481,7 @@ def _metric_evidence_from_preloaded_facts(
     missing_metrics = [
         metric
         for metric in tool_input.metrics
-        if _normalize_metric_name(metric) not in facts_by_metric
+        if normalize_metric_name(metric) not in facts_by_metric
     ]
     if missing_metrics:
         return None
@@ -508,7 +515,7 @@ def _metrics_missing_from_facts(metrics: list[str], state: AgentState) -> list[s
     if not facts_by_metric:
         return metrics
     missing_metrics = [
-        metric for metric in metrics if _normalize_metric_name(metric) not in facts_by_metric
+        metric for metric in metrics if normalize_metric_name(metric) not in facts_by_metric
     ]
     return missing_metrics or metrics
 
@@ -583,7 +590,7 @@ def _task_scoped_metric_queries(
     metrics: list[str] | None = None,
 ) -> list[str]:
     if state.task_type == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION:
-        metric_terms = {_normalize_metric_name(metric) for metric in metrics or []}
+        metric_terms = {normalize_metric_name(metric) for metric in metrics or []}
         metric_focus = " ".join(sorted(metric_terms)) if metric_terms else query
         return [
             " ".join(
@@ -701,7 +708,7 @@ def _companyfacts_source_refs(
 ) -> list[dict[str, object]]:
     source_refs: list[dict[str, object]] = []
     for metric in metrics:
-        normalized_metric = _normalize_metric_name(metric)
+        normalized_metric = normalize_metric_name(metric)
         fact = facts_by_metric.get(normalized_metric)
         if not fact:
             continue
@@ -722,11 +729,22 @@ def _companyfacts_source_ref(
     accession_number = fact.get("accession_number")
     metric_slug = _metric_slug(normalized_metric)
     value_text = f"{value} {unit}".strip()
+    source = str(fact.get("source") or "")
+    section = (
+        "yfinance structured snapshot"
+        if source == "preloaded_financial_facts"
+        else "SEC companyfacts"
+    )
+    source_label = (
+        "Structured yfinance facts"
+        if source == "preloaded_financial_facts"
+        else f"SEC companyfacts {concept}"
+    )
     return {
         "source_id": f"{run_id}:sec_companyfacts:{metric_slug}",
-        "section": "SEC companyfacts",
+        "section": section,
         "snippet": (
-            f"SEC companyfacts {concept} reports {normalized_metric} of "
+            f"{source_label} reports {normalized_metric} of "
             f"{value_text} for {period} filed {filed}."
         ),
         "citation_status": "supported",
@@ -742,7 +760,7 @@ def _metric_evidence_record(
     source_refs: list[dict[str, object]],
     facts_by_metric: Mapping[str, Mapping[str, object]],
 ) -> dict[str, object]:
-    normalized_metric = _normalize_metric_name(metric)
+    normalized_metric = normalize_metric_name(metric)
     fact = facts_by_metric.get(normalized_metric)
     if fact:
         source_id = _companyfacts_source_id_from_refs(normalized_metric, source_refs)
@@ -773,7 +791,7 @@ def _metric_evidence_record(
                 "taxonomy": fact.get("taxonomy"),
                 "concept": fact.get("concept"),
                 "label": fact.get("label"),
-                "source": "sec_companyfacts",
+                "source": fact.get("source") or "sec_companyfacts",
             }
         )
     return record
@@ -806,14 +824,10 @@ def _source_ref_by_id(
 
 
 def _facts_by_metric(state: AgentState) -> dict[str, Mapping[str, object]]:
-    metrics = state.evidence_memory.facts.get("metrics")
-    if not isinstance(metrics, list):
-        return {}
+    metrics = structured_metric_records_from_facts(state.evidence_memory.facts)
     facts: dict[str, Mapping[str, object]] = {}
     for metric in metrics:
-        if not isinstance(metric, Mapping):
-            continue
-        name = _normalize_metric_name(str(metric.get("name") or ""))
+        name = normalize_metric_name(str(metric.get("name") or ""))
         if name:
             facts[name] = metric
     return facts
@@ -963,7 +977,7 @@ def _latest_metric_record(
     requested_metric: str,
     period: str,
 ) -> dict[str, object] | None:
-    normalized_metric = _normalize_metric_name(requested_metric)
+    normalized_metric = normalize_metric_name(requested_metric)
     concepts = _CONCEPTS_BY_METRIC.get(normalized_metric, [])
     facts = companyfacts.get("facts")
     if not isinstance(facts, dict):
@@ -1083,29 +1097,6 @@ def _fact_period(fact: Mapping[str, object]) -> str | None:
     if fy is None or fp is None:
         return None
     return f"{fy}{fp}"
-
-
-def _normalize_metric_name(metric: str) -> str:
-    spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", metric.strip())
-    normalized = re.sub(r"\s+", " ", spaced.lower().replace("_", " "))
-    return _METRIC_ALIASES.get(normalized, normalized)
-
-
-_METRIC_ALIASES: dict[str, str] = {
-    "total revenue": "revenue",
-    "total revenues": "revenue",
-    "net sales": "revenue",
-    "gross profit": "gross profit",
-    "gross margin": "gross margin",
-    "operating income": "operating income",
-    "operating income loss": "operating income",
-    "operating cashflow": "operating cash flow",
-    "operating cash flows": "operating cash flow",
-    "capital expenditure": "capital expenditures",
-    "capital expenditures": "capital expenditures",
-    "share buybacks": "buybacks",
-    "stock buybacks": "buybacks",
-}
 
 
 _CONCEPTS_BY_METRIC: dict[str, list[str]] = {

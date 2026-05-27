@@ -58,7 +58,7 @@ class HybridFinancialDataServiceTest {
                         new BigDecimal("4500000000"),
                         new BigDecimal("3100000000"),
                         new BigDecimal("5600000000"),
-                        new BigDecimal("80000000"))),
+                        null, new BigDecimal("80000000"), null, null, null, null)),
                 "Supplemental market data unavailable for: valuation",
                 null));
 
@@ -122,7 +122,7 @@ class HybridFinancialDataServiceTest {
                         new BigDecimal("4449000000"),
                         new BigDecimal("2936000000"),
                         new BigDecimal("5933000000"),
-                        new BigDecimal("71000000"))),
+                        null, new BigDecimal("71000000"), null, null, null, null)),
                 null,
                 null));
 
@@ -270,7 +270,7 @@ class HybridFinancialDataServiceTest {
                                 null,
                                 new BigDecimal("13025000000"),
                                 new BigDecimal("119724000000"),
-                                new BigDecimal("119724000000")),
+                                null, new BigDecimal("119724000000"), null, null, null, null),
                         new MarketSupplementalData.QuarterlyFinancialSnapshot(
                                 "2024-12-31",
                                 new BigDecimal("42791000000"),
@@ -278,7 +278,7 @@ class HybridFinancialDataServiceTest {
                                 null,
                                 new BigDecimal("14005000000"),
                                 new BigDecimal("147758000000"),
-                                new BigDecimal("147758000000"))),
+                                null, new BigDecimal("147758000000"), null, null, null, null)),
                 null,
                 null));
 
@@ -353,7 +353,7 @@ class HybridFinancialDataServiceTest {
                                 null,
                                 new BigDecimal("14393000000"),
                                 new BigDecimal("-45214000000"),
-                                new BigDecimal("-45214000000")),
+                                null, new BigDecimal("-45214000000"), null, null, null, null),
                         new MarketSupplementalData.QuarterlyFinancialSnapshot(
                                 "2025-06-30",
                                 new BigDecimal("44882000000"),
@@ -361,7 +361,7 @@ class HybridFinancialDataServiceTest {
                                 null,
                                 new BigDecimal("14987000000"),
                                 new BigDecimal("29547000000"),
-                                new BigDecimal("29547000000")),
+                                null, new BigDecimal("29547000000"), null, null, null, null),
                         new MarketSupplementalData.QuarterlyFinancialSnapshot(
                                 "2025-03-31",
                                 new BigDecimal("45327000000"),
@@ -369,7 +369,7 @@ class HybridFinancialDataServiceTest {
                                 null,
                                 new BigDecimal("14643000000"),
                                 new BigDecimal("-251839000000"),
-                                new BigDecimal("-251839000000"))),
+                                null, new BigDecimal("-251839000000"), null, null, null, null)),
                 null,
                 null));
 
@@ -587,7 +587,7 @@ class HybridFinancialDataServiceTest {
                                 new BigDecimal("31222000000"),
                                 new BigDecimal("34979000000"),
                                 new BigDecimal("41330000000"),
-                                new BigDecimal("28900000000")),
+                                null, new BigDecimal("28900000000"), null, null, null, null),
                         new MarketSupplementalData.QuarterlyFinancialSnapshot(
                                 "2024-09-30",
                                 new BigDecimal("88268000000"),
@@ -595,7 +595,7 @@ class HybridFinancialDataServiceTest {
                                 new BigDecimal("28262000000"),
                                 new BigDecimal("26301000000"),
                                 new BigDecimal("34000000000"),
-                                new BigDecimal("24000000000"))),
+                                null, new BigDecimal("24000000000"), null, null, null, null)),
                 null,
                 "Alphabet is a technology company focused on search, cloud, and digital advertising."));
 
@@ -728,7 +728,7 @@ class HybridFinancialDataServiceTest {
                                 null,
                                 new BigDecimal("14393000000"),
                                 new BigDecimal("-45214000000"),
-                                new BigDecimal("-45214000000")),
+                                null, new BigDecimal("-45214000000"), null, null, null, null),
                         new MarketSupplementalData.QuarterlyFinancialSnapshot(
                                 "2024-09-30",
                                 new BigDecimal("43432000000"),
@@ -736,7 +736,7 @@ class HybridFinancialDataServiceTest {
                                 null,
                                 new BigDecimal("12900000000"),
                                 new BigDecimal("-38000000000"),
-                                new BigDecimal("-38000000000"))),
+                                null, new BigDecimal("-38000000000"), null, null, null, null)),
                 null,
                 null));
 

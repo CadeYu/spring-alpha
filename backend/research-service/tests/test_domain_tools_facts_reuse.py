@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from app.agents.domain_tools import LlamaIndexResearchToolService, SecCompanyFactsProvider
+from app.agents.domain_tools import (
+    LlamaIndexResearchToolService,
+    ResearchToolService,
+    SecCompanyFactsProvider,
+)
 from app.agents.evidence_pack_tool import create_agent_evidence_pack_tool
 from app.contracts.agent import AgentState, EvidenceMemory, TaskPolicy, ToolStatus
 from app.contracts.report import SourceRef
@@ -151,7 +155,9 @@ def test_get_company_facts_returns_preloaded_partial_facts_when_sec_mapping_is_m
     assert "SEC ticker mapping not found for PARA" in result.degraded_reasons[0]
 
 
-def test_get_company_facts_returns_empty_when_sec_mapping_is_missing_without_preloaded_facts() -> None:
+def test_get_company_facts_returns_empty_when_sec_mapping_is_missing_without_preloaded_facts() -> (
+    None
+):
     provider = _MissingMappingFactsProvider()
     service = LlamaIndexResearchToolService(_CountingPipeline(), facts_provider=provider)  # type: ignore[arg-type]
     state = _state_with_facts(metrics=[]).model_copy(
@@ -225,6 +231,67 @@ def test_search_metric_evidence_uses_preloaded_facts_without_rag_when_all_metric
     assert len(result.data["records"]) == 3
     assert {record["source"] for record in result.data["records"]} == {"sec_companyfacts"}
     assert all(":sec_companyfacts:" in ref["source_id"] for ref in result.source_refs)
+
+
+def test_base_search_metric_evidence_uses_raw_yfinance_quarterly_facts() -> None:
+    service = ResearchToolService(facts_provider=None)
+    state = AgentState(
+        run_id="run_1",
+        ticker="BRK-B",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            allowed_tools=[
+                "get_company_facts",
+                "search_filing_sections",
+                "search_metric_evidence",
+            ],
+            required_outputs=["cashQualityVerdict", "cashMetrics"],
+        ),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "ticker": "BRK-B",
+                "quarterlyFinancials": [
+                    {
+                        "periodEnd": "2026-03-31",
+                        "netIncome": 12300000000,
+                        "operatingCashFlow": 16000000000,
+                        "capitalExpenditures": 1900000000,
+                        "freeCashFlow": 14100000000,
+                        "cashAndShortTermInvestments": 334000000000,
+                        "currentAssets": 430000000000,
+                        "currentLiabilities": 106000000000,
+                        "totalDebt": 128000000000,
+                    }
+                ],
+            }
+        ),
+    )
+
+    result = service.search_metric_evidence(
+        MetricEvidenceInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            metrics=[
+                "net income",
+                "operating cash flow",
+                "capital expenditures",
+                "free cash flow",
+                "current ratio",
+                "total debt",
+                "cash and short term investments",
+            ],
+            period="latest_quarter",
+        ),
+        state,
+    )
+
+    assert result.status == ToolStatus.OK
+    assert len(result.data["records"]) == 7
+    assert {record["source"] for record in result.data["records"]} == {"preloaded_financial_facts"}
+    assert result.data["records"][4]["value"] == 430000000000 / 106000000000
+    assert all(ref["section"] == "yfinance structured snapshot" for ref in result.source_refs)
 
 
 def test_search_metric_evidence_retrieves_only_missing_metrics_when_facts_are_partial() -> None:

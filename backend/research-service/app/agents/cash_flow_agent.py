@@ -16,6 +16,16 @@ from app.contracts.research_task import ResearchTaskType
 from app.contracts.tools import CompanyFactsInput, FilingSectionSearchInput, MetricEvidenceInput
 from app.rag.llamaindex_pipeline import LlamaIndexRagPipeline
 
+PRIMARY_CASH_FLOW_METRICS = [
+    "net income",
+    "operating cash flow",
+    "capital expenditures",
+    "free cash flow",
+    "current ratio",
+    "total debt",
+    "cash and short term investments",
+]
+
 
 class CashFlowAgentError(RuntimeError):
     def __init__(self, message: str, *, state: AgentState) -> None:
@@ -93,18 +103,20 @@ def run_cash_flow_agent(
             {
                 "name": "get_company_facts",
                 "args": {
-                    "metrics": [
-                        "operating cash flow",
-                        "capital expenditures",
-                        "buybacks",
-                    ],
+                    "metrics": PRIMARY_CASH_FLOW_METRICS,
                     "period": "latest_quarter",
                 },
             },
             {"name": "search_metric_evidence", "args": {}},
             {
                 "name": "build_evidence_pack",
-                "args": {"focus": "operating cash flow capex buybacks liquidity", "top_k": 5},
+                "args": {
+                    "focus": (
+                        "net income operating cash flow free cash flow capex "
+                        "liquidity debt working capital"
+                    ),
+                    "top_k": 5,
+                },
             },
         ],
         error_factory=lambda message, error_state: CashFlowAgentError(
@@ -133,12 +145,7 @@ def _cash_flow_tools(
             ticker=request.ticker,
             task_type=request.task_type,
             period=period,
-            metrics=metrics
-            or [
-                "operating cash flow",
-                "capital expenditures",
-                "buybacks",
-            ],
+            metrics=metrics or PRIMARY_CASH_FLOW_METRICS,
         )
         started_at = perf_counter()
         tool_result = tool_service.get_company_facts(tool_input, state_getter())
@@ -182,11 +189,7 @@ def _cash_flow_tools(
         period: str | None = "latest_quarter",
         query: str | None = None,
     ) -> str:
-        requested_metrics = metrics or [
-            "operating cash flow",
-            "capital expenditures",
-            "buybacks",
-        ]
+        requested_metrics = metrics or PRIMARY_CASH_FLOW_METRICS
         tool_input = MetricEvidenceInput(
             run_id=request.run_id,
             ticker=request.ticker,
@@ -213,15 +216,18 @@ def _cash_flow_tools(
         StructuredTool.from_function(
             get_company_facts,
             name="get_company_facts",
-            description="Return cash flow, capex, buyback, liquidity, and debt company facts.",
+            description=(
+                "Return structured cash flow, capex, free cash flow, liquidity, "
+                "and debt company facts."
+            ),
             args_schema=CompanyFactsSearchInput,
         ),
         StructuredTool.from_function(
             search_filing_sections,
             name="search_filing_sections",
             description=(
-                "Search SEC filing sections for operating cash flow, capex, buybacks, "
-                "dividends, debt, liquidity, and working capital evidence."
+                "Search SEC filing sections for operating cash flow, capex, debt, "
+                "liquidity, working capital, and capital allocation evidence."
             ),
             args_schema=FilingSearchInput,
         ),
@@ -241,6 +247,7 @@ def _cash_flow_tools(
         ),
     ]
     return tools
+
 
 def _run_domain_tool(
     state: AgentState,
@@ -365,8 +372,10 @@ def _tool_prompt() -> ChatPromptTemplate:
                 "financial research team. Work like a TradingAgents fundamentals analyst: "
                 "gather enough tool evidence to judge whether earnings convert to cash and "
                 "whether capital allocation compounds or leaks value. Focus "
-                "on operating cash flow, free cash flow, capex, buybacks, dividends, debt, "
-                "liquidity, and working capital. Call one useful tool at a time.",
+                "on net income, operating cash flow, free cash flow, capex, debt, "
+                "liquidity, and working capital. Treat shareholder-return evidence as "
+                "optional context, not a required top-level section. Call one useful tool "
+                "at a time.",
             ),
             MessagesPlaceholder(variable_name="messages"),
         ]
@@ -396,10 +405,11 @@ def _cash_flow_instruction(request: AgentRequest, state: AgentState) -> str:
         return (
             f"请分析 {state.ticker} 的现金流和资本配置。\n"
             "Required workflow:\n"
-            "1. 调用 get_company_facts 获取 operating cash flow、capital expenditures 和 buybacks。\n"
-            "2. 调用 search_metric_evidence 获取 operating cash flow、capital expenditures 和 buybacks。\n"
-            "3. 调用 build_evidence_pack 获取 liquidity、cash flow statement、capital allocation、"
-            "buybacks、dividends、debt、capex 和 working capital 证据。\n"
+            "1. 调用 get_company_facts 获取 net income、operating cash flow、capital expenditures、"
+            "free cash flow、current ratio、total debt 和 cash and short term investments。\n"
+            "2. 调用 search_metric_evidence 获取同一组结构化现金流、流动性和债务指标。\n"
+            "3. 调用 build_evidence_pack 获取 cash flow statement、liquidity、debt、"
+            "capex 和 working capital 叙事证据。\n"
             "Final JSON shape:\n"
             "{"
             '"cash_quality_verdict":{"headline":"...",'
@@ -422,12 +432,13 @@ def _cash_flow_instruction(request: AgentRequest, state: AgentState) -> str:
     return (
         f"Analyze cash flow and capital allocation for {state.ticker}.\n"
         "Required workflow:\n"
-        "1. Call get_company_facts for operating cash flow, capital expenditures, "
-        "and buybacks.\n"
-        "2. Call search_metric_evidence for operating cash flow, capital expenditures, "
-        "and buybacks.\n"
-        "3. Call build_evidence_pack for liquidity, cash flow statement, capital "
-        "allocation, buybacks, dividends, debt, capex, and working capital evidence.\n"
+        "1. Call get_company_facts for net income, operating cash flow, capital "
+        "expenditures, free cash flow, current ratio, total debt, and cash and short "
+        "term investments.\n"
+        "2. Call search_metric_evidence for the same structured cash flow, liquidity, "
+        "and debt metrics.\n"
+        "3. Call build_evidence_pack for cash flow statement, liquidity, debt, capex, "
+        "and working capital narrative evidence.\n"
         "Final JSON shape:\n"
         "{"
         '"cash_quality_verdict":{"headline":"...",'
@@ -458,7 +469,8 @@ def _final_cash_flow_instruction(request: AgentRequest, state: AgentState) -> st
             "写成投资备忘录，而不是简单复述。cash_quality_verdict.summary 必须说明现金质量结论、"
             "对投资者的意义，以及如果现金转换或资本配置纪律 mixed 时最强的反证。red_flags "
             "在相关时必须包括下季度什么变化会改变结论。\n"
-            "capital_allocation 必须包含 capex, buybacks, dividends, debt, liquidity arrays。"
+            "capital_allocation 必须包含 capex, buybacks, dividends, debt, liquidity arrays，"
+            "但 buybacks 和 dividends 仅在工具证据直接支持时填写，否则保持空数组。"
             "不要把 schema labels 或 placeholders 写进正文，包括 Evidence point, cash_quality_verdict, "
             "capital_allocation, red_flags 或 N/A。每个 section 都应该把现金流证据连接到投资者相关性，"
             "而不是复述指标。每个数组最多 2 个简洁条目。任何引用证据的分析点都只能使用 evidence context 中存在的 source_ids。\n"
@@ -474,7 +486,8 @@ def _final_cash_flow_instruction(request: AgentRequest, state: AgentState) -> st
         "counter-evidence if cash conversion or allocation discipline is mixed. red_flags "
         "must include what would change the conclusion next quarter when relevant.\n"
         "capital_allocation must contain capex, buybacks, dividends, debt, liquidity "
-        "arrays. Do not use schema labels or placeholders as prose, including Evidence "
+        "arrays, but buybacks and dividends should stay empty unless directly supported "
+        "by tool evidence. Do not use schema labels or placeholders as prose, including Evidence "
         "point, cash_quality_verdict, capital_allocation, red_flags, or N/A. Each section "
         "should connect cash evidence to investor relevance instead of restating metrics. "
         "Keep each array to at most 2 concise items. Every analytical point that cites "

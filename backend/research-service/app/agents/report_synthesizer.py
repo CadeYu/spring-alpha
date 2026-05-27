@@ -5,6 +5,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.llm_gateway import LlmClient, LlmRequest, LlmResponse
+from app.agents.structured_facts import (
+    cash_flow_metric_records_from_facts,
+    normalize_metric_name,
+)
 from app.contracts.agent import AgentRequest, AgentState
 from app.contracts.report import (
     BullBearRead,
@@ -58,9 +62,7 @@ _NOISY_BUSINESS_DRIVER_TEXT_PHRASES = (
     "table of contents",
 )
 
-_BUSINESS_DRIVER_PARTIAL_PLACEHOLDER = (
-    "Evidence for this business-driver lens remains partial."
-)
+_BUSINESS_DRIVER_PARTIAL_PLACEHOLDER = "Evidence for this business-driver lens remains partial."
 
 
 def _is_zh_locale(language: str | None) -> bool:
@@ -290,8 +292,7 @@ def build_latest_earnings_report_from_payload(
         source_refs_by_id,
     )
     watch_next = [
-        _watch_next_item_from_payload(item, source_refs_by_id)
-        for item in payload.watch_next
+        _watch_next_item_from_payload(item, source_refs_by_id) for item in payload.watch_next
     ]
     key_takeaways = [
         _point_from_payload(point, source_refs_by_id) for point in payload.key_takeaways
@@ -548,9 +549,7 @@ def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str
             normalized["company_profile"] = {
                 "summary": str(summary),
                 "source_ids": _list_of_strings(clean_profile.get("source_ids")),
-                "citation_status": str(
-                    clean_profile.get("citation_status") or "unverified"
-                ),
+                "citation_status": str(clean_profile.get("citation_status") or "unverified"),
             }
         else:
             normalized["company_profile"] = None
@@ -563,9 +562,7 @@ def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str
         }
     elif isinstance(topline_verdict, dict):
         summary = str(topline_verdict.get("summary") or topline_verdict.get("text") or "")
-        if summary and (
-            "headline" not in topline_verdict or "verdict" not in topline_verdict
-        ):
+        if summary and ("headline" not in topline_verdict or "verdict" not in topline_verdict):
             normalized["topline_verdict"] = {
                 "headline": str(topline_verdict.get("headline") or summary[:120]),
                 "summary": summary,
@@ -574,15 +571,11 @@ def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str
                 ),
                 "confidence": str(topline_verdict.get("confidence") or "medium"),
             }
-    normalized["key_takeaways"] = _normalize_synthesized_points(
-        normalized.get("key_takeaways", [])
-    )
+    normalized["key_takeaways"] = _normalize_synthesized_points(normalized.get("key_takeaways", []))
     normalized["driver_snapshot"] = _normalize_synthesized_points(
         normalized.get("driver_snapshot", [])
     )
-    normalized["risk_snapshot"] = _normalize_synthesized_points(
-        normalized.get("risk_snapshot", [])
-    )
+    normalized["risk_snapshot"] = _normalize_synthesized_points(normalized.get("risk_snapshot", []))
     normalized["claims"] = _normalize_synthesized_claims(normalized.get("claims", []))
     dashboard = normalized.get("financial_dashboard")
     if isinstance(dashboard, dict):
@@ -596,12 +589,8 @@ def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str
     normalized["drivers_and_draggers"] = _normalize_drivers_and_draggers(
         normalized.get("drivers_and_draggers")
     )
-    normalized["bull_bear_read"] = _normalize_bull_bear_read(
-        normalized.get("bull_bear_read")
-    )
-    normalized["watch_next"] = _normalize_watch_next_items(
-        normalized.get("watch_next", [])
-    )
+    normalized["bull_bear_read"] = _normalize_bull_bear_read(normalized.get("bull_bear_read"))
+    normalized["watch_next"] = _normalize_watch_next_items(normalized.get("watch_next", []))
     return _sanitize_payload_user_text(normalized)
 
 
@@ -702,9 +691,7 @@ def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str
     elif isinstance(driver_thesis, dict):
         driver_thesis = _clean_mapping_keys(driver_thesis)
         summary = str(driver_thesis.get("summary") or driver_thesis.get("text") or "")
-        if summary and (
-            "headline" not in driver_thesis or "durability" not in driver_thesis
-        ):
+        if summary and ("headline" not in driver_thesis or "durability" not in driver_thesis):
             normalized["driver_thesis"] = {
                 "headline": str(driver_thesis.get("headline") or summary[:120]),
                 "durability": _driver_durability_from_text(
@@ -871,9 +858,7 @@ def _normalize_bull_bear_read(value: object) -> object:
     return {
         "bull_case": _ensure_point_list(clean_value.get("bull_case", [])),
         "bear_case": _ensure_point_list(clean_value.get("bear_case", [])),
-        "balanced_read": _normalize_optional_synthesized_point(
-            clean_value.get("balanced_read")
-        ),
+        "balanced_read": _normalize_optional_synthesized_point(clean_value.get("balanced_read")),
     }
 
 
@@ -1090,9 +1075,7 @@ def _strip_noisy_business_driver_fragments(value: str) -> str:
 
 
 def _is_noisy_business_driver_source_ref(source_ref: SourceRef) -> bool:
-    return _is_noisy_business_driver_text(
-        f"{source_ref.section} {source_ref.snippet}"
-    )
+    return _is_noisy_business_driver_text(f"{source_ref.section} {source_ref.snippet}")
 
 
 def _is_noisy_business_driver_text(value: str) -> bool:
@@ -1103,11 +1086,7 @@ def _is_noisy_business_driver_text(value: str) -> bool:
     if any(phrase in lower_text for phrase in _NOISY_BUSINESS_DRIVER_TEXT_PHRASES):
         return True
     pipe_count = normalized.count("|")
-    if (
-        pipe_count >= 4
-        or "---|---" in normalized
-        or re.search(r"\|\s*\|\s*\|", normalized)
-    ):
+    if pipe_count >= 4 or "---|---" in normalized or re.search(r"\|\s*\|\s*\|", normalized):
         return True
     digits = sum(character.isdigit() for character in normalized)
     separators = sum(1 for character in normalized if character in "|,$%")
@@ -1284,6 +1263,7 @@ def build_cash_flow_report_from_payload(
         payload.capital_allocation,
         cash_metrics,
     )
+    red_flags = _cash_flow_red_flags_with_backfill(payload.red_flags, cash_metrics)
     task_sections = CashFlowCapitalAllocationSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
@@ -1295,8 +1275,7 @@ def build_cash_flow_report_from_payload(
         ],
         capital_allocation=CapitalAllocation(
             capex=[
-                _point_from_payload(point, source_refs_by_id)
-                for point in capital_allocation.capex
+                _point_from_payload(point, source_refs_by_id) for point in capital_allocation.capex
             ],
             buybacks=[
                 _point_from_payload(point, source_refs_by_id)
@@ -1307,8 +1286,7 @@ def build_cash_flow_report_from_payload(
                 for point in capital_allocation.dividends
             ],
             debt=[
-                _point_from_payload(point, source_refs_by_id)
-                for point in capital_allocation.debt
+                _point_from_payload(point, source_refs_by_id) for point in capital_allocation.debt
             ],
             liquidity=[
                 _point_from_payload(point, source_refs_by_id)
@@ -1318,7 +1296,7 @@ def build_cash_flow_report_from_payload(
         allocation_discipline=[
             _point_from_payload(point, source_refs_by_id) for point in payload.allocation_discipline
         ],
-        red_flags=[_point_from_payload(point, source_refs_by_id) for point in payload.red_flags],
+        red_flags=[_point_from_payload(point, source_refs_by_id) for point in red_flags],
     )
     return EvidenceAwareReport(
         run_id=request.run_id,
@@ -1337,19 +1315,22 @@ def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]
     verdict = normalized.get("cash_quality_verdict")
     if isinstance(verdict, str):
         normalized["cash_quality_verdict"] = {
-            "headline": verdict[:120],
+            "headline": _complete_sentence_headline(verdict),
             "earnings_backed_by_cash": "unclear",
             "summary": verdict,
         }
     elif isinstance(verdict, dict):
         summary = str(verdict.get("summary") or verdict.get("text") or "")
-        if summary and (
-            "headline" not in verdict or "earnings_backed_by_cash" not in verdict
-        ):
+        if summary and ("headline" not in verdict or "earnings_backed_by_cash" not in verdict):
+            headline = str(verdict.get("headline") or summary)
+            inferred_rating = _cash_quality_from_text(f"{headline} {summary}")
             normalized["cash_quality_verdict"] = {
-                "headline": str(verdict.get("headline") or summary[:120]),
-                "earnings_backed_by_cash": _cash_quality_from_text(
-                    str(verdict.get("earnings_backed_by_cash") or verdict.get("rating") or summary)
+                "headline": _complete_sentence_headline(headline),
+                "earnings_backed_by_cash": _cash_quality_rating_with_text_guardrail(
+                    str(
+                        verdict.get("earnings_backed_by_cash") or verdict.get("rating") or "unclear"
+                    ),
+                    inferred_rating,
                 ),
                 "summary": summary,
             }
@@ -1362,9 +1343,22 @@ def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]
                     "provide a complete cash quality verdict."
                 ),
             }
+        else:
+            headline = str(verdict.get("headline") or summary)
+            rating = str(verdict.get("earnings_backed_by_cash") or "unclear")
+            inferred_rating = _cash_quality_from_text(f"{headline} {summary}")
+            normalized["cash_quality_verdict"] = {
+                **verdict,
+                "headline": _complete_sentence_headline(headline),
+                "earnings_backed_by_cash": _cash_quality_rating_with_text_guardrail(
+                    rating,
+                    inferred_rating,
+                ),
+                "summary": summary,
+            }
     elif top_level_summary:
         normalized["cash_quality_verdict"] = {
-            "headline": top_level_summary[:120],
+            "headline": _complete_sentence_headline(top_level_summary),
             "earnings_backed_by_cash": _cash_quality_from_text(top_level_summary),
             "summary": top_level_summary,
         }
@@ -1376,9 +1370,7 @@ def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]
         normalized_cash_metrics = []
     cash_metric_points = _qualitative_cash_metric_points(normalized_cash_metrics)
     normalized["cash_metrics"] = [
-        metric
-        for metric in normalized_cash_metrics
-        if not _is_qualitative_cash_metric(metric)
+        metric for metric in normalized_cash_metrics if not _is_qualitative_cash_metric(metric)
     ]
     capital_allocation = normalized.get("capital_allocation")
     if isinstance(capital_allocation, dict):
@@ -1391,17 +1383,13 @@ def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]
             "debt": [],
             "liquidity": [],
         }
-    discipline_points = _normalize_synthesized_points(
-        normalized.get("allocation_discipline", [])
-    )
+    discipline_points = _normalize_synthesized_points(normalized.get("allocation_discipline", []))
     if not isinstance(discipline_points, list):
         discipline_points = []
     normalized["allocation_discipline"] = [*cash_metric_points, *discipline_points]
     normalized["red_flags"] = _normalize_synthesized_points(normalized.get("red_flags", []))
     claims = normalized.get("claims", [])
-    normalized["claims"] = _normalize_synthesized_claims(
-        claims if isinstance(claims, list) else []
-    )
+    normalized["claims"] = _normalize_synthesized_claims(claims if isinstance(claims, list) else [])
     normalized = {
         key: normalized[key]
         for key in {
@@ -1500,12 +1488,8 @@ def _bull_bear_read_from_payload(
     if value is None:
         return None
     return BullBearRead(
-        bull_case=[
-            _point_from_payload(point, source_refs_by_id) for point in value.bull_case
-        ],
-        bear_case=[
-            _point_from_payload(point, source_refs_by_id) for point in value.bear_case
-        ],
+        bull_case=[_point_from_payload(point, source_refs_by_id) for point in value.bull_case],
+        bear_case=[_point_from_payload(point, source_refs_by_id) for point in value.bear_case],
         balanced_read=_optional_point_from_payload(
             value.balanced_read,
             source_refs_by_id,
@@ -1595,27 +1579,33 @@ def _latest_bull_bear_with_backfill(
     source_refs: list[SourceRef],
 ) -> BullBearRead | None:
     existing = bull_bear_read or BullBearRead()
-    bull_case = existing.bull_case or _scenario_points_or_backfill(
-        [*driver_snapshot, *key_takeaways],
-        "Bull case",
-        "Constructive read",
-        (
-            "The constructive case is based on the supported revenue and "
-            "operating driver evidence. "
-            "It remains a scenario, not a price target or trading recommendation."
-        ),
-        source_refs,
-    )[:2]
-    bear_case = existing.bear_case or _scenario_points_or_backfill(
-        risk_snapshot,
-        "Bear case",
-        "Cautious read",
-        (
-            "The cautious case is based on the supported risk or pressure evidence. "
-            "It keeps the final read balanced until follow-up metrics improve."
-        ),
-        source_refs,
-    )[:2]
+    bull_case = (
+        existing.bull_case
+        or _scenario_points_or_backfill(
+            [*driver_snapshot, *key_takeaways],
+            "Bull case",
+            "Constructive read",
+            (
+                "The constructive case is based on the supported revenue and "
+                "operating driver evidence. "
+                "It remains a scenario, not a price target or trading recommendation."
+            ),
+            source_refs,
+        )[:2]
+    )
+    bear_case = (
+        existing.bear_case
+        or _scenario_points_or_backfill(
+            risk_snapshot,
+            "Bear case",
+            "Cautious read",
+            (
+                "The cautious case is based on the supported risk or pressure evidence. "
+                "It keeps the final read balanced until follow-up metrics improve."
+            ),
+            source_refs,
+        )[:2]
+    )
     balanced_read = existing.balanced_read or _point_from_source_refs(
         "Balanced read",
         (
@@ -1713,8 +1703,7 @@ def _quality_point_from_metric(
         return EvidenceBoundPoint(
             title=title,
             summary=(
-                f"{metric.name} of {metric.value} is the evidence anchor. "
-                f"{metric.interpretation}"
+                f"{metric.name} of {metric.value} is the evidence anchor. {metric.interpretation}"
             ),
             evidence_refs=metric.evidence_refs,
             citation_status=metric.citation_status,
@@ -1747,7 +1736,9 @@ def _points_or_backfill(
     summary: str,
     source_refs: list[SourceRef],
 ) -> list[EvidenceBoundPoint]:
-    return points or ([point] if (point := _point_from_source_refs(title, summary, source_refs)) else [])
+    return points or (
+        [point] if (point := _point_from_source_refs(title, summary, source_refs)) else []
+    )
 
 
 def _point_from_source_refs(
@@ -1790,13 +1781,7 @@ def _cash_metrics_with_fact_backfill(
     metrics: list[_SynthesizedMetric],
     state: AgentState,
 ) -> list[_SynthesizedMetric]:
-    usable_metrics = [
-        metric
-        for metric in metrics
-        if not _cash_metric_needs_fact_backfill(metric)
-    ]
-    if usable_metrics and len(usable_metrics) == len(metrics):
-        return usable_metrics
+    usable_metrics = [metric for metric in metrics if not _cash_metric_needs_fact_backfill(metric)]
     synthesized_metrics = []
     for record in state.evidence_memory.metric_evidence:
         if not _has_fact_value(record):
@@ -1817,29 +1802,52 @@ def _cash_metrics_with_fact_backfill(
                 citation_status=CitationStatus.SUPPORTED,
             )
         )
-    if not synthesized_metrics:
-        source_id = _first_source_id(state)
-        for record in _facts_metric_records(state):
-            name = str(record.get("name") or "").strip()
-            if not name or record.get("value") is None:
-                continue
-            synthesized_metrics.append(
-                _SynthesizedMetric(
-                    name=name.title(),
-                    value=_metric_evidence_value(record),
-                    period=_metric_evidence_period(record),
-                    interpretation=(
-                        f"{name.title()} was reported in SEC companyfacts and used as "
-                        "the cash-flow KPI anchor."
-                    ),
-                    source_ids=[source_id] if source_id else [],
-                    citation_status=CitationStatus.SUPPORTED
-                    if source_id
-                    else CitationStatus.UNVERIFIED,
-                )
+    source_id = _first_source_id(state)
+    for record in _facts_metric_records(state):
+        name = str(record.get("name") or "").strip()
+        if not name or record.get("value") is None:
+            continue
+        synthesized_metrics.append(
+            _SynthesizedMetric(
+                name=name.title(),
+                value=_metric_evidence_value(record),
+                period=_metric_evidence_period(record),
+                interpretation=(
+                    f"{name.title()} was reported in structured financial facts and used as "
+                    "the cash-flow KPI anchor."
+                ),
+                source_ids=[source_id] if source_id else [],
+                citation_status=CitationStatus.SUPPORTED
+                if source_id
+                else CitationStatus.UNVERIFIED,
             )
-    merged_metrics = [*usable_metrics, *synthesized_metrics]
-    return merged_metrics[:3]
+        )
+    merged_metrics = [*synthesized_metrics, *usable_metrics]
+    return _dedupe_cash_metrics(merged_metrics)[:7]
+
+
+def _dedupe_cash_metrics(metrics: list[_SynthesizedMetric]) -> list[_SynthesizedMetric]:
+    deduped: list[_SynthesizedMetric] = []
+    seen: set[str] = set()
+    for metric in metrics:
+        normalized_name = _normalize_metric_name(metric.name)
+        if normalized_name in seen:
+            continue
+        seen.add(normalized_name)
+        deduped.append(metric)
+    return deduped
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = value.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
 
 
 def _cash_metric_needs_fact_backfill(metric: _SynthesizedMetric) -> bool:
@@ -1854,29 +1862,154 @@ def _capital_allocation_with_fact_backfill(
     capital_allocation: _SynthesizedCapitalAllocation,
     metrics: list[_SynthesizedMetric],
 ) -> _SynthesizedCapitalAllocation:
-    if any(_capital_allocation_points(capital_allocation)):
-        return capital_allocation
     if not metrics:
-        return capital_allocation
-    metric = metrics[0]
-    point = _SynthesizedPoint(
-        title="Cash flow anchor",
-        summary=(
-            f"{metric.name} of {metric.value} is the core allocation capacity signal; "
-            "use buybacks, dividends, capex, debt, and liquidity evidence to refine "
-            "the conclusion."
-        ),
+        return _SynthesizedCapitalAllocation()
+    capex_metric = _synthesized_metric_by_name(metrics, ("capital expenditures", "capex"))
+    debt_metric = _synthesized_metric_by_name(metrics, ("total debt", "debt"))
+    current_ratio_metric = _synthesized_metric_by_name(metrics, ("current ratio",))
+    cash_metric = _synthesized_metric_by_name(
+        metrics,
+        ("cash and short term investments", "cash and equivalents"),
+    )
+    capex = list(capital_allocation.capex) if capex_metric is not None else []
+    debt = list(capital_allocation.debt) if debt_metric is not None else []
+    liquidity = (
+        list(capital_allocation.liquidity)
+        if current_ratio_metric is not None or cash_metric is not None
+        else []
+    )
+    if not capex and capex_metric is not None:
+        capex.append(
+            _cash_flow_point_from_metric(
+                capex_metric,
+                title="Capex and reinvestment",
+                summary=(
+                    f"{capex_metric.name} of {capex_metric.value} is the main "
+                    "reinvestment use of cash."
+                ),
+            )
+        )
+    if not debt and debt_metric is not None:
+        debt.append(
+            _cash_flow_point_from_metric(
+                debt_metric,
+                title="Debt load",
+                summary=(
+                    f"{debt_metric.name} of {debt_metric.value} frames balance sheet "
+                    "risk against cash generation."
+                ),
+            )
+        )
+    if not liquidity:
+        liquidity_parts = []
+        source_ids: list[str] = []
+        citation_status = CitationStatus.UNVERIFIED
+        if current_ratio_metric is not None:
+            liquidity_parts.append(f"current ratio of {current_ratio_metric.value}")
+            source_ids.extend(current_ratio_metric.source_ids)
+            citation_status = current_ratio_metric.citation_status
+        if cash_metric is not None:
+            liquidity_parts.append(f"cash and short-term investments of {cash_metric.value}")
+            source_ids.extend(cash_metric.source_ids)
+            citation_status = cash_metric.citation_status
+        if liquidity_parts:
+            liquidity.append(
+                _SynthesizedPoint(
+                    title="Balance sheet resilience",
+                    summary=(
+                        "Liquidity is anchored by "
+                        + " and ".join(liquidity_parts)
+                        + ", which determines how much room management has to fund reinvestment."
+                    ),
+                    source_ids=_dedupe_strings(source_ids),
+                    citation_status=citation_status,
+                )
+            )
+    if not any([capex, debt, liquidity, capital_allocation.buybacks, capital_allocation.dividends]):
+        metric = metrics[0]
+        liquidity.append(
+            _cash_flow_point_from_metric(
+                metric,
+                title="Cash flow anchor",
+                summary=(
+                    f"{metric.name} of {metric.value} is the core allocation capacity signal."
+                ),
+            )
+        )
+    return _SynthesizedCapitalAllocation(
+        capex=capex,
+        buybacks=capital_allocation.buybacks,
+        dividends=capital_allocation.dividends,
+        debt=debt,
+        liquidity=liquidity,
+    )
+
+
+def _cash_flow_red_flags_with_backfill(
+    red_flags: list[_SynthesizedPoint],
+    metrics: list[_SynthesizedMetric],
+) -> list[_SynthesizedPoint]:
+    if red_flags:
+        return red_flags
+    ocf = _synthesized_metric_by_name(metrics, ("operating cash flow",))
+    fcf = _synthesized_metric_by_name(metrics, ("free cash flow",))
+    capex = _synthesized_metric_by_name(metrics, ("capital expenditures", "capex"))
+    current_ratio = _synthesized_metric_by_name(metrics, ("current ratio",))
+    anchor = fcf or ocf or capex or current_ratio
+    if anchor is None:
+        return []
+    watch_items = []
+    if fcf is not None and capex is not None:
+        watch_items.append(f"whether {fcf.name.lower()} stays above capex after reinvestment")
+    elif ocf is not None and capex is not None:
+        watch_items.append(
+            f"whether {ocf.name.lower()} continues to fund capex without balance sheet strain"
+        )
+    elif current_ratio is not None:
+        watch_items.append(
+            f"whether liquidity remains stable around a current ratio of {current_ratio.value}"
+        )
+    else:
+        watch_items.append(f"whether {anchor.name.lower()} remains durable next quarter")
+    return [
+        _SynthesizedPoint(
+            title="Watch next cash signal",
+            summary=(
+                "Watch " + watch_items[0] + "; a deterioration would change the cash quality read."
+            ),
+            source_ids=anchor.source_ids,
+            citation_status=anchor.citation_status,
+        )
+    ]
+
+
+def _synthesized_metric_by_name(
+    metrics: list[_SynthesizedMetric],
+    needles: tuple[str, ...],
+) -> _SynthesizedMetric | None:
+    for metric in metrics:
+        normalized_name = _normalize_metric_name(metric.name)
+        if any(needle in normalized_name for needle in needles):
+            return metric
+    return None
+
+
+def _cash_flow_point_from_metric(
+    metric: _SynthesizedMetric,
+    *,
+    title: str,
+    summary: str,
+) -> _SynthesizedPoint:
+    return _SynthesizedPoint(
+        title=title,
+        summary=summary,
         source_ids=metric.source_ids,
         citation_status=metric.citation_status,
     )
-    return _SynthesizedCapitalAllocation(liquidity=[point])
 
 
 def _facts_metric_records(state: AgentState) -> list[dict[str, Any]]:
-    metrics = state.evidence_memory.facts.get("metrics")
-    if not isinstance(metrics, list):
-        return []
-    return [metric for metric in metrics if isinstance(metric, dict)]
+    return cash_flow_metric_records_from_facts(state.evidence_memory.facts)
 
 
 def _first_source_id(state: AgentState) -> str:
@@ -1908,10 +2041,7 @@ def _summary_from_provider_point(point: dict[str, object], text: str) -> str:
 
 
 def _clean_mapping_keys(value: dict[str, Any]) -> dict[str, Any]:
-    return {
-        _clean_key(key): item
-        for key, item in value.items()
-    }
+    return {_clean_key(key): item for key, item in value.items()}
 
 
 def _clean_key(value: object) -> str:
@@ -1951,15 +2081,55 @@ def _earnings_verdict_from_text(value: str) -> str:
 
 def _cash_quality_from_text(value: str) -> str:
     normalized = value.lower()
-    if re.search(r"\b(no|weak|weakness|deteriorat(?:e|ed|ing)|unfunded)\b", normalized):
+    if re.search(r"\b(unassessable|not assessable|insufficient|missing evidence)\b", normalized):
         return "no"
+    if re.search(r"\b(weak|weakness|deteriorat(?:e|ed|ing)|unfunded)\b", normalized):
+        return "no"
+    if (
+        "mixed" in normalized
+        or "caveat" in normalized
+        or "but" in normalized
+        or "not pristine" in normalized
+        or "strained" in normalized
+        or "strain" in normalized
+        or "pressure" in normalized
+        or "volatile" in normalized
+    ):
+        return "mixed"
     if "high_quality" in normalized:
         return "yes"
-    if "mixed" in normalized or "caveat" in normalized:
-        return "mixed"
-    if re.search(r"\b(yes|funded|supports?|backed|covered)\b", normalized):
+    if re.search(
+        r"\b(yes|strong|exceptional|positive|funded|supports?|backed|covered|solid)\b",
+        normalized,
+    ):
         return "yes"
     return "unclear"
+
+
+def _cash_quality_rating_with_text_guardrail(rating: str, inferred_rating: str) -> str:
+    normalized_rating = rating if rating in {"yes", "mixed", "no", "unclear"} else "unclear"
+    if inferred_rating == "unclear":
+        return normalized_rating
+    if normalized_rating == "unclear":
+        return inferred_rating
+    if normalized_rating != inferred_rating:
+        return inferred_rating
+    return normalized_rating
+
+
+def _complete_sentence_headline(value: str, *, max_chars: int = 120) -> str:
+    text = " ".join(str(value or "").split())
+    first_sentence = re.match(r"^(.+?[.!?])\s+(?=[A-Z])", text)
+    if first_sentence:
+        return first_sentence.group(1)
+    if len(text) <= max_chars:
+        return text
+    sentence_boundaries = [
+        match.end(1) for match in re.finditer(r"(.+?[.!?])\s+(?=[A-Z])", text[: max_chars + 1])
+    ]
+    if sentence_boundaries:
+        return text[: sentence_boundaries[-1]]
+    return text[:max_chars].rstrip(" ,;:-") + "."
 
 
 def _driver_durability_from_text(value: str) -> str:
@@ -2507,7 +2677,9 @@ def _source_ref_aliases(source_ref: SourceRef, index: int) -> list[str]:
         aliases.extend(_strip_source_ref_suffix(part) for part in source_ref.source_id.split(":"))
         aliases.append(_source_ref_short_alias(source_ref.source_id))
     if source_ref.accession_number:
-        aliases.append(_source_ref_short_alias(f"{source_ref.accession_number}:{source_ref.source_id}"))
+        aliases.append(
+            _source_ref_short_alias(f"{source_ref.accession_number}:{source_ref.source_id}")
+        )
     return [alias for alias in aliases if alias]
 
 
@@ -2785,10 +2957,7 @@ def _business_driver_backfill_source_refs(
         source_ref
         for source_ref in source_refs
         if source_ref.source_id
-        and any(
-            term in f"{source_ref.section} {source_ref.snippet}".lower()
-            for term in terms
-        )
+        and any(term in f"{source_ref.section} {source_ref.snippet}".lower() for term in terms)
     ]
     if matches:
         return matches[:3]
@@ -2908,12 +3077,13 @@ def _sanitize_source_ids(
     source_refs_by_id: dict[str, SourceRef],
 ) -> None:
     original_ids = list(item.source_ids)
-    item.source_ids = [
-        source_id for source_id in original_ids if source_id in source_refs_by_id
-    ]
+    item.source_ids = [source_id for source_id in original_ids if source_id in source_refs_by_id]
     if original_ids and not item.source_ids:
         item.citation_status = CitationStatus.UNVERIFIED
-    elif len(item.source_ids) < len(original_ids) and item.citation_status == CitationStatus.SUPPORTED:
+    elif (
+        len(item.source_ids) < len(original_ids)
+        and item.citation_status == CitationStatus.SUPPORTED
+    ):
         item.citation_status = CitationStatus.PARTIAL
 
 
@@ -3193,13 +3363,10 @@ def _final_dashboard_metrics(
     source_refs_by_id: dict[str, SourceRef],
 ) -> list[EvidenceBoundMetric]:
     final_metrics = [
-        _metric_with_evidence_guardrail(metric, state, source_refs_by_id)
-        for metric in metrics
+        _metric_with_evidence_guardrail(metric, state, source_refs_by_id) for metric in metrics
     ]
     return [
-        metric
-        for metric in final_metrics
-        if not _is_placeholder_evidence_metric(metric)
+        metric for metric in final_metrics if not _is_placeholder_evidence_metric(metric)
     ] or _dashboard_metrics_from_fact_evidence(state, source_refs_by_id)
 
 
@@ -3276,7 +3443,10 @@ def _metric_evidence_for_name(
 
 
 def _has_fact_value(record: dict[str, Any]) -> bool:
-    return record.get("value") is not None and str(record.get("source") or "") == "sec_companyfacts"
+    return record.get("value") is not None and str(record.get("source") or "") in {
+        "sec_companyfacts",
+        "preloaded_financial_facts",
+    }
 
 
 def _metric_value_needs_evidence(value: str, interpretation: str) -> bool:
@@ -3296,6 +3466,10 @@ def _metric_value_needs_evidence(value: str, interpretation: str) -> bool:
 def _metric_evidence_value(record: dict[str, Any]) -> str:
     value = record.get("value")
     unit = str(record.get("unit") or "").strip()
+    if isinstance(value, int | float) and unit.lower() in {"x", "ratio"}:
+        return f"{float(value):.2f}x"
+    if isinstance(value, int | float) and unit.lower() in {"pure", "percent", "percentage"}:
+        return f"{float(value) * 100:.1f}%"
     if isinstance(value, int | float):
         formatted = _compact_number(value)
     elif isinstance(value, str) and value.strip().replace(".", "", 1).isdigit():
@@ -3372,7 +3546,7 @@ def _metric_evidence_interpretation(record: dict[str, Any], source_ref: SourceRe
 
 
 def _normalize_metric_name(metric: str) -> str:
-    return " ".join(metric.strip().lower().replace("_", " ").split())
+    return normalize_metric_name(metric)
 
 
 def _compact_number(value: int | float) -> str:

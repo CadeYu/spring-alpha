@@ -1960,18 +1960,19 @@ describe("Home page", () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText("Cash Quality").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cash Flow Bridge").length).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText("Capital Allocation Scorecard").length,
-    ).toBeGreaterThan(0);
-    expect(screen.getAllByText("Allocation Discipline").length).toBeGreaterThan(
+    expect(screen.getAllByText("Capex and Reinvestment").length).toBeGreaterThan(
       0,
     );
-    expect(screen.getAllByText("Red Flags").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Balance Sheet Resilience and Debt").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("Risk Signals and Watch Next").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Final Analyst Outlook").length).toBeGreaterThan(0);
     expect(screen.queryByText("Trust Summary")).not.toBeInTheDocument();
     expect(screen.queryByText("Evidence Count")).not.toBeInTheDocument();
     expect(screen.getByText("Typed operating cash flow")).toBeInTheDocument();
     expect(screen.getByText("Typed capex signal")).toBeInTheDocument();
-    expect(screen.getByText("Typed buyback signal")).toBeInTheDocument();
+    expect(screen.queryByText("Typed buyback signal")).not.toBeInTheDocument();
     expect(screen.getByText("Typed liquidity signal")).toBeInTheDocument();
     expect(screen.getByText("Typed allocation discipline")).toBeInTheDocument();
     expect(screen.getByText("Typed red flag")).toBeInTheDocument();

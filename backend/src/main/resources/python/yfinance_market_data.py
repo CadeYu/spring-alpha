@@ -53,10 +53,10 @@ def read_statement_value(frame, labels, column):
     return None
 
 
-def collect_quarterly_financials(income_stmt, cashflow_stmt):
+def collect_quarterly_financials(income_stmt, cashflow_stmt, balance_sheet):
     statements = {}
 
-    for frame in [income_stmt, cashflow_stmt]:
+    for frame in [income_stmt, cashflow_stmt, balance_sheet]:
         if frame is None or getattr(frame, "empty", True):
             continue
 
@@ -74,7 +74,12 @@ def collect_quarterly_financials(income_stmt, cashflow_stmt):
                     "operatingIncome": None,
                     "netIncome": None,
                     "operatingCashFlow": None,
+                    "capitalExpenditures": None,
                     "freeCashFlow": None,
+                    "cashAndShortTermInvestments": None,
+                    "currentAssets": None,
+                    "currentLiabilities": None,
+                    "totalDebt": None,
                 },
             )
 
@@ -100,10 +105,44 @@ def collect_quarterly_financials(income_stmt, cashflow_stmt):
                     ["Operating Cash Flow"],
                     column,
                 )
+            if snapshot["capitalExpenditures"] is None:
+                capex = read_statement_value(
+                    cashflow_stmt,
+                    ["Capital Expenditure", "Capital Expenditures"],
+                    column,
+                )
+                snapshot["capitalExpenditures"] = abs(capex) if capex is not None else None
             if snapshot["freeCashFlow"] is None:
                 snapshot["freeCashFlow"] = read_statement_value(
                     cashflow_stmt,
                     ["Free Cash Flow"],
+                    column,
+                )
+            if snapshot["cashAndShortTermInvestments"] is None:
+                snapshot["cashAndShortTermInvestments"] = read_statement_value(
+                    balance_sheet,
+                    [
+                        "Cash And Cash Equivalents",
+                        "Cash Cash Equivalents And Short Term Investments",
+                    ],
+                    column,
+                )
+            if snapshot["currentAssets"] is None:
+                snapshot["currentAssets"] = read_statement_value(
+                    balance_sheet,
+                    ["Current Assets", "Total Current Assets"],
+                    column,
+                )
+            if snapshot["currentLiabilities"] is None:
+                snapshot["currentLiabilities"] = read_statement_value(
+                    balance_sheet,
+                    ["Current Liabilities", "Total Current Liabilities"],
+                    column,
+                )
+            if snapshot["totalDebt"] is None:
+                snapshot["totalDebt"] = read_statement_value(
+                    balance_sheet,
+                    ["Total Debt", "Long Term Debt", "Long Term Debt And Capital Lease Obligation"],
                     column,
                 )
 
@@ -133,6 +172,7 @@ def main() -> int:
     history = None
     quarterly_income_stmt = None
     quarterly_cashflow = None
+    quarterly_balance_sheet = None
     errors = []
 
     try:
@@ -159,6 +199,11 @@ def main() -> int:
         quarterly_cashflow = stock.quarterly_cashflow
     except Exception as exc:
         errors.append(f"quarterly_cashflow: {exc}")
+
+    try:
+        quarterly_balance_sheet = stock.quarterly_balance_sheet
+    except Exception as exc:
+        errors.append(f"quarterly_balance_sheet: {exc}")
 
     company_name = info.get("shortName") or info.get("longName") or info.get("displayName")
     sector = info.get("sectorDisp") or info.get("sector")
@@ -188,7 +233,11 @@ def main() -> int:
         except Exception:
             pass
 
-    quarterly_financials = collect_quarterly_financials(quarterly_income_stmt, quarterly_cashflow)
+    quarterly_financials = collect_quarterly_financials(
+        quarterly_income_stmt,
+        quarterly_cashflow,
+        quarterly_balance_sheet,
+    )
 
     payload = {
         "profileAvailable": company_name is not None,

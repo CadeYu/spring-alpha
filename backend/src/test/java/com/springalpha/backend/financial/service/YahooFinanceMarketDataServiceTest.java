@@ -41,7 +41,12 @@ class YahooFinanceMarketDataServiceTest {
                               "operatingIncome": 4449000000,
                               "netIncome": 2936000000,
                               "operatingCashFlow": 5933000000,
-                              "freeCashFlow": 71000000
+                              "capitalExpenditures": 5862000000,
+                              "freeCashFlow": 71000000,
+                              "cashAndShortTermInvestments": 11200000000,
+                              "currentAssets": 21400000000,
+                              "currentLiabilities": 12400000000,
+                              "totalDebt": 88300000000
                             }
                           ],
                           "message": null,
@@ -74,6 +79,11 @@ class YahooFinanceMarketDataServiceTest {
         assertEquals("Oracle provides enterprise infrastructure software and cloud services.", data.businessSummary());
         assertEquals(1, data.quarterlyFinancials().size());
         assertEquals(new BigDecimal("14130000000"), data.quarterlyFinancials().get(0).revenue());
+        assertEquals(new BigDecimal("5862000000"), data.quarterlyFinancials().get(0).capitalExpenditures());
+        assertEquals(new BigDecimal("11200000000"), data.quarterlyFinancials().get(0).cashAndShortTermInvestments());
+        assertEquals(new BigDecimal("21400000000"), data.quarterlyFinancials().get(0).currentAssets());
+        assertEquals(new BigDecimal("12400000000"), data.quarterlyFinancials().get(0).currentLiabilities());
+        assertEquals(new BigDecimal("88300000000"), data.quarterlyFinancials().get(0).totalDebt());
     }
 
     @Test

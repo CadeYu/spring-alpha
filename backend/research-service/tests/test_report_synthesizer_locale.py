@@ -15,10 +15,18 @@ from app.agents.report_synthesizer import (
     _system_prompt,
     _user_prompt,
     build_business_driver_report_from_payload,
+    build_cash_flow_report_from_payload,
     build_latest_earnings_report_from_payload,
     synthesize_latest_earnings_payload,
 )
-from app.contracts.agent import AgentState, CoverageState, EvidenceMemory, TaskPolicy
+from app.contracts.agent import (
+    AgentRequest,
+    AgentState,
+    CoverageState,
+    EvidenceMemory,
+    TaskPolicy,
+    default_task_policy,
+)
 from app.contracts.report import SourceRef
 from app.contracts.research_task import ResearchTaskType
 
@@ -108,9 +116,7 @@ def test_prompts_remain_english_for_en_language() -> None:
     state = _make_state()
 
     assert _system_prompt("en").startswith("You are a financial research report synthesizer")
-    assert _company_profile_system_prompt("en").startswith(
-        "You write concise investor-facing"
-    )
+    assert _company_profile_system_prompt("en").startswith("You write concise investor-facing")
     assert "Write a 1-2 sentence investor-facing company profile" in _company_profile_user_prompt(
         state,
         "Apple designs consumer electronics and services.",
@@ -387,9 +393,7 @@ def test_latest_earnings_backfills_rich_sections_when_model_omits_them() -> None
     assert sections.quality_of_quarter.cash_quality.title == "Cash quality"
     assert sections.drivers_and_draggers.drivers[0].title == "Services support mix"
     assert sections.drivers_and_draggers.draggers[0].title == "Margin pressure remains visible"
-    assert sections.bull_bear_read.bull_case[0].title == (
-        "Bull case: Services support mix"
-    )
+    assert sections.bull_bear_read.bull_case[0].title == ("Bull case: Services support mix")
     assert sections.bull_bear_read.bear_case[0].title == (
         "Bear case: Margin pressure remains visible"
     )
@@ -665,9 +669,7 @@ def test_business_driver_report_backfills_clean_refs_when_synthesis_omits_source
         if point is not None
         for evidence_ref in point.evidence_refs
     } <= {"src_revenue", "src_segment"}
-    assert all(
-        point.citation_status == "partial" for point in points if point is not None
-    )
+    assert all(point.citation_status == "partial" for point in points if point is not None)
 
 
 def test_business_driver_report_recovers_partial_placeholder_with_clean_lens_refs() -> None:
@@ -1073,9 +1075,7 @@ def test_business_driver_report_filters_noisy_synthesis_text_and_refs() -> None:
                     {
                         "source_id": "src_table",
                         "section": "Segment table",
-                        "snippet": (
-                            "| | | 6,402 | | | 15,509 | | | Services | Products | ---|---"
-                        ),
+                        "snippet": ("| | | 6,402 | | | 15,509 | | | Services | Products | ---|---"),
                         "citation_status": "supported",
                     },
                 ],
@@ -1233,19 +1233,11 @@ def test_business_driver_report_filters_footnote_and_table_of_contents_refs() ->
     assert "Wireless service revenue increased" in serialized
     sections = report.task_sections.driver_map
     assert sections.segment_momentum is not None
-    assert all(
-        ref.source_id != "src_bby_table"
-        for ref in sections.segment_momentum.evidence_refs
-    )
+    assert all(ref.source_id != "src_bby_table" for ref in sections.segment_momentum.evidence_refs)
     assert sections.margin_and_mix is not None
-    assert all(
-        ref.source_id != "src_vz_footnote"
-        for ref in sections.margin_and_mix.evidence_refs
-    )
+    assert all(ref.source_id != "src_vz_footnote" for ref in sections.margin_and_mix.evidence_refs)
     assert sections.demand_signals is not None
-    assert [ref.source_id for ref in sections.demand_signals.evidence_refs] == [
-        "src_vz_clean"
-    ]
+    assert [ref.source_id for ref in sections.demand_signals.evidence_refs] == ["src_vz_clean"]
 
 
 def test_business_driver_report_filters_low_information_pipe_refs_and_claim_citations() -> None:
@@ -1469,7 +1461,9 @@ def test_cash_flow_capital_allocation_backfills_empty_point_summaries() -> None:
     capex = payload["capital_allocation"]["capex"][0]
     buybacks = payload["capital_allocation"]["buybacks"][0]
     discipline = payload["allocation_discipline"][0]
-    assert capex["summary"] == "Investor implication: Capex remains the main reinvestment use of cash."
+    assert (
+        capex["summary"] == "Investor implication: Capex remains the main reinvestment use of cash."
+    )
     assert buybacks["summary"] == "Value was $0 for latest quarter."
     assert "Liquidity remains adequate" in discipline["summary"]
 
@@ -1566,6 +1560,478 @@ def test_cash_flow_qualitative_metric_is_moved_to_allocation_discipline() -> Non
     assert (
         payload["allocation_discipline"][0]["summary"]
         == "mixed - cash flow exists but quality remains thin."
+    )
+
+
+def test_cash_flow_fact_backfill_keeps_core_metrics_and_adds_resilience_points() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {
+                        "name": "net income",
+                        "value": 29578000000,
+                        "unit": "USD",
+                        "period": "2026-03-31",
+                    },
+                    {
+                        "name": "operating cash flow",
+                        "value": 28702000000,
+                        "unit": "USD",
+                        "period": "2026-03-31",
+                    },
+                    {
+                        "name": "capital expenditures",
+                        "value": 1971000000,
+                        "unit": "USD",
+                        "period": "2026-03-31",
+                    },
+                    {
+                        "name": "free cash flow",
+                        "value": 26731000000,
+                        "unit": "USD",
+                        "period": "2026-03-31",
+                    },
+                    {
+                        "name": "current ratio",
+                        "value": 1.0704,
+                        "unit": "x",
+                        "period": "2026-03-31",
+                    },
+                    {
+                        "name": "total debt",
+                        "value": 84711000000,
+                        "unit": "USD",
+                        "period": "2026-03-31",
+                    },
+                    {
+                        "name": "cash and short term investments",
+                        "value": 45572000000,
+                        "unit": "USD",
+                        "period": "2026-03-31",
+                    },
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Structured quarterly yfinance cash flow and balance sheet facts.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "Cash generation is strong.",
+            "earnings_backed_by_cash": "yes",
+            "summary": "Cash generation is strong and supported by free cash flow.",
+        },
+        "cash_metrics": [
+            {
+                "name": "Metric",
+                "value": "available",
+                "interpretation": "placeholder",
+                "source_ids": [],
+            }
+        ],
+        "capital_allocation": {
+            "capex": [
+                {
+                    "title": "Capex is modest",
+                    "summary": "Capex is modest against operating cash flow.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ]
+        },
+        "allocation_discipline": [],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+    metric_names = [metric.name.lower() for metric in report.task_sections.cash_metrics]
+
+    assert metric_names == [
+        "net income",
+        "operating cash flow",
+        "capital expenditures",
+        "free cash flow",
+        "current ratio",
+        "total debt",
+        "cash and short term investments",
+    ]
+    assert report.task_sections.capital_allocation.capex
+    assert report.task_sections.capital_allocation.debt
+    assert report.task_sections.capital_allocation.liquidity
+    assert report.task_sections.capital_allocation.buybacks == []
+    assert report.task_sections.capital_allocation.dividends == []
+
+
+def test_cash_flow_partial_llm_metrics_are_completed_from_structured_facts() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="AMD",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="AMD",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "net income", "value": 1384000000, "unit": "USD"},
+                    {"name": "operating cash flow", "value": 2957000000, "unit": "USD"},
+                    {"name": "capital expenditures", "value": 132000000, "unit": "USD"},
+                    {"name": "free cash flow", "value": 2825000000, "unit": "USD"},
+                    {"name": "current ratio", "value": 2.49, "unit": "x"},
+                    {"name": "total debt", "value": 3027000000, "unit": "USD"},
+                    {
+                        "name": "cash and short term investments",
+                        "value": 7572000000,
+                        "unit": "USD",
+                    },
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Structured yfinance cash flow and balance sheet metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "AMD cash quality is strong.",
+            "earnings_backed_by_cash": "yes",
+            "summary": "Operating cash flow covers earnings.",
+        },
+        "cash_metrics": [
+            {
+                "name": "Operating Cash Flow / Net Income",
+                "value": "2.1x",
+                "interpretation": "Cash conversion is strong.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            },
+            {
+                "name": "Free Cash Flow",
+                "value": "$2.8B",
+                "interpretation": "Free cash flow is positive.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            },
+        ],
+        "capital_allocation": {"liquidity": []},
+        "allocation_discipline": [],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+    metric_names = [metric.name.lower() for metric in report.task_sections.cash_metrics]
+
+    assert "net income" in metric_names
+    assert "operating cash flow" in metric_names
+    assert "capital expenditures" in metric_names
+    assert "current ratio" in metric_names
+    assert "total debt" in metric_names
+    assert "cash and short term investments" in metric_names
+
+
+def test_cash_flow_raw_yfinance_quarterly_facts_are_completed_as_core_metrics() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="BRK-B",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="BRK-B",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "ticker": "BRK-B",
+                "companyName": "Berkshire Hathaway Inc.",
+                "quarterlyFinancials": [
+                    {
+                        "periodEnd": "2026-03-31",
+                        "netIncome": 12300000000,
+                        "operatingCashFlow": 16000000000,
+                        "capitalExpenditures": 1900000000,
+                        "freeCashFlow": 14100000000,
+                        "cashAndShortTermInvestments": 334000000000,
+                        "currentAssets": 430000000000,
+                        "currentLiabilities": 106000000000,
+                        "totalDebt": 128000000000,
+                    }
+                ],
+            },
+            source_refs=[],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "Berkshire cash quality is resilient.",
+            "earnings_backed_by_cash": "mixed",
+            "summary": "Cash quality should be anchored in structured financial facts.",
+        },
+        "cash_metrics": [
+            {
+                "name": "Net income (latest quarter)",
+                "value": "$12.3B",
+                "interpretation": "Net income was reported in the latest quarter.",
+                "source_ids": [],
+                "citation_status": "supported",
+            }
+        ],
+        "capital_allocation": {},
+        "allocation_discipline": [],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+    metric_names = [metric.name.lower() for metric in report.task_sections.cash_metrics]
+
+    assert metric_names == [
+        "net income",
+        "operating cash flow",
+        "capital expenditures",
+        "free cash flow",
+        "current ratio",
+        "total debt",
+        "cash and short term investments",
+    ]
+    assert "net income (latest quarter)" not in metric_names
+    current_ratio = next(
+        metric
+        for metric in report.task_sections.cash_metrics
+        if metric.name.lower() == "current ratio"
+    )
+    assert current_ratio.value == "4.06x"
+    assert report.task_sections.capital_allocation.capex
+    assert report.task_sections.capital_allocation.debt
+    assert report.task_sections.capital_allocation.liquidity
+
+
+def test_cash_flow_empty_red_flags_are_backfilled_with_watch_next() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "operating cash flow", "value": 28702000000, "unit": "USD"},
+                    {"name": "capital expenditures", "value": 1971000000, "unit": "USD"},
+                    {"name": "free cash flow", "value": 26731000000, "unit": "USD"},
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Structured yfinance cash flow metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "Cash quality is strong but not pristine.",
+            "earnings_backed_by_cash": "mixed",
+            "summary": "Cash generation is positive.",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {},
+        "allocation_discipline": [],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    assert report.task_sections.red_flags
+    assert "Watch" in report.task_sections.red_flags[0].title
+
+
+def test_cash_flow_unsupported_capital_points_are_removed_without_structured_metrics() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="HD",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="HD",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="en",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={"metrics": []},
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "Financial Statements",
+                    "snippet": "Evidence placeholder for net income.",
+                    "citation_status": "unverified",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "Cash quality is unverifiable.",
+            "earnings_backed_by_cash": "unclear",
+            "summary": "Structured cash flow evidence is missing.",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {
+            "capex": [
+                {
+                    "title": "Capex placeholder",
+                    "summary": "Capex appears manageable.",
+                    "source_ids": ["src_1"],
+                }
+            ],
+            "debt": [
+                {
+                    "title": "Debt placeholder",
+                    "summary": "Debt appears manageable.",
+                    "source_ids": ["src_1"],
+                }
+            ],
+            "liquidity": [
+                {
+                    "title": "Liquidity placeholder",
+                    "summary": "Liquidity appears adequate.",
+                    "source_ids": ["src_1"],
+                }
+            ],
+        },
+        "allocation_discipline": [],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    assert report.task_sections.capital_allocation.capex == []
+    assert report.task_sections.capital_allocation.debt == []
+    assert report.task_sections.capital_allocation.liquidity == []
+
+
+def test_cash_flow_verdict_normalization_keeps_headline_complete_and_status_consistent() -> None:
+    payload = _normalize_cash_flow_payload(
+        {
+            "cash_quality_verdict": {
+                "headline": (
+                    "Apple's cash quality is strong but not pristine. The company "
+                    "generated $26.7B in free cash flow against $29.6B in net income."
+                ),
+                "earnings_backed_by_cash": "unclear",
+                "summary": (
+                    "Apple's cash quality is strong but not pristine. Free cash flow "
+                    "covered most reported earnings, but operating cash flow trailed net income."
+                ),
+            },
+            "cash_metrics": [],
+            "capital_allocation": {},
+            "allocation_discipline": [],
+            "red_flags": [],
+            "claims": [],
+        }
+    )
+
+    verdict = payload["cash_quality_verdict"]
+    assert verdict["headline"] == "Apple's cash quality is strong but not pristine."
+    assert verdict["earnings_backed_by_cash"] == "mixed"
+
+
+def test_cash_flow_verdict_normalization_overrides_conflicting_status() -> None:
+    assert (
+        _normalize_cash_flow_payload(
+            {
+                "cash_quality_verdict": {
+                    "headline": "Exceptional cash quality.",
+                    "earnings_backed_by_cash": "no",
+                    "summary": "Exceptional cash quality and strong free cash flow conversion support earnings.",
+                },
+                "cash_metrics": [],
+                "capital_allocation": {},
+                "allocation_discipline": [],
+                "red_flags": [],
+                "claims": [],
+            }
+        )["cash_quality_verdict"]["earnings_backed_by_cash"]
+        == "yes"
+    )
+    assert (
+        _normalize_cash_flow_payload(
+            {
+                "cash_quality_verdict": {
+                    "headline": "Oracle's cash quality is structurally strained.",
+                    "earnings_backed_by_cash": "yes",
+                    "summary": "Cash quality is structurally strained because capex and debt pressure free cash flow.",
+                },
+                "cash_metrics": [],
+                "capital_allocation": {},
+                "allocation_discipline": [],
+                "red_flags": [],
+                "claims": [],
+            }
+        )["cash_quality_verdict"]["earnings_backed_by_cash"]
+        == "mixed"
+    )
+    assert (
+        _normalize_cash_flow_payload(
+            {
+                "cash_quality_verdict": {
+                    "earnings_backed_by_cash": "yes",
+                    "summary": "Apple's cash quality is strong but not pristine.",
+                },
+                "cash_metrics": [],
+                "capital_allocation": {},
+                "allocation_discipline": [],
+                "red_flags": [],
+                "claims": [],
+            }
+        )["cash_quality_verdict"]["earnings_backed_by_cash"]
+        == "mixed"
     )
 
 
