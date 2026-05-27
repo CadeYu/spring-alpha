@@ -2814,10 +2814,7 @@ function MetricStripCard({
 function EvidencePointBlock({ point }: { point: EvidenceBoundPoint }) {
   return (
     <div className="min-w-0 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-3">
-      <p className="min-w-0 [overflow-wrap:anywhere] font-semibold text-slate-200">
-        {point.title}
-      </p>
-      <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400">
+      <p className="min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400">
         {point.summary}
       </p>
     </div>
@@ -2839,14 +2836,9 @@ function BusinessDriverParagraphBlock({
         {label}
       </p>
       {point ? (
-        <>
-          <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-base font-semibold leading-7 text-slate-100">
-            {point.title}
-          </p>
-          <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-sm leading-7 text-slate-400">
-            {point.summary}
-          </p>
-        </>
+        <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-sm leading-7 text-slate-400">
+          {point.summary}
+        </p>
       ) : (
         <p className="mt-2 text-sm leading-6 text-slate-500">{emptyText}</p>
       )}
@@ -3093,17 +3085,14 @@ function WatchNextCard({
               key={`${item.title}-${index}`}
               className="min-w-0 overflow-hidden rounded-md border border-slate-800 bg-slate-950/60 p-4"
             >
-              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                <p className="min-w-0 [overflow-wrap:anywhere] font-semibold text-slate-200">
-                  {item.title}
-                </p>
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-end">
                 {item.metric && (
                   <Badge className="w-fit border-slate-700 bg-slate-900 text-slate-300">
                     {item.metric}
                   </Badge>
                 )}
               </div>
-              <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400">
+              <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-sm leading-6 text-slate-400 first:mt-0">
                 {item.whyItMatters}
               </p>
             </div>

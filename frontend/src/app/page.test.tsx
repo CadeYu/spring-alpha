@@ -1149,9 +1149,8 @@ describe("Home page", () => {
     openAgentReport(/business driver deep dive/i);
 
     expect(await screen.findByText("Typed driver thesis")).toBeInTheDocument();
-    expect(screen.getAllByText("Typed revenue bridge").length).toBeGreaterThan(
-      0,
-    );
+    expect(screen.queryByText("Typed revenue bridge")).not.toBeInTheDocument();
+    expect(screen.getByText("Typed revenue bridge evidence.")).toBeInTheDocument();
     expect(screen.queryByText("Track typed product adoption.")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Legacy services momentum"),
@@ -1345,20 +1344,30 @@ describe("Home page", () => {
     expect(screen.getAllByText("Watch Next").length).toBeGreaterThan(0);
     expect(screen.queryByText("Trust Summary")).not.toBeInTheDocument();
     expect(screen.queryByText("Evidence Count")).not.toBeInTheDocument();
-    expect(screen.getByText("Typed revenue takeaway")).toBeInTheDocument();
+    expect(screen.queryByText("Typed revenue takeaway")).not.toBeInTheDocument();
+    expect(screen.getByText("Typed revenue evidence.")).toBeInTheDocument();
     expect(screen.getByText("Typed revenue metric")).toBeInTheDocument();
     expect(screen.getByText("$219.7B")).toBeInTheDocument();
     expect(screen.queryByText("219659000000")).not.toBeInTheDocument();
     expect(screen.queryByText("Revenue")).not.toBeInTheDocument();
     expect(screen.queryByText("Reported metric.")).not.toBeInTheDocument();
-    expect(screen.getByText("Typed services driver")).toBeInTheDocument();
+    expect(screen.queryByText("Typed services driver")).not.toBeInTheDocument();
+    expect(screen.getByText("Typed services evidence.")).toBeInTheDocument();
     expect(screen.queryByText("Growth quality improved")).not.toBeInTheDocument();
-    expect(screen.getByText("Installed base drove services")).toBeInTheDocument();
-    expect(screen.getByText("FX remained a drag")).toBeInTheDocument();
-    expect(screen.getByText("Bull case: services durability")).toBeInTheDocument();
-    expect(screen.getByText("Bear case: margin pressure")).toBeInTheDocument();
-    expect(screen.getByText("Balanced read favors mixed")).toBeInTheDocument();
-    expect(screen.getByText("Watch operating margin")).toBeInTheDocument();
+    expect(screen.queryByText("Installed base drove services")).not.toBeInTheDocument();
+    expect(screen.getByText("Services demand remained the clearest positive driver.")).toBeInTheDocument();
+    expect(screen.queryByText("FX remained a drag")).not.toBeInTheDocument();
+    expect(screen.getByText("Foreign exchange pressure muted part of the growth signal.")).toBeInTheDocument();
+    expect(screen.queryByText("Bull case: services durability")).not.toBeInTheDocument();
+    expect(screen.getByText("A larger installed base can keep services growth durable.")).toBeInTheDocument();
+    expect(screen.queryByText("Bear case: margin pressure")).not.toBeInTheDocument();
+    expect(screen.getByText("Operating leverage may stay constrained if expenses outpace revenue.")).toBeInTheDocument();
+    expect(screen.queryByText("Balanced read favors mixed")).not.toBeInTheDocument();
+    expect(screen.getByText("The quarter improved, but margin and FX evidence keep the verdict mixed.")).toBeInTheDocument();
+    expect(screen.queryByText("Watch operating margin")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Operating margin will show whether revenue converts into better earnings."),
+    ).toBeInTheDocument();
     expect(screen.getByText("operating_margin")).toBeInTheDocument();
     expect(screen.queryByText("Typed risk snapshot")).not.toBeInTheDocument();
     expect(
@@ -1421,7 +1430,10 @@ describe("Home page", () => {
       await screen.findByText("Legacy-compatible latest earnings thesis"),
     ).toBeInTheDocument();
     expect(screen.getAllByText("Watch Next").length).toBeGreaterThan(0);
-    expect(screen.getByText("Legacy risk watch item")).toBeInTheDocument();
+    expect(screen.queryByText("Legacy risk watch item")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Legacy risk evidence still works as the watch-next fallback."),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Growth quality improved")).not.toBeInTheDocument();
   });
 
@@ -1971,11 +1983,15 @@ describe("Home page", () => {
     expect(screen.queryByText("Trust Summary")).not.toBeInTheDocument();
     expect(screen.queryByText("Evidence Count")).not.toBeInTheDocument();
     expect(screen.getByText("Typed operating cash flow")).toBeInTheDocument();
-    expect(screen.getByText("Typed capex signal")).toBeInTheDocument();
+    expect(screen.queryByText("Typed capex signal")).not.toBeInTheDocument();
+    expect(screen.getByText("Typed capex evidence.")).toBeInTheDocument();
     expect(screen.queryByText("Typed buyback signal")).not.toBeInTheDocument();
-    expect(screen.getByText("Typed liquidity signal")).toBeInTheDocument();
-    expect(screen.getByText("Typed allocation discipline")).toBeInTheDocument();
-    expect(screen.getByText("Typed red flag")).toBeInTheDocument();
+    expect(screen.queryByText("Typed liquidity signal")).not.toBeInTheDocument();
+    expect(screen.getByText("Typed liquidity evidence.")).toBeInTheDocument();
+    expect(screen.queryByText("Typed allocation discipline")).not.toBeInTheDocument();
+    expect(screen.getByText("Typed allocation discipline evidence.")).toBeInTheDocument();
+    expect(screen.queryByText("Typed red flag")).not.toBeInTheDocument();
+    expect(screen.getByText("Typed red flag evidence.")).toBeInTheDocument();
     expect(screen.queryByText("Legacy Free Cash Flow")).not.toBeInTheDocument();
   });
 
