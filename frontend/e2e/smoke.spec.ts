@@ -99,6 +99,7 @@ const TASK_E2E_CASES = [
     companyName: "Apple Inc.",
     summary: "Latest earnings readout mocked E2E summary.",
     typedHeadline: "Typed latest earnings thesis",
+    typedSummary: "Latest earnings typed summary.",
     expectedSections: [
       "Company Profile",
       "Earnings Readout View",
@@ -115,6 +116,7 @@ const TASK_E2E_CASES = [
     companyName: "Microsoft Corporation",
     summary: "Business driver deep dive mocked E2E summary.",
     typedHeadline: "Typed business driver thesis",
+    typedSummary: "Business driver typed summary.",
     expectedSections: [
       "Business Driver Research View",
       "Thesis",
@@ -132,6 +134,7 @@ const TASK_E2E_CASES = [
     companyName: "NVIDIA Corporation",
     summary: "Cash flow capital allocation mocked E2E summary.",
     typedHeadline: "Typed cash quality thesis",
+    typedSummary: "Cash flow typed summary.",
     expectedSections: [
       "Capital Allocation View",
       "Cash Quality",
@@ -381,8 +384,9 @@ test.describe("Spring Alpha smoke", () => {
       for (const taskCase of TASK_E2E_CASES) {
         await openAgentReport(page, taskCase.tabName);
         await expect(
-          page.getByText(taskCase.typedHeadline).first(),
+          page.getByText(taskCase.typedSummary).first(),
         ).toBeVisible();
+        await expect(page.getByText(taskCase.typedHeadline)).toHaveCount(0);
         for (const section of taskCase.expectedSections) {
           await expect(page.getByText(section).first()).toBeVisible();
         }
@@ -529,11 +533,12 @@ test.describe("Spring Alpha smoke", () => {
       page.getByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).toBeVisible();
     await expect(
-      page.getByText("Typed latest earnings thesis").first(),
+      page.getByText("Latest earnings typed summary.").first(),
     ).toBeVisible();
+    await expect(page.getByText("Typed latest earnings thesis")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: /download pdf|下载 pdf 报告/i }),
-    ).toBeVisible();
+    ).toHaveCount(0);
   });
 
   test("typed report sections keep noisy SEC snippets inside the report column", async ({
@@ -898,7 +903,8 @@ test.describe("Spring Alpha smoke", () => {
     await expect(
       page.getByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).toBeVisible();
-    await expect(page.getByText("Typed latest earnings thesis")).toBeVisible();
+    await expect(page.getByText("Latest earnings typed summary.")).toBeVisible();
+    await expect(page.getByText("Typed latest earnings thesis")).toHaveCount(0);
   });
 
   test("TSLA second run in Chinese can recover grounded citations", async ({
@@ -967,11 +973,13 @@ test.describe("Spring Alpha smoke", () => {
 
     await page.getByRole("button", { name: /开始分析/i }).click();
     await openAgentReport(page, /最新财报速读/i);
-    await expect(page.getByText("Typed latest earnings thesis")).toBeVisible();
+    await expect(page.getByText("Latest earnings typed summary.")).toBeVisible();
+    await expect(page.getByText("Typed latest earnings thesis")).toHaveCount(0);
 
     await page.getByRole("button", { name: /开始分析/i }).click();
     await openAgentReport(page, /最新财报速读/i);
-    await expect(page.getByText("Typed latest earnings thesis")).toBeVisible();
+    await expect(page.getByText("Latest earnings typed summary.")).toBeVisible();
+    await expect(page.getByText("Typed latest earnings thesis")).toHaveCount(0);
   });
 
   test("financial-sector tickers require typed sections instead of generic margin dashboards", async ({
@@ -1266,7 +1274,8 @@ test.describe("Spring Alpha smoke", () => {
     resolveFirstHistory();
     await page.waitForTimeout(300);
 
-    await expect(page.getByText("Microsoft typed thesis.").first()).toBeVisible();
+    await expect(page.getByText("Microsoft revenue stayed strong.").first()).toBeVisible();
+    await expect(page.getByText("Microsoft typed thesis.")).toHaveCount(0);
     await expect(
       page.getByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
     ).not.toBeVisible();

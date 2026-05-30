@@ -11,10 +11,6 @@ import Home from "@/components/app/earnings-analyst-app";
 let mockSessionStatus: "authenticated" | "unauthenticated" | "loading" =
   "unauthenticated";
 
-vi.mock("@/components/pdf/PdfDownloadButton", () => ({
-  PdfDownloadButton: () => <button type="button">pdf</button>,
-}));
-
 vi.mock("next-auth/react", () => ({
   useSession: () => ({
     data:
@@ -415,7 +411,8 @@ describe("Home page", () => {
         "SEC filing was available, but semantic grounding was not ready yet.",
       ),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Typed degraded thesis")).toBeInTheDocument();
+    expect(screen.getByText("Tesla remained under pressure.")).toBeInTheDocument();
+    expect(screen.queryByText("Typed degraded thesis")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/sec/analyze/TSLA?lang=en&model=siliconflow"),
       expect.anything(),
@@ -623,11 +620,14 @@ describe("Home page", () => {
     submitTicker("TSLA");
 
     openAgentReport(/latest earnings readout|最新财报速读/i);
-    expect(await screen.findByText("Earnings agent verdict")).toBeInTheDocument();
+    expect(await screen.findByText("Earnings agent verdict summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
     openAgentReport(/business driver deep dive/i);
-    expect(await screen.findByText("Business driver agent thesis")).toBeInTheDocument();
+    expect(await screen.findByText("Business driver agent summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Business driver agent thesis")).not.toBeInTheDocument();
     openAgentReport(/cash flow & capital allocation/i);
-    expect(await screen.findByText("Cash flow agent verdict")).toBeInTheDocument();
+    expect(await screen.findByText("Cash flow agent summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Cash flow agent verdict")).not.toBeInTheDocument();
     expect(taskOrder).toEqual([
       "latest_earnings_readout",
       "business_driver_deep_dive",
@@ -689,9 +689,10 @@ describe("Home page", () => {
 
     await waitFor(() =>
       expect(
-        screen.getAllByText("Revenue demand signal").length,
-      ).toBeGreaterThan(0),
+        screen.getByText("Revenue provides the clearest available demand signal."),
+      ).toBeInTheDocument(),
     );
+    expect(screen.queryByText("Revenue demand signal")).not.toBeInTheDocument();
     expect(screen.getAllByText("Revenue Bridge").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Demand Signals").length).toBeGreaterThan(0);
     expect(screen.queryByText("Product")).not.toBeInTheDocument();
@@ -903,16 +904,16 @@ describe("Home page", () => {
       screen.getByRole("tab", { name: /latest earnings readout/i }),
     );
 
-    expect(await screen.findByText("Earnings agent verdict")).toBeInTheDocument();
+    expect(await screen.findByText("Earnings agent verdict summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("tab", { name: /business driver deep dive/i }),
     );
 
-    expect(
-      await screen.findByText("Business driver agent thesis"),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
+    expect(await screen.findByText("Business driver agent summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Business driver agent thesis")).not.toBeInTheDocument();
+    expect(screen.queryByText("Earnings agent verdict summary.")).not.toBeInTheDocument();
   });
 
   it("renders the agent pipeline and submits all task types", async () => {
@@ -1175,7 +1176,8 @@ describe("Home page", () => {
 
     openAgentReport(/business driver deep dive/i);
 
-    expect(await screen.findByText("Typed driver thesis")).toBeInTheDocument();
+    expect(await screen.findByText("Typed driver summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Typed driver thesis")).not.toBeInTheDocument();
     expect(screen.queryByText("Typed revenue bridge")).not.toBeInTheDocument();
     expect(screen.getByText("Typed revenue bridge evidence.")).toBeInTheDocument();
     expect(screen.queryByText("Track typed product adoption.")).not.toBeInTheDocument();
@@ -1353,9 +1355,8 @@ describe("Home page", () => {
 
     openAgentReport(/latest earnings readout|最新财报速读/i);
 
-    expect(
-      await screen.findByText("Typed latest earnings thesis"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Typed latest earnings summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Typed latest earnings thesis")).not.toBeInTheDocument();
     expect(screen.getByText("Company Profile")).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -1454,8 +1455,11 @@ describe("Home page", () => {
     openAgentReport(/latest earnings readout|最新财报速读/i);
 
     expect(
-      await screen.findByText("Legacy-compatible latest earnings thesis"),
+      await screen.findByText("Legacy-compatible latest earnings thesis summary."),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Legacy-compatible latest earnings thesis"),
+    ).not.toBeInTheDocument();
     expect(screen.getAllByText("Watch Next").length).toBeGreaterThan(0);
     expect(screen.queryByText("Legacy risk watch item")).not.toBeInTheDocument();
     expect(
@@ -1642,7 +1646,8 @@ describe("Home page", () => {
 
     openAgentReport(/latest earnings readout|最新财报速读/i);
 
-    expect(await screen.findByText("Typed thesis")).toBeInTheDocument();
+    expect(await screen.findByText("Typed summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Typed thesis")).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: /Messages & Tools/i })).toBeInTheDocument();
     expect(screen.getAllByText("Messages & Tools").length).toBeGreaterThan(0);
     expect(screen.getByText("test-model: 1416 in, 53 out")).toBeInTheDocument();
@@ -1738,7 +1743,8 @@ describe("Home page", () => {
 
     openAgentReport(/latest earnings readout|最新财报速读/i);
 
-    expect(await screen.findByText("Typed thesis")).toBeInTheDocument();
+    expect(await screen.findByText("Typed summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Typed thesis")).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: /消息与工具/i })).toBeInTheDocument();
     expect(screen.getByText("消息与工具")).toBeInTheDocument();
     expect(screen.queryByText("Messages & Tools")).not.toBeInTheDocument();
@@ -1994,9 +2000,8 @@ describe("Home page", () => {
 
     openAgentReport(/cash flow & capital allocation/i);
 
-    expect(
-      await screen.findByText("Typed cash quality verdict"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Typed cash conversion summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Typed cash quality verdict")).not.toBeInTheDocument();
     expect(screen.getAllByText("Cash Quality").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cash Flow Bridge").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Capex and Reinvestment").length).toBeGreaterThan(
@@ -2214,7 +2219,8 @@ describe("Home page", () => {
       "/api/sec/analyze/V?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(screen.getByText("Visa typed thesis")).toBeInTheDocument();
+    expect(screen.getByText("Visa typed thesis summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Visa typed thesis")).not.toBeInTheDocument();
     expect(screen.queryByTestId("key-metrics")).not.toBeInTheDocument();
   });
 
@@ -2438,15 +2444,54 @@ describe("Home page", () => {
     );
 
     openAgentReport(/latest earnings readout|最新财报速读/i);
-    expect(await screen.findByText("Earnings agent verdict")).toBeInTheDocument();
+    expect(await screen.findByText("Earnings agent verdict summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
 
     openAgentReport(/business driver deep dive|业务驱动深挖/i);
-    expect(
-      await screen.findByText("Business driver agent thesis"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Business driver agent summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Business driver agent thesis")).not.toBeInTheDocument();
 
     openAgentReport(/cash flow & capital allocation|现金流与资本配置/i);
-    expect(await screen.findByText("Cash flow agent verdict")).toBeInTheDocument();
+    expect(await screen.findByText("Cash flow agent summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Cash flow agent verdict")).not.toBeInTheDocument();
+  });
+
+  it("does not expose PDF download from the report surface", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Latest earnings report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          taskSections: latestTaskSections("Earnings agent verdict"),
+        },
+      ]);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker();
+
+    openAgentReport(/latest earnings readout|最新财报速读/i);
+
+    expect(await screen.findByText("Earnings agent verdict summary.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /download pdf|下载 pdf|pdf/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the login wall once the anonymous trial is already used", async () => {
@@ -3039,7 +3084,8 @@ describe("Home page", () => {
     expect(
       await screen.findByText("Tesla, Inc. · FY 2025 · 2026-01-29"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Tesla typed thesis")).toBeInTheDocument();
+    expect(screen.getByText("Tesla typed thesis summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Tesla typed thesis")).not.toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(([input]) =>
         String(input).includes("/sec/history/"),
@@ -3111,7 +3157,8 @@ describe("Home page", () => {
     expect(
       await screen.findByText("Tesla, Inc. · FY 2025 · 2026-01-29"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Initial typed thesis")).toBeInTheDocument();
+    expect(screen.getByText("Initial thesis from the first agent.")).toBeInTheDocument();
+    expect(screen.queryByText("Initial typed thesis")).not.toBeInTheDocument();
     expect(screen.queryByText("First citation.")).not.toBeInTheDocument();
     expect(screen.queryByText("Second citation.")).not.toBeInTheDocument();
   });
@@ -3214,6 +3261,7 @@ describe("Home page", () => {
     expect(
       await screen.findByText("Tesla, Inc. · FY 2025 · 2026-01-29"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Tesla active typed thesis")).toBeInTheDocument();
+    expect(screen.getByText("Tesla thesis still owns the active run.")).toBeInTheDocument();
+    expect(screen.queryByText("Tesla active typed thesis")).not.toBeInTheDocument();
   });
 });

@@ -1,15 +1,12 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnalysisReportPDF } from '@/components/pdf/AnalysisReportPDF';
-import { PdfDownloadButton } from '@/components/pdf/PdfDownloadButton';
 import type { AnalysisReport } from '@/types/AnalysisReport';
 
 const {
-  pdfToBlobMock,
   pdfMock,
   fontRegisterMock,
 } = vi.hoisted(() => ({
-  pdfToBlobMock: vi.fn(async () => new Blob(['pdf-content'], { type: 'application/pdf' })),
   pdfMock: vi.fn(() => ({ toBlob: undefined as unknown })),
   fontRegisterMock: vi.fn(),
 }));
@@ -269,9 +266,7 @@ const tightReport: AnalysisReport = {
 describe('PDF reporting', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    pdfMock.mockImplementation(() => ({ toBlob: pdfToBlobMock }));
     pdfMock.mockClear();
-    pdfToBlobMock.mockClear();
     fontRegisterMock.mockClear();
   });
 
@@ -330,72 +325,5 @@ describe('PDF reporting', () => {
     expect(screen.getByText('AI与基础设施')).toBeInTheDocument();
     expect(screen.queryByText('利润兑现')).not.toBeInTheDocument();
     expect(screen.queryByText('商业化延展')).not.toBeInTheDocument();
-  });
-
-  it('downloads a generated PDF blob instead of opening a print window', async () => {
-    const originalCreateObjectUrl = URL.createObjectURL;
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      writable: true,
-      value: vi.fn(() => 'blob:pdf'),
-    });
-
-    const createObjectUrlSpy = vi.mocked(URL.createObjectURL);
-    const appendChildSpy = vi.spyOn(document.body, 'appendChild');
-    const originalCreateElement = document.createElement.bind(document);
-    const anchorClickSpy = vi.fn();
-    const anchorRemoveSpy = vi.fn();
-
-    vi.spyOn(document, 'createElement').mockImplementation(((tagName: string) => {
-      const element = originalCreateElement(tagName);
-      if (tagName.toLowerCase() === 'a') {
-        Object.defineProperty(element, 'click', {
-          configurable: true,
-          value: anchorClickSpy,
-        });
-        Object.defineProperty(element, 'remove', {
-          configurable: true,
-          value: anchorRemoveSpy,
-        });
-      }
-      return element;
-    }) as typeof document.createElement);
-
-    render(<PdfDownloadButton report={baseReport} ticker="TSLA" lang="en" />);
-
-    fireEvent.click(screen.getByRole('button', { name: /download pdf/i }));
-
-    await waitFor(() => {
-      expect(pdfMock).toHaveBeenCalledTimes(1);
-      expect(pdfToBlobMock).toHaveBeenCalledTimes(1);
-      expect(anchorClickSpy).toHaveBeenCalledTimes(1);
-    });
-
-    const appendedAnchor = appendChildSpy.mock.calls.find(
-      ([node]) => node instanceof HTMLAnchorElement
-    )?.[0] as HTMLAnchorElement | undefined;
-
-    expect(appendedAnchor?.download).toMatch(/^TSLA_AI_Analysis_Report_\d{4}-\d{2}-\d{2}\.pdf$/);
-    expect(appendedAnchor?.href).toBe('blob:pdf');
-    expect(createObjectUrlSpy).toHaveBeenCalledTimes(1);
-    expect(anchorRemoveSpy).toHaveBeenCalledTimes(1);
-
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      writable: true,
-      value: originalCreateObjectUrl,
-    });
-  });
-
-  it('surfaces a direct error if blob generation fails', async () => {
-    pdfToBlobMock.mockRejectedValueOnce(new Error('boom'));
-
-    render(<PdfDownloadButton report={baseReport} ticker="TSLA" lang="en" />);
-
-    fireEvent.click(screen.getByRole('button', { name: /download pdf/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText('PDF export failed: boom')).toBeInTheDocument();
-    });
   });
 });

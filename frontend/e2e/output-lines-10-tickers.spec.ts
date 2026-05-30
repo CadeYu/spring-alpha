@@ -7,6 +7,7 @@ type TaskCase = {
     | "cash_flow_capital_allocation";
   tabName: RegExp;
   headline: string;
+  summary: string;
   sections: string[];
 };
 
@@ -28,6 +29,7 @@ const TASK_CASES: TaskCase[] = [
     taskType: "latest_earnings_readout",
     tabName: /latest earnings readout/i,
     headline: "Typed latest earnings thesis",
+    summary: "Latest earnings typed summary.",
     sections: [
       "Earnings Readout View",
       "Earnings Verdict",
@@ -40,6 +42,7 @@ const TASK_CASES: TaskCase[] = [
     taskType: "business_driver_deep_dive",
     tabName: /business driver deep dive/i,
     headline: "Typed business driver thesis",
+    summary: "Business driver typed summary.",
     sections: [
       "Business Driver Research View",
       "Thesis",
@@ -54,6 +57,7 @@ const TASK_CASES: TaskCase[] = [
     taskType: "cash_flow_capital_allocation",
     tabName: /cash flow & capital allocation/i,
     headline: "Typed cash quality thesis",
+    summary: "Cash flow typed summary.",
     sections: [
       "Capital Allocation View",
       "Cash Quality",
@@ -283,7 +287,8 @@ test.describe("Spring Alpha 10 ticker output-line matrix", () => {
         await expect(
           page.getByText(`${tickerCase.companyName} · Q1 2026 · 2026-03-31`),
         ).toBeVisible();
-        await expect(page.getByText(taskCase.headline).first()).toBeVisible();
+        await expect(page.getByText(taskCase.summary).first()).toBeVisible();
+        await expect(page.getByText(taskCase.headline)).toHaveCount(0);
         for (const section of taskCase.sections) {
           await expect(page.getByText(section).first()).toBeVisible();
         }

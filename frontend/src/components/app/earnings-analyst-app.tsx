@@ -41,7 +41,6 @@ import {
   CompanyProfileSection,
 } from "@/types/AnalysisReport";
 import { RagEvalDashboard } from "@/components/app/rag-eval-dashboard";
-import { PdfDownloadButton } from "@/components/pdf/PdfDownloadButton";
 import { formatPeriodForDisplay } from "@/lib/reportPresentation";
 import { type ResearchTaskId } from "@/lib/researchTasks";
 import { cn } from "@/lib/utils";
@@ -1211,15 +1210,6 @@ export default function EarningsAnalystApp({
                   {isZh ? "三段 Agent 研究流水线" : "Three-agent research pipeline"}
                 </p>
               </div>
-              {primaryReport && (
-                <div data-pdf-exclude="true">
-                  <PdfDownloadButton
-                    report={activeReportEntry.report}
-                    ticker={reportTitleTicker}
-                    lang={lang}
-                  />
-                </div>
-              )}
             </div>
 
               <AgentReportPanel
@@ -2350,7 +2340,6 @@ function TypedLatestEarningsSections({
         )}
         <AnalystVerdictCard
           eyebrow={isZh ? "财报判断" : "Earnings Verdict"}
-          headline={toplineVerdict.headline}
           status={formatLatestVerdictStatus(
             toplineVerdict.verdict,
             toplineVerdict.confidence ?? "medium",
@@ -2546,7 +2535,6 @@ function TypedBusinessDriverSections({
         />
         <AnalystVerdictCard
           eyebrow={isZh ? "论点" : "Thesis"}
-          headline={driverThesis.headline}
           status={driverThesis.durability}
           summary={driverThesis.summary}
         />
@@ -2634,7 +2622,6 @@ function TypedCashFlowSections({
         />
         <AnalystVerdictCard
           eyebrow={isZh ? "现金质量" : "Cash Quality"}
-          headline={cashQualityVerdict.headline}
           status={cashQualityVerdict.earningsBackedByCash}
           summary={cashQualityVerdict.summary}
         />
@@ -2818,12 +2805,10 @@ function ResearchViewCard({
 
 function AnalystVerdictCard({
   eyebrow,
-  headline,
   status,
   summary,
 }: {
   eyebrow: string;
-  headline: string;
   status: string;
   summary: string;
 }) {
@@ -2838,10 +2823,7 @@ function AnalystVerdictCard({
         </div>
       </CardHeader>
       <CardContent className="p-6">
-        <p className="text-xl font-semibold leading-8 text-slate-100">
-          {headline}
-        </p>
-        <p className="mt-3 text-sm leading-6 text-slate-400">{summary}</p>
+        <p className="text-sm leading-7 text-slate-300">{summary}</p>
       </CardContent>
     </Card>
   );
