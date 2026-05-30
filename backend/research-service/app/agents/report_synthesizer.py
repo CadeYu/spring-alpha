@@ -64,6 +64,20 @@ _NOISY_BUSINESS_DRIVER_TEXT_PHRASES = (
 
 _BUSINESS_DRIVER_PARTIAL_PLACEHOLDER = "Evidence for this business-driver lens remains partial."
 
+_LATEST_GROWTH_QUALITY_SUMMARY_EN = (
+    "Growth quality is anchored by the reported revenue evidence. Use this lens to judge "
+    "whether the quarter is expanding from durable top-line demand rather than only "
+    "narrative momentum."
+)
+_LATEST_MARGIN_QUALITY_SUMMARY_EN = (
+    "Margin quality is anchored by the available margin or operating income evidence. "
+    "Use this lens to judge whether revenue is converting into operating leverage."
+)
+_LATEST_CASH_QUALITY_SUMMARY_EN = (
+    "Cash quality is anchored by operating cash flow or free cash flow evidence. "
+    "Use this lens to judge whether accounting earnings are supported by cash generation."
+)
+
 
 def _is_zh_locale(language: str | None) -> bool:
     return str(language or "").lower().startswith("zh")
@@ -271,7 +285,7 @@ def build_latest_earnings_report_from_payload(
 ) -> EvidenceAwareReport:
     source_refs = _source_refs_from_state(state)
     source_refs_by_id = _alias_source_refs_by_id(source_refs)
-    payload_data = _normalize_latest_earnings_payload(payload_data)
+    payload_data = _normalize_latest_earnings_payload(payload_data, request.language)
     payload = _LatestEarningsSynthesis.model_validate(payload_data)
     _sanitize_latest_earnings_source_ids(payload, source_refs_by_id)
     dashboard_metrics = _final_dashboard_metrics(
@@ -308,6 +322,7 @@ def build_latest_earnings_report_from_payload(
         dashboard_metrics,
         key_takeaways,
         source_refs,
+        request.language,
     )
     drivers_and_draggers = _latest_drivers_with_backfill(
         drivers_and_draggers,
@@ -321,6 +336,7 @@ def build_latest_earnings_report_from_payload(
         driver_snapshot,
         risk_snapshot,
         source_refs,
+        request.language,
     )
     watch_next = _latest_watch_next_with_backfill(
         watch_next,
@@ -537,7 +553,10 @@ def synthesize_latest_earnings_payload(language: str = "en") -> dict[str, Any]:
     }
 
 
-def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str, Any]:
+def _normalize_latest_earnings_payload(
+    payload_data: dict[str, Any],
+    language: str | None = None,
+) -> dict[str, Any]:
     normalized = _clean_mapping_keys(payload_data)
     company_profile = normalized.get("company_profile")
     if isinstance(company_profile, str):
@@ -588,7 +607,10 @@ def _normalize_latest_earnings_payload(payload_data: dict[str, Any]) -> dict[str
     dashboard = normalized.get("financial_dashboard")
     if isinstance(dashboard, dict):
         normalized["financial_dashboard"] = {
-            "metrics": _normalize_synthesized_metrics(dashboard.get("metrics", [])),
+            "metrics": _normalize_synthesized_metrics(
+                dashboard.get("metrics", []),
+                language,
+            ),
             "chart_focus": _list_of_strings(dashboard.get("chart_focus")),
         }
     normalized["quality_of_quarter"] = _normalize_quality_of_quarter(
@@ -822,10 +844,13 @@ def _normalize_synthesized_points(value: object) -> object:
     return [point for point in normalized_points if _has_point_summary(point)]
 
 
-def _normalize_synthesized_metrics(value: object) -> object:
+def _normalize_synthesized_metrics(
+    value: object,
+    language: str | None = None,
+) -> object:
     if isinstance(value, dict):
         return [
-            _normalize_synthesized_metric({"name": key, "value": metric_value})
+            _normalize_synthesized_metric({"name": key, "value": metric_value}, language)
             for key, metric_value in value.items()
             if not _is_metric_object_metadata_key(key)
         ]
@@ -834,7 +859,7 @@ def _normalize_synthesized_metrics(value: object) -> object:
     return [
         normalized_metric
         for metric in value
-        for normalized_metric in [_normalize_synthesized_metric(metric)]
+        for normalized_metric in [_normalize_synthesized_metric(metric, language)]
         if not _is_unsupported_placeholder_metric(normalized_metric)
     ]
 
@@ -916,13 +941,17 @@ def _ensure_point_list(value: object) -> list[object]:
     return normalized if isinstance(normalized, list) else []
 
 
-def _normalize_synthesized_metric(metric: object) -> object:
+def _normalize_synthesized_metric(
+    metric: object,
+    language: str | None = None,
+) -> object:
+    default_interpretation = "已报告指标。" if _is_zh_locale(language) else "Reported metric."
     if not isinstance(metric, dict):
         return {
             "name": "Metric",
             "value": str(metric),
             "period": None,
-            "interpretation": "Reported metric.",
+            "interpretation": default_interpretation,
             "source_ids": [],
             "citation_status": "unverified",
         }
@@ -937,7 +966,7 @@ def _normalize_synthesized_metric(metric: object) -> object:
         "value": str(value or "Not extracted"),
         "period": period,
         "interpretation": str(
-            metric.get("interpretation") or metric.get("summary") or "Reported metric."
+            metric.get("interpretation") or metric.get("summary") or default_interpretation
         ),
         "source_ids": _source_ids_from_value(metric),
         "citation_status": str(metric.get("citation_status") or "supported"),
@@ -1288,22 +1317,31 @@ def build_cash_flow_report_from_payload(
 ) -> EvidenceAwareReport:
     source_refs = _source_refs_from_state(state)
     source_refs_by_id = _alias_source_refs_by_id(source_refs)
-    payload_data = _normalize_cash_flow_payload(payload_data)
+    payload_data = _normalize_cash_flow_payload(payload_data, request.language)
     payload = _CashFlowSynthesis.model_validate(payload_data)
     _sanitize_cash_flow_source_ids(payload, source_refs_by_id)
-    cash_metrics = _cash_metrics_with_fact_backfill(payload.cash_metrics, state)
+    cash_metrics = _cash_metrics_with_fact_backfill(
+        payload.cash_metrics,
+        state,
+        request.language,
+    )
     capital_allocation = _capital_allocation_with_fact_backfill(
         payload.capital_allocation,
         cash_metrics,
+        request.language,
     )
-    red_flags = _cash_flow_red_flags_with_backfill(payload.red_flags, cash_metrics)
+    red_flags = _cash_flow_red_flags_with_backfill(
+        payload.red_flags,
+        cash_metrics,
+        request.language,
+    )
     task_sections = CashFlowCapitalAllocationSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
         coverage=_cash_flow_coverage(payload, source_refs),
         cash_quality_verdict=payload.cash_quality_verdict,
         cash_metrics=[
-            _metric_with_evidence_guardrail(metric, state, source_refs_by_id)
+            _metric_with_evidence_guardrail(metric, state, source_refs_by_id, request.language)
             for metric in cash_metrics
         ],
         capital_allocation=CapitalAllocation(
@@ -1342,7 +1380,10 @@ def build_cash_flow_report_from_payload(
     )
 
 
-def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]:
+def _normalize_cash_flow_payload(
+    payload_data: dict[str, Any],
+    language: str | None = None,
+) -> dict[str, Any]:
     normalized = _clean_mapping_keys(payload_data)
     top_level_summary = str(normalized.pop("summary", "") or "").strip()
     verdict = normalized.get("cash_quality_verdict")
@@ -1397,7 +1438,8 @@ def _normalize_cash_flow_payload(payload_data: dict[str, Any]) -> dict[str, Any]
         }
     cash_metrics = normalized.get("cash_metrics", [])
     normalized_cash_metrics = _normalize_synthesized_metrics(
-        cash_metrics if isinstance(cash_metrics, list | dict) else []
+        cash_metrics if isinstance(cash_metrics, list | dict) else [],
+        language,
     )
     if not isinstance(normalized_cash_metrics, list):
         normalized_cash_metrics = []
@@ -1559,32 +1601,50 @@ def _latest_quality_with_backfill(
     metrics: list[EvidenceBoundMetric],
     key_takeaways: list[EvidenceBoundPoint],
     source_refs: list[SourceRef],
+    language: str | None = None,
 ) -> QualityOfQuarter | None:
     existing = quality or QualityOfQuarter()
+    is_zh = _is_zh_locale(language)
     return QualityOfQuarter(
         growth_quality=existing.growth_quality
         or _quality_point_from_metric(
-            "Growth quality",
-            "Growth quality is anchored by the reported revenue evidence. Use this lens to judge whether the quarter is expanding from durable top-line demand rather than only narrative momentum.",
+            "增长质量" if is_zh else "Growth quality",
+            (
+                "增长质量以已报告收入证据为锚，重点判断本季扩张是否来自可延续的终端需求，"
+                "而不只是叙事或一次性动能。"
+                if is_zh
+                else _LATEST_GROWTH_QUALITY_SUMMARY_EN
+            ),
             _metric_by_name(metrics, ("revenue", "sales", "net sales")),
             key_takeaways,
             source_refs,
+            is_zh,
         ),
         margin_quality=existing.margin_quality
         or _quality_point_from_metric(
-            "Margin quality",
-            "Margin quality is anchored by the available margin or operating income evidence. Use this lens to judge whether revenue is converting into operating leverage.",
+            "利润率质量" if is_zh else "Margin quality",
+            (
+                "利润率质量以可用的利润率或经营利润证据为锚，重点判断收入是否真正转化为经营杠杆。"
+                if is_zh
+                else _LATEST_MARGIN_QUALITY_SUMMARY_EN
+            ),
             _metric_by_name(metrics, ("margin", "operating income", "gross profit")),
             key_takeaways,
             source_refs,
+            is_zh,
         ),
         cash_quality=existing.cash_quality
         or _quality_point_from_metric(
-            "Cash quality",
-            "Cash quality is anchored by operating cash flow or free cash flow evidence. Use this lens to judge whether accounting earnings are supported by cash generation.",
+            "现金质量" if is_zh else "Cash quality",
+            (
+                "现金质量以经营现金流或自由现金流证据为锚，重点判断会计利润是否有真实现金生成支撑。"
+                if is_zh
+                else _LATEST_CASH_QUALITY_SUMMARY_EN
+            ),
             _metric_by_name(metrics, ("cash flow", "free cash flow", "operating cash")),
             key_takeaways,
             source_refs,
+            is_zh,
         ),
         one_time_items=existing.one_time_items,
     )
@@ -1610,18 +1670,25 @@ def _latest_bull_bear_with_backfill(
     driver_snapshot: list[EvidenceBoundPoint],
     risk_snapshot: list[EvidenceBoundPoint],
     source_refs: list[SourceRef],
+    language: str | None = None,
 ) -> BullBearRead | None:
     existing = bull_bear_read or BullBearRead()
+    is_zh = _is_zh_locale(language)
     bull_case = (
         existing.bull_case
         or _scenario_points_or_backfill(
             [*driver_snapshot, *key_takeaways],
-            "Bull case",
-            "Constructive read",
+            "看多逻辑" if is_zh else "Bull case",
+            "积极情景" if is_zh else "Constructive read",
             (
-                "The constructive case is based on the supported revenue and "
-                "operating driver evidence. "
-                "It remains a scenario, not a price target or trading recommendation."
+                "积极情景基于已有收入和经营驱动证据，但它仍然只是情景判断，"
+                "不是目标价或交易建议。"
+                if is_zh
+                else (
+                    "The constructive case is based on the supported revenue and "
+                    "operating driver evidence. "
+                    "It remains a scenario, not a price target or trading recommendation."
+                )
             ),
             source_refs,
         )[:2]
@@ -1630,20 +1697,28 @@ def _latest_bull_bear_with_backfill(
         existing.bear_case
         or _scenario_points_or_backfill(
             risk_snapshot,
-            "Bear case",
-            "Cautious read",
+            "看空逻辑" if is_zh else "Bear case",
+            "谨慎情景" if is_zh else "Cautious read",
             (
-                "The cautious case is based on the supported risk or pressure evidence. "
-                "It keeps the final read balanced until follow-up metrics improve."
+                "谨慎情景基于已有风险或压力证据；在后续指标改善前，最终判断需要保持均衡。"
+                if is_zh
+                else (
+                    "The cautious case is based on the supported risk or pressure evidence. "
+                    "It keeps the final read balanced until follow-up metrics improve."
+                )
             ),
             source_refs,
         )[:2]
     )
     balanced_read = existing.balanced_read or _point_from_source_refs(
-        "Balanced read",
+        "均衡判断" if is_zh else "Balanced read",
         (
-            f"The reported quarter screens as {topline.verdict} with "
-            f"{topline.confidence} confidence. {topline.summary}"
+            f"本季财报整体呈现{topline.verdict}，置信度为{topline.confidence}。{topline.summary}"
+            if is_zh
+            else (
+                f"The reported quarter screens as {topline.verdict} with "
+                f"{topline.confidence} confidence. {topline.summary}"
+            )
         ),
         source_refs,
     )
@@ -1748,12 +1823,18 @@ def _quality_point_from_metric(
     metric: EvidenceBoundMetric | None,
     key_takeaways: list[EvidenceBoundPoint],
     source_refs: list[SourceRef],
+    is_zh: bool = False,
 ) -> EvidenceBoundPoint | None:
     if metric is not None:
         return EvidenceBoundPoint(
             title=title,
             summary=(
-                f"{metric.name} of {metric.value} is the evidence anchor. {metric.interpretation}"
+                f"{metric.name} 为 {metric.value}，是这一判断的证据锚点。{metric.interpretation}"
+                if is_zh
+                else (
+                    f"{metric.name} of {metric.value} is the evidence anchor. "
+                    f"{metric.interpretation}"
+                )
             ),
             evidence_refs=metric.evidence_refs,
             citation_status=metric.citation_status,
@@ -1762,7 +1843,11 @@ def _quality_point_from_metric(
         point = key_takeaways[0]
         return EvidenceBoundPoint(
             title=title,
-            summary=f"{fallback_summary} Supporting context: {point.summary}",
+            summary=(
+                f"{fallback_summary} 支撑背景：{point.summary}"
+                if is_zh
+                else f"{fallback_summary} Supporting context: {point.summary}"
+            ),
             evidence_refs=point.evidence_refs,
             citation_status=point.citation_status,
         )
@@ -1830,7 +1915,9 @@ def _normalize_watchlist(value: object) -> list[str]:
 def _cash_metrics_with_fact_backfill(
     metrics: list[_SynthesizedMetric],
     state: AgentState,
+    language: str | None = None,
 ) -> list[_SynthesizedMetric]:
+    is_zh = _is_zh_locale(language)
     usable_metrics = [metric for metric in metrics if not _cash_metric_needs_fact_backfill(metric)]
     synthesized_metrics = []
     for record in state.evidence_memory.metric_evidence:
@@ -1845,8 +1932,12 @@ def _cash_metrics_with_fact_backfill(
                 value=_metric_evidence_value(record),
                 period=_metric_evidence_period(record),
                 interpretation=(
-                    f"{name.title()} was reported in SEC companyfacts and used as "
-                    "the cash-flow KPI anchor."
+                    f"{name.title()} 来自 SEC companyfacts，可作为现金流 KPI 锚点。"
+                    if is_zh
+                    else (
+                        f"{name.title()} was reported in SEC companyfacts and used as "
+                        "the cash-flow KPI anchor."
+                    )
                 ),
                 source_ids=_source_ids_from_value(record),
                 citation_status=CitationStatus.SUPPORTED,
@@ -1863,8 +1954,12 @@ def _cash_metrics_with_fact_backfill(
                 value=_metric_evidence_value(record),
                 period=_metric_evidence_period(record),
                 interpretation=(
-                    f"{name.title()} was reported in structured financial facts and used as "
-                    "the cash-flow KPI anchor."
+                    f"{name.title()} 来自结构化财务数据，可作为现金流 KPI 锚点。"
+                    if is_zh
+                    else (
+                        f"{name.title()} was reported in structured financial facts and used as "
+                        "the cash-flow KPI anchor."
+                    )
                 ),
                 source_ids=[source_id] if source_id else [],
                 citation_status=CitationStatus.SUPPORTED
@@ -1911,9 +2006,11 @@ def _cash_metric_needs_fact_backfill(metric: _SynthesizedMetric) -> bool:
 def _capital_allocation_with_fact_backfill(
     capital_allocation: _SynthesizedCapitalAllocation,
     metrics: list[_SynthesizedMetric],
+    language: str | None = None,
 ) -> _SynthesizedCapitalAllocation:
     if not metrics:
         return _SynthesizedCapitalAllocation()
+    is_zh = _is_zh_locale(language)
     capex_metric = _synthesized_metric_by_name(metrics, ("capital expenditures", "capex"))
     debt_metric = _synthesized_metric_by_name(metrics, ("total debt", "debt"))
     current_ratio_metric = _synthesized_metric_by_name(metrics, ("current ratio",))
@@ -1932,10 +2029,14 @@ def _capital_allocation_with_fact_backfill(
         capex.append(
             _cash_flow_point_from_metric(
                 capex_metric,
-                title="Capex and reinvestment",
+                title="资本开支与再投资" if is_zh else "Capex and reinvestment",
                 summary=(
-                    f"{capex_metric.name} of {capex_metric.value} is the main "
-                    "reinvestment use of cash."
+                    f"{capex_metric.name} 为 {capex_metric.value}，是现金再投资的主要去向。"
+                    if is_zh
+                    else (
+                        f"{capex_metric.name} of {capex_metric.value} is the main "
+                        "reinvestment use of cash."
+                    )
                 ),
             )
         )
@@ -1943,10 +2044,17 @@ def _capital_allocation_with_fact_backfill(
         debt.append(
             _cash_flow_point_from_metric(
                 debt_metric,
-                title="Debt load",
+                title="债务负担" if is_zh else "Debt load",
                 summary=(
-                    f"{debt_metric.name} of {debt_metric.value} frames balance sheet "
-                    "risk against cash generation."
+                    (
+                        f"{debt_metric.name} 为 {debt_metric.value}，"
+                        "需要和现金生成能力一起评估资产负债表风险。"
+                    )
+                    if is_zh
+                    else (
+                        f"{debt_metric.name} of {debt_metric.value} frames balance sheet "
+                        "risk against cash generation."
+                    )
                 ),
             )
         )
@@ -1955,21 +2063,38 @@ def _capital_allocation_with_fact_backfill(
         source_ids: list[str] = []
         citation_status = CitationStatus.UNVERIFIED
         if current_ratio_metric is not None:
-            liquidity_parts.append(f"current ratio of {current_ratio_metric.value}")
+            liquidity_parts.append(
+                f"current ratio 为 {current_ratio_metric.value}"
+                if is_zh
+                else f"current ratio of {current_ratio_metric.value}"
+            )
             source_ids.extend(current_ratio_metric.source_ids)
             citation_status = current_ratio_metric.citation_status
         if cash_metric is not None:
-            liquidity_parts.append(f"cash and short-term investments of {cash_metric.value}")
+            liquidity_parts.append(
+                f"cash and short-term investments 为 {cash_metric.value}"
+                if is_zh
+                else f"cash and short-term investments of {cash_metric.value}"
+            )
             source_ids.extend(cash_metric.source_ids)
             citation_status = cash_metric.citation_status
         if liquidity_parts:
             liquidity.append(
                 _SynthesizedPoint(
-                    title="Balance sheet resilience",
+                    title="资产负债表韧性" if is_zh else "Balance sheet resilience",
                     summary=(
-                        "Liquidity is anchored by "
-                        + " and ".join(liquidity_parts)
-                        + ", which determines how much room management has to fund reinvestment."
+                        (
+                            "流动性由"
+                            + "和".join(liquidity_parts)
+                            + "支撑，这决定管理层还有多少空间继续投入再投资。"
+                        )
+                        if is_zh
+                        else (
+                            "Liquidity is anchored by "
+                            + " and ".join(liquidity_parts)
+                            + ", which determines how much room management has "
+                            "to fund reinvestment."
+                        )
                     ),
                     source_ids=_dedupe_strings(source_ids),
                     citation_status=citation_status,
@@ -1980,9 +2105,11 @@ def _capital_allocation_with_fact_backfill(
         liquidity.append(
             _cash_flow_point_from_metric(
                 metric,
-                title="Cash flow anchor",
+                title="现金流锚点" if is_zh else "Cash flow anchor",
                 summary=(
-                    f"{metric.name} of {metric.value} is the core allocation capacity signal."
+                    f"{metric.name} 为 {metric.value}，是资本配置能力的核心信号。"
+                    if is_zh
+                    else f"{metric.name} of {metric.value} is the core allocation capacity signal."
                 ),
             )
         )
@@ -1998,9 +2125,11 @@ def _capital_allocation_with_fact_backfill(
 def _cash_flow_red_flags_with_backfill(
     red_flags: list[_SynthesizedPoint],
     metrics: list[_SynthesizedMetric],
+    language: str | None = None,
 ) -> list[_SynthesizedPoint]:
     if red_flags:
         return red_flags
+    is_zh = _is_zh_locale(language)
     ocf = _synthesized_metric_by_name(metrics, ("operating cash flow",))
     fcf = _synthesized_metric_by_name(metrics, ("free cash flow",))
     capex = _synthesized_metric_by_name(metrics, ("capital expenditures", "capex"))
@@ -2010,22 +2139,48 @@ def _cash_flow_red_flags_with_backfill(
         return []
     watch_items = []
     if fcf is not None and capex is not None:
-        watch_items.append(f"whether {fcf.name.lower()} stays above capex after reinvestment")
+        watch_items.append(
+            f"{fcf.name} 在再投资后是否仍能高于 capex"
+            if is_zh
+            else f"whether {fcf.name.lower()} stays above capex after reinvestment"
+        )
     elif ocf is not None and capex is not None:
         watch_items.append(
-            f"whether {ocf.name.lower()} continues to fund capex without balance sheet strain"
+            f"{ocf.name} 是否能继续覆盖 capex，且不造成资产负债表压力"
+            if is_zh
+            else (
+                f"whether {ocf.name.lower()} continues to fund capex without "
+                "balance sheet strain"
+            )
         )
     elif current_ratio is not None:
         watch_items.append(
-            f"whether liquidity remains stable around a current ratio of {current_ratio.value}"
+            f"流动性是否能围绕 current ratio {current_ratio.value} 保持稳定"
+            if is_zh
+            else (
+                "whether liquidity remains stable around a current ratio of "
+                f"{current_ratio.value}"
+            )
         )
     else:
-        watch_items.append(f"whether {anchor.name.lower()} remains durable next quarter")
+        watch_items.append(
+            f"{anchor.name} 在下一季是否仍具备延续性"
+            if is_zh
+            else f"whether {anchor.name.lower()} remains durable next quarter"
+        )
     return [
         _SynthesizedPoint(
-            title="Watch next cash signal",
+            title="观察下一季现金信号" if is_zh else "Watch next cash signal",
             summary=(
-                "Watch " + watch_items[0] + "; a deterioration would change the cash quality read."
+                (
+                    "重点观察"
+                    + watch_items[0]
+                    + "；如果这个信号恶化，现金质量判断也需要下修。"
+                )
+                if is_zh
+                else "Watch "
+                + watch_items[0]
+                + "; a deterioration would change the cash quality read."
             ),
             source_ids=anchor.source_ids,
             citation_status=anchor.citation_status,
@@ -3413,7 +3568,8 @@ def _final_dashboard_metrics(
     source_refs_by_id: dict[str, SourceRef],
 ) -> list[EvidenceBoundMetric]:
     final_metrics = [
-        _metric_with_evidence_guardrail(metric, state, source_refs_by_id) for metric in metrics
+        _metric_with_evidence_guardrail(metric, state, source_refs_by_id)
+        for metric in metrics
     ]
     return [
         metric for metric in final_metrics if not _is_placeholder_evidence_metric(metric)
@@ -3424,6 +3580,7 @@ def _metric_with_evidence_guardrail(
     metric: _SynthesizedMetric,
     state: AgentState,
     source_refs_by_id: dict[str, SourceRef],
+    language: str | None = None,
 ) -> EvidenceBoundMetric:
     metric_record = _metric_evidence_for_name(metric.name, state.evidence_memory.metric_evidence)
     if not metric_record or not _has_fact_value(metric_record):
@@ -3438,7 +3595,7 @@ def _metric_with_evidence_guardrail(
         name=metric.name,
         value=_metric_evidence_value(metric_record),
         period=_metric_evidence_period(metric_record) or metric.period,
-        interpretation=_metric_evidence_interpretation(metric_record, source_ref),
+        interpretation=_metric_evidence_interpretation(metric_record, source_ref, language),
         evidence_refs=[_evidence_ref(source_ref)],
         citation_status=CitationStatus.SUPPORTED,
     )
@@ -3587,10 +3744,16 @@ def _metric_evidence_period(record: dict[str, Any]) -> str | None:
     return str(period) if period is not None else None
 
 
-def _metric_evidence_interpretation(record: dict[str, Any], source_ref: SourceRef) -> str:
+def _metric_evidence_interpretation(
+    record: dict[str, Any],
+    source_ref: SourceRef,
+    language: str | None = None,
+) -> str:
     concept = str(record.get("concept") or "").strip()
     if concept:
         clipped_excerpt = _clip(source_ref.snippet, 220)
+        if _is_zh_locale(language):
+            return f"SEC companyfacts 概念 {concept}；证据摘录：{clipped_excerpt}"
         return f"SEC companyfacts concept {concept}; evidence excerpt: {clipped_excerpt}"
     return _clip(source_ref.snippet, 220)
 

@@ -399,6 +399,124 @@ def test_cash_flow_timeout_fallback_uses_structured_cash_report_shape() -> None:
     assert report.task_sections.red_flags
 
 
+def test_cash_flow_timeout_fallback_respects_chinese_locale() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="AMD",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="AMD",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["cashQualityVerdict"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "net income",
+                    "value": 709000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "concept": "NetIncomeLoss",
+                    "source_id": "src_net_income",
+                },
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "operating cash flow",
+                    "value": 920000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "concept": "NetCashProvidedByUsedInOperatingActivities",
+                    "source_id": "src_ocf",
+                },
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "capital expenditures",
+                    "value": 120000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "concept": "PaymentsToAcquirePropertyPlantAndEquipment",
+                    "source_id": "src_capex",
+                },
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "free cash flow",
+                    "value": 800000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_fcf",
+                },
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "current ratio",
+                    "value": 2.31,
+                    "unit": "ratio",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_current_ratio",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_net_income",
+                    "section": "SEC companyfacts",
+                    "snippet": "Net income was $709M.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_ocf",
+                    "section": "SEC companyfacts",
+                    "snippet": "Operating cash flow was $920M.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_capex",
+                    "section": "SEC companyfacts",
+                    "snippet": "Capital expenditures were $120M.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_fcf",
+                    "section": "SEC companyfacts",
+                    "snippet": "Free cash flow was $800M.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_current_ratio",
+                    "section": "SEC companyfacts",
+                    "snippet": "Current ratio was 2.31x.",
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Cash flow agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    assert "Earnings are supported by cash generation." not in serialized
+    assert "Cash quality is pressured by capex." not in serialized
+    assert "Cash quality needs more evidence." not in serialized
+    assert "Capex and reinvestment" not in serialized
+    assert "Balance sheet resilience" not in serialized
+    assert "Watch next" not in serialized
+    assert report.task_sections.cash_quality_verdict.headline == "盈利有现金生成支撑。"
+    assert "资本开支与再投资" in serialized
+    assert "资产负债表韧性" in serialized
+    assert "观察下一季" in serialized
+
+
 def test_latest_earnings_timeout_fallback_backfills_rich_memo_sections() -> None:
     request = AgentRequest(
         run_id="run_1",
@@ -504,6 +622,79 @@ def test_latest_earnings_timeout_fallback_backfills_rich_memo_sections() -> None
     assert sections.bull_bear_read.balanced_read is not None
     assert len(sections.watch_next) == 3
     assert report.sections["synthesis"] == "deterministic_fallback"
+
+
+def test_latest_earnings_timeout_fallback_respects_chinese_locale() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="NVDA",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="NVDA",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["toplineVerdict"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "revenue",
+                    "value": 35100000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+                    "source_id": "src_1",
+                },
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "operating income",
+                    "value": 21869000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "concept": "OperatingIncomeLoss",
+                    "source_id": "src_2",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "SEC companyfacts",
+                    "snippet": "Revenue was $35.1B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_2",
+                    "section": "Risk Factors",
+                    "snippet": "Customer concentration and supply constraints remain key risks.",
+                    "citation_status": "partial",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Earnings agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    assert "Evidence-backed fallback earnings view" not in serialized
+    assert "Evidence-backed fallback" not in serialized
+    assert "evidence anchor" not in serialized
+    assert "risk watch" not in serialized
+    assert "Risk Factors risk watch" not in serialized
+    assert "证据兜底财报判断" in serialized
+    assert "证据锚点" in serialized
+    assert "风险观察" in serialized
 
 
 def test_fallback_summary_hides_internal_missing_metric_markers() -> None:

@@ -413,6 +413,151 @@ def test_latest_earnings_backfills_rich_sections_when_model_omits_them() -> None
     ]
 
 
+def test_latest_earnings_rich_section_backfills_respect_chinese_locale() -> None:
+    state = _make_state(language="zh")
+    payload = {
+        "company_profile": {
+            "summary": "NVIDIA provides accelerated computing platforms and related software.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "NVDA 本季收入和利润率仍然强劲。",
+            "summary": "收入增长和利润率仍是本季判断的核心，现金流需要继续观察。",
+            "verdict": "positive",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "收入增长仍是主线",
+                "summary": "收入增长继续支撑本季财报判断，但下一季仍需要确认需求和利润率的延续性。",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$35.1B",
+                    "period": "latest_quarter",
+                    "interpretation": "Revenue anchors the demand read.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Gross Margin",
+                    "value": "74.6%",
+                    "period": "latest_quarter",
+                    "interpretation": "Gross margin shows pricing and mix quality.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Operating Cash Flow",
+                    "value": "$16.6B",
+                    "period": "latest_quarter",
+                    "interpretation": "Operating cash flow checks earnings quality.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+            ],
+            "chart_focus": ["revenue", "gross_margin", "operating_cash_flow"],
+        },
+        "driver_snapshot": [
+            {
+                "title": "数据中心需求支撑增长",
+                "summary": "数据中心需求是收入增长的主要支撑，下一季需要确认订单和供给能否延续。",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "risk_snapshot": [
+            {
+                "title": "利润率高位延续风险",
+                "summary": "利润率已经处在高位，后续需要观察产品组合和成本变化是否带来压力。",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    serialized = report.model_dump_json()
+    assert "Growth quality" not in serialized
+    assert "Margin quality" not in serialized
+    assert "Cash quality" not in serialized
+    assert "Bull case" not in serialized
+    assert "Bear case" not in serialized
+    assert "Constructive read:" not in serialized
+    assert "Cautious read:" not in serialized
+    assert "Balanced read" not in serialized
+    assert "The reported quarter screens" not in serialized
+    sections = report.task_sections
+    assert sections.quality_of_quarter.growth_quality.title == "增长质量"
+    assert sections.quality_of_quarter.margin_quality.title == "利润率质量"
+    assert sections.quality_of_quarter.cash_quality.title == "现金质量"
+    assert sections.bull_bear_read.bull_case[0].title.startswith("看多逻辑")
+    assert sections.bull_bear_read.bear_case[0].title.startswith("看空逻辑")
+    assert sections.bull_bear_read.balanced_read.title == "均衡判断"
+
+
+def test_latest_earnings_reported_metric_placeholder_respects_chinese_locale() -> None:
+    state = _make_state(language="zh")
+    payload = {
+        "company_profile": {
+            "summary": "NVIDIA provides accelerated computing platforms and related software.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "NVDA 本季收入仍是核心指标。",
+            "summary": "收入指标已经被抽取，但模型没有提供完整解释。",
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "收入指标可用",
+                "summary": "收入数据可用于判断本季需求状态。",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$35.1B",
+                    "period": "latest_quarter",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+            "chart_focus": ["revenue"],
+        },
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    metric = report.task_sections.financial_dashboard.metrics[0]
+    assert metric.interpretation == "已报告指标。"
+    assert "Reported metric." not in report.model_dump_json()
+
+
 def test_latest_earnings_watch_next_metric_backfill_respects_chinese_locale() -> None:
     state = _make_state(language="zh")
     payload = {
@@ -2051,6 +2196,72 @@ def test_cash_flow_empty_red_flags_are_backfilled_with_watch_next() -> None:
 
     assert report.task_sections.red_flags
     assert "Watch" in report.task_sections.red_flags[0].title
+
+
+def test_cash_flow_fact_backfills_respect_chinese_locale() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "operating cash flow", "value": 28702000000, "unit": "USD"},
+                    {"name": "capital expenditures", "value": 1971000000, "unit": "USD"},
+                    {"name": "free cash flow", "value": 26731000000, "unit": "USD"},
+                    {"name": "total debt", "value": 98600000000, "unit": "USD"},
+                    {
+                        "name": "cash and short term investments",
+                        "value": 53700000000,
+                        "unit": "USD",
+                    },
+                    {"name": "current ratio", "value": 0.82, "unit": "ratio"},
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Structured yfinance cash flow metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "AAPL 现金质量稳健。",
+            "earnings_backed_by_cash": "yes",
+            "summary": "经营现金流和自由现金流均为正，现金生成能够支撑本季判断。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {},
+        "allocation_discipline": [],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    serialized = report.model_dump_json()
+    assert "was reported in structured financial facts" not in serialized
+    assert "Capex and reinvestment" not in serialized
+    assert "Debt load" not in serialized
+    assert "Balance sheet resilience" not in serialized
+    assert "Watch next cash signal" not in serialized
+    assert "Watch whether" not in serialized
+    assert "资本开支与再投资" in serialized
+    assert "债务负担" in serialized
+    assert "资产负债表韧性" in serialized
+    assert "观察下一季现金信号" in serialized
 
 
 def test_cash_flow_unsupported_capital_points_are_removed_without_structured_metrics() -> None:

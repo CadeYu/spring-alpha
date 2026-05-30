@@ -327,6 +327,7 @@ def _fallback_report_from_state(
                 summary=summary,
                 metrics=present_metrics[:3],
                 source_refs=source_refs,
+                language=request.language,
             ),
         )
         return fallback_report.model_copy(
@@ -376,7 +377,9 @@ def _latest_earnings_fallback_payload(
     summary: str,
     metrics: list[EvidenceBoundMetric],
     source_refs: list[SourceRef],
+    language: str | None = None,
 ) -> dict[str, Any]:
+    is_zh = _is_zh_locale(language)
     fallback_source_ids = [source_ref.source_id for source_ref in source_refs[:3]]
     primary_source_ids = fallback_source_ids[:1]
     primary_metric = _primary_fallback_metric(metrics)
@@ -384,14 +387,14 @@ def _latest_earnings_fallback_payload(
     return {
         "company_profile": None,
         "topline_verdict": {
-            "headline": "Evidence-backed fallback earnings view",
+            "headline": "证据兜底财报判断" if is_zh else "Evidence-backed fallback earnings view",
             "summary": summary,
             "verdict": "mixed",
             "confidence": "low",
         },
         "key_takeaways": [
             _fallback_payload_point(
-                title="Evidence-backed fallback",
+                title="证据兜底判断" if is_zh else "Evidence-backed fallback",
                 summary=summary,
                 source_ids=primary_source_ids,
                 citation_status=_fallback_citation_status(source_refs),
@@ -407,16 +410,16 @@ def _latest_earnings_fallback_payload(
         },
         "driver_snapshot": [
             _fallback_payload_point(
-                title=_driver_fallback_title(primary_metric),
-                summary=_driver_fallback_summary(primary_metric, summary),
+                title=_driver_fallback_title(primary_metric, is_zh),
+                summary=_driver_fallback_summary(primary_metric, summary, is_zh),
                 source_ids=_metric_source_ids(primary_metric) or primary_source_ids,
                 citation_status=_fallback_citation_status(source_refs),
             )
         ],
         "risk_snapshot": [
             _fallback_payload_point(
-                title=_risk_fallback_title(risk_source),
-                summary=_risk_fallback_summary(risk_source),
+                title=_risk_fallback_title(risk_source, is_zh),
+                summary=_risk_fallback_summary(risk_source, is_zh),
                 source_ids=(
                     [risk_source.source_id] if risk_source is not None else primary_source_ids
                 ),
@@ -451,15 +454,26 @@ def _primary_fallback_metric(
     return present_metrics[0]
 
 
-def _driver_fallback_title(metric: EvidenceBoundMetric | None) -> str:
+def _driver_fallback_title(metric: EvidenceBoundMetric | None, is_zh: bool = False) -> str:
     if metric is None:
-        return "Evidence anchor"
+        return "证据锚点" if is_zh else "Evidence anchor"
+    if is_zh:
+        return f"{_title_case_metric(metric.name)} 证据锚点"
     return f"{_title_case_metric(metric.name)} evidence anchor"
 
 
-def _driver_fallback_summary(metric: EvidenceBoundMetric | None, summary: str) -> str:
+def _driver_fallback_summary(
+    metric: EvidenceBoundMetric | None,
+    summary: str,
+    is_zh: bool = False,
+) -> str:
     if metric is None:
         return summary
+    if is_zh:
+        return (
+            f"{metric.name} 为 {metric.value}，是最终综合完成前最清晰的财报驱动证据。"
+            f"{metric.interpretation}"
+        )
     return (
         f"{metric.name} of {metric.value} is the clearest available earnings driver "
         f"before final synthesis completed. {metric.interpretation}"
@@ -999,17 +1013,26 @@ def _risk_source_ref(
     return source_refs[0] if source_refs else None
 
 
-def _risk_fallback_title(source_ref: SourceRef | None) -> str:
+def _risk_fallback_title(source_ref: SourceRef | None, is_zh: bool = False) -> str:
     if source_ref is None:
-        return "Evidence risk watch"
+        return "证据风险观察" if is_zh else "Evidence risk watch"
+    if is_zh:
+        return f"{_clip_title(source_ref.section)} 风险观察"
     return f"{_clip_title(source_ref.section)} risk watch"
 
 
-def _risk_fallback_summary(source_ref: SourceRef | None) -> str:
+def _risk_fallback_summary(source_ref: SourceRef | None, is_zh: bool = False) -> str:
     if source_ref is None:
+        if is_zh:
+            return "最终 LLM 综合未完成，因此风险框架在下一次完整分析前仍应视为部分判断。"
         return (
             "The final LLM synthesis did not complete, so risk framing remains "
             "partial until the next full analysis run."
+        )
+    if is_zh:
+        return (
+            f"{_clip(source_ref.snippet, 180)} 在最终综合能够重新核对驱动与风险证据前，"
+            "这会让财报判断保持均衡。"
         )
     return (
         f"{_clip(source_ref.snippet, 180)} This keeps the earnings read balanced "
@@ -1125,6 +1148,7 @@ def _cash_flow_fallback_sections(
     source_refs: list[SourceRef],
     coverage: TaskSectionCoverage,
 ) -> CashFlowCapitalAllocationSections:
+    is_zh = _is_zh_locale(request.language)
     metric_map = {
         _normalize_metric_lookup_key(metric.name): metric
         for metric in metrics
@@ -1147,19 +1171,27 @@ def _cash_flow_fallback_sections(
     capex_point = _cash_flow_metric_point(
         metric_map,
         "capital expenditures",
-        title="Capex and reinvestment",
+        title="资本开支与再投资" if is_zh else "Capex and reinvestment",
         fallback_summary=(
-            "Capital expenditure data was collected as the main reinvestment signal."
+            "资本开支数据是主要再投资信号。"
+            if is_zh
+            else "Capital expenditure data was collected as the main reinvestment signal."
         ),
+        zh=is_zh,
     )
     debt_point = _cash_flow_metric_point(
         metric_map,
         "total debt",
-        title="Debt load",
-        fallback_summary="Debt data was collected as the main balance sheet risk signal.",
+        title="债务负担" if is_zh else "Debt load",
+        fallback_summary=(
+            "债务数据是主要资产负债表风险信号。"
+            if is_zh
+            else "Debt data was collected as the main balance sheet risk signal."
+        ),
+        zh=is_zh,
     )
-    liquidity_point = _cash_flow_liquidity_point(metric_map, source_refs)
-    red_flags = _cash_flow_red_flags(metric_map, source_refs)
+    liquidity_point = _cash_flow_liquidity_point(metric_map, source_refs, is_zh)
+    red_flags = _cash_flow_red_flags(metric_map, source_refs, is_zh)
     outlook = _fallback_point(
         _cash_flow_outlook_summary(request, metric_map, summary),
         source_refs,
@@ -1206,42 +1238,76 @@ def _cash_quality_verdict(
     metric_map: dict[str, EvidenceBoundMetric],
     fallback_summary: str,
 ) -> CashQualityVerdict:
+    is_zh = _is_zh_locale(request.language)
     net_income = _metric_float(_lookup_metric(metric_map, "net income"))
     ocf = _metric_float(_lookup_metric(metric_map, "operating cash flow"))
     fcf = _metric_float(_lookup_metric(metric_map, "free cash flow"))
     capex = _metric_float(_lookup_metric(metric_map, "capital expenditures"))
     if ocf is not None and capex is not None and fcf is not None and fcf < 0 < ocf:
         return CashQualityVerdict(
-            headline="Cash quality is pressured by capex.",
+            headline=(
+                "现金质量受到资本开支压力。"
+                if is_zh
+                else "Cash quality is pressured by capex."
+            ),
             earnings_backed_by_cash="mixed",
             summary=(
-                f"{request.ticker} generated positive operating cash flow, but capex "
-                "absorbed that cash and left free cash flow negative. The cash story "
-                "therefore depends on whether reinvestment starts converting into durable "
-                "operating cash recovery."
+                (
+                    f"{request.ticker} 经营现金流为正，"
+                    "但资本开支吸收了这部分现金并导致自由现金流为负。"
+                    "因此现金质量取决于再投资能否转化为可持续的经营现金流修复。"
+                )
+                if is_zh
+                else (
+                    f"{request.ticker} generated positive operating cash flow, but capex "
+                    "absorbed that cash and left free cash flow negative. The cash story "
+                    "therefore depends on whether reinvestment starts converting into durable "
+                    "operating cash recovery."
+                )
             ),
         )
     if ocf is not None and net_income is not None and ocf > 0 and net_income <= 0:
         return CashQualityVerdict(
-            headline="Cash flow is stronger than reported earnings.",
+            headline=(
+                "现金流强于报告利润。"
+                if is_zh
+                else "Cash flow is stronger than reported earnings."
+            ),
             earnings_backed_by_cash="mixed",
             summary=(
-                f"{request.ticker} reported weak earnings, but operating cash flow stayed "
-                "positive. That supports liquidity, while free cash flow and capex still "
-                "decide whether the cash profile is improving."
+                (
+                    f"{request.ticker} 报告利润偏弱，但经营现金流仍为正。"
+                    "这支撑了流动性，不过自由现金流和资本开支仍决定现金画像是否真正改善。"
+                )
+                if is_zh
+                else (
+                    f"{request.ticker} reported weak earnings, but operating cash flow stayed "
+                    "positive. That supports liquidity, while free cash flow and capex still "
+                    "decide whether the cash profile is improving."
+                )
             ),
         )
     if ocf is not None and fcf is not None and ocf > 0 and fcf > 0:
         return CashQualityVerdict(
-            headline="Earnings are supported by cash generation.",
+            headline=(
+                "盈利有现金生成支撑。"
+                if is_zh
+                else "Earnings are supported by cash generation."
+            ),
             earnings_backed_by_cash="yes",
             summary=(
-                f"{request.ticker} produced positive operating cash flow and free cash "
-                "flow, giving management real capital allocation capacity."
+                (
+                    f"{request.ticker} 经营现金流和自由现金流均为正，管理层具备真实资本配置能力。"
+                )
+                if is_zh
+                else (
+                    f"{request.ticker} produced positive operating cash flow and free cash "
+                    "flow, giving management real capital allocation capacity."
+                )
             ),
         )
     return CashQualityVerdict(
-        headline="Cash quality needs more evidence.",
+        headline="现金质量仍需要更多证据。" if is_zh else "Cash quality needs more evidence.",
         earnings_backed_by_cash="unclear",
         summary=fallback_summary,
     )
@@ -1253,13 +1319,18 @@ def _cash_flow_metric_point(
     *,
     title: str,
     fallback_summary: str,
+    zh: bool = False,
 ) -> EvidenceBoundPoint | None:
     metric = _lookup_metric(metric_map, metric_name)
     if metric is None:
         return None
     return EvidenceBoundPoint(
         title=title,
-        summary=f"{metric.name} was {metric.value}. {metric.interpretation or fallback_summary}",
+        summary=(
+            f"{metric.name} 为 {metric.value}。{metric.interpretation or fallback_summary}"
+            if zh
+            else f"{metric.name} was {metric.value}. {metric.interpretation or fallback_summary}"
+        ),
         evidence_refs=metric.evidence_refs,
         citation_status=metric.citation_status,
     )
@@ -1268,6 +1339,7 @@ def _cash_flow_metric_point(
 def _cash_flow_liquidity_point(
     metric_map: dict[str, EvidenceBoundMetric],
     source_refs: list[SourceRef],
+    zh: bool = False,
 ) -> EvidenceBoundPoint | None:
     current_ratio = _lookup_metric(metric_map, "current ratio")
     cash = _lookup_metric(metric_map, "cash and short term investments")
@@ -1281,22 +1353,39 @@ def _cash_flow_liquidity_point(
     evidence_refs: list[EvidenceRef] = []
     citation_status = CitationStatus.UNVERIFIED
     if current_ratio is not None:
-        parts.append(f"current ratio was {current_ratio.value}")
+        parts.append(
+            f"current ratio 为 {current_ratio.value}"
+            if zh
+            else f"current ratio was {current_ratio.value}"
+        )
         evidence_refs.extend(current_ratio.evidence_refs)
         citation_status = current_ratio.citation_status
     if cash is not None:
-        parts.append(f"cash and short-term investments were {cash.value}")
+        parts.append(
+            f"cash and short-term investments 为 {cash.value}"
+            if zh
+            else f"cash and short-term investments were {cash.value}"
+        )
         evidence_refs.extend(cash.evidence_refs)
         citation_status = cash.citation_status
     if not parts and liquidity_refs:
         parts.append(_clip(liquidity_refs[0].snippet, 160))
         citation_status = liquidity_refs[0].citation_status
     return EvidenceBoundPoint(
-        title="Balance sheet resilience",
+        title="资产负债表韧性" if zh else "Balance sheet resilience",
         summary=(
-            "Liquidity context: "
-            + " and ".join(parts)
-            + ". This determines how much time management has to convert investment into cash returns."
+            (
+                "流动性背景："
+                + "和".join(parts)
+                + "。这决定管理层有多少时间把投资转化为现金回报。"
+            )
+            if zh
+            else (
+                "Liquidity context: "
+                + " and ".join(parts)
+                + ". This determines how much time management has to convert "
+                "investment into cash returns."
+            )
         ),
         evidence_refs=evidence_refs
         or [_evidence_ref(source_ref) for source_ref in liquidity_refs[:2]],
@@ -1319,6 +1408,7 @@ def _cash_flow_source_refs_matching_terms(
 def _cash_flow_red_flags(
     metric_map: dict[str, EvidenceBoundMetric],
     source_refs: list[SourceRef],
+    zh: bool = False,
 ) -> list[EvidenceBoundPoint]:
     flags: list[EvidenceBoundPoint] = []
     ocf = _metric_float(_lookup_metric(metric_map, "operating cash flow"))
@@ -1327,27 +1417,45 @@ def _cash_flow_red_flags(
     if fcf is not None and fcf < 0:
         flags.append(
             _fallback_point(
-                "Free cash flow is negative, so the next quarter should show whether "
-                "operating cash flow can rise above capex.",
+                (
+                    "自由现金流为负，下一季需要观察经营现金流能否提升到资本开支之上。"
+                    if zh
+                    else (
+                        "Free cash flow is negative, so the next quarter should show whether "
+                        "operating cash flow can rise above capex."
+                    )
+                ),
                 source_refs,
-                title="Negative free cash flow",
+                title="自由现金流为负" if zh else "Negative free cash flow",
             )
         )
     if ocf is not None and capex is not None and capex > ocf > 0:
         flags.append(
             _fallback_point(
-                "Capex is larger than operating cash flow, which keeps reinvestment "
-                "from translating into near-term free cash flow.",
+                (
+                    "资本开支高于经营现金流，使再投资短期内难以转化为自由现金流。"
+                    if zh
+                    else (
+                        "Capex is larger than operating cash flow, which keeps reinvestment "
+                        "from translating into near-term free cash flow."
+                    )
+                ),
                 source_refs,
-                title="Capex exceeds operating cash flow",
+                title="资本开支高于经营现金流" if zh else "Capex exceeds operating cash flow",
             )
         )
     return flags or [
         _fallback_point(
-            "Watch whether operating cash flow, capex, and liquidity move in the same "
-            "direction next quarter.",
+            (
+                "观察下一季经营现金流、资本开支和流动性是否朝同一方向变化。"
+                if zh
+                else (
+                    "Watch whether operating cash flow, capex, and liquidity move in the same "
+                    "direction next quarter."
+                )
+            ),
             source_refs,
-            title="Watch next",
+            title="观察下一季" if zh else "Watch next",
         )
     ]
 
