@@ -413,6 +413,82 @@ def test_latest_earnings_backfills_rich_sections_when_model_omits_them() -> None
     ]
 
 
+def test_latest_earnings_watch_next_metric_backfill_respects_chinese_locale() -> None:
+    state = _make_state(language="zh")
+    payload = {
+        "company_profile": {
+            "summary": "NVIDIA provides accelerated computing platforms and related software.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "NVDA latest quarter stayed strong but needs follow-through.",
+            "summary": (
+                "Revenue and gross margin remain central to the latest quarter read. "
+                "The next report should clarify whether operating leverage keeps improving."
+            ),
+            "verdict": "positive",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "Revenue stayed central",
+                "summary": "Revenue is the primary demand signal in the latest quarter.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$35.1B",
+                    "period": "latest_quarter",
+                    "interpretation": "Revenue anchors the demand read.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Gross Margin",
+                    "value": "74.6%",
+                    "period": "latest_quarter",
+                    "interpretation": "Gross margin shows pricing and mix quality.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Operating Income",
+                    "value": "$21.9B",
+                    "period": "latest_quarter",
+                    "interpretation": "Operating income shows leverage quality.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+            ],
+            "chart_focus": ["revenue", "gross_margin", "operating_income"],
+        },
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    why_text = "\n".join(item.why_it_matters for item in report.task_sections.watch_next)
+    assert "latest-quarter evidence" not in why_text
+    assert "next report should show" not in why_text
+    assert "下一季报告" in why_text
+    assert [item.metric for item in report.task_sections.watch_next] == [
+        "Revenue",
+        "Gross Margin",
+        "Operating Income",
+    ]
+
+
 def test_latest_earnings_backfills_top_level_summary_when_model_summary_is_too_short() -> None:
     state = _make_state(language="zh")
     payload = {

@@ -327,6 +327,7 @@ def build_latest_earnings_report_from_payload(
         dashboard_metrics,
         risk_snapshot,
         source_refs,
+        request.language,
     )
     coverage = _latest_coverage(
         payload,
@@ -1681,17 +1682,16 @@ def _latest_watch_next_with_backfill(
     metrics: list[EvidenceBoundMetric],
     risk_snapshot: list[EvidenceBoundPoint],
     source_refs: list[SourceRef],
+    language: str | None = None,
 ) -> list[WatchNextItem]:
     if watch_next:
         return watch_next
+    is_zh = _is_zh_locale(language)
     metric_items = [
         WatchNextItem(
-            title=f"Watch {metric.name}",
+            title=f"观察 {metric.name}" if is_zh else f"Watch {metric.name}",
             metric=metric.name,
-            why_it_matters=(
-                f"{metric.name} is already part of the latest-quarter evidence; "
-                "the next report should show whether this signal improves, fades, or reverses."
-            ),
+            why_it_matters=_watch_next_metric_reason(metric.name, is_zh),
             evidence_refs=metric.evidence_refs,
             citation_status=metric.citation_status,
         )
@@ -1701,7 +1701,7 @@ def _latest_watch_next_with_backfill(
         return metric_items
     return [
         WatchNextItem(
-            title=f"Watch {point.title}",
+            title=f"观察 {point.title}" if is_zh else f"Watch {point.title}",
             metric=None,
             why_it_matters=point.summary,
             evidence_refs=point.evidence_refs,
@@ -1710,18 +1710,36 @@ def _latest_watch_next_with_backfill(
         for point in risk_snapshot[:3]
     ] or [
         WatchNextItem(
-            title="Watch next filing evidence",
+            title="观察下一季 filing 证据" if is_zh else "Watch next filing evidence",
             metric=None,
-            why_it_matters=(
-                "The next filing should confirm whether the current earnings read is "
-                "supported by fresh KPI, driver, and risk evidence."
-            ),
+            why_it_matters=_watch_next_filing_reason(is_zh),
             evidence_refs=[_evidence_ref(source_refs[0])] if source_refs else [],
             citation_status=source_refs[0].citation_status
             if source_refs
             else CitationStatus.UNVERIFIED,
         )
     ]
+
+
+def _watch_next_metric_reason(metric_name: str, is_zh: bool) -> str:
+    if is_zh:
+        return (
+            f"{metric_name} 已经是本季证据中的关键观察项；"
+            "下一季报告需要确认这个信号是继续改善、转弱，还是出现反转。"
+        )
+    return (
+        f"{metric_name} is already part of the latest-quarter evidence; "
+        "the next report should show whether this signal improves, fades, or reverses."
+    )
+
+
+def _watch_next_filing_reason(is_zh: bool) -> str:
+    if is_zh:
+        return "下一季 filing 应确认当前财报判断是否仍有新的 KPI、业务驱动和风险证据支撑。"
+    return (
+        "The next filing should confirm whether the current earnings read is "
+        "supported by fresh KPI, driver, and risk evidence."
+    )
 
 
 def _quality_point_from_metric(
