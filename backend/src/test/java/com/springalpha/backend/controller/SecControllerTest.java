@@ -37,7 +37,8 @@ class SecControllerTest {
 
         List<AnalysisReport> reports = client.get()
                 .uri("/api/sec/analyze/TSLA?lang=zh&model=siliconflow")
-                .header("X-Provider-API-Key", "sk-test")
+                .header("X-Visitor-Id", "2cc57d20-ebd4-49bd-b53d-2c935bd9e01c")
+                .header("X-Trial-Run-Id", "7f2819ce-042c-4a54-ac27-74294d2f9ca3")
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
                 .expectStatus().isOk()
@@ -52,8 +53,31 @@ class SecControllerTest {
         assertEquals("zh", analysisService.lastLang);
         assertEquals("siliconflow", analysisService.lastModel);
         assertEquals("quarterly", analysisService.lastReportType);
-        assertEquals("sk-test", analysisService.lastOpenAiApiKey);
+        assertEquals(null, analysisService.lastOpenAiApiKey);
         assertEquals(ResearchTaskType.LATEST_EARNINGS_READOUT, analysisService.lastTaskType);
+    }
+
+    @Test
+    void analyzeEndpointRejectsProviderKeysBecauseByokRunsInTheBrowser() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
+
+        WebTestClient client = WebTestClient.bindToController(controller)
+                .controllerAdvice(new ApiExceptionHandler())
+                .build();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
+                .header("X-Provider-API-Key", "sk-test")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody(String.class)
+                .value(body -> assertTrue(body.contains("SERVER_BYOK_KEY_REJECTED")));
+
+        assertEquals(0, analysisService.callCount);
     }
 
     @Test
@@ -67,7 +91,8 @@ class SecControllerTest {
 
         client.get()
                 .uri("/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=deepseek-ai/deepseek-v4-flash")
-                .header("X-Provider-API-Key", "sk-test")
+                .header("X-Visitor-Id", "2cc57d20-ebd4-49bd-b53d-2c935bd9e01c")
+                .header("X-Trial-Run-Id", "7f2819ce-042c-4a54-ac27-74294d2f9ca3")
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
                 .expectStatus().isOk();
@@ -86,7 +111,8 @@ class SecControllerTest {
 
         client.get()
                 .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
-                .header("X-Provider-API-Key", "sk-test")
+                .header("X-Visitor-Id", "2cc57d20-ebd4-49bd-b53d-2c935bd9e01c")
+                .header("X-Trial-Run-Id", "7f2819ce-042c-4a54-ac27-74294d2f9ca3")
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
                 .expectStatus().isOk()
@@ -243,7 +269,8 @@ class SecControllerTest {
 
         client.get()
                 .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
-                .header("X-Provider-API-Key", "sk-test")
+                .header("X-Visitor-Id", "2cc57d20-ebd4-49bd-b53d-2c935bd9e01c")
+                .header("X-Trial-Run-Id", "7f2819ce-042c-4a54-ac27-74294d2f9ca3")
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
                 .expectStatus().isEqualTo(503)

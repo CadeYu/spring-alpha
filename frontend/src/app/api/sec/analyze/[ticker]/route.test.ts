@@ -25,7 +25,7 @@ describe("analysis SSE bridge", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("forwards the selected BYOK provider key to the backend", async () => {
+  it("rejects provider keys because BYOK calls must stay in the browser", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode("data:{}\n\n"));
@@ -45,20 +45,13 @@ describe("analysis SSE bridge", () => {
       { params: Promise.resolve({ ticker: "AAPL" }) },
     );
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe(
-      "text/event-stream; charset=utf-8",
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "http://127.0.0.1:8082/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
-      ),
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          "X-Provider-API-Key": "sk-test-123",
-        }),
-      }),
-    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error:
+        "Provider API keys must be used by the browser-direct BYOK path and are not accepted by this server route.",
+      code: "SERVER_BYOK_KEY_REJECTED",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("uses the production backend url on Vercel when no explicit backend url is configured", async () => {
@@ -76,9 +69,6 @@ describe("analysis SSE bridge", () => {
     const response = await GET(
       new NextRequest(
         "http://localhost/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
-        {
-          headers: { "X-Provider-API-Key": "sk-test-123" },
-        },
       ),
       { params: Promise.resolve({ ticker: "AAPL" }) },
     );
@@ -105,9 +95,6 @@ describe("analysis SSE bridge", () => {
     const response = await GET(
       new NextRequest(
         "http://localhost/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=deepseek-ai%2Fdeepseek-v4-flash&taskType=latest_earnings_readout",
-        {
-          headers: { "X-Provider-API-Key": "sk-test-123" },
-        },
       ),
       { params: Promise.resolve({ ticker: "AAPL" }) },
     );

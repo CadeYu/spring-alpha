@@ -261,10 +261,8 @@ async function mockCommonRoutes(
 test.describe("Spring Alpha 10 ticker output-line matrix", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      window.localStorage.setItem(
-        "spring-alpha-siliconflow-key",
-        "test-skip-provider-validation",
-      );
+      window.localStorage.removeItem("spring-alpha-siliconflow-key");
+      window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
     });
   });
 

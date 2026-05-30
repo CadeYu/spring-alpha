@@ -8,12 +8,21 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/components/app/earnings-analyst-app";
 
+let mockSessionStatus: "authenticated" | "unauthenticated" | "loading" =
+  "unauthenticated";
+
 vi.mock("@/components/pdf/PdfDownloadButton", () => ({
   PdfDownloadButton: () => <button type="button">pdf</button>,
 }));
 
 vi.mock("next-auth/react", () => ({
-  useSession: () => ({ data: null, status: "unauthenticated" }),
+  useSession: () => ({
+    data:
+      mockSessionStatus === "authenticated"
+        ? { user: { email: "cade@example.com" } }
+        : null,
+    status: mockSessionStatus,
+  }),
   signIn: vi.fn(),
   signOut: vi.fn(),
   SessionProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -167,14 +176,32 @@ function submitTicker(ticker = "AAPL") {
   fireEvent.click(screen.getByRole("button", { name: /analyze|开始分析/i }));
 }
 
+function createProviderJsonResponse(report: unknown): Response {
+  return new Response(
+    JSON.stringify({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify(report),
+          },
+        },
+      ],
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
 describe("Home page", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockSessionStatus = "unauthenticated";
     chartTimeScaleMock.fitContent.mockClear();
     chartTimeScaleMock.scrollToRealTime.mockClear();
     chartTimeScaleMock.setVisibleLogicalRange.mockClear();
     window.localStorage.clear();
-    window.localStorage.setItem("spring-alpha-siliconflow-key", "sk-test-123");
   });
 
   it("starts with an empty ticker state instead of defaulting to AAPL", () => {
@@ -2441,6 +2468,47 @@ describe("Home page", () => {
     ).toBe(false);
   });
 
+  it("does not use a saved provider key for unauthenticated users", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          taskSections: latestTaskSections("Anonymous trial thesis"),
+        },
+      ]);
+    });
+
+    window.localStorage.setItem("spring-alpha-siliconflow-key", "sk-stale-local-key");
+    window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker("AAPL");
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) =>
+          String(input).includes("/api/sec/analyze/AAPL"),
+        ),
+      ).toBe(true);
+    });
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes("api.siliconflow.cn/v1/chat/completions"),
+      ),
+    ).toBe(false);
+  });
+
   it("shows the live run status while the real analysis request is in flight", async () => {
     const deferred = createDeferredResponse();
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -2670,37 +2738,68 @@ describe("Home page", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("sends the saved provider key when BYOK mode is used", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  it("uses saved provider keys only in browser-direct BYOK calls", async () => {
+    mockSessionStatus = "authenticated";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/sec/history/")) {
-        return new Response(JSON.stringify([]), {
+      if (url.includes("/api/java/financial/")) {
+        return new Response(
+          JSON.stringify({
+            companyName: "Tesla, Inc.",
+            period: "FY 2025",
+            filingDate: "2026-01-29",
+            revenue: 100,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (url.includes("/api/java/sec/10k/")) {
+        return new Response("Revenue grew from deliveries.", {
           status: 200,
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+      if (url.includes("api.siliconflow.cn/v1/chat/completions")) {
+        expect(init?.headers).toEqual(
+          expect.objectContaining({
+            Authorization: "Bearer sk-test-123",
+          }),
+        );
+        return createProviderJsonResponse({
+          executiveSummary: "Tesla browser-direct thesis.",
+          companyName: "Tesla, Inc.",
+          period: "FY 2025",
+          filingDate: "2026-01-29",
+          citations: [],
+          taskSections: {
+            schemaVersion: "task_sections.v1",
+            taskType: "latest_earnings_readout",
+            latestEarnings: {
+              toplineVerdict: {
+                headline: "Browser direct typed thesis",
+                summary: "Tesla browser-direct thesis.",
+                verdict: "mixed",
+                confidence: "medium",
+              },
+              keyTakeaways: [],
+              financialDashboard: { metrics: [], chartFocus: [] },
+              driverSnapshot: [],
+              riskSnapshot: [],
+            },
+          },
         });
       }
 
-      return createSseResponse([
-        {
-          executiveSummary: "Tesla remained under pressure.",
-          keyMetrics: [],
-          businessDrivers: [],
-          riskFactors: [],
-          citations: [],
-          metadata: {
-            modelName: "gpt-4o-mini",
-            generatedAt: "2026-03-09T10:00:00",
-            language: "en",
-          },
-        },
-      ]);
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
 
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /change key/i }));
     fireEvent.change(
       screen.getByPlaceholderText(/enter your siliconflow key/i),
       {
@@ -2717,44 +2816,58 @@ describe("Home page", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining("/sec/analyze/"),
-        expect.objectContaining({
-          headers: { "X-Provider-API-Key": "sk-test-123" },
-          signal: expect.any(AbortSignal),
-        }),
+        expect.stringContaining("api.siliconflow.cn/v1/chat/completions"),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
       );
     });
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input).includes("/api/sec/analyze/")),
+    ).toBe(false);
+    expect(
+      fetchMock.mock.calls.some(([, init]) =>
+        JSON.stringify(init?.headers ?? {}).includes("X-Provider-API-Key"),
+      ),
+    ).toBe(false);
   });
 
   it("surfaces explicit invalid-key errors for BYOK providers instead of rendering an empty report shell", async () => {
+    mockSessionStatus = "authenticated";
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/sec/history/")) {
+      if (url.includes("/api/java/financial/")) {
         return new Response(JSON.stringify([]), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
       }
+      if (url.includes("/api/java/sec/10k/")) {
+        return new Response("Revenue evidence.", {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+      if (url.includes("api.siliconflow.cn/v1/chat/completions")) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              message:
+                "SiliconFlow API key is invalid or unauthorized for this project",
+            },
+          }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
 
-      return new Response(
-        JSON.stringify({
-          error:
-            "SiliconFlow API key is invalid or unauthorized for this project",
-          code: "SILICONFLOW_API_KEY_INVALID",
-          source: "siliconflow",
-        }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
 
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /change key/i }));
     fireEvent.change(
       screen.getByPlaceholderText(/enter your siliconflow key/i),
       {
@@ -2891,7 +3004,7 @@ describe("Home page", () => {
         createSseResponse([
           {
             executiveSummary: "stub summary",
-            companyName: url.includes("/MSFT")
+            companyName: url.includes("MSFT")
               ? "Microsoft Corporation"
               : "Tesla, Inc.",
             period: "FY 2025",
@@ -2906,7 +3019,7 @@ describe("Home page", () => {
               language: "en",
             },
             taskSections: latestTaskSections(
-              url.includes("/MSFT")
+              url.includes("MSFT")
                 ? "Microsoft typed thesis"
                 : "Tesla typed thesis",
             ),
@@ -2927,15 +3040,6 @@ describe("Home page", () => {
       await screen.findByText("Tesla, Inc. · FY 2025 · 2026-01-29"),
     ).toBeInTheDocument();
     expect(screen.getByText("Tesla typed thesis")).toBeInTheDocument();
-
-    submitTicker("MSFT");
-
-    openAgentReport(/latest earnings readout/i);
-
-    expect(
-      await screen.findByText("Microsoft Corporation · FY 2025 · 2026-01-29"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Microsoft typed thesis")).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(([input]) =>
         String(input).includes("/sec/history/"),

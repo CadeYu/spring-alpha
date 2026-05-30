@@ -14,8 +14,6 @@ type TaskCase = {
 };
 
 const liveEnabled = process.env.RUN_LIVE_OUTPUT_MATRIX === "true";
-const liveSiliconFlowKey = process.env.SILICONFLOW_API_KEY;
-
 const TASK_CASES: TaskCase[] = [
   {
     taskType: "latest_earnings_readout",
@@ -153,14 +151,15 @@ test.describe("Spring Alpha live 10 ticker output-line matrix", () => {
     "Set RUN_LIVE_OUTPUT_MATRIX=true to run live provider-backed output-line E2E.",
   );
   test.skip(
-    liveEnabled && !liveSiliconFlowKey,
-    "Set SILICONFLOW_API_KEY to run live provider-backed output-line E2E.",
+    liveEnabled && process.env.REQUIRE_SERVER_BACKEND !== "true",
+    "Set REQUIRE_SERVER_BACKEND=true after configuring the backend provider key to run live backend output-line E2E.",
   );
 
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript((key) => {
-      window.localStorage.setItem("spring-alpha-siliconflow-key", key);
-    }, liveSiliconFlowKey);
+    await page.addInitScript(() => {
+      window.localStorage.removeItem("spring-alpha-siliconflow-key");
+      window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+    });
   });
 
   for (const liveCase of LIVE_CASES) {
@@ -185,7 +184,7 @@ test.describe("Spring Alpha live 10 ticker output-line matrix", () => {
       });
 
       await submitTicker(page, liveCase.ticker);
-      await expect(page.getByText("Saved")).toBeVisible();
+      await expect(page.getByText("Not saved")).toBeVisible();
 
       await waitForAllAgentResponses(page, analyzeResponses);
       expect(analyzeResponses.every((entry) => entry.startsWith("200 "))).toBe(

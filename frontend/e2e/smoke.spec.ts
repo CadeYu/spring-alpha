@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 
 const liveAgentEnabled = process.env.RUN_LIVE_AGENT_E2E === "true";
-const liveSiliconFlowKey = process.env.SILICONFLOW_API_KEY;
 
 function sseBody(payloads: unknown[]) {
   return payloads
@@ -65,6 +64,21 @@ async function mockMarketChartRoute(
             volume: 123456 + index,
           };
         }),
+      }),
+    });
+  });
+}
+
+async function mockAuthenticatedSession(page: import("@playwright/test").Page) {
+  await page.route("**/api/auth/session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        user: {
+          email: "cade@example.com",
+        },
+        expires: "2099-01-01T00:00:00.000Z",
       }),
     });
   });
@@ -247,10 +261,8 @@ function typedTaskSections(
 test.describe("Spring Alpha smoke", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      window.localStorage.setItem(
-        "spring-alpha-siliconflow-key",
-        "test-skip-provider-validation",
-      );
+      window.localStorage.removeItem("spring-alpha-siliconflow-key");
+      window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
     });
     await mockMarketChartRoute(page);
   });
@@ -1130,6 +1142,13 @@ test.describe("Spring Alpha smoke", () => {
     const firstHistoryGate = new Promise<void>((resolve) => {
       resolveFirstHistory = resolve;
     });
+    await mockAuthenticatedSession(page);
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "spring-alpha-siliconflow-key",
+        "test-browser-provider-key",
+      );
+    });
 
     await mockFinancialFactsRoute(page, async (route) => {
       await route.fulfill({
@@ -1177,52 +1196,51 @@ test.describe("Spring Alpha smoke", () => {
       });
     });
 
-    await mockAnalyzeRoute(page, async (route) => {
-      const url = route.request().url();
-      const isMsft = url.includes("/MSFT");
-
+    await page.route("**/api/java/sec/10k/**", async (route) => {
       await route.fulfill({
         status: 200,
-        contentType: "text/event-stream",
-        body: sseBody([
-          {
-            executiveSummary: isMsft ? "Microsoft thesis." : "Tesla thesis.",
-            companyName: isMsft ? "Microsoft Corporation" : "Tesla, Inc.",
-            period: isMsft ? "Q2 2026" : "Q1 2026",
-            filingDate: isMsft ? "2026-07-30" : "2026-03-31",
-            keyMetrics: [
-              {
-                metricName: "Revenue",
-                value: isMsft ? "$245B" : "$95B",
-                interpretation: isMsft
-                  ? "Microsoft revenue stayed strong."
-                  : "Tesla revenue stayed under pressure.",
-                sentiment: "positive",
+        contentType: "text/plain",
+        body: "Revenue evidence.",
+      });
+    });
+
+    await page.route("https://api.siliconflow.cn/v1/chat/completions", async (route) => {
+      const body = route.request().postDataJSON() as {
+        messages?: Array<{ content?: string }>;
+      };
+      const prompt = body.messages?.[0]?.content ?? "";
+      const isMsft = prompt.includes("Ticker: MSFT");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  executiveSummary: isMsft ? "Microsoft thesis." : "Tesla thesis.",
+                  companyName: isMsft ? "Microsoft Corporation" : "Tesla, Inc.",
+                  period: isMsft ? "Q2 2026" : "Q1 2026",
+                  filingDate: isMsft ? "2026-07-30" : "2026-03-31",
+                  citations: [],
+                  taskSections: {
+                    ...typedTaskSections("latest_earnings_readout"),
+                    latestEarnings: {
+                      ...typedTaskSections("latest_earnings_readout").latestEarnings,
+                      toplineVerdict: {
+                        headline: isMsft ? "Microsoft typed thesis." : "Tesla typed thesis.",
+                        verdict: "mixed",
+                        summary: isMsft
+                          ? "Microsoft revenue stayed strong."
+                          : "Tesla revenue stayed under pressure.",
+                      },
+                    },
+                  },
+                }),
               },
-            ],
-            businessDrivers: [],
-            riskFactors: [],
-            citations: [],
-            metadata: {
-              modelName: "gpt-4o-mini",
-              generatedAt: "2026-03-09T10:00:00Z",
-              language: "en",
             },
-            taskSections: {
-              ...typedTaskSections("latest_earnings_readout"),
-              latestEarnings: {
-                ...typedTaskSections("latest_earnings_readout").latestEarnings,
-                toplineVerdict: {
-                  headline: isMsft ? "Microsoft typed thesis." : "Tesla typed thesis.",
-                  verdict: "mixed",
-                  summary: isMsft
-                    ? "Microsoft revenue stayed strong."
-                    : "Tesla revenue stayed under pressure.",
-                },
-              },
-            },
-          },
-        ]),
+          ],
+        }),
       });
     });
 
@@ -1265,16 +1283,14 @@ test.describe("Spring Alpha live Agent path", () => {
     "Set RUN_LIVE_AGENT_E2E=true to run the non-mocked Agent E2E path.",
   );
   test.skip(
-    liveAgentEnabled && !liveSiliconFlowKey,
-    "Set SILICONFLOW_API_KEY to run the live SiliconFlow Agent E2E path.",
+    liveAgentEnabled && process.env.REQUIRE_SERVER_BACKEND !== "true",
+    "Set REQUIRE_SERVER_BACKEND=true after configuring the backend provider key to run the live Agent E2E path.",
   );
 
   test("renders Python Research Service agent output through the browser", async ({
     page,
   }, testInfo) => {
     testInfo.setTimeout(180_000);
-    const siliconFlowKey = liveSiliconFlowKey;
-    test.skip(!siliconFlowKey, "SILICONFLOW_API_KEY is required.");
 
     await mockHistoryRoute(page, async (route) => {
       await route.fulfill({
@@ -1292,9 +1308,10 @@ test.describe("Spring Alpha live Agent path", () => {
       });
     });
 
-    await page.addInitScript((key) => {
-      window.localStorage.setItem("spring-alpha-siliconflow-key", key);
-    }, siliconFlowKey);
+    await page.addInitScript(() => {
+      window.localStorage.removeItem("spring-alpha-siliconflow-key");
+      window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+    });
     await mockMarketChartRoute(page);
 
     await page.goto("/app");
