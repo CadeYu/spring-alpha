@@ -208,9 +208,8 @@ describe("KeyMetrics", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/java/financial/EW");
     });
 
-    expect(screen.getByTestId("margin-chart")).toHaveTextContent("strict:true");
-    expect(screen.getByTestId("margin-chart")).toHaveTextContent(
-      "mode:standard",
-    );
+    const marginChart = await screen.findByTestId("margin-chart");
+    expect(marginChart).toHaveTextContent("strict:true");
+    expect(marginChart).toHaveTextContent("mode:standard");
   });
 });
