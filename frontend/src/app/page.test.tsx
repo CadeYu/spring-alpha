@@ -2875,6 +2875,134 @@ describe("Home page", () => {
     ).toBe(false);
   });
 
+  it("normalizes loose BYOK latest earnings collections before rendering", async () => {
+    mockSessionStatus = "authenticated";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/market/chart/")) {
+        return new Response(JSON.stringify({ candles: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/java/financial/")) {
+        return new Response(
+          JSON.stringify({
+            companyName: "NVIDIA Corporation",
+            period: "Q1 FY2027",
+            filingDate: "2026-05-27",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (url.includes("/api/java/sec/10k/")) {
+        return new Response("Data center revenue accelerated.", {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+      if (url.includes("api.siliconflow.cn/v1/chat/completions")) {
+        return createProviderJsonResponse({
+          executiveSummary: "NVDA browser-direct thesis.",
+          companyName: "NVIDIA Corporation",
+          period: "Q1 FY2027",
+          filingDate: "2026-05-27",
+          citations: [],
+          taskSections: {
+            schemaVersion: "task_sections.v1",
+            taskType: "latest_earnings_readout",
+            latestEarnings: {
+              toplineVerdict: {
+                headline: "Data center demand led the quarter.",
+                summary: "Data center demand led the quarter.",
+                verdict: "positive",
+                confidence: "medium",
+              },
+              keyTakeaways: {
+                title: "Revenue accelerated",
+                summary: "Data center revenue accelerated.",
+                evidenceRefs: [],
+                citationStatus: "supported",
+              },
+              financialDashboard: {
+                metrics: {
+                  name: "Revenue",
+                  value: "$44.1B",
+                  interpretation: "Revenue accelerated.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+                chartFocus: "revenue",
+              },
+              driverSnapshot: [],
+              riskSnapshot: [],
+              driversAndDraggers: {
+                drivers: {
+                  title: "Data center demand",
+                  summary: "Demand remained the main driver.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+                draggers: "No material dragger was provided.",
+              },
+              bullBearRead: {
+                bullCase: {
+                  title: "Bull case",
+                  summary: "Demand can remain durable.",
+                  evidenceRefs: [],
+                  citationStatus: "supported",
+                },
+                bearCase: "Export restrictions remain a risk.",
+                balancedRead: {
+                  title: "Balanced read",
+                  summary: "The setup is positive but policy risk remains.",
+                  evidenceRefs: [],
+                  citationStatus: "partial",
+                },
+              },
+              watchNext: {
+                title: "Watch supply",
+                metric: "supply",
+                whyItMatters: "Supply will determine how much demand converts to revenue.",
+                evidenceRefs: [],
+                citationStatus: "supported",
+              },
+            },
+          },
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    fireEvent.change(
+      screen.getByPlaceholderText(/enter your siliconflow key/i),
+      {
+        target: { value: "sk-test-123" },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    submitTicker("NVDA");
+    openAgentReport(/latest earnings readout/i);
+
+    expect(
+      await screen.findByText("Data center demand led the quarter."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Revenue accelerated.")).toBeInTheDocument();
+    expect(screen.getByText("Demand remained the main driver.")).toBeInTheDocument();
+    expect(screen.getByText("Export restrictions remain a risk.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Supply will determine how much demand converts to revenue."),
+    ).toBeInTheDocument();
+  });
+
   it("surfaces explicit invalid-key errors for BYOK providers instead of rendering an empty report shell", async () => {
     mockSessionStatus = "authenticated";
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

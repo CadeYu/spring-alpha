@@ -510,14 +510,12 @@ function normalizeLatestEarningsSections(
     driverSnapshot: pointArray(latest.driverSnapshot),
     riskSnapshot: pointArray(latest.riskSnapshot),
     driversAndDraggers: objectValue(latest.driversAndDraggers)
-      ? (latest.driversAndDraggers as LatestEarningsSections["driversAndDraggers"])
+      ? normalizeDriversAndDraggers(objectValue(latest.driversAndDraggers))
       : { drivers: [], draggers: [] },
     bullBearRead: objectValue(latest.bullBearRead)
-      ? (latest.bullBearRead as LatestEarningsSections["bullBearRead"])
+      ? normalizeBullBearRead(objectValue(latest.bullBearRead))
       : { bullCase: [], bearCase: [] },
-    watchNext: Array.isArray(latest.watchNext)
-      ? (latest.watchNext as LatestEarningsSections["watchNext"])
-      : [],
+    watchNext: watchNextArray(latest.watchNext),
   };
 }
 
@@ -595,7 +593,7 @@ function normalizeCashFlowSections(
 }
 
 function pointArray(value: unknown): EvidenceBoundPoint[] {
-  return Array.isArray(value) ? value.map(pointValue).filter(Boolean) : [];
+  return valueArray(value).map(pointValue).filter(Boolean);
 }
 
 function pointOrNull(value: unknown): EvidenceBoundPoint | null {
@@ -603,6 +601,15 @@ function pointOrNull(value: unknown): EvidenceBoundPoint | null {
 }
 
 function pointValue(value: unknown): EvidenceBoundPoint {
+  const text = stringValue(value);
+  if (text) {
+    return {
+      title: "Evidence point",
+      summary: text,
+      evidenceRefs: defaultEvidenceRefs(),
+      citationStatus: "partial",
+    };
+  }
   const object = objectValue(value) ?? {};
   return {
     title: stringValue(object.title) || "Evidence point",
@@ -620,10 +627,7 @@ function pointValue(value: unknown): EvidenceBoundPoint {
 }
 
 function metricArray(value: unknown): EvidenceBoundMetric[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.reduce<EvidenceBoundMetric[]>((metrics, item) => {
+  return valueArray(value).reduce<EvidenceBoundMetric[]>((metrics, item) => {
     const object = objectValue(item);
     if (!object) {
       return metrics;
@@ -649,9 +653,67 @@ function metricArray(value: unknown): EvidenceBoundMetric[] {
   }, []);
 }
 
+function normalizeDriversAndDraggers(
+  value: Record<string, unknown> | null,
+): NonNullable<LatestEarningsSections["driversAndDraggers"]> {
+  return {
+    drivers: pointArray(value?.drivers),
+    draggers: pointArray(value?.draggers),
+  };
+}
+
+function normalizeBullBearRead(
+  value: Record<string, unknown> | null,
+): NonNullable<LatestEarningsSections["bullBearRead"]> {
+  return {
+    bullCase: pointArray(value?.bullCase),
+    bearCase: pointArray(value?.bearCase),
+    balancedRead: value?.balancedRead ? pointValue(value.balancedRead) : null,
+  };
+}
+
+function watchNextArray(value: unknown): NonNullable<LatestEarningsSections["watchNext"]> {
+  return valueArray(value).map((item) => {
+    const text = stringValue(item);
+    if (text) {
+      return {
+        title: "Watch item",
+        metric: null,
+        whyItMatters: text,
+        evidenceRefs: defaultEvidenceRefs(),
+        citationStatus: "partial" as const,
+      };
+    }
+    const object = objectValue(item) ?? {};
+    return {
+      title: stringValue(object.title) || "Watch item",
+      metric: stringValue(object.metric),
+      whyItMatters:
+        stringValue(object.whyItMatters) ||
+        stringValue(object.summary) ||
+        stringValue(object.description) ||
+        "Watch item evidence was limited.",
+      evidenceRefs: evidenceRefsFromUnknown(object.evidenceRefs),
+      citationStatus:
+        enumValue(object.citationStatus, [
+          "supported",
+          "partial",
+          "missing",
+          "unverified",
+        ] as const) ?? "partial",
+    };
+  });
+}
+
+function valueArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  return value === null || value === undefined ? [] : [value];
+}
+
 function evidenceRefsFromUnknown(value: unknown): EvidenceRef[] {
-  if (!Array.isArray(value)) return defaultEvidenceRefs();
-  const refs = value.reduce<EvidenceRef[]>((items, item) => {
+  const refs = valueArray(value).reduce<EvidenceRef[]>((items, item) => {
     const object = objectValue(item);
     if (!object) {
       return items;
@@ -756,9 +818,7 @@ function stringValue(value: unknown) {
 }
 
 function stringArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
+  return valueArray(value).filter((item): item is string => typeof item === "string");
 }
 
 function enumValue<T extends string>(value: unknown, allowed: readonly T[]): T | null {
