@@ -797,7 +797,7 @@ test.describe("Spring Alpha smoke", () => {
   test("anonymous trial allows one real analysis before the gate closes", async ({
     page,
   }) => {
-    let analyzeCalls = 0;
+    const analyzeRequests: Array<{ taskType: string | null; trialRunId: string | null }> = [];
     await page.addInitScript(() => {
       window.localStorage.removeItem("spring-alpha-siliconflow-key");
       window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
@@ -811,7 +811,13 @@ test.describe("Spring Alpha smoke", () => {
     });
     await mockMarketChartRoute(page);
     await mockAnalyzeRoute(page, async (route) => {
-      analyzeCalls += 1;
+      const request = route.request();
+      const url = new URL(request.url());
+      const taskType = url.searchParams.get("taskType");
+      analyzeRequests.push({
+        taskType,
+        trialRunId: request.headers()["x-trial-run-id"] ?? null,
+      });
       await route.fulfill({
         status: 200,
         contentType: "text/event-stream",
@@ -825,7 +831,12 @@ test.describe("Spring Alpha smoke", () => {
             businessDrivers: [],
             riskFactors: [],
             citations: [],
-            taskSections: typedTaskSections("latest_earnings_readout"),
+            taskSections: typedTaskSections(
+              taskType === "business_driver_deep_dive" ||
+                taskType === "cash_flow_capital_allocation"
+                ? taskType
+                : "latest_earnings_readout",
+            ),
           },
         ]),
       });
@@ -840,12 +851,28 @@ test.describe("Spring Alpha smoke", () => {
       page.getByText("You have used your free analysis."),
     ).toBeVisible();
     await expect(page.getByText("Free trial reached")).toBeVisible();
+    expect(analyzeRequests.map((request) => request.taskType)).toEqual([
+      "latest_earnings_readout",
+    ]);
+
+    await openAgentReport(page, /business driver deep dive/i);
+    await expect(page.getByText("Business driver typed summary.")).toBeVisible();
+    await openAgentReport(page, /cash flow & capital allocation/i);
+    await expect(page.getByText("Cash flow typed summary.")).toBeVisible();
+    expect(analyzeRequests.map((request) => request.taskType)).toEqual([
+      "latest_earnings_readout",
+      "business_driver_deep_dive",
+      "cash_flow_capital_allocation",
+    ]);
+    expect(new Set(analyzeRequests.map((request) => request.trialRunId)).size).toBe(
+      1,
+    );
     await page
       .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
       .fill("MSFT");
     await page.getByRole("button", { name: /analyze/i }).click();
     await expect(page.getByText(/your anonymous trial is over/i)).toBeVisible();
-    expect(analyzeCalls).toBe(3);
+    expect(analyzeRequests).toHaveLength(3);
   });
 
   test("TSLA first run in Chinese shows degraded-source notice", async ({
