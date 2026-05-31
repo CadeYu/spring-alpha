@@ -295,14 +295,14 @@ def test_latest_earnings_rich_sections_are_preserved_in_typed_contract() -> None
 
     sections = report.task_sections
     assert sections.topline_verdict.confidence == "medium"
-    assert sections.quality_of_quarter.growth_quality.title == "Growth quality"
+    assert sections.quality_of_quarter.growth_quality.title == "增长质量"
     assert sections.quality_of_quarter.one_time_items is None
-    assert sections.drivers_and_draggers.drivers[0].title == "Demand resilience"
-    assert sections.drivers_and_draggers.draggers[0].title == "Cost pressure"
-    assert sections.bull_bear_read.bull_case[0].title == "Revenue base is durable"
-    assert sections.bull_bear_read.bear_case[0].title == "Margin recovery is not proven"
+    assert sections.drivers_and_draggers.drivers[0].title == "需求韧性"
+    assert sections.drivers_and_draggers.draggers[0].title == "成本压力"
+    assert sections.bull_bear_read.bull_case[0].title == "收入基础具备韧性"
+    assert sections.bull_bear_read.bear_case[0].title == "利润率修复尚未验证"
     assert "利润率 recovery" not in sections.bull_bear_read.bear_case[0].title
-    assert sections.bull_bear_read.balanced_read.title == "Balanced read"
+    assert sections.bull_bear_read.balanced_read.title == "均衡判断"
     assert sections.watch_next[0].metric == "operating_margin"
     assert sections.watch_next[0].evidence_refs[0].source_id == "src_1"
 
@@ -507,6 +507,102 @@ def test_latest_earnings_rich_section_backfills_respect_chinese_locale() -> None
     assert sections.bull_bear_read.bull_case[0].title.startswith("看多逻辑")
     assert sections.bull_bear_read.bear_case[0].title.startswith("看空逻辑")
     assert sections.bull_bear_read.balanced_read.title == "均衡判断"
+
+
+def test_latest_earnings_zh_visible_copy_localizes_common_metric_source_and_enum_words() -> None:
+    state = _make_state(language="zh")
+    payload = {
+        "company_profile": {
+            "summary": "NVIDIA provides accelerated computing platforms and related software.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "Revenue and operating income improved, but the read remains mixed.",
+            "summary": (
+                "Revenue, gross margin, and operating income should be checked against "
+                "yfinance evidence before treating the quarter as high confidence."
+            ),
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "Revenue and operating income improved",
+                "summary": "Revenue grew while gross margin stayed high in yfinance facts.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$35.1B",
+                    "period": "latest_quarter",
+                    "interpretation": "Revenue anchors the demand read.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Gross Margin",
+                    "value": "74.6%",
+                    "period": "latest_quarter",
+                    "interpretation": "Gross margin shows pricing and mix quality.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Operating Income",
+                    "value": "$21.9B",
+                    "period": "latest_quarter",
+                    "interpretation": "Operating income shows leverage quality.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+            ],
+            "chart_focus": ["revenue", "gross_margin", "operating_income"],
+        },
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    sections = report.task_sections
+    assert sections.bull_bear_read is not None
+    visible_text = " ".join(
+        [
+            sections.topline_verdict.headline,
+            sections.topline_verdict.summary,
+            sections.key_takeaways[0].title,
+            sections.key_takeaways[0].summary,
+            *(metric.interpretation for metric in sections.financial_dashboard.metrics),
+            sections.bull_bear_read.balanced_read.summary,
+        ]
+    )
+    normalized_visible_text = visible_text.lower()
+
+    for leaked in (
+        "operating income",
+        "gross margin",
+        "revenue",
+        "yfinance",
+        "mixed",
+        "medium",
+    ):
+        assert leaked not in normalized_visible_text
+    assert "收入" in visible_text
+    assert "毛利率" in visible_text
+    assert "经营利润" in visible_text
+    assert "结构化行情数据" in visible_text
+    assert "表现分化" in visible_text
+    assert "中等" in visible_text
 
 
 def test_latest_earnings_reported_metric_placeholder_respects_chinese_locale() -> None:
@@ -720,8 +816,8 @@ def test_latest_earnings_backfills_top_level_summary_when_model_summary_is_too_s
 
     assert report.sections["summary"] != "BBY FY26 Q3业绩呈现"
     assert len(report.sections["summary"]) > 120
-    assert "Revenue pressure remained visible" in report.sections["summary"]
-    assert "Comparable sales pressure" in report.sections["summary"]
+    assert "收入压力仍然可见" in report.sections["summary"]
+    assert "可比销售压力" in report.sections["summary"]
 
 
 def test_latest_earnings_repairs_incomplete_topline_verdict_text() -> None:

@@ -154,6 +154,18 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\bcapex\b", flags=re.I), "资本开支"),
     (re.compile(r"\bgross margin\b", flags=re.I), "毛利率"),
     (re.compile(r"\boperating margin\b", flags=re.I), "经营利润率"),
+    (re.compile(r"\boperating income\b", flags=re.I), "经营利润"),
+    (re.compile(r"\bnet income\b", flags=re.I), "净利润"),
+    (re.compile(r"\brevenue\b", flags=re.I), "收入"),
+    (re.compile(r"\bmedium confidence\b", flags=re.I), "中等置信度"),
+    (re.compile(r"\bhigh confidence\b", flags=re.I), "高置信度"),
+    (re.compile(r"\blow confidence\b", flags=re.I), "低置信度"),
+    (re.compile(r"\bmixed\b", flags=re.I), "表现分化"),
+    (re.compile(r"\bpositive\b", flags=re.I), "偏积极"),
+    (re.compile(r"\bnegative\b", flags=re.I), "偏承压"),
+    (re.compile(r"\bmedium\b", flags=re.I), "中等"),
+    (re.compile(r"\bhigh\b", flags=re.I), "高"),
+    (re.compile(r"\blow\b", flags=re.I), "低"),
     (re.compile(r"\bmargins\b", flags=re.I), "利润率"),
     (re.compile(r"\bpace\b", flags=re.I), "节奏"),
     (re.compile(r"\bis still the\b", flags=re.I), "仍是"),
@@ -174,6 +186,284 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (
         re.compile(r"\bCash And Short Term Investments\b", flags=re.I),
         "现金及短期投资",
+    ),
+)
+
+_ZH_VISIBLE_PHRASE_REPLACEMENTS = (
+    (
+        re.compile(
+            r"\bRevenue growth improved but margin pressure kept the quarter mixed\.?",
+            flags=re.I,
+        ),
+        "收入增长改善，但利润率压力使本季判断表现分化。",
+    ),
+    (
+        re.compile(r"\bRevenue improved because demand was resilient\.?", flags=re.I),
+        "收入改善，说明需求具备韧性。",
+    ),
+    (
+        re.compile(
+            r"\bGross margin still needs watching because cost pressure remains visible\.?",
+            flags=re.I,
+        ),
+        "毛利率仍需观察，因为成本压力仍然可见。",
+    ),
+    (
+        re.compile(
+            r"\bOperating income gives the quarter enough support, but the next quarter needs confirmation\.?",
+            flags=re.I,
+        ),
+        "经营利润为本季提供支撑，但下一季仍需确认。",
+    ),
+    (
+        re.compile(r"\bRevenue improved\b", flags=re.I),
+        "收入改善",
+    ),
+    (
+        re.compile(r"\bRevenue grew against a mixed demand backdrop\.?", flags=re.I),
+        "收入在需求表现分化的背景下增长。",
+    ),
+    (
+        re.compile(
+            r"\bThe improvement is useful, but it needs confirmation from segment trends\.?",
+            flags=re.I,
+        ),
+        "这一改善有参考价值，但仍需分部趋势确认。",
+    ),
+    (
+        re.compile(r"\bRevenue is the main top-line anchor\.?", flags=re.I),
+        "收入是主要增长锚点。",
+    ),
+    (
+        re.compile(r"\bOperating income shows profit conversion\.?", flags=re.I),
+        "经营利润体现利润转化。",
+    ),
+    (
+        re.compile(r"\bCash flow checks earnings quality\.?", flags=re.I),
+        "现金流用于检验盈利质量。",
+    ),
+    (
+        re.compile(r"\bServices support mix\b", flags=re.I),
+        "服务业务支撑组合",
+    ),
+    (
+        re.compile(
+            r"\bServices provide a steadier contribution than hardware\.?\s*"
+            r"This helps offset uneven device demand\.?",
+            flags=re.I,
+        ),
+        "服务业务贡献比硬件更稳定，有助于抵消设备需求波动。",
+    ),
+    (
+        re.compile(
+            r"\bDemand was resilient enough to support revenue\.?\s*"
+            r"The point is strongest when paired with KPI evidence\.?",
+            flags=re.I,
+        ),
+        "需求具备足够韧性来支撑收入，与 KPI 证据结合时这一判断更强。",
+    ),
+    (
+        re.compile(
+            r"\bCost pressure still limits the quality of the quarter\.?\s*"
+            r"It keeps the verdict from being cleanly positive\.?",
+            flags=re.I,
+        ),
+        "成本压力仍限制本季质量，使判断无法简单归为积极。",
+    ),
+    (re.compile(r"\bDemand resilience\b", flags=re.I), "需求韧性"),
+    (re.compile(r"\bCost pressure\b", flags=re.I), "成本压力"),
+    (
+        re.compile(r"\bRevenue base is durable\b", flags=re.I),
+        "收入基础具备韧性",
+    ),
+    (
+        re.compile(
+            r"\bThe bull case is that revenue has enough support to remain durable\.?\s*"
+            r"Services mix can make that support less cyclical\.?",
+            flags=re.I,
+        ),
+        "看多逻辑是收入具备足够支撑，服务业务组合可以降低周期性波动。",
+    ),
+    (
+        re.compile(r"\bMargin recovery is not proven\b", flags=re.I),
+        "利润率修复尚未验证",
+    ),
+    (
+        re.compile(
+            r"\bThe bear case is that margin pressure can absorb revenue upside\.?\s*"
+            r"That keeps the investment read balanced\.?",
+            flags=re.I,
+        ),
+        "看空逻辑是利润率压力可能吸收收入上行空间，因此投资判断仍需保持均衡。",
+    ),
+    (
+        re.compile(
+            r"\bThe quarter is mixed because growth and cash support are real, "
+            r"but margin pressure remains unresolved\.?",
+            flags=re.I,
+        ),
+        "本季表现分化：增长和现金支撑真实存在，但利润率压力仍未解决。",
+    ),
+    (
+        re.compile(r"\bBalanced read\b", flags=re.I),
+        "均衡判断",
+    ),
+    (
+        re.compile(r"\bGrowth quality\b", flags=re.I),
+        "增长质量",
+    ),
+    (
+        re.compile(
+            r"\bGrowth looks useful but not one-dimensional\.?\s*"
+            r"It should be judged together with margin and cash conversion\.?",
+            flags=re.I,
+        ),
+        "增长有参考价值但并不单一，需要结合利润率和现金转化一起判断。",
+    ),
+    (
+        re.compile(r"\bMargin quality\b", flags=re.I),
+        "利润率质量",
+    ),
+    (
+        re.compile(
+            r"\bMargin quality is mixed because revenue improved while cost pressure still matters\.?",
+            flags=re.I,
+        ),
+        "利润率质量表现分化，因为收入改善的同时成本压力仍然重要。",
+    ),
+    (
+        re.compile(r"\bCash quality\b", flags=re.I),
+        "现金质量",
+    ),
+    (
+        re.compile(
+            r"\bCash conversion supports the quarter because operating cash flow remains visible\.?",
+            flags=re.I,
+        ),
+        "现金转化支撑本季判断，因为经营现金流仍然可见。",
+    ),
+    (
+        re.compile(r"\bWatch operating margin\b", flags=re.I),
+        "观察经营利润率",
+    ),
+    (
+        re.compile(
+            r"\bOperating margin will show whether revenue growth converts into higher quality earnings\.?",
+            flags=re.I,
+        ),
+        "经营利润率将显示收入增长能否转化为更高质量的盈利。",
+    ),
+    (
+        re.compile(
+            r"\bRevenue and operating income improved, but the read remains mixed\.?",
+            flags=re.I,
+        ),
+        "收入和经营利润改善，但整体判断仍表现分化。",
+    ),
+    (
+        re.compile(
+            r"\bRevenue, gross margin, and operating income should be checked against "
+            r"yfinance evidence before treating the quarter as high confidence\.?",
+            flags=re.I,
+        ),
+        "收入、毛利率和经营利润需要结合结构化行情数据验证，才能形成高置信度判断。",
+    ),
+    (
+        re.compile(r"\bRevenue and operating income improved\b", flags=re.I),
+        "收入和经营利润改善",
+    ),
+    (
+        re.compile(
+            r"\bRevenue grew while gross margin stayed high in yfinance facts\.?",
+            flags=re.I,
+        ),
+        "结构化行情数据中，收入增长且毛利率保持高位。",
+    ),
+    (
+        re.compile(r"\bRevenue anchors the demand read\.?", flags=re.I),
+        "收入是需求判断锚点。",
+    ),
+    (
+        re.compile(r"\bGross margin shows pricing and mix quality\.?", flags=re.I),
+        "毛利率体现定价和产品组合质量。",
+    ),
+    (
+        re.compile(r"\bOperating income shows leverage quality\.?", flags=re.I),
+        "经营利润体现经营杠杆质量。",
+    ),
+    (
+        re.compile(
+            r"\bNVDA latest quarter stayed strong but needs follow-through\.?",
+            flags=re.I,
+        ),
+        "NVDA 最新季度表现强劲，但仍需后续验证。",
+    ),
+    (
+        re.compile(
+            r"\bRevenue and gross margin remain central to the latest quarter read\.?\s*"
+            r"The next report should clarify whether operating leverage keeps improving\.?",
+            flags=re.I,
+        ),
+        "收入和毛利率仍是最新季度判断核心，下一季报告应确认经营杠杆是否继续改善。",
+    ),
+    (
+        re.compile(r"\bRevenue stayed central\b", flags=re.I),
+        "收入仍是核心",
+    ),
+    (
+        re.compile(r"\bRevenue is the primary demand signal in the latest quarter\.?", flags=re.I),
+        "收入是最新季度最主要的需求信号。",
+    ),
+    (
+        re.compile(
+            r"\bRevenue pressure remained visible, but the quarter still showed "
+            r"enough operating evidence to separate demand weakness from execution\.?",
+            flags=re.I,
+        ),
+        "收入压力仍然可见，但本季仍有足够经营证据区分需求疲弱和执行表现。",
+    ),
+    (
+        re.compile(r"\bRevenue pressure remained visible\b", flags=re.I),
+        "收入压力仍然可见",
+    ),
+    (
+        re.compile(
+            r"\bRevenue remains the main pressure point and should be read against "
+            r"comparable sales and operating margin\.?",
+            flags=re.I,
+        ),
+        "收入仍是主要压力点，需要结合可比销售和经营利润率判断。",
+    ),
+    (
+        re.compile(
+            r"\bOperating income shows whether cost discipline is offsetting weaker sales momentum\.?",
+            flags=re.I,
+        ),
+        "经营利润显示成本纪律能否抵消销售动能走弱。",
+    ),
+    (
+        re.compile(
+            r"\bComparable sales pressure remains the central operating driver\.?\s*"
+            r"The next read should test whether demand stabilizes across categories\.?",
+            flags=re.I,
+        ),
+        "可比销售压力仍是核心经营驱动，下一次披露应验证各品类需求是否企稳。",
+    ),
+    (
+        re.compile(r"\bComparable sales pressure\b", flags=re.I),
+        "可比销售压力",
+    ),
+    (
+        re.compile(r"\bMargin conversion risk\b", flags=re.I),
+        "利润率转化风险",
+    ),
+    (
+        re.compile(
+            r"\bMargin conversion remains a risk because lower sales can absorb "
+            r"cost discipline and limit earnings recovery\.?",
+            flags=re.I,
+        ),
+        "利润率转化仍是风险，因为销售走弱可能吸收成本纪律带来的收益，并限制盈利修复。",
     ),
 )
 
@@ -2158,7 +2448,10 @@ def _latest_bull_bear_with_backfill(
     balanced_read = existing.balanced_read or _point_from_source_refs(
         "均衡判断" if is_zh else "Balanced read",
         (
-            f"本季财报整体呈现{topline.verdict}，置信度为{topline.confidence}。{topline.summary}"
+            "本季财报整体呈现"
+            f"{_localize_verdict_label(topline.verdict, language)}，置信度为"
+            f"{_localize_confidence_label(topline.confidence, language)}。"
+            f"{_localize_visible_text(topline.summary, language)}"
             if is_zh
             else (
                 f"The reported quarter screens as {topline.verdict} with "
@@ -4497,6 +4790,28 @@ def _localize_metric_name(metric_name: str | None, language: str | None) -> str:
     return _ZH_METRIC_LABELS.get(normalized, name)
 
 
+def _localize_verdict_label(verdict: str | None, language: str | None) -> str:
+    value = str(verdict or "").strip().lower()
+    if not _is_zh_locale(language):
+        return value
+    return {
+        "positive": "偏积极",
+        "mixed": "表现分化",
+        "negative": "偏承压",
+    }.get(value, value)
+
+
+def _localize_confidence_label(confidence: str | None, language: str | None) -> str:
+    value = str(confidence or "").strip().lower()
+    if not _is_zh_locale(language):
+        return value
+    return {
+        "high": "高",
+        "medium": "中等",
+        "low": "低",
+    }.get(value, value)
+
+
 def _metric_match_keys(metric_name: str | None) -> tuple[str, ...]:
     normalized = _normalize_metric_name(str(metric_name or ""))
     alias = _ZH_METRIC_NORMALIZED_ALIASES.get(normalized)
@@ -4510,6 +4825,8 @@ def _localize_visible_text(value: str, language: str | None) -> str:
     if not _is_zh_locale(language):
         return text
     text = _rewrite_structured_yfinance_metric_sentence(text)
+    for pattern, replacement in _ZH_VISIBLE_PHRASE_REPLACEMENTS:
+        text = pattern.sub(replacement, text)
     for pattern, replacement in _ZH_VISIBLE_TECH_TERM_REPLACEMENTS:
         text = pattern.sub(replacement, text)
     text = _rewrite_structured_yfinance_metric_sentence(text)
