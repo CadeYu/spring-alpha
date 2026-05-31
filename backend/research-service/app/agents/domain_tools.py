@@ -13,6 +13,7 @@ from app.contracts.tools import (
     BusinessSignalsInput,
     CompanyFactsInput,
     FilingSectionSearchInput,
+    MarketContextInput,
     MetricEvidenceInput,
 )
 from app.rag.llamaindex_pipeline import LlamaIndexRagPipeline, RetrieveEvidenceResult
@@ -282,6 +283,20 @@ class ResearchToolService:
             data={"records": records},
         )
 
+    def get_market_context(
+        self,
+        tool_input: MarketContextInput,
+        state: AgentState,
+    ) -> ToolResult:
+        context = _market_context_from_preloaded_facts(tool_input, state)
+        source_refs = _market_context_source_refs(state.run_id, context)
+        if not _has_market_context(context):
+            return ToolResult.empty(
+                data=context,
+                degraded_reason="No preloaded market context was available.",
+            )
+        return ToolResult.ok(data=context, source_refs=source_refs)
+
 
 class LlamaIndexResearchToolService(ResearchToolService):
     def __init__(
@@ -518,6 +533,245 @@ def _metrics_missing_from_facts(metrics: list[str], state: AgentState) -> list[s
         metric for metric in metrics if normalize_metric_name(metric) not in facts_by_metric
     ]
     return missing_metrics or metrics
+
+
+def _market_context_from_preloaded_facts(
+    tool_input: MarketContextInput,
+    state: AgentState,
+) -> dict[str, object]:
+    facts = state.evidence_memory.facts
+    requested_types = {
+        _normalize_context_type(context_type)
+        for context_type in tool_input.context_types
+        if context_type.strip()
+    }
+    if not requested_types:
+        requested_types = {
+            "profile",
+            "valuation",
+            "quote",
+            "technical",
+            "news",
+            "sentiment",
+            "macro",
+        }
+    context: dict[str, object] = {
+        "ticker": state.ticker,
+        "source": "preloaded_market_context",
+        "context_types": sorted(requested_types),
+    }
+    if "profile" in requested_types:
+        context["profile"] = _non_empty_mapping(
+            {
+                "company_name": _first_fact_value(
+                    facts,
+                    "company_name",
+                    "companyName",
+                    "longName",
+                    "name",
+                ),
+                "sector": _first_fact_value(facts, "sector", "market_sector", "marketSector"),
+                "industry": _first_fact_value(
+                    facts,
+                    "industry",
+                    "market_industry",
+                    "marketIndustry",
+                ),
+                "security_type": _first_fact_value(
+                    facts,
+                    "security_type",
+                    "market_security_type",
+                    "marketSecurityType",
+                ),
+                "business_summary": _first_fact_value(
+                    facts,
+                    "business_summary",
+                    "businessSummary",
+                    "market_business_summary",
+                    "marketBusinessSummary",
+                    "description",
+                ),
+            }
+        )
+    if "valuation" in requested_types:
+        context["valuation"] = _non_empty_mapping(
+            {
+                "market_cap": _first_fact_value(
+                    facts,
+                    "market_cap",
+                    "marketCap",
+                    "marketCapitalization",
+                ),
+                "price_to_earnings_ratio": _first_fact_value(
+                    facts,
+                    "price_to_earnings_ratio",
+                    "trailing_pe",
+                    "trailingPE",
+                    "forward_pe",
+                    "forwardPE",
+                ),
+                "price_to_book_ratio": _first_fact_value(
+                    facts,
+                    "price_to_book_ratio",
+                    "priceToBook",
+                    "price_to_book",
+                ),
+                "enterprise_value": _first_fact_value(
+                    facts,
+                    "enterprise_value",
+                    "enterpriseValue",
+                ),
+            }
+        )
+    if "quote" in requested_types:
+        context["quote"] = _non_empty_mapping(
+            {
+                "latest_price": _first_fact_value(
+                    facts,
+                    "latest_price",
+                    "regular_market_price",
+                    "regularMarketPrice",
+                    "currentPrice",
+                ),
+                "day_change_percent": _first_fact_value(
+                    facts,
+                    "regular_market_change_percent",
+                    "regularMarketChangePercent",
+                    "day_change_percent",
+                ),
+                "fifty_two_week_change_percent": _first_fact_value(
+                    facts,
+                    "fifty_two_week_change_percent",
+                    "fiftyTwoWeekChangePercent",
+                    "52WeekChange",
+                ),
+            }
+        )
+    if "technical" in requested_types:
+        context["technical"] = _non_empty_mapping(
+            {
+                "trend": _first_fact_value(
+                    facts,
+                    "technical_trend",
+                    "technicalTrend",
+                    "price_trend",
+                    "priceTrend",
+                ),
+                "relative_strength": _first_fact_value(
+                    facts,
+                    "relative_strength",
+                    "relativeStrength",
+                    "momentum_summary",
+                    "momentumSummary",
+                ),
+            }
+        )
+    if "news" in requested_types:
+        headlines = _list_fact_values(facts, "news_headlines", "newsHeadlines", "headlines")
+        context["news"] = _non_empty_mapping({"headlines": headlines[:5]})
+    if "sentiment" in requested_types:
+        context["sentiment"] = _non_empty_mapping(
+            {
+                "summary": _first_fact_value(
+                    facts,
+                    "sentiment_summary",
+                    "sentimentSummary",
+                    "market_sentiment",
+                    "marketSentiment",
+                )
+            }
+        )
+    if "macro" in requested_types:
+        context["macro"] = _non_empty_mapping(
+            {
+                "context": _first_fact_value(
+                    facts,
+                    "macro_context",
+                    "macroContext",
+                    "macro_summary",
+                    "macroSummary",
+                )
+            }
+        )
+    return context
+
+
+def _market_context_source_refs(
+    run_id: str,
+    context: Mapping[str, object],
+) -> list[dict[str, object]]:
+    snippets: list[str] = []
+    for section_name in (
+        "profile",
+        "valuation",
+        "quote",
+        "technical",
+        "news",
+        "sentiment",
+        "macro",
+    ):
+        value = context.get(section_name)
+        if not isinstance(value, Mapping) or not value:
+            continue
+        snippets.append(f"{section_name}: {_market_context_snippet(value)}")
+    if not snippets:
+        return []
+    return [
+        {
+            "source_id": f"{run_id}:market_context:1",
+            "section": "Market context",
+            "snippet": " | ".join(snippets)[:900],
+            "citation_status": "unverified",
+        }
+    ]
+
+
+def _market_context_snippet(value: Mapping[str, object]) -> str:
+    parts: list[str] = []
+    for key, nested in value.items():
+        if isinstance(nested, list):
+            if nested:
+                parts.append(f"{key}={'; '.join(str(item) for item in nested[:3])}")
+        elif nested not in (None, "", [], {}):
+            parts.append(f"{key}={nested}")
+    return ", ".join(parts)
+
+
+def _has_market_context(context: Mapping[str, object]) -> bool:
+    for value in context.values():
+        if isinstance(value, Mapping) and value:
+            return True
+    return False
+
+
+def _normalize_context_type(context_type: str) -> str:
+    return re.sub(r"\s+", "_", context_type.strip().lower())
+
+
+def _non_empty_mapping(mapping: dict[str, object | None]) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in mapping.items()
+        if value not in (None, "", [], {})
+    }
+
+
+def _first_fact_value(facts: Mapping[str, object], *keys: str) -> object | None:
+    for key in keys:
+        value = facts.get(key)
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def _list_fact_values(facts: Mapping[str, object], *keys: str) -> list[str]:
+    for key in keys:
+        value = facts.get(key)
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+    return []
 
 
 def _content_terms(text: str) -> set[str]:

@@ -11,6 +11,7 @@ MVP_TOOL_NAMES = frozenset(
         "search_filing_sections",
         "search_metric_evidence",
         "get_business_signals",
+        "get_market_context",
     }
 )
 
@@ -232,6 +233,7 @@ class EvidenceMemory(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     facts: dict[str, Any] = Field(default_factory=dict)
+    market_context: dict[str, Any] = Field(default_factory=dict)
     source_refs: list[dict[str, Any]] = Field(default_factory=list)
     metric_evidence: list[dict[str, Any]] = Field(default_factory=list)
     business_signals: list[dict[str, Any]] = Field(default_factory=list)
@@ -301,6 +303,8 @@ def default_task_policy(task_type: ResearchTaskType) -> TaskPolicy:
         ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE: TaskPolicy(
             task_type=task_type,
             allowed_tools=[
+                "get_company_facts",
+                "get_market_context",
                 "search_filing_sections",
                 "search_metric_evidence",
                 "get_business_signals",

@@ -36,3 +36,6 @@ class MetricEvidenceInput(BaseToolInput):
 class BusinessSignalsInput(BaseToolInput):
     signal_types: list[str] = Field(default_factory=list)
 
+
+class MarketContextInput(BaseToolInput):
+    context_types: list[str] = Field(default_factory=list)

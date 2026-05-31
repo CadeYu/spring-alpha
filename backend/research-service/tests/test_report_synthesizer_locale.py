@@ -6,11 +6,11 @@ from app.agents.llm_gateway import LlmClient, LlmRequest, LlmResponse
 from app.agents.report_synthesizer import (
     _business_driver_prompt,
     _cash_flow_prompt,
-    _normalize_cash_flow_payload,
     _company_profile_system_prompt,
     _company_profile_user_prompt,
     _evidence_lines,
     _normalize_business_driver_payload,
+    _normalize_cash_flow_payload,
     _sanitize_user_text,
     _system_prompt,
     _user_prompt,
@@ -897,6 +897,391 @@ def test_business_driver_report_uses_four_evidence_bound_paragraphs() -> None:
     assert sections.driver_map.demand_signals.evidence_refs
     assert sections.coverage.missing_sections == []
     assert not hasattr(sections, "watchlist")
+
+
+def test_business_driver_prompt_includes_structured_facts_brief() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "NVIDIA Corporation",
+                    "market_sector": "Technology",
+                    "market_industry": "Semiconductors",
+                    "business_summary": (
+                        "NVIDIA sells accelerated computing platforms for data center, "
+                        "gaming, professional visualization, and automotive markets."
+                    ),
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 44062000000,
+                            "unit": "USD",
+                            "period": "2026-04-27",
+                        },
+                        {
+                            "name": "gross margin",
+                            "value": 0.613,
+                            "unit": "percent",
+                            "period": "2026-04-27",
+                        },
+                        {
+                            "name": "operating income",
+                            "value": 26422000000,
+                            "unit": "USD",
+                            "period": "2026-04-27",
+                        },
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 44062000000,
+                        "unit": "USD",
+                        "fact_period": "2026-04-27",
+                        "source": "sec_companyfacts",
+                    },
+                    {
+                        "metric": "gross margin",
+                        "value": 0.613,
+                        "unit": "percent",
+                        "fact_period": "2026-04-27",
+                        "source": "preloaded_financial_facts",
+                    },
+                ],
+                business_signals=[
+                    {
+                        "theme": "data center demand",
+                        "summary": "Data center demand remained the main growth signal.",
+                    }
+                ],
+            ),
+        }
+    )
+
+    prompt = _business_driver_prompt(
+        request=_make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state=state,
+        source_refs=[],
+    )
+
+    assert "Business driver facts brief:" in prompt
+    assert "Financial facts brief:" in prompt
+    assert "NVIDIA Corporation" in prompt
+    assert "Technology" in prompt
+    assert "Semiconductors" in prompt
+    assert "revenue: $44.1B" in prompt
+    assert "gross margin: 61.3%" in prompt
+    assert "Data center demand remained the main growth signal." in prompt
+    assert "如果 segment 或 RAG 证据不完整" in prompt
+
+
+def test_business_driver_placeholder_is_recovered_from_structured_facts() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "NVIDIA Corporation",
+                    "market_sector": "Technology",
+                    "market_industry": "Semiconductors",
+                    "business_summary": (
+                        "NVIDIA sells accelerated computing platforms for data center, "
+                        "gaming, professional visualization, and automotive markets."
+                    ),
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 44062000000,
+                            "unit": "USD",
+                            "period": "2026-04-27",
+                        },
+                        {
+                            "name": "gross margin",
+                            "value": 0.613,
+                            "unit": "percent",
+                            "period": "2026-04-27",
+                        },
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 44062000000,
+                        "unit": "USD",
+                        "fact_period": "2026-04-27",
+                        "source": "sec_companyfacts",
+                    },
+                    {
+                        "metric": "gross margin",
+                        "value": 0.613,
+                        "unit": "percent",
+                        "fact_period": "2026-04-27",
+                        "source": "preloaded_financial_facts",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Evidence is thin.",
+                "durability": "unclear",
+                "summary": "No evidence for this lens.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "No evidence for this lens.",
+                    "citation_status": "missing",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Unable to determine from the retrieved RAG chunks.",
+                    "citation_status": "missing",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "证据不足，无法判断。",
+                    "citation_status": "missing",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Insufficient evidence.",
+                    "citation_status": "missing",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    points = [
+        report.task_sections.driver_map.revenue_bridge,
+        report.task_sections.driver_map.segment_momentum,
+        report.task_sections.driver_map.margin_and_mix,
+        report.task_sections.driver_map.demand_signals,
+    ]
+    assert all(point is not None for point in points)
+    combined = " ".join(point.summary for point in points if point is not None)
+    assert "No evidence for this lens" not in combined
+    assert "Unable to determine" not in combined
+    assert "Insufficient evidence" not in combined
+    assert "无法判断" not in combined
+    assert "NVIDIA" in combined
+    assert "$44.1B" in combined
+    assert "61.3%" in combined
+    assert "方向性判断" in combined
+    assert all(point.citation_status == "partial" for point in points if point is not None)
+
+
+def test_business_driver_thesis_placeholder_is_recovered_from_structured_facts() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "Advanced Micro Devices, Inc.",
+                    "market_sector": "Technology",
+                    "market_industry": "Semiconductors",
+                    "business_summary": (
+                        "AMD designs CPUs, GPUs, adaptive computing products, and "
+                        "data-center accelerators."
+                    ),
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 7438000000,
+                            "unit": "USD",
+                            "period": "2026-Q1",
+                        },
+                        {
+                            "name": "gross margin",
+                            "value": 0.52,
+                            "unit": "percent",
+                            "period": "2026-Q1",
+                        },
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 7438000000,
+                        "unit": "USD",
+                        "fact_period": "2026-Q1",
+                        "source": "sec_companyfacts",
+                    },
+                    {
+                        "metric": "gross margin",
+                        "value": 0.52,
+                        "unit": "percent",
+                        "fact_period": "2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "No evidence for this lens.",
+                "durability": "unclear",
+                "summary": "证据不足，无法判断。",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue bridge is directional.",
+                    "citation_status": "partial",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Segment momentum is directional.",
+                    "citation_status": "partial",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Margin and mix is directional.",
+                    "citation_status": "partial",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Demand signals are directional.",
+                    "citation_status": "partial",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    thesis = report.task_sections.driver_thesis
+    assert "No evidence" not in thesis.headline
+    assert "无法判断" not in thesis.summary
+    assert "Advanced Micro Devices" in thesis.summary
+    assert "$7.4B" in thesis.summary
+    assert "52.0%" in thesis.summary
+    assert "方向性判断" in thesis.summary
+    assert report.sections is not None
+    assert report.sections["summary"] == thesis.summary
+
+
+def test_business_driver_reviewer_rewrites_generic_chinese_points() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "Advanced Micro Devices, Inc.",
+                    "market_sector": "Technology",
+                    "market_industry": "Semiconductors",
+                    "business_summary": (
+                        "AMD designs CPUs, GPUs, adaptive computing products, and "
+                        "data-center accelerators."
+                    ),
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 7438000000,
+                            "unit": "USD",
+                            "period": "2026-Q1",
+                        },
+                        {
+                            "name": "gross margin",
+                            "value": 0.52,
+                            "unit": "percent",
+                            "period": "2026-Q1",
+                        },
+                    ],
+                    "news_headlines": [
+                        "AI infrastructure demand remains the key market debate."
+                    ],
+                    "technical_trend": "Shares trade above the 50-day moving average.",
+                    "macro_context": "Higher rates keep long-duration growth multiples under scrutiny.",
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 7438000000,
+                        "unit": "USD",
+                        "fact_period": "2026-Q1",
+                        "source": "sec_companyfacts",
+                    },
+                    {
+                        "metric": "gross margin",
+                        "value": 0.52,
+                        "unit": "percent",
+                        "fact_period": "2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    },
+                ],
+                business_signals=[
+                    {
+                        "summary": "AI accelerator demand remained the main growth signal.",
+                    }
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Business driver thesis",
+                "durability": "unclear",
+                "summary": "Business driver evidence shows revenue and demand.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue bridge is important for investors.",
+                    "citation_status": "unverified",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Segment momentum is important for investors.",
+                    "citation_status": "unverified",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Margin and mix is important for investors.",
+                    "citation_status": "unverified",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Demand signals are important for investors.",
+                    "citation_status": "unverified",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    points = [
+        report.task_sections.driver_map.revenue_bridge,
+        report.task_sections.driver_map.segment_momentum,
+        report.task_sections.driver_map.margin_and_mix,
+        report.task_sections.driver_map.demand_signals,
+    ]
+    combined = " ".join(point.summary for point in points if point is not None)
+    assert "Revenue bridge is important" not in combined
+    assert "Segment momentum is important" not in combined
+    assert "Margin and mix is important" not in combined
+    assert "Demand signals are important" not in combined
+    assert "Advanced Micro Devices" in combined
+    assert "$7.4B" in combined
+    assert "52.0%" in combined
+    assert "投资" in combined
+    assert "AI accelerator demand" not in combined
+    assert all(point.citation_status == "partial" for point in points if point is not None)
 
 
 def test_business_driver_report_backfills_clean_refs_when_synthesis_omits_source_ids() -> None:

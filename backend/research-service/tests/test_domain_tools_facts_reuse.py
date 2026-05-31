@@ -9,7 +9,12 @@ from app.agents.evidence_pack_tool import create_agent_evidence_pack_tool
 from app.contracts.agent import AgentState, EvidenceMemory, TaskPolicy, ToolStatus
 from app.contracts.report import SourceRef
 from app.contracts.research_task import ResearchTaskType
-from app.contracts.tools import CompanyFactsInput, FilingSectionSearchInput, MetricEvidenceInput
+from app.contracts.tools import (
+    CompanyFactsInput,
+    FilingSectionSearchInput,
+    MarketContextInput,
+    MetricEvidenceInput,
+)
 from app.rag.llamaindex_pipeline import RetrievalFallbackStatus, RetrieveEvidenceResult
 
 
@@ -382,6 +387,69 @@ def test_build_evidence_pack_uses_two_task_queries_for_latest_earnings() -> None
 
     assert len(pipeline.queries) == 1
     assert "revenue" in pipeline.queries[0]
+
+
+def test_get_market_context_returns_preloaded_market_context_without_network() -> None:
+    service = ResearchToolService(facts_provider=None)
+    state = _state_with_facts(metrics=[]).model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "ticker": "AMD",
+                    "company_name": "Advanced Micro Devices, Inc.",
+                    "market_sector": "Technology",
+                    "market_industry": "Semiconductors",
+                    "business_summary": (
+                        "AMD designs CPUs, GPUs, adaptive computing products, and "
+                        "data-center accelerators."
+                    ),
+                    "market_cap": 265_000_000_000,
+                    "trailing_pe": 44.2,
+                    "regular_market_price": 162.5,
+                    "fifty_two_week_change_percent": 0.28,
+                    "technical_trend": "Shares trade above the 50-day moving average.",
+                    "news_headlines": [
+                        "Cloud customers increased accelerator deployments.",
+                    ],
+                    "sentiment_summary": "AI infrastructure demand is the main market debate.",
+                    "macro_context": "Higher rates keep long-duration growth multiples under scrutiny.",
+                }
+            ),
+        }
+    )
+
+    result = service.get_market_context(
+        MarketContextInput(
+            run_id=state.run_id,
+            ticker=state.ticker,
+            task_type=state.task_type,
+            context_types=[
+                "profile",
+                "valuation",
+                "technical",
+                "news",
+                "sentiment",
+                "macro",
+            ],
+        ),
+        state,
+    )
+
+    assert result.status == ToolStatus.OK
+    assert result.data["profile"]["sector"] == "Technology"
+    assert result.data["valuation"]["market_cap"] == 265_000_000_000
+    assert result.data["technical"]["trend"] == "Shares trade above the 50-day moving average."
+    assert result.data["news"]["headlines"] == [
+        "Cloud customers increased accelerator deployments."
+    ]
+    assert result.data["sentiment"]["summary"] == (
+        "AI infrastructure demand is the main market debate."
+    )
+    assert result.data["macro"]["context"] == (
+        "Higher rates keep long-duration growth multiples under scrutiny."
+    )
+    assert result.source_refs[0]["source_id"] == "run_1:market_context:1"
 
 
 def _state_with_facts(*, metrics: list[dict[str, object]]) -> AgentState:

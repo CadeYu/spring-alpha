@@ -4,7 +4,14 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.agents.business_driver_quality import (
+    business_driver_facts_backfill_summary,
+    business_driver_facts_brief,
+    business_driver_facts_context,
+    business_driver_thesis_backfill,
+)
 from app.agents.llm_gateway import LlmClient, LlmRequest, LlmResponse
+from app.agents.report_reviewer import review_business_driver_payload
 from app.agents.structured_facts import (
     cash_flow_metric_records_from_facts,
     normalize_metric_name,
@@ -19,8 +26,8 @@ from app.contracts.report import (
     CitationStatus,
     CompanyProfileSection,
     DriverMap,
-    DriverThesis,
     DriversAndDraggers,
+    DriverThesis,
     EvidenceAwareReport,
     EvidenceBoundClaim,
     EvidenceBoundMetric,
@@ -63,6 +70,20 @@ _NOISY_BUSINESS_DRIVER_TEXT_PHRASES = (
 )
 
 _BUSINESS_DRIVER_PARTIAL_PLACEHOLDER = "Evidence for this business-driver lens remains partial."
+_BUSINESS_DRIVER_PLACEHOLDER_PHRASES = (
+    "no evidence for this lens",
+    "unable to determine",
+    "cannot determine",
+    "not enough evidence",
+    "insufficient evidence",
+    "no relevant evidence",
+    "evidence is insufficient",
+    "证据不足",
+    "无法判断",
+    "无法确定",
+    "没有足够证据",
+    "未找到证据",
+)
 
 _LATEST_GROWTH_QUALITY_SUMMARY_EN = (
     "Growth quality is anchored by the reported revenue evidence. Use this lens to judge "
@@ -673,7 +694,10 @@ def build_business_driver_report_from_payload(
         backfill_excluded_points,
         request.language,
         source_refs_by_id,
+        state,
     )
+    _backfill_business_driver_thesis(payload, state, request.language)
+    review_business_driver_payload(payload, state, request.language)
     task_sections = BusinessDriverSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
@@ -2518,6 +2542,7 @@ def _business_driver_prompt(
     evidence_refs = _aliased_source_refs(_limit_source_refs(source_refs))
     evidence_lines = _evidence_lines(evidence_refs, source_refs)
     allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
+    facts_brief = business_driver_facts_brief(state, request.language)
     if _is_zh_locale(request.language):
         return (
             "请生成业务驱动深挖所需的 typed task sections。\n"
@@ -2544,12 +2569,14 @@ def _business_driver_prompt(
             "driver_map 的四个字段都是单个段落 point，不要返回数组。"
             "每段 summary 写 3-5 句，说明结论、证据、投资含义和证据限制。\n"
             "所有 source_ids 都必须来自已提供的证据。\n"
-            "如果证据稀薄，也要保持同样的对象/数组结构，但文案要谨慎。\n"
+            "如果 segment 或 RAG 证据不完整，也要基于结构化 facts brief 给出谨慎的方向性判断，"
+            "不要输出 No evidence、无法判断 或类似占位句。\n"
             "四段分别回答 revenue bridge、segment momentum、margin and mix、demand signals。"
             "SEC filing、company facts、market data 和已收集第三方来源都可以作为补充证据，"
             "但必须使用 allowed source_ids。监管、法律或市场风险只能作为反证写入相关段落。\n"
             f"Ticker: {state.ticker}\n"
             f"Task: {request.task_type.value}\n"
+            f"{facts_brief}\n"
             f"Business signals: {_json_safe(state.evidence_memory.business_signals)}\n"
             f"Coverage: status={state.coverage.status}; "
             f"evidence_count={state.coverage.evidence_count}; "
@@ -2581,13 +2608,16 @@ def _business_driver_prompt(
         "Each driver_map field is one paragraph point, not an array. Each summary should "
         "be 3-5 sentences covering conclusion, evidence, investor relevance, and evidence limits.\n"
         "All source_ids must come from the evidence provided.\n"
-        "If evidence is sparse, keep the same object and array structure, but stay cautious in the wording.\n"
+        "If segment or RAG evidence is incomplete, use the structured facts brief to write a "
+        "cautious directional conclusion. Do not output No evidence, unable to determine, "
+        "or similar placeholders.\n"
         "The four paragraphs must cover revenue bridge, segment momentum, margin and mix, "
         "and demand signals. SEC filing, company facts, market data, and collected third-party "
         "sources may all supplement the analysis, but every cited fact must use an allowed source_id. "
         "Regulatory, legal, or market-risk evidence should be used only as counter-evidence inside the relevant paragraph.\n"
         f"Ticker: {state.ticker}\n"
         f"Task: {request.task_type.value}\n"
+        f"{facts_brief}\n"
         f"Business signals: {_json_safe(state.evidence_memory.business_signals)}\n"
         f"Coverage: status={state.coverage.status}; "
         f"evidence_count={state.coverage.evidence_count}; "
@@ -3063,6 +3093,7 @@ def _backfill_business_driver_point_source_ids(
     excluded_point_ids: set[int],
     language: str | None,
     source_refs_by_id: dict[str, SourceRef],
+    state: AgentState,
 ) -> None:
     lens_terms = {
         "revenue_bridge": (
@@ -3113,6 +3144,7 @@ def _backfill_business_driver_point_source_ids(
         for source_ref in source_refs
         if not _is_noisy_business_driver_source_ref(source_ref)
     ]
+    facts_context = business_driver_facts_context(state)
     for lens_name, point in (
         ("revenue_bridge", payload.driver_map.revenue_bridge),
         ("segment_momentum", payload.driver_map.segment_momentum),
@@ -3138,6 +3170,14 @@ def _backfill_business_driver_point_source_ids(
                 source_ref.source_id for source_ref in matched_refs if source_ref.source_id
             ][:3]
         if not point.source_ids or not matched_refs:
+            if placeholder_summary and facts_context.has_signal:
+                point.summary = business_driver_facts_backfill_summary(
+                    lens_name,
+                    facts_context,
+                    language,
+                )
+                point.source_ids = []
+                point.citation_status = CitationStatus.PARTIAL
             continue
         if placeholder_summary:
             point.summary = _business_driver_backfill_summary(
@@ -3152,6 +3192,28 @@ def _backfill_business_driver_point_source_ids(
         }:
             point.citation_status = CitationStatus.PARTIAL
     _localize_business_driver_placeholders(payload, language)
+
+
+def _backfill_business_driver_thesis(
+    payload: _BusinessDriverSynthesis,
+    state: AgentState,
+    language: str | None,
+) -> None:
+    thesis = payload.driver_thesis
+    if not _is_business_driver_placeholder_text(thesis.headline) and not (
+        _is_business_driver_placeholder_text(thesis.summary)
+    ):
+        return
+    facts_context = business_driver_facts_context(state)
+    if not facts_context.has_signal:
+        return
+    headline, durability, summary = business_driver_thesis_backfill(
+        facts_context,
+        language,
+    )
+    thesis.headline = headline
+    thesis.durability = _driver_durability_from_text(durability)
+    thesis.summary = summary
 
 
 def _business_driver_backfill_source_refs(
@@ -3242,7 +3304,14 @@ def _trim_sentence(text: str, *, max_chars: int) -> str:
 
 
 def _is_business_driver_partial_placeholder(point: _SynthesizedPoint) -> bool:
-    return point.summary.strip() == _BUSINESS_DRIVER_PARTIAL_PLACEHOLDER
+    return _is_business_driver_placeholder_text(point.summary)
+
+
+def _is_business_driver_placeholder_text(value: str) -> bool:
+    normalized = " ".join(value.split()).strip().lower()
+    if normalized == _BUSINESS_DRIVER_PARTIAL_PLACEHOLDER.lower():
+        return True
+    return any(phrase in normalized for phrase in _BUSINESS_DRIVER_PLACEHOLDER_PHRASES)
 
 
 def _localize_business_driver_placeholders(

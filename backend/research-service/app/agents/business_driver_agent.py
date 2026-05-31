@@ -8,6 +8,11 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.business_driver_quality import (
+    BUSINESS_DRIVER_CORE_METRICS,
+    BUSINESS_DRIVER_FACT_METRICS,
+    business_driver_facts_brief,
+)
 from app.agents.domain_tools import ResearchToolService
 from app.agents.evidence_pack_tool import create_agent_evidence_pack_tool
 from app.agents.tool_calling_graph import run_tool_calling_graph_agent
@@ -17,6 +22,7 @@ from app.contracts.tools import (
     BusinessSignalsInput,
     CompanyFactsInput,
     FilingSectionSearchInput,
+    MarketContextInput,
     MetricEvidenceInput,
 )
 from app.rag.llamaindex_pipeline import LlamaIndexRagPipeline
@@ -48,6 +54,12 @@ class BusinessSignalsSearchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     signal_types: list[str] = Field(default_factory=list)
+
+
+class MarketContextSearchInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    context_types: list[str] = Field(default_factory=list)
 
 
 class CompanyFactsSearchInput(BaseModel):
@@ -104,11 +116,31 @@ def run_business_driver_agent(
             {
                 "name": "get_company_facts",
                 "args": {
-                    "metrics": ["revenue"],
+                    "metrics": BUSINESS_DRIVER_FACT_METRICS,
                     "period": "latest_quarter",
                 },
             },
-            {"name": "search_metric_evidence", "args": {}},
+            {
+                "name": "get_market_context",
+                "args": {
+                    "context_types": [
+                        "profile",
+                        "valuation",
+                        "quote",
+                        "technical",
+                        "news",
+                        "sentiment",
+                        "macro",
+                    ],
+                },
+            },
+            {
+                "name": "search_metric_evidence",
+                "args": {
+                    "metrics": BUSINESS_DRIVER_CORE_METRICS,
+                    "period": "latest_quarter",
+                },
+            },
             {
                 "name": "build_evidence_pack",
                 "args": {
@@ -144,7 +176,7 @@ def _business_driver_tools(
             ticker=request.ticker,
             task_type=request.task_type,
             period=period,
-            metrics=metrics or ["revenue"],
+            metrics=metrics or BUSINESS_DRIVER_FACT_METRICS,
         )
         started_at = perf_counter()
         tool_result = tool_service.get_company_facts(tool_input, state_getter())
@@ -188,7 +220,7 @@ def _business_driver_tools(
         period: str | None = "latest_quarter",
         query: str | None = None,
     ) -> str:
-        requested_metrics = metrics or ["revenue", "segment revenue"]
+        requested_metrics = metrics or BUSINESS_DRIVER_CORE_METRICS
         tool_input = MetricEvidenceInput(
             run_id=request.run_id,
             ticker=request.ticker,
@@ -232,12 +264,42 @@ def _business_driver_tools(
         state_setter(next_state)
         return payload
 
+    def get_market_context(context_types: list[str] | None = None) -> str:
+        tool_input = MarketContextInput(
+            run_id=request.run_id,
+            ticker=request.ticker,
+            task_type=request.task_type,
+            context_types=context_types or [],
+        )
+        started_at = perf_counter()
+        tool_result = tool_service.get_market_context(tool_input, state_getter())
+        tool_latency_ms = int((perf_counter() - started_at) * 1000)
+        next_state, payload = _run_domain_tool(
+            state_getter(),
+            "get_market_context",
+            "Collected market, sentiment, technical, and macro context.",
+            tool_result,
+            tool_input.model_dump(mode="json"),
+            tool_latency_ms=tool_latency_ms,
+        )
+        state_setter(next_state)
+        return payload
+
     tools = [
         StructuredTool.from_function(
             get_company_facts,
             name="get_company_facts",
             description="Return company profile and core revenue facts for business drivers.",
             args_schema=CompanyFactsSearchInput,
+        ),
+        StructuredTool.from_function(
+            get_market_context,
+            name="get_market_context",
+            description=(
+                "Return preloaded market context such as business profile, valuation, quote, "
+                "technical trend, news headlines, market sentiment, and macro context."
+            ),
+            args_schema=MarketContextSearchInput,
         ),
         StructuredTool.from_function(
             search_filing_sections,
@@ -307,6 +369,8 @@ def _run_domain_tool(
         evidence_memory.source_refs.extend(result.source_refs)
     if tool_name == "get_company_facts":
         evidence_memory.facts.update(result.data)
+    if tool_name == "get_market_context":
+        evidence_memory.market_context.update(result.data)
     if tool_name == "search_metric_evidence":
         evidence_memory.metric_evidence.extend(_records_from_result(result.data))
     if tool_name == "get_business_signals":
@@ -335,7 +399,7 @@ def _run_domain_tool(
 
 
 def _phase_for_tool(tool_name: str) -> AgentPhase:
-    if tool_name == "get_company_facts":
+    if tool_name in {"get_company_facts", "get_market_context"}:
         return AgentPhase.COLLECT_FINANCIAL_FACTS
     if tool_name == "get_business_signals":
         return AgentPhase.EXTRACT_SIGNALS
@@ -428,15 +492,20 @@ def _final_prompt() -> ChatPromptTemplate:
 
 
 def _business_driver_instruction(request: AgentRequest, state: AgentState) -> str:
+    facts_brief = business_driver_facts_brief(state, request.language)
     if _is_zh_locale(request.language):
         return (
             f"请分析 {state.ticker} 的业务驱动因素。\n"
             "Required workflow:\n"
             "1. 调用 get_company_facts 获取 company profile 和核心 revenue facts。\n"
-            "2. 调用 search_metric_evidence 获取 revenue、segment revenue 和任何可用的 driver KPIs。\n"
-            "3. 调用 build_evidence_pack 获取 revenue bridge、segment momentum、margin and mix "
+            "2. 调用 get_market_context 获取 valuation、quote、technical、news、sentiment "
+            "和 macro context。\n"
+            "3. 调用 search_metric_evidence 获取 revenue、segment revenue、margin "
+            "和 profitability KPIs。\n"
+            "4. 调用 build_evidence_pack 获取 revenue bridge、segment momentum、margin and mix "
             "和 demand signals 证据。\n"
-            "4. 在 filing 或 metric evidence 已存在后调用 get_business_signals。\n"
+            "5. 在 filing 或 metric evidence 已存在后调用 get_business_signals。\n"
+            f"{facts_brief}\n"
             "Final JSON shape:\n"
             "{"
             '"driver_thesis":{"headline":"...","durability":"durable|mixed|temporary|unclear",'
@@ -453,17 +522,22 @@ def _business_driver_instruction(request: AgentRequest, state: AgentState) -> st
             '"citation_status":"supported|partial|missing|unverified"}]'
             "}\n"
             "driver_map 的四个字段都是单段 point，不要返回数组。只能使用工具返回的 source_ids。"
+            "如果 segment 或 RAG 证据不完整，也要基于结构化 facts brief 给出谨慎的方向性判断，"
+            "不要输出 No evidence、无法判断 或类似占位句。"
             f"Language: {request.language}"
         )
     return (
         f"Analyze business drivers for {state.ticker}.\n"
         "Required workflow:\n"
         "1. Call get_company_facts for company profile and core revenue facts.\n"
-        "2. Call search_metric_evidence for revenue, segment revenue, and any available "
-        "driver KPIs.\n"
-        "3. Call build_evidence_pack for revenue bridge, segment momentum, margin and mix, "
+        "2. Call get_market_context for valuation, quote, technical, news, sentiment, "
+        "and macro context.\n"
+        "3. Call search_metric_evidence for revenue, segment revenue, margin, and "
+        "profitability KPIs.\n"
+        "4. Call build_evidence_pack for revenue bridge, segment momentum, margin and mix, "
         "and demand signals evidence.\n"
-        "4. Call get_business_signals after filing or metric evidence exists.\n"
+        "5. Call get_business_signals after filing or metric evidence exists.\n"
+        f"{facts_brief}\n"
         "Final JSON shape:\n"
         "{"
         '"driver_thesis":{"headline":"...","durability":"durable|mixed|temporary|unclear",'
@@ -481,11 +555,15 @@ def _business_driver_instruction(request: AgentRequest, state: AgentState) -> st
         "}\n"
         "Each driver_map field is a single paragraph point, not an array. "
         "Use only source_ids returned by tools. "
+        "If segment or RAG evidence is incomplete, use the structured facts brief to write "
+        "a cautious directional conclusion. Do not output No evidence, unable to determine, "
+        "or similar placeholders. "
         f"Language: {request.language}"
     )
 
 
 def _final_business_driver_instruction(request: AgentRequest, state: AgentState) -> str:
+    facts_brief = business_driver_facts_brief(state, request.language)
     if _is_zh_locale(request.language):
         return (
             f"请基于 evidence context 为 {state.ticker} 写出 business driver report JSON。\n"
@@ -497,6 +575,9 @@ def _final_business_driver_instruction(request: AgentRequest, state: AgentState)
             "投资含义和证据限制。不要编造事实。"
             "不要把 schema labels 或 placeholders 写进正文，包括 Evidence point, Business driver thesis, "
             "driver_map 或 N/A。任何引用证据的分析点都只能使用 evidence context 中存在的 source_ids。\n"
+            f"{facts_brief}\n"
+            "如果 evidence context 的 segment 或 RAG 证据不完整，也要基于 facts brief 写方向性结论，"
+            "不要输出 No evidence、无法判断 或类似占位句。\n"
             f"Language: {request.language}"
         )
     return (
@@ -512,6 +593,10 @@ def _final_business_driver_instruction(request: AgentRequest, state: AgentState)
         "including Evidence point, Business driver thesis, driver_map, or N/A. "
         "Every analytical point that cites evidence must use only source_ids present in "
         "evidence context.\n"
+        f"{facts_brief}\n"
+        "If segment or RAG evidence is incomplete, use the structured facts brief to write "
+        "a cautious directional conclusion. Do not output No evidence, unable to determine, "
+        "or similar placeholders.\n"
         f"Language: {request.language}"
     )
 
