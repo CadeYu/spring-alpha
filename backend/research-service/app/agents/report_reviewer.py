@@ -161,19 +161,19 @@ def _reviewer_zh_summary(lens_name: str, context: BusinessDriverFactsContext) ->
     profile = _zh_business_profile_hint(context)
     summaries = {
         "revenue_bridge": (
-            f"{company} 的收入桥接应先锚定结构化 facts：最新收入为 {revenue}。"
+            f"{company} 的收入桥接应先锚定结构化数据：最新收入为 {revenue}。"
             f"{profile} 这说明当前最重要的投资含义是判断增长是否来自可持续需求，"
             "而不是只看单季收入规模。由于分业务或区域拆分仍不完整，这一结论属于"
             "方向性判断，并应标记为部分支撑。"
         ),
         "segment_momentum": (
-            f"{company} 的分部动能不能因为 segment 证据不足就留空；现有业务画像显示"
+            f"{company} 的分部动能不能因为分部证据不足就留空；现有业务画像显示"
             f"{profile} 因此该段应退化为业务线暴露分析：看核心产品、客户场景和收入结构"
             "是否继续贡献增长。对投资者来说，重点是判断增长来源是否集中、是否可延续，"
             "目前结论仍是方向性判断。"
         ),
         "margin_and_mix": (
-            f"{company} 的利润率与组合判断应锚定 {margin}，并结合收入 {revenue} "
+            f"{company} 的利润率与组合判断应锚定毛利率为 {margin}，并结合收入 {revenue} "
             "观察规模增长是否能转化为经营杠杆。对投资者来说，关键是收入质量和产品组合"
             "是否支撑利润率韧性，而不是只复述收入变化。由于成本项和分部利润率证据仍有限，"
             "该结论应视为部分支撑。"

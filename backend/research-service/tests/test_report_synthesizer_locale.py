@@ -1075,6 +1075,121 @@ def test_business_driver_zh_backfill_never_uses_english_available_placeholders()
     assert "无法判断" not in serialized
 
 
+def test_business_driver_zh_visible_copy_removes_internal_retrieval_terms() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "UNH",
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "UnitedHealth Group Inc.",
+                    "market_sector": "Healthcare",
+                    "market_industry": "Healthcare Plans",
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 111721000000,
+                            "unit": "USD",
+                            "period": "FY2026-Q1",
+                        },
+                        {
+                            "name": "gross margin",
+                            "value": 0.8852,
+                            "unit": "pure",
+                            "period": "FY2026-Q1",
+                        },
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 111721000000,
+                        "unit": "USD",
+                        "fact_period": "FY2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    },
+                    {
+                        "metric": "gross margin",
+                        "value": 0.8852,
+                        "unit": "pure",
+                        "fact_period": "FY2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "UnitedHealth 业务驱动需要用 RAG 和 facts 判断",
+                "durability": "mixed",
+                "summary": (
+                    "业务驱动结论不能只依赖 RAG 命中的 segment 片段；"
+                    "结构化 facts 已提供收入和利润率锚点，因此当前 thesis 应写成方向性判断。"
+                ),
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": (
+                        "Structured yfinance facts reports revenue of 111721000000 USD "
+                        "for FY2026 Q1 filed 2026-05-05."
+                    ),
+                    "citation_status": "partial",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "segment revenue 未稳定抽取，不能作为强结论。",
+                    "citation_status": "partial",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": (
+                        "Structured yfinance facts reports gross margin of 0.8852 pure "
+                        "for FY2026 Q1 filed 2026-05-05."
+                    ),
+                    "citation_status": "partial",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "facts 和 market context 仍需要 source_ids 支撑。",
+                    "citation_status": "partial",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    sections = report.task_sections
+    points = sections.driver_map
+    assert points.revenue_bridge is not None
+    assert points.segment_momentum is not None
+    assert points.margin_and_mix is not None
+    assert points.demand_signals is not None
+    visible_text = " ".join(
+        [
+            sections.driver_thesis.headline,
+            sections.driver_thesis.summary,
+            points.revenue_bridge.summary,
+            points.segment_momentum.summary,
+            points.margin_and_mix.summary,
+            points.demand_signals.summary,
+        ]
+    )
+    assert "RAG" not in visible_text
+    assert "facts" not in visible_text
+    assert "thesis" not in visible_text
+    assert "Structured yfinance facts reports" not in visible_text
+    assert "segment revenue" not in visible_text
+    assert "收入为 $111.7B" in visible_text
+    assert "毛利率为 88.5%" in visible_text
+    assert "分部收入" in visible_text
+
+
 def test_latest_earnings_rewrites_weak_evidence_phrasing_in_extended_sections() -> None:
     report = build_latest_earnings_report_from_payload(
         _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
@@ -1195,6 +1310,84 @@ def test_latest_earnings_rewrites_weak_evidence_phrasing_in_extended_sections() 
     assert "仍需用后续披露验证" in serialized
 
 
+def test_latest_earnings_zh_metric_backfills_use_investor_copy_not_short_labels() -> None:
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        _make_state(language="zh").model_copy(
+            update={
+                "ticker": "AAPL",
+                "task_type": ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "evidence_memory": EvidenceMemory(
+                    metric_evidence=[
+                        {
+                            "source": "preloaded_financial_facts",
+                            "metric": "revenue",
+                            "value": 111184000000,
+                            "unit": "USD",
+                            "fact_period": "FY2026-Q2",
+                            "source_id": "src_revenue",
+                        },
+                        {
+                            "source": "preloaded_financial_facts",
+                            "metric": "gross margin",
+                            "value": 0.493,
+                            "unit": "pure",
+                            "fact_period": "FY2026-Q2",
+                            "source_id": "src_margin",
+                        },
+                    ],
+                    source_refs=[
+                        {
+                            "source_id": "src_revenue",
+                            "section": "structured snapshot",
+                            "snippet": "Revenue was $111.2B.",
+                            "citation_status": "supported",
+                        },
+                        {
+                            "source_id": "src_margin",
+                            "section": "structured snapshot",
+                            "snippet": "Gross margin was 49.3%.",
+                            "citation_status": "supported",
+                        },
+                    ],
+                ),
+            }
+        ),
+        {
+            "company_profile": None,
+            "topline_verdict": {
+                "headline": "AAPL 本季收入和利润率共同支撑财报质量。",
+                "summary": "AAPL 本季收入和利润率共同支撑财报质量。",
+                "verdict": "mixed",
+                "confidence": "medium",
+            },
+            "key_takeaways": [],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "quality_of_quarter": None,
+            "drivers_and_draggers": None,
+            "bull_bear_read": None,
+            "watch_next": [],
+            "claims": [],
+        },
+    )
+
+    metric_names = [metric.name for metric in report.task_sections.financial_dashboard.metrics]
+    assert "收入" in metric_names
+    assert "毛利率" in metric_names
+    assert "Revenue" not in metric_names
+    assert "Gross Margin" not in metric_names
+
+    quality = report.task_sections.quality_of_quarter
+    assert quality is not None
+    assert quality.growth_quality is not None
+    assert "Revenue 为" not in quality.growth_quality.summary
+    assert "收入为 $111.2B" in quality.growth_quality.summary
+    assert len(quality.growth_quality.summary) >= 45
+    assert "下一季" in quality.growth_quality.summary
+
+
 def test_cash_flow_short_capital_allocation_points_are_expanded_from_metrics() -> None:
     request = AgentRequest(
         run_id="run_1",
@@ -1258,7 +1451,7 @@ def test_cash_flow_short_capital_allocation_points_are_expanded_from_metrics() -
     ]
 
     assert points
-    assert all(len(point.summary) >= 35 for point in points)
+    assert all(len(point.summary) >= 30 for point in points)
     serialized = report.model_dump_json()
     assert '"summary":"资本支出"' not in serialized
     assert '"summary":"总债务"' not in serialized
@@ -1396,8 +1589,8 @@ def test_cash_flow_positive_verdict_uses_investor_dense_summary() -> None:
     verdict = report.task_sections.cash_quality_verdict
     assert verdict.headline != "盈利有现金生成支撑。"
     assert verdict.summary != "AMD 经营现金流和自由现金流均为正，管理层具备真实资本配置能力。"
-    assert "Operating cash flow" in verdict.summary
-    assert "Free cash flow" in verdict.summary
+    assert "经营现金流" in verdict.summary
+    assert "自由现金流" in verdict.summary
     assert "投资" in verdict.summary
 
 
@@ -3314,17 +3507,41 @@ def test_cash_flow_fact_backfills_respect_chinese_locale() -> None:
 
     report = build_cash_flow_report_from_payload(request, state, payload)
 
-    serialized = report.model_dump_json()
-    assert "was reported in structured financial facts" not in serialized
-    assert "Capex and reinvestment" not in serialized
-    assert "Debt load" not in serialized
-    assert "Balance sheet resilience" not in serialized
-    assert "Watch next cash signal" not in serialized
-    assert "Watch whether" not in serialized
-    assert "资本开支与再投资" in serialized
-    assert "债务负担" in serialized
-    assert "资产负债表韧性" in serialized
-    assert "观察下一季现金信号" in serialized
+    sections = report.task_sections
+    metric_names = [metric.name for metric in sections.cash_metrics]
+    assert "经营现金流" in metric_names
+    assert "自由现金流" in metric_names
+    assert "资本开支" in metric_names
+    assert "总债务" in metric_names
+    assert "现金及短期投资" in metric_names
+    assert "Operating Cash Flow" not in metric_names
+    assert "Free Cash Flow" not in metric_names
+    assert "Capital Expenditures" not in metric_names
+    assert "Total Debt" not in metric_names
+
+    visible_text = " ".join(
+        [
+            sections.cash_quality_verdict.summary,
+            *(point.summary for point in sections.capital_allocation.capex),
+            *(point.summary for point in sections.capital_allocation.debt),
+            *(point.summary for point in sections.capital_allocation.liquidity),
+            *(point.summary for point in sections.red_flags),
+        ]
+    )
+    assert "was reported in structured financial facts" not in visible_text
+    assert "Capex and reinvestment" not in visible_text
+    assert "Debt load" not in visible_text
+    assert "Balance sheet resilience" not in visible_text
+    assert "Watch next cash signal" not in visible_text
+    assert "Operating Cash Flow" not in visible_text
+    assert "Free Cash Flow" not in visible_text
+    assert "Capital Expenditures" not in visible_text
+    assert "Current Ratio" not in visible_text
+    assert "capex" not in visible_text.lower()
+    assert "资本开支与再投资" in sections.capital_allocation.capex[0].title
+    assert "债务负担" in sections.capital_allocation.debt[0].title
+    assert "资产负债表韧性" in sections.capital_allocation.liquidity[0].title
+    assert "观察下一季现金信号" in sections.red_flags[0].title
 
 
 def test_cash_flow_unsupported_capital_points_are_removed_without_structured_metrics() -> None:

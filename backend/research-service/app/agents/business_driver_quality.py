@@ -144,7 +144,7 @@ def business_driver_facts_backfill_summary(
         )
         summaries = {
             "revenue_bridge": (
-                f"{company} 的收入桥接需要更多分部证据，但结构化 facts 已显示收入为 {revenue}。"
+                f"{company} 的收入桥接需要更多分部证据，但结构化数据已显示收入为 {revenue}。"
                 f"{profile} 因此当前可给出方向性判断：增长解读应先锚定已披露收入规模，"
                 "再等待更细的分业务或区域拆分来验证质量。"
             ),
@@ -154,7 +154,7 @@ def business_driver_facts_backfill_summary(
                 "当前应把该段视为方向性判断，并继续等待更细的 segment revenue 或利润率证据。"
             ),
             "margin_and_mix": (
-                f"{company} 的利润率与组合证据不完整，但结构化 facts 给出的利润率锚点是 {margin}。"
+                f"{company} 的利润率与组合证据不完整，但结构化数据给出的毛利率为 {margin}。"
                 f"结合收入 {revenue}，当前可判断经营质量需要看收入增长是否能转化为利润率韧性。"
                 "这属于方向性判断，后续仍需产品组合、成本项或分部利润率来验证。"
             ),
@@ -229,9 +229,9 @@ def business_driver_thesis_backfill(
         profile = _business_driver_profile_hint(context, language)
         headline = f"{company} 业务驱动需要同时看收入与利润率"
         summary = (
-            f"{company} 的业务驱动结论不能只依赖 RAG 命中的 segment 片段；"
-            f"结构化 facts 已提供收入 {revenue} 和利润率/盈利锚点 {margin}。"
-            f"{profile} 因此当前 thesis 应写成方向性判断：先用收入规模、业务暴露和利润率锚点"
+            f"{company} 的业务驱动结论不能只依赖检索到的分部片段；"
+            f"结构化数据已提供收入 {revenue} 和毛利率/盈利锚点 {margin}。"
+            f"{profile} 因此当前结论应写成方向性判断：先用收入规模、业务暴露和利润率锚点"
             "判断经营质量，再等待更细的分部收入、产品组合和需求指标验证。"
         )
         return headline, "mixed", summary

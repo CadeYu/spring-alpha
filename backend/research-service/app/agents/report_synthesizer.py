@@ -1,6 +1,6 @@
 import re
 from os import getenv
-from typing import Any
+from typing import Any, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -97,6 +97,56 @@ _LATEST_MARGIN_QUALITY_SUMMARY_EN = (
 _LATEST_CASH_QUALITY_SUMMARY_EN = (
     "Cash quality is anchored by operating cash flow or free cash flow evidence. "
     "Use this lens to judge whether accounting earnings are supported by cash generation."
+)
+
+_ZH_METRIC_LABELS = {
+    "revenue": "收入",
+    "sales": "收入",
+    "net sales": "收入",
+    "gross margin": "毛利率",
+    "operating margin": "经营利润率",
+    "net margin": "净利率",
+    "gross profit": "毛利润",
+    "operating income": "经营利润",
+    "net income": "净利润",
+    "eps": "每股收益",
+    "operating cash flow": "经营现金流",
+    "free cash flow": "自由现金流",
+    "capital expenditures": "资本开支",
+    "current ratio": "流动比率",
+    "total debt": "总债务",
+    "cash and short term investments": "现金及短期投资",
+    "cash and equivalents": "现金及等价物",
+    "buybacks": "回购",
+    "dividends": "分红",
+}
+
+_ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
+    (re.compile(r"\bRAG\b", flags=re.I), "检索证据"),
+    (re.compile(r"\bfacts\b", flags=re.I), "结构化数据"),
+    (re.compile(r"\bthesis\b", flags=re.I), "结论"),
+    (re.compile(r"\bsource[_ ]?ids?\b", flags=re.I), "证据来源"),
+    (re.compile(r"\bnode[_ ]?ids?\b", flags=re.I), "证据来源"),
+    (re.compile(r"\bsegment revenue\b", flags=re.I), "分部收入"),
+    (re.compile(r"\bsegment\b", flags=re.I), "分部"),
+    (re.compile(r"\brevenue bridge\b", flags=re.I), "收入桥接"),
+    (re.compile(r"\bsegment momentum\b", flags=re.I), "分部动能"),
+    (re.compile(r"\bmargin and mix\b", flags=re.I), "利润率与组合"),
+    (re.compile(r"\bdemand signals\b", flags=re.I), "需求信号"),
+    (re.compile(r"\bmarket context\b", flags=re.I), "市场背景"),
+    (re.compile(r"\bStructured yfinance facts reports\b", flags=re.I), "结构化数据披露"),
+    (re.compile(r"\byfinance\b", flags=re.I), "结构化行情数据"),
+    (re.compile(r"\bfiled\b", flags=re.I), "披露于"),
+    (re.compile(r"\bcapex\b", flags=re.I), "资本开支"),
+    (re.compile(r"\bCapital Expenditures\b", flags=re.I), "资本开支"),
+    (re.compile(r"\bOperating Cash Flow\b", flags=re.I), "经营现金流"),
+    (re.compile(r"\bFree Cash Flow\b", flags=re.I), "自由现金流"),
+    (re.compile(r"\bCurrent Ratio\b", flags=re.I), "流动比率"),
+    (re.compile(r"\bTotal Debt\b", flags=re.I), "总债务"),
+    (
+        re.compile(r"\bCash And Short Term Investments\b", flags=re.I),
+        "现金及短期投资",
+    ),
 )
 
 
@@ -296,6 +346,11 @@ class _CashFlowSynthesis(BaseModel):
     claims: list[_SynthesizedClaim] = Field(default_factory=list)
 
 
+class _LocalizedMetric(NamedTuple):
+    metric: EvidenceBoundMetric
+    raw_name: str
+
+
 def synthesize_latest_earnings_report(
     request: AgentRequest,
     state: AgentState,
@@ -334,35 +389,44 @@ def build_latest_earnings_report_from_payload(
     payload_data = _normalize_latest_earnings_payload(payload_data, request.language)
     payload = _LatestEarningsSynthesis.model_validate(payload_data)
     _sanitize_latest_earnings_source_ids(payload, source_refs_by_id)
-    dashboard_metrics = _final_dashboard_metrics(
+    localized_dashboard_metrics = _final_dashboard_metrics(
         payload.financial_dashboard.metrics,
         state,
         source_refs_by_id,
+        request.language,
     )
+    dashboard_metrics = [item.metric for item in localized_dashboard_metrics]
     _repair_latest_weak_evidence_phrasing(payload, request.language)
     quality_of_quarter = _quality_of_quarter_from_payload(
         payload.quality_of_quarter,
         source_refs_by_id,
+        request.language,
     )
     drivers_and_draggers = _drivers_and_draggers_from_payload(
         payload.drivers_and_draggers,
         source_refs_by_id,
+        request.language,
     )
     bull_bear_read = _bull_bear_read_from_payload(
         payload.bull_bear_read,
         source_refs_by_id,
+        request.language,
     )
     watch_next = [
-        _watch_next_item_from_payload(item, source_refs_by_id) for item in payload.watch_next
+        _watch_next_item_from_payload(item, source_refs_by_id, request.language)
+        for item in payload.watch_next
     ]
     key_takeaways = [
-        _point_from_payload(point, source_refs_by_id) for point in payload.key_takeaways
+        _point_from_payload(point, source_refs_by_id, request.language)
+        for point in payload.key_takeaways
     ]
     driver_snapshot = [
-        _point_from_payload(point, source_refs_by_id) for point in payload.driver_snapshot
+        _point_from_payload(point, source_refs_by_id, request.language)
+        for point in payload.driver_snapshot
     ]
     risk_snapshot = [
-        _point_from_payload(point, source_refs_by_id) for point in payload.risk_snapshot
+        _point_from_payload(point, source_refs_by_id, request.language)
+        for point in payload.risk_snapshot
     ]
     quality_of_quarter = _latest_quality_with_backfill(
         quality_of_quarter,
@@ -387,7 +451,7 @@ def build_latest_earnings_report_from_payload(
     )
     watch_next = _latest_watch_next_with_backfill(
         watch_next,
-        dashboard_metrics,
+        localized_dashboard_metrics,
         risk_snapshot,
         source_refs,
         request.language,
@@ -413,6 +477,10 @@ def build_latest_earnings_report_from_payload(
         driver_snapshot,
         risk_snapshot,
         dashboard_metrics,
+        request.language,
+    )
+    payload.topline_verdict = _localize_topline_verdict(
+        payload.topline_verdict,
         request.language,
     )
     task_sections = LatestEarningsSections(
@@ -737,6 +805,7 @@ def build_business_driver_report_from_payload(
     )
     _backfill_business_driver_thesis(payload, state, request.language)
     review_business_driver_payload(payload, state, request.language)
+    _localize_business_driver_visible_copy(payload, request.language)
     task_sections = BusinessDriverSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
@@ -746,18 +815,22 @@ def build_business_driver_report_from_payload(
             revenue_bridge=_optional_point_from_payload(
                 payload.driver_map.revenue_bridge,
                 source_refs_by_id,
+                request.language,
             ),
             segment_momentum=_optional_point_from_payload(
                 payload.driver_map.segment_momentum,
                 source_refs_by_id,
+                request.language,
             ),
             margin_and_mix=_optional_point_from_payload(
                 payload.driver_map.margin_and_mix,
                 source_refs_by_id,
+                request.language,
             ),
             demand_signals=_optional_point_from_payload(
                 payload.driver_map.demand_signals,
                 source_refs_by_id,
+                request.language,
             ),
         ),
     )
@@ -1507,28 +1580,34 @@ def build_cash_flow_report_from_payload(
         ],
         capital_allocation=CapitalAllocation(
             capex=[
-                _point_from_payload(point, source_refs_by_id) for point in capital_allocation.capex
+                _point_from_payload(point, source_refs_by_id, request.language)
+                for point in capital_allocation.capex
             ],
             buybacks=[
-                _point_from_payload(point, source_refs_by_id)
+                _point_from_payload(point, source_refs_by_id, request.language)
                 for point in capital_allocation.buybacks
             ],
             dividends=[
-                _point_from_payload(point, source_refs_by_id)
+                _point_from_payload(point, source_refs_by_id, request.language)
                 for point in capital_allocation.dividends
             ],
             debt=[
-                _point_from_payload(point, source_refs_by_id) for point in capital_allocation.debt
+                _point_from_payload(point, source_refs_by_id, request.language)
+                for point in capital_allocation.debt
             ],
             liquidity=[
-                _point_from_payload(point, source_refs_by_id)
+                _point_from_payload(point, source_refs_by_id, request.language)
                 for point in capital_allocation.liquidity
             ],
         ),
         allocation_discipline=[
-            _point_from_payload(point, source_refs_by_id) for point in payload.allocation_discipline
+            _point_from_payload(point, source_refs_by_id, request.language)
+            for point in payload.allocation_discipline
         ],
-        red_flags=[_point_from_payload(point, source_refs_by_id) for point in red_flags],
+        red_flags=[
+            _point_from_payload(point, source_refs_by_id, request.language)
+            for point in red_flags
+        ],
     )
     return EvidenceAwareReport(
         run_id=request.run_id,
@@ -1778,9 +1857,13 @@ def _cash_metric_summary_text(
     ][:4]
     if not metrics:
         return "关键现金流 KPI 已收集。" if _is_zh_locale(language) else "Cash-flow KPIs were collected."
-    pieces = [f"{metric.name}={metric.value}" for metric in metrics]
     if _is_zh_locale(language):
+        pieces = [
+            f"{_localize_metric_name(metric.name, language)}={metric.value}"
+            for metric in metrics
+        ]
         return "关键 KPI 包括 " + "，".join(pieces) + "。"
+    pieces = [f"{metric.name}={metric.value}" for metric in metrics]
     return "Key KPIs include " + ", ".join(pieces) + "."
 
 
@@ -1825,6 +1908,7 @@ def _is_qualitative_cash_metric(metric: object) -> bool:
 def _quality_of_quarter_from_payload(
     value: _SynthesizedQualityOfQuarter | None,
     source_refs_by_id: dict[str, SourceRef],
+    language: str | None = None,
 ) -> QualityOfQuarter | None:
     if value is None:
         return None
@@ -1832,18 +1916,22 @@ def _quality_of_quarter_from_payload(
         growth_quality=_optional_point_from_payload(
             value.growth_quality,
             source_refs_by_id,
+            language,
         ),
         margin_quality=_optional_point_from_payload(
             value.margin_quality,
             source_refs_by_id,
+            language,
         ),
         cash_quality=_optional_point_from_payload(
             value.cash_quality,
             source_refs_by_id,
+            language,
         ),
         one_time_items=_optional_point_from_payload(
             value.one_time_items,
             source_refs_by_id,
+            language,
         ),
     )
 
@@ -1851,27 +1939,40 @@ def _quality_of_quarter_from_payload(
 def _drivers_and_draggers_from_payload(
     value: _SynthesizedDriversAndDraggers | None,
     source_refs_by_id: dict[str, SourceRef],
+    language: str | None = None,
 ) -> DriversAndDraggers | None:
     if value is None:
         return None
     return DriversAndDraggers(
-        drivers=[_point_from_payload(point, source_refs_by_id) for point in value.drivers],
-        draggers=[_point_from_payload(point, source_refs_by_id) for point in value.draggers],
+        drivers=[
+            _point_from_payload(point, source_refs_by_id, language) for point in value.drivers
+        ],
+        draggers=[
+            _point_from_payload(point, source_refs_by_id, language) for point in value.draggers
+        ],
     )
 
 
 def _bull_bear_read_from_payload(
     value: _SynthesizedBullBearRead | None,
     source_refs_by_id: dict[str, SourceRef],
+    language: str | None = None,
 ) -> BullBearRead | None:
     if value is None:
         return None
     return BullBearRead(
-        bull_case=[_point_from_payload(point, source_refs_by_id) for point in value.bull_case],
-        bear_case=[_point_from_payload(point, source_refs_by_id) for point in value.bear_case],
+        bull_case=[
+            _point_from_payload(point, source_refs_by_id, language)
+            for point in value.bull_case
+        ],
+        bear_case=[
+            _point_from_payload(point, source_refs_by_id, language)
+            for point in value.bear_case
+        ],
         balanced_read=_optional_point_from_payload(
             value.balanced_read,
             source_refs_by_id,
+            language,
         ),
     )
 
@@ -1879,11 +1980,12 @@ def _bull_bear_read_from_payload(
 def _watch_next_item_from_payload(
     item: _SynthesizedWatchNextItem,
     source_refs_by_id: dict[str, SourceRef],
+    language: str | None = None,
 ) -> WatchNextItem:
     return WatchNextItem(
-        title=item.title,
+        title=_localize_visible_text(item.title, language),
         metric=item.metric,
-        why_it_matters=item.why_it_matters,
+        why_it_matters=_localize_visible_text(item.why_it_matters, language),
         evidence_refs=[
             _evidence_ref(source_refs_by_id[source_id]) for source_id in item.source_ids
         ],
@@ -1894,10 +1996,11 @@ def _watch_next_item_from_payload(
 def _optional_point_from_payload(
     point: _SynthesizedPoint | None,
     source_refs_by_id: dict[str, SourceRef],
+    language: str | None = None,
 ) -> EvidenceBoundPoint | None:
     if point is None:
         return None
-    return _point_from_payload(point, source_refs_by_id)
+    return _point_from_payload(point, source_refs_by_id, language)
 
 
 def _latest_quality_with_backfill(
@@ -2058,7 +2161,7 @@ def _scenario_points_or_backfill(
 
 def _latest_watch_next_with_backfill(
     watch_next: list[WatchNextItem],
-    metrics: list[EvidenceBoundMetric],
+    metrics: list[_LocalizedMetric],
     risk_snapshot: list[EvidenceBoundPoint],
     source_refs: list[SourceRef],
     language: str | None = None,
@@ -2068,11 +2171,11 @@ def _latest_watch_next_with_backfill(
     is_zh = _is_zh_locale(language)
     metric_items = [
         WatchNextItem(
-            title=f"观察 {metric.name}" if is_zh else f"Watch {metric.name}",
-            metric=metric.name,
-            why_it_matters=_watch_next_metric_reason(metric.name, is_zh),
-            evidence_refs=metric.evidence_refs,
-            citation_status=metric.citation_status,
+            title=f"观察 {metric.metric.name}" if is_zh else f"Watch {metric.metric.name}",
+            metric=metric.raw_name,
+            why_it_matters=_watch_next_metric_reason(metric.metric.name, is_zh),
+            evidence_refs=metric.metric.evidence_refs,
+            citation_status=metric.metric.citation_status,
         )
         for metric in metrics[:3]
     ]
@@ -2130,10 +2233,15 @@ def _quality_point_from_metric(
     is_zh: bool = False,
 ) -> EvidenceBoundPoint | None:
     if metric is not None:
+        metric_label = _localize_metric_name(metric.name, "zh" if is_zh else None)
         return EvidenceBoundPoint(
             title=title,
             summary=(
-                f"{metric.name} 为 {metric.value}，是这一判断的证据锚点。{metric.interpretation}"
+                (
+                    f"{metric_label}为 {metric.value}，是本季{title}的量化锚点。"
+                    f"{_localize_visible_text(metric.interpretation, 'zh')} "
+                    "下一季需要继续验证这个指标是否和收入、利润率及现金流方向一致。"
+                )
                 if is_zh
                 else (
                     f"{metric.name} of {metric.value} is the evidence anchor. "
@@ -2236,7 +2344,10 @@ def _cash_metrics_with_fact_backfill(
                 value=_metric_evidence_value(record),
                 period=_metric_evidence_period(record),
                 interpretation=(
-                    f"{name.title()} 来自 SEC companyfacts，可作为现金流 KPI 锚点。"
+                    (
+                        f"{_localize_metric_name(name, language)}来自 SEC companyfacts，"
+                        "可作为现金流和资本配置能力的量化锚点。"
+                    )
                     if is_zh
                     else (
                         f"{name.title()} was reported in SEC companyfacts and used as "
@@ -2258,7 +2369,10 @@ def _cash_metrics_with_fact_backfill(
                 value=_metric_evidence_value(record),
                 period=_metric_evidence_period(record),
                 interpretation=(
-                    f"{name.title()} 来自结构化财务数据，可作为现金流 KPI 锚点。"
+                    (
+                        f"{_localize_metric_name(name, language)}来自结构化财务数据，"
+                        "可作为现金流和资本配置能力的量化锚点。"
+                    )
                     if is_zh
                     else (
                         f"{name.title()} was reported in structured financial facts and used as "
@@ -2358,7 +2472,10 @@ def _capital_allocation_with_fact_backfill(
                 capex_metric,
                 title="资本开支与再投资" if is_zh else "Capex and reinvestment",
                 summary=(
-                    f"{capex_metric.name} 为 {capex_metric.value}，是现金再投资的主要去向。"
+                    (
+                        f"{_localize_metric_name(capex_metric.name, language)}为 {capex_metric.value}，"
+                        "是现金再投资的主要去向。"
+                    )
                     if is_zh
                     else (
                         f"{capex_metric.name} of {capex_metric.value} is the main "
@@ -2374,7 +2491,7 @@ def _capital_allocation_with_fact_backfill(
                 title="债务负担" if is_zh else "Debt load",
                 summary=(
                     (
-                        f"{debt_metric.name} 为 {debt_metric.value}，"
+                        f"{_localize_metric_name(debt_metric.name, language)}为 {debt_metric.value}，"
                         "需要和现金生成能力一起评估资产负债表风险。"
                     )
                     if is_zh
@@ -2391,7 +2508,7 @@ def _capital_allocation_with_fact_backfill(
         citation_status = CitationStatus.UNVERIFIED
         if current_ratio_metric is not None:
             liquidity_parts.append(
-                f"current ratio 为 {current_ratio_metric.value}"
+                f"流动比率为 {current_ratio_metric.value}"
                 if is_zh
                 else f"current ratio of {current_ratio_metric.value}"
             )
@@ -2399,7 +2516,7 @@ def _capital_allocation_with_fact_backfill(
             citation_status = current_ratio_metric.citation_status
         if cash_metric is not None:
             liquidity_parts.append(
-                f"cash and short-term investments 为 {cash_metric.value}"
+                f"现金及短期投资为 {cash_metric.value}"
                 if is_zh
                 else f"cash and short-term investments of {cash_metric.value}"
             )
@@ -2434,7 +2551,10 @@ def _capital_allocation_with_fact_backfill(
                 metric,
                 title="现金流锚点" if is_zh else "Cash flow anchor",
                 summary=(
-                    f"{metric.name} 为 {metric.value}，是资本配置能力的核心信号。"
+                    (
+                        f"{_localize_metric_name(metric.name, language)}为 {metric.value}，"
+                        "是资本配置能力的核心信号。"
+                    )
                     if is_zh
                     else f"{metric.name} of {metric.value} is the core allocation capacity signal."
                 ),
@@ -2475,18 +2595,21 @@ def _expand_short_capital_point(
     is_zh = _is_zh_locale(language)
     if is_zh:
         if metric_kind == "capital expenditures":
+            metric_label = _localize_metric_name(metric.name, language)
             expanded = (
-                f"{metric.name} 为 {metric.value}，这是再投资消耗现金的主要锚点；"
+                f"{metric_label}为 {metric.value}，这是再投资消耗现金的主要锚点；"
                 "投资者应观察它是否继续低于经营现金流。"
             )
         elif metric_kind == "total debt":
+            metric_label = _localize_metric_name(metric.name, language)
             expanded = (
-                f"{metric.name} 为 {metric.value}，需要和经营现金流、自由现金流一起判断"
+                f"{metric_label}为 {metric.value}，需要和经营现金流、自由现金流一起判断"
                 "资产负债表压力。"
             )
         else:
+            metric_label = _localize_metric_name(metric.name, language)
             expanded = (
-                f"{metric.name} 为 {metric.value}，这是短期流动性和资本配置余地的关键锚点。"
+                f"{metric_label}为 {metric.value}，这是短期流动性和资本配置余地的关键锚点。"
             )
     elif metric_kind == "capital expenditures":
         expanded = (
@@ -2532,13 +2655,13 @@ def _cash_flow_red_flags_with_backfill(
     watch_items = []
     if fcf is not None and capex is not None:
         watch_items.append(
-            f"{fcf.name} 在再投资后是否仍能高于 capex"
+            f"{_localize_metric_name(fcf.name, language)}在再投资后是否仍能高于资本开支"
             if is_zh
             else f"whether {fcf.name.lower()} stays above capex after reinvestment"
         )
     elif ocf is not None and capex is not None:
         watch_items.append(
-            f"{ocf.name} 是否能继续覆盖 capex，且不造成资产负债表压力"
+            f"{_localize_metric_name(ocf.name, language)}是否能继续覆盖资本开支，且不造成资产负债表压力"
             if is_zh
             else (
                 f"whether {ocf.name.lower()} continues to fund capex without "
@@ -2547,7 +2670,7 @@ def _cash_flow_red_flags_with_backfill(
         )
     elif current_ratio is not None:
         watch_items.append(
-            f"流动性是否能围绕 current ratio {current_ratio.value} 保持稳定"
+            f"流动性是否能围绕流动比率 {current_ratio.value} 保持稳定"
             if is_zh
             else (
                 "whether liquidity remains stable around a current ratio of "
@@ -3698,6 +3821,25 @@ def _localize_business_driver_placeholders(
             point.summary = _business_driver_backfill_summary(lens_name, [], language)
 
 
+def _localize_business_driver_visible_copy(
+    payload: _BusinessDriverSynthesis,
+    language: str | None,
+) -> None:
+    if not _is_zh_locale(language):
+        return
+    payload.driver_thesis.headline = _localize_visible_text(
+        payload.driver_thesis.headline,
+        language,
+    )
+    payload.driver_thesis.summary = _localize_visible_text(
+        payload.driver_thesis.summary,
+        language,
+    )
+    for point in _driver_map_points(payload.driver_map):
+        point.title = _localize_visible_text(point.title, language)
+        point.summary = _localize_visible_text(point.summary, language)
+
+
 def _sanitize_cash_flow_source_ids(
     payload: _CashFlowSynthesis,
     source_refs_by_id: dict[str, SourceRef],
@@ -4024,10 +4166,11 @@ def _claims_from_payload(
 def _point_from_payload(
     point: _SynthesizedPoint,
     source_refs_by_id: dict[str, SourceRef],
+    language: str | None = None,
 ) -> EvidenceBoundPoint:
     return EvidenceBoundPoint(
-        title=point.title,
-        summary=point.summary,
+        title=_localize_visible_text(point.title, language),
+        summary=_localize_visible_text(point.summary, language),
         evidence_refs=[
             _evidence_ref(source_refs_by_id[source_id]) for source_id in point.source_ids
         ],
@@ -4038,12 +4181,13 @@ def _point_from_payload(
 def _metric_from_payload(
     metric: _SynthesizedMetric,
     source_refs_by_id: dict[str, SourceRef],
+    language: str | None = None,
 ) -> EvidenceBoundMetric:
     return EvidenceBoundMetric(
-        name=metric.name,
+        name=_localize_metric_name(metric.name, language),
         value=metric.value,
         period=metric.period,
-        interpretation=metric.interpretation,
+        interpretation=_localize_visible_text(metric.interpretation, language),
         evidence_refs=[
             _evidence_ref(source_refs_by_id[source_id]) for source_id in metric.source_ids
         ],
@@ -4055,14 +4199,23 @@ def _final_dashboard_metrics(
     metrics: list[_SynthesizedMetric],
     state: AgentState,
     source_refs_by_id: dict[str, SourceRef],
-) -> list[EvidenceBoundMetric]:
+    language: str | None = None,
+) -> list[_LocalizedMetric]:
     final_metrics = [
-        _metric_with_evidence_guardrail(metric, state, source_refs_by_id)
+        _LocalizedMetric(
+            _metric_with_evidence_guardrail(metric, state, source_refs_by_id, language),
+            metric.name,
+        )
         for metric in metrics
     ]
-    return [
-        metric for metric in final_metrics if not _is_placeholder_evidence_metric(metric)
-    ] or _dashboard_metrics_from_fact_evidence(state, source_refs_by_id)
+    filtered_metrics = [
+        metric for metric in final_metrics if not _is_placeholder_evidence_metric(metric.metric)
+    ]
+    return filtered_metrics or _dashboard_metrics_from_fact_evidence(
+        state,
+        source_refs_by_id,
+        language,
+    )
 
 
 def _metric_with_evidence_guardrail(
@@ -4073,15 +4226,15 @@ def _metric_with_evidence_guardrail(
 ) -> EvidenceBoundMetric:
     metric_record = _metric_evidence_for_name(metric.name, state.evidence_memory.metric_evidence)
     if not metric_record or not _has_fact_value(metric_record):
-        return _metric_from_payload(metric, source_refs_by_id)
+        return _metric_from_payload(metric, source_refs_by_id, language)
     if not _metric_value_needs_evidence(metric.value, metric.interpretation):
-        return _metric_from_payload(metric, source_refs_by_id)
+        return _metric_from_payload(metric, source_refs_by_id, language)
     source_id = str(metric_record.get("source_id") or "").strip()
     if not source_id or source_id not in source_refs_by_id:
-        return _metric_from_payload(metric, source_refs_by_id)
+        return _metric_from_payload(metric, source_refs_by_id, language)
     source_ref = source_refs_by_id[source_id]
     return EvidenceBoundMetric(
-        name=metric.name,
+        name=_localize_metric_name(metric.name, language),
         value=_metric_evidence_value(metric_record),
         period=_metric_evidence_period(metric_record) or metric.period,
         interpretation=_metric_evidence_interpretation(metric_record, source_ref, language),
@@ -4093,8 +4246,9 @@ def _metric_with_evidence_guardrail(
 def _dashboard_metrics_from_fact_evidence(
     state: AgentState,
     source_refs_by_id: dict[str, SourceRef],
-) -> list[EvidenceBoundMetric]:
-    synthesized_metrics: list[EvidenceBoundMetric] = []
+    language: str | None = None,
+) -> list[_LocalizedMetric]:
+    synthesized_metrics: list[_LocalizedMetric] = []
     for record in state.evidence_memory.metric_evidence:
         if not _has_fact_value(record):
             continue
@@ -4104,13 +4258,16 @@ def _dashboard_metrics_from_fact_evidence(
             continue
         name = str(record.get("metric") or record.get("normalized_metric") or "Metric")
         synthesized_metrics.append(
-            EvidenceBoundMetric(
-                name=name,
-                value=_metric_evidence_value(record),
-                period=_metric_evidence_period(record),
-                interpretation=_metric_evidence_interpretation(record, source_ref),
-                evidence_refs=[_evidence_ref(source_ref)],
-                citation_status=CitationStatus.SUPPORTED,
+            _LocalizedMetric(
+                EvidenceBoundMetric(
+                    name=_localize_metric_name(name, language),
+                    value=_metric_evidence_value(record),
+                    period=_metric_evidence_period(record),
+                    interpretation=_metric_evidence_interpretation(record, source_ref, language),
+                    evidence_refs=[_evidence_ref(source_ref)],
+                    citation_status=CitationStatus.SUPPORTED,
+                ),
+                name,
             )
         )
     return synthesized_metrics[:3]
@@ -4244,7 +4401,76 @@ def _metric_evidence_interpretation(
         if _is_zh_locale(language):
             return f"SEC companyfacts 概念 {concept}；证据摘录：{clipped_excerpt}"
         return f"SEC companyfacts concept {concept}; evidence excerpt: {clipped_excerpt}"
-    return _clip(source_ref.snippet, 220)
+    clipped = _clip(source_ref.snippet, 220)
+    if _is_zh_locale(language):
+        return _localize_visible_text(clipped, language)
+    return clipped
+
+
+def _localize_metric_name(metric_name: str | None, language: str | None) -> str:
+    name = str(metric_name or "").strip()
+    if not _is_zh_locale(language):
+        return name
+    normalized = _normalize_metric_name(name)
+    return _ZH_METRIC_LABELS.get(normalized, name)
+
+
+def _localize_visible_text(value: str, language: str | None) -> str:
+    text = str(value or "")
+    if not _is_zh_locale(language):
+        return text
+    for pattern, replacement in _ZH_VISIBLE_TECH_TERM_REPLACEMENTS:
+        text = pattern.sub(replacement, text)
+    text = _rewrite_structured_yfinance_metric_sentence(text)
+    text = re.sub(r"\s{2,}", " ", text)
+    text = re.sub(r"\s+([，。；：,.!?;:])", r"\1", text)
+    return text.strip()
+
+
+def _localize_topline_verdict(
+    verdict: ToplineVerdict,
+    language: str | None,
+) -> ToplineVerdict:
+    if not _is_zh_locale(language):
+        return verdict
+    return ToplineVerdict(
+        headline=_localize_visible_text(verdict.headline, language),
+        summary=_localize_visible_text(verdict.summary, language),
+        verdict=verdict.verdict,
+        confidence=verdict.confidence,
+    )
+
+
+def _rewrite_structured_yfinance_metric_sentence(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        metric = _localize_metric_name(match.group("metric"), "zh")
+        value = _format_structured_metric_value(match.group("value"), match.group("unit"))
+        period = match.group("period").strip()
+        return f"{period} {metric}为 {value}。"
+
+    return re.sub(
+        r"结构化数据披露\s+(?P<metric>[A-Za-z ]+?)\s+of\s+"
+        r"(?P<value>-?\d+(?:\.\d+)?)\s+(?P<unit>USD|pure|percent|percentage|x|ratio)"
+        r"\s+for\s+(?P<period>[^.。]+)(?:\.|。)?",
+        replace,
+        text,
+        flags=re.I,
+    )
+
+
+def _format_structured_metric_value(value: str, unit: str) -> str:
+    try:
+        numeric_value = float(value)
+    except ValueError:
+        return value
+    normalized_unit = unit.lower()
+    if normalized_unit == "usd":
+        return f"${_compact_number(numeric_value)}"
+    if normalized_unit in {"pure", "percent", "percentage"}:
+        return f"{numeric_value * 100:.1f}%"
+    if normalized_unit in {"x", "ratio"}:
+        return f"{numeric_value:.2f}x"
+    return value
 
 
 def _normalize_metric_name(metric: str) -> str:
