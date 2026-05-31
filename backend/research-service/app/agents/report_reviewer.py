@@ -90,8 +90,9 @@ def _review_driver_thesis(
     context: BusinessDriverFactsContext,
     language: str | None,
 ) -> None:
-    if not _needs_business_driver_rewrite(thesis.summary, language) and not (
-        _needs_business_driver_rewrite(thesis.headline, language)
+    if not (
+        _needs_business_driver_rewrite(thesis.summary, language)
+        or _needs_business_driver_rewrite(thesis.headline, language)
         or _is_template_thesis_headline(thesis.headline)
     ):
         return

@@ -3,6 +3,10 @@ from time import perf_counter
 from typing import Any
 
 from app.agents.business_driver_agent import BusinessDriverAgentError, run_business_driver_agent
+from app.agents.business_driver_quality import (
+    business_driver_facts_context,
+    business_driver_thesis_backfill,
+)
 from app.agents.cash_flow_agent import CashFlowAgentError, run_cash_flow_agent
 from app.agents.domain_tools import ResearchToolService
 from app.agents.earnings_agent import EarningsAgentError, run_latest_earnings_agent
@@ -571,10 +575,11 @@ def _business_driver_fallback_sections(
         summary=summary,
         points=[revenue_point, segment_point, margin_point, demand_point],
     )
-    thesis_title = (
-        "业务驱动证据优先结论"
-        if _is_zh_locale(request.language)
-        else "Evidence-backed business driver thesis"
+    thesis_title, thesis_durability, thesis_summary = _business_driver_fallback_thesis(
+        request=request,
+        state=state,
+        summary=summary,
+        points=[revenue_point, segment_point, margin_point, demand_point],
     )
     return BusinessDriverSections(
         schema_version="task_sections.v1",
@@ -582,7 +587,7 @@ def _business_driver_fallback_sections(
         coverage=coverage,
         driver_thesis=DriverThesis(
             headline=thesis_title,
-            durability="mixed" if source_refs else "unclear",
+            durability=thesis_durability,
             summary=thesis_summary,
         ),
         driver_map=DriverMap(
@@ -590,6 +595,35 @@ def _business_driver_fallback_sections(
             segment_momentum=segment_point,
             margin_and_mix=margin_point,
             demand_signals=demand_point,
+        ),
+    )
+
+
+def _business_driver_fallback_thesis(
+    *,
+    request: AgentRequest,
+    state: AgentState,
+    summary: str,
+    points: list[EvidenceBoundPoint],
+) -> tuple[str, str, str]:
+    facts_context = business_driver_facts_context(state)
+    if facts_context.has_signal:
+        if not facts_context.company:
+            facts_context = facts_context.model_copy(
+                update={"company": request.ticker}
+            )
+        return business_driver_thesis_backfill(facts_context, request.language)
+    return (
+        (
+            f"{request.ticker} 业务驱动需要等待更多证据验证"
+            if _is_zh_locale(request.language)
+            else f"{request.ticker} business drivers need more evidence"
+        ),
+        "unclear",
+        _business_driver_fallback_thesis_summary(
+            request=request,
+            summary=summary,
+            points=points,
         ),
     )
 

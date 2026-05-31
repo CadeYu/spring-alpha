@@ -916,6 +916,358 @@ def test_business_driver_reviewer_rewrites_template_thesis_headline() -> None:
     assert "52.0%" in thesis.summary
 
 
+def test_business_driver_template_headline_rewrites_even_when_summary_is_long() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "NVDA",
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "NVIDIA Corporation",
+                    "market_sector": "Technology",
+                    "market_industry": "Semiconductors",
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 81615000000,
+                            "unit": "USD",
+                            "period": "FY2027-Q1",
+                        },
+                        {
+                            "name": "gross margin",
+                            "value": 0.7493,
+                            "unit": "pure",
+                            "period": "FY2027-Q1",
+                        },
+                        {
+                            "name": "operating margin",
+                            "value": 0.6557,
+                            "unit": "pure",
+                            "period": "FY2027-Q1",
+                        },
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 81615000000,
+                        "unit": "USD",
+                        "fact_period": "FY2027-Q1",
+                        "source": "preloaded_financial_facts",
+                    },
+                    {
+                        "metric": "gross margin",
+                        "value": 0.7493,
+                        "unit": "pure",
+                        "fact_period": "FY2027-Q1",
+                        "source": "preloaded_financial_facts",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "业务驱动证据优先结论",
+                "durability": "mixed",
+                "summary": (
+                    "NVDA 的证据收集已完成，当前报告先以已验证的 SEC 指标和 filing "
+                    "片段形成保守结论；这份结论应视为证据优先版本，后续需要继续观察。"
+                ),
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "收入桥接基于收入规模和利润率锚点，投资者需要观察增长是否延续。",
+                    "citation_status": "partial",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "分部动能需要结合产品线暴露和数据中心需求来判断。",
+                    "citation_status": "partial",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "利润率与组合决定收入能否转化为经营杠杆。",
+                    "citation_status": "partial",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "需求信号需要和收入增长、客户场景交叉验证。",
+                    "citation_status": "partial",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    thesis = report.task_sections.driver_thesis
+    serialized = report.model_dump_json()
+    assert thesis.headline != "业务驱动证据优先结论"
+    assert "NVIDIA" in thesis.headline or "NVIDIA" in thesis.summary
+    assert "$81.6B" in thesis.summary
+    assert "74.9%" in thesis.summary
+    assert "业务驱动证据优先结论" not in serialized
+
+
+def test_business_driver_zh_backfill_never_uses_english_available_placeholders() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "JPM",
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "JPMorgan Chase & Co.",
+                    "market_sector": "Financial Services",
+                    "market_industry": "Banks - Diversified",
+                },
+                source_refs=[],
+                metric_evidence=[],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "No evidence for this lens.",
+                "durability": "unclear",
+                "summary": "证据不足，无法判断。",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "No evidence for this lens.",
+                    "citation_status": "missing",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "No evidence for this lens.",
+                    "citation_status": "missing",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "No evidence for this lens.",
+                    "citation_status": "missing",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "No evidence for this lens.",
+                    "citation_status": "missing",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    assert "the available" not in serialized
+    assert "available revenue" not in serialized
+    assert "available margin" not in serialized
+    assert "可用收入数据" in serialized
+    assert "可用利润率" in serialized
+    assert "无法判断" not in serialized
+
+
+def test_latest_earnings_rewrites_weak_evidence_phrasing_in_extended_sections() -> None:
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        _make_state(language="zh").model_copy(
+            update={
+                "ticker": "V",
+                "task_type": ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "evidence_memory": EvidenceMemory(
+                    metric_evidence=[
+                        {
+                            "source": "preloaded_financial_facts",
+                            "metric": "revenue",
+                            "value": 11230000000,
+                            "unit": "USD",
+                            "fact_period": "FY2026-Q2",
+                            "source_id": "src_revenue",
+                        },
+                        {
+                            "source": "preloaded_financial_facts",
+                            "metric": "gross margin",
+                            "value": 0.813,
+                            "unit": "pure",
+                            "fact_period": "FY2026-Q2",
+                            "source_id": "src_margin",
+                        },
+                    ],
+                    source_refs=[
+                        {
+                            "source_id": "src_revenue",
+                            "section": "yfinance structured snapshot",
+                            "snippet": "Revenue was $11.2B.",
+                            "citation_status": "supported",
+                        },
+                        {
+                            "source_id": "src_margin",
+                            "section": "yfinance structured snapshot",
+                            "snippet": "Gross margin was 81.3%.",
+                            "citation_status": "supported",
+                        },
+                    ],
+                ),
+            }
+        ),
+        {
+            "company_profile": {
+                "summary": "Visa 是全球支付技术公司。",
+                "source_ids": ["src_revenue"],
+                "citation_status": "supported",
+            },
+            "topline_verdict": {
+                "headline": "Visa FY2026 Q2 财报呈现强劲增长。",
+                "summary": "Visa FY2026 Q2 营收和利润率均保持强劲。",
+                "verdict": "positive",
+                "confidence": "medium",
+            },
+            "key_takeaways": [
+                {
+                    "title": "增长",
+                    "summary": "Revenue 为 $11.2B，说明支付网络仍有规模动能。",
+                    "source_ids": ["src_revenue"],
+                    "citation_status": "supported",
+                }
+            ],
+            "financial_dashboard": {
+                "metrics": [
+                    {
+                        "name": "Revenue",
+                        "value": "$11.2B",
+                        "period": "FY2026-Q2",
+                        "interpretation": "收入规模是增长质量锚点。",
+                        "source_ids": ["src_revenue"],
+                        "citation_status": "supported",
+                    }
+                ],
+                "chart_focus": ["revenue"],
+            },
+            "driver_snapshot": [
+                {
+                    "title": "支付量",
+                    "summary": "文件未披露具体支付量或跨境交易增速，无法判断是量价齐升。",
+                    "source_ids": ["src_revenue"],
+                    "citation_status": "partial",
+                }
+            ],
+            "risk_snapshot": [],
+            "quality_of_quarter": None,
+            "drivers_and_draggers": {
+                "drivers": [
+                    {
+                        "title": "支付量",
+                        "summary": "文件未披露具体支付量或跨境交易增速，无法判断是量价齐升。",
+                        "source_ids": ["src_revenue"],
+                        "citation_status": "partial",
+                    }
+                ],
+                "draggers": [],
+            },
+            "bull_bear_read": {
+                "bull_case": [
+                    {
+                        "title": "积极情景",
+                        "summary": "积极情景: 文件未披露具体支付量，无法判断是量价齐升。",
+                        "source_ids": ["src_revenue"],
+                        "citation_status": "partial",
+                    }
+                ],
+                "bear_case": [],
+                "balanced_read": None,
+            },
+            "watch_next": [],
+            "claims": [],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    assert "无法判断" not in serialized
+    assert "证据不足" not in serialized
+    assert "仍需用后续披露验证" in serialized
+
+
+def test_cash_flow_short_capital_allocation_points_are_expanded_from_metrics() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="CRM",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="CRM",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "operating cash flow", "value": 6710000000, "unit": "USD"},
+                    {"name": "capital expenditures", "value": 145000000, "unit": "USD"},
+                    {"name": "free cash flow", "value": 6565000000, "unit": "USD"},
+                    {"name": "current ratio", "value": 0.79, "unit": "x"},
+                    {"name": "total debt", "value": 10300000000, "unit": "USD"},
+                    {
+                        "name": "cash and short term investments",
+                        "value": 8940000000,
+                        "unit": "USD",
+                    },
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Structured yfinance cash flow metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "CRM 现金质量高。",
+            "earnings_backed_by_cash": "yes",
+            "summary": "CRM 自由现金流强劲。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {
+            "capex": [{"title": "资本支出", "summary": "资本支出"}],
+            "debt": [{"title": "总债务", "summary": "总债务"}],
+            "liquidity": [{"title": "流动比率", "summary": "流动比率"}],
+        },
+        "allocation_discipline": [],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+    points = [
+        *report.task_sections.capital_allocation.capex,
+        *report.task_sections.capital_allocation.debt,
+        *report.task_sections.capital_allocation.liquidity,
+    ]
+
+    assert points
+    assert all(len(point.summary) >= 35 for point in points)
+    serialized = report.model_dump_json()
+    assert '"summary":"资本支出"' not in serialized
+    assert '"summary":"总债务"' not in serialized
+    assert '"summary":"流动比率"' not in serialized
+    assert "$145.0M" in serialized
+    assert "$10.3B" in serialized
+    assert "0.79x" in serialized
+
+
 def test_chinese_company_profile_does_not_echo_raw_english_business_summary() -> None:
     state = _make_state(language="zh").model_copy(
         update={

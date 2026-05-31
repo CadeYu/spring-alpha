@@ -125,23 +125,23 @@ def business_driver_facts_backfill_summary(
     context: BusinessDriverFactsContext,
     language: str | None,
 ) -> str:
-    company = context.company or "the company"
-    profile = _business_driver_profile_hint(context, language)
-    revenue = context.revenue or "the available revenue base"
-    margin = (
-        context.gross_margin
-        or context.operating_margin
-        or context.net_margin
-        or context.operating_income
-        or "the available margin and profitability facts"
-    )
-    demand = (
-        context.demand_signal
-        or context.market_context
-        or profile
-        or "the available business profile"
-    )
     if _is_zh_locale(language):
+        company = context.company or "该公司"
+        profile = _business_driver_profile_hint(context, language)
+        revenue = context.revenue or "可用收入数据"
+        margin = (
+            context.gross_margin
+            or context.operating_margin
+            or context.net_margin
+            or context.operating_income
+            or "可用利润率和盈利数据"
+        )
+        demand = (
+            context.demand_signal
+            or context.market_context
+            or profile
+            or "可用业务画像"
+        )
         summaries = {
             "revenue_bridge": (
                 f"{company} 的收入桥接需要更多分部证据，但结构化 facts 已显示收入为 {revenue}。"
@@ -167,6 +167,22 @@ def business_driver_facts_backfill_summary(
         }
         return summaries[lens_name]
 
+    company = context.company or "the company"
+    profile = _business_driver_profile_hint(context, language)
+    revenue = context.revenue or "the available revenue base"
+    margin = (
+        context.gross_margin
+        or context.operating_margin
+        or context.net_margin
+        or context.operating_income
+        or "the available margin and profitability facts"
+    )
+    demand = (
+        context.demand_signal
+        or context.market_context
+        or profile
+        or "the available business profile"
+    )
     summaries = {
         "revenue_bridge": (
             f"{company}'s revenue bridge needs more segment evidence, but structured facts "
@@ -200,6 +216,26 @@ def business_driver_thesis_backfill(
     context: BusinessDriverFactsContext,
     language: str | None,
 ) -> tuple[str, str, str]:
+    if _is_zh_locale(language):
+        company = context.company or "该公司"
+        revenue = context.revenue or "可用收入数据"
+        margin = (
+            context.gross_margin
+            or context.operating_margin
+            or context.net_margin
+            or context.operating_income
+            or "可用利润率和盈利数据"
+        )
+        profile = _business_driver_profile_hint(context, language)
+        headline = f"{company} 业务驱动需要同时看收入与利润率"
+        summary = (
+            f"{company} 的业务驱动结论不能只依赖 RAG 命中的 segment 片段；"
+            f"结构化 facts 已提供收入 {revenue} 和利润率/盈利锚点 {margin}。"
+            f"{profile} 因此当前 thesis 应写成方向性判断：先用收入规模、业务暴露和利润率锚点"
+            "判断经营质量，再等待更细的分部收入、产品组合和需求指标验证。"
+        )
+        return headline, "mixed", summary
+
     company = context.company or "the company"
     revenue = context.revenue or "the available revenue base"
     margin = (
@@ -210,16 +246,6 @@ def business_driver_thesis_backfill(
         or "the available margin facts"
     )
     profile = _business_driver_profile_hint(context, language)
-    if _is_zh_locale(language):
-        headline = f"{company} 业务驱动需要同时看收入与利润率"
-        summary = (
-            f"{company} 的业务驱动结论不能只依赖 RAG 命中的 segment 片段；"
-            f"结构化 facts 已提供收入 {revenue} 和利润率/盈利锚点 {margin}。"
-            f"{profile} 因此当前 thesis 应写成方向性判断：先用收入规模、业务暴露和利润率锚点"
-            "判断经营质量，再等待更细的分部收入、产品组合和需求指标验证。"
-        )
-        return headline, "mixed", summary
-
     headline = f"{company} revenue and margin anchors drive the business read"
     summary = (
         f"{company}'s business-driver thesis should not depend only on retrieved segment "

@@ -339,6 +339,7 @@ def build_latest_earnings_report_from_payload(
         state,
         source_refs_by_id,
     )
+    _repair_latest_weak_evidence_phrasing(payload, request.language)
     quality_of_quarter = _quality_of_quarter_from_payload(
         payload.quality_of_quarter,
         source_refs_by_id,
@@ -1206,6 +1207,29 @@ def _sanitize_user_text(value: str) -> str:
     return text.strip()
 
 
+def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
+    text = str(value or "")
+    if not _is_zh_locale(language):
+        return text
+    replacements = (
+        (
+            re.compile(r"文件未披露([^。；;]*?)，无法判断([^。；;]*?)([。；;])"),
+            r"文件未披露\1，当前只能把\2作为待验证变量，仍需用后续披露验证\3",
+        ),
+        (
+            re.compile(r"证据不足，?无法判断[。；;]?"),
+            "现有证据只支持方向性判断，仍需用后续披露验证。",
+        ),
+        (
+            re.compile(r"无法判断([^。；;]*?)([。；;])"),
+            r"仍需用后续披露验证\1\2",
+        ),
+    )
+    for pattern, replacement in replacements:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def _rewrite_placeholder_availability_text(value: str) -> str:
     text = value
     replacements = (
@@ -1615,6 +1639,31 @@ def _normalize_cash_flow_payload(
         if key in normalized
     }
     return _sanitize_payload_user_text(normalized)
+
+
+def _repair_latest_weak_evidence_phrasing(
+    payload: _LatestEarningsSynthesis,
+    language: str | None,
+) -> None:
+    if not _is_zh_locale(language):
+        return
+    payload.topline_verdict.summary = _rewrite_weak_evidence_text(
+        payload.topline_verdict.summary,
+        language,
+    )
+    payload.topline_verdict.headline = _rewrite_weak_evidence_text(
+        payload.topline_verdict.headline,
+        language,
+    )
+    for point in [
+        *payload.key_takeaways,
+        *payload.driver_snapshot,
+        *payload.risk_snapshot,
+        *_quality_of_quarter_points(payload.quality_of_quarter),
+        *_drivers_and_draggers_points(payload.drivers_and_draggers),
+        *_bull_bear_read_points(payload.bull_bear_read),
+    ]:
+        point.summary = _rewrite_weak_evidence_text(point.summary, language)
 
 
 def _cash_quality_verdict_with_repair(
@@ -2273,10 +2322,33 @@ def _capital_allocation_with_fact_backfill(
         metrics,
         ("cash and short term investments", "cash and equivalents"),
     )
-    capex = list(capital_allocation.capex) if capex_metric is not None else []
-    debt = list(capital_allocation.debt) if debt_metric is not None else []
+    capex = (
+        _capital_points_or_empty(
+            capital_allocation.capex,
+            capex_metric,
+            language,
+            "capital expenditures",
+        )
+        if capex_metric is not None
+        else []
+    )
+    debt = (
+        _capital_points_or_empty(
+            capital_allocation.debt,
+            debt_metric,
+            language,
+            "total debt",
+        )
+        if debt_metric is not None
+        else []
+    )
     liquidity = (
-        list(capital_allocation.liquidity)
+        _capital_points_or_empty(
+            capital_allocation.liquidity,
+            current_ratio_metric or cash_metric,
+            language,
+            "liquidity",
+        )
         if current_ratio_metric is not None or cash_metric is not None
         else []
     )
@@ -2374,6 +2446,71 @@ def _capital_allocation_with_fact_backfill(
         dividends=capital_allocation.dividends,
         debt=debt,
         liquidity=liquidity,
+    )
+
+
+def _capital_points_or_empty(
+    points: list[_SynthesizedPoint],
+    metric: _SynthesizedMetric | None,
+    language: str | None,
+    metric_kind: str,
+) -> list[_SynthesizedPoint]:
+    if metric is None:
+        return []
+    return [
+        _expand_short_capital_point(point, metric, language, metric_kind)
+        for point in points
+    ]
+
+
+def _expand_short_capital_point(
+    point: _SynthesizedPoint,
+    metric: _SynthesizedMetric,
+    language: str | None,
+    metric_kind: str,
+) -> _SynthesizedPoint:
+    summary = " ".join(point.summary.split()).strip()
+    if len(summary) >= 35:
+        return point
+    is_zh = _is_zh_locale(language)
+    if is_zh:
+        if metric_kind == "capital expenditures":
+            expanded = (
+                f"{metric.name} 为 {metric.value}，这是再投资消耗现金的主要锚点；"
+                "投资者应观察它是否继续低于经营现金流。"
+            )
+        elif metric_kind == "total debt":
+            expanded = (
+                f"{metric.name} 为 {metric.value}，需要和经营现金流、自由现金流一起判断"
+                "资产负债表压力。"
+            )
+        else:
+            expanded = (
+                f"{metric.name} 为 {metric.value}，这是短期流动性和资本配置余地的关键锚点。"
+            )
+    elif metric_kind == "capital expenditures":
+        expanded = (
+            f"{metric.name} of {metric.value} is the main reinvestment use of cash; "
+            "investors should watch whether it remains below operating cash flow."
+        )
+    elif metric_kind == "total debt":
+        expanded = (
+            f"{metric.name} of {metric.value} should be read against operating cash flow "
+            "and free cash flow to judge balance sheet pressure."
+        )
+    else:
+        expanded = (
+            f"{metric.name} of {metric.value} is the key liquidity and capital allocation "
+            "capacity anchor."
+        )
+    return point.model_copy(
+        update={
+            "summary": expanded,
+            "source_ids": point.source_ids or metric.source_ids,
+            "citation_status": point.citation_status
+            if point.source_ids
+            else metric.citation_status,
+        }
     )
 
 
