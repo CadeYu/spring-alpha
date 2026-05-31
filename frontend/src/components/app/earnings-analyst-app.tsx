@@ -154,6 +154,7 @@ type AnalysisErrorState = {
 };
 
 type AnalysisRunPhase = "submitted" | "streaming" | "received" | "failed";
+type AgentPipelinePhase = AnalysisRunPhase | "pending" | "queued";
 
 type AnalysisRunState = {
   ticker: string;
@@ -166,7 +167,7 @@ type AnalysisRunState = {
 type AgentPipelineRun = {
   taskId: ResearchTaskId;
   taskTitle: string;
-  phase: AnalysisRunPhase | "pending";
+  phase: AgentPipelinePhase;
   startedAt?: number;
   completedAt?: number;
 };
@@ -360,6 +361,7 @@ export default function EarningsAnalystApp({
   const analysisAbortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
   const anonymousTrialConsumedRef = useRef(false);
+  const activeTrialRunIdRef = useRef<string | null>(null);
   const handleSearchRef = useRef<((rawTicker?: string) => Promise<void>) | null>(
     null,
   );
@@ -402,6 +404,36 @@ export default function EarningsAnalystApp({
         ? "全部 Agent"
         : "All agents"
       : undefined;
+
+  const markPipelineTaskSubmitted = (taskId: ResearchTaskId, startedAt: number) => {
+    setPipelineRuns((current) =>
+      current.map((run) =>
+        run.taskId === taskId
+          ? { ...run, phase: "submitted", startedAt, completedAt: undefined }
+          : run,
+      ),
+    );
+  };
+
+  const completePipelineTask = (
+    taskId: ResearchTaskId,
+    taskResult: { phase: "received" | "failed"; error?: AnalysisErrorState },
+  ) => {
+    setPipelineRuns((current) =>
+      current.map((run) =>
+        run.taskId === taskId
+          ? {
+              ...run,
+              phase: taskResult.phase,
+              completedAt: Date.now(),
+            }
+          : run,
+      ),
+    );
+    if (taskResult.phase === "failed" && taskResult.error) {
+      setError(taskResult.error);
+    }
+  };
 
   useEffect(() => {
     window.localStorage.setItem(APP_LOCALE_STORAGE_KEY, lang);
@@ -510,6 +542,7 @@ export default function EarningsAnalystApp({
 
     anonymousTrialConsumedRef.current = false;
     const trialRunId = anonymousTrialAvailable ? createClientUuid() : null;
+    activeTrialRunIdRef.current = trialRunId;
 
     const requestId = Date.now();
     requestIdRef.current = requestId;
@@ -527,7 +560,10 @@ export default function EarningsAnalystApp({
     const initialPipelineRuns = RESEARCH_TASKS.map((task) => ({
       taskId: task.id,
       taskTitle: isZh ? task.titleZh : task.title,
-      phase: "pending" as const,
+      phase:
+        task.id === "latest_earnings_readout"
+          ? ("pending" as const)
+          : ("queued" as const),
     }));
     setPipelineRuns(initialPipelineRuns);
     setRunState({
@@ -540,99 +576,31 @@ export default function EarningsAnalystApp({
     setRunNow(startedAt);
 
     try {
-      const taskPromises = RESEARCH_TASKS.map(async (task) => {
-        if (requestIdRef.current !== requestId || controller.signal.aborted) {
-          return { phase: "failed" as const };
-        }
-
-        const taskStartedAt = Date.now();
-        setPipelineRuns((current) =>
-          current.map((run) =>
-            run.taskId === task.id
-              ? { ...run, phase: "submitted", startedAt: taskStartedAt }
-              : run,
-          ),
-        );
-
-        try {
-          const taskResult = await runResearchTask({
-            taskId: task.id,
-            requestId,
-            submittedTicker,
-            runtimeProviderKey,
-            anonymousTrialMode: anonymousTrialAvailable,
-            trialRunId,
-            controller,
-          });
-
-          if (requestIdRef.current !== requestId || controller.signal.aborted) {
-            return taskResult;
-          }
-
-          setPipelineRuns((current) =>
-            current.map((run) =>
-              run.taskId === task.id
-                ? {
-                    ...run,
-                    phase: taskResult.phase,
-                    completedAt: Date.now(),
-                  }
-                : run,
-            ),
-          );
-
-          if (taskResult.phase === "failed" && taskResult.error) {
-            setError(taskResult.error);
-          }
-
-          return taskResult;
-        } catch (error) {
-          if (requestIdRef.current !== requestId || controller.signal.aborted) {
-            return { phase: "failed" as const };
-          }
-
-          console.error("Fetch Error:", error);
-          const normalizedError = normalizeAnalysisError(error);
-          setPipelineRuns((current) =>
-            current.map((run) =>
-              run.taskId === task.id
-                ? {
-                    ...run,
-                    phase: "failed",
-                    completedAt: Date.now(),
-                  }
-                : run,
-            ),
-          );
-          setError(normalizedError);
-          return { phase: "failed" as const, error: normalizedError };
-        }
-      });
-
-      const settledResults = await Promise.allSettled(taskPromises);
       if (requestIdRef.current !== requestId || controller.signal.aborted) {
         return;
       }
 
-      const hasReceivedReport = settledResults.some(
-        (result) =>
-          result.status === "fulfilled" && result.value.phase === "received",
-      );
-      const hasFailure = settledResults.some(
-        (result) =>
-          result.status === "rejected" ||
-          (result.status === "fulfilled" && result.value.phase === "failed"),
-      );
+      const latestTask = RESEARCH_TASKS[0];
+      markPipelineTaskSubmitted(latestTask.id, Date.now());
+      const latestResult = await runResearchTask({
+        taskId: latestTask.id,
+        requestId,
+        submittedTicker,
+        runtimeProviderKey,
+        anonymousTrialMode: anonymousTrialAvailable,
+        trialRunId,
+        controller,
+      });
+      if (requestIdRef.current !== requestId || controller.signal.aborted) {
+        return;
+      }
+      completePipelineTask(latestTask.id, latestResult);
 
       setRunState((current) =>
         current && current.ticker === submittedTicker
           ? {
               ...current,
-              phase: hasFailure
-                ? "failed"
-                : hasReceivedReport
-                  ? "received"
-                  : current.phase,
+              phase: latestResult.phase,
             }
           : current,
       );
@@ -850,6 +818,92 @@ export default function EarningsAnalystApp({
       [taskId]: report,
     }));
     return { phase: "received" };
+  };
+
+  const runDeferredResearchTask = async (taskId: ResearchTaskId) => {
+    if (!activeTicker || reportsByTask[taskId]) {
+      return;
+    }
+    const existingRun = pipelineRuns.find((run) => run.taskId === taskId);
+    if (
+      existingRun?.phase === "submitted" ||
+      existingRun?.phase === "streaming" ||
+      existingRun?.phase === "received"
+    ) {
+      return;
+    }
+
+    const savedProviderKey =
+      providerApiKey.trim() ||
+      window.localStorage.getItem(selectedProvider.storageKey)?.trim() ||
+      "";
+    const runtimeProviderKey = isAuthenticated ? savedProviderKey : "";
+    const anonymousTrialMode = runtimeProviderKey.length === 0;
+    const canContinueActiveTrial =
+      anonymousTrialMode && activeTrialRunIdRef.current !== null;
+    if (!runtimeProviderKey && isAuthenticated) {
+      setError({
+        message: isZh
+          ? `请先保存你自己的 ${selectedProvider.name} API Key。`
+          : `${selectedProvider.name} requires your own saved API key after sign in.`,
+        code: "PROVIDER_KEY_REQUIRED",
+        source: "auth",
+      });
+      return;
+    }
+    if (
+      !runtimeProviderKey &&
+      trialStatus === "trial_exhausted" &&
+      !canContinueActiveTrial
+    ) {
+      setError({
+        message: isZh
+          ? "匿名试用已经用完，请使用 Google 登录并保存你自己的 API Key。"
+          : "Your anonymous trial is over. Sign in with Google and save your own API key to continue.",
+        code: "TRIAL_EXHAUSTED",
+        source: "trial",
+      });
+      return;
+    }
+
+    const requestId = requestIdRef.current;
+    const controller = analysisAbortRef.current ?? new AbortController();
+    if (!analysisAbortRef.current) {
+      analysisAbortRef.current = controller;
+    }
+    markPipelineTaskSubmitted(taskId, Date.now());
+    setError(null);
+    try {
+      const taskResult = await runResearchTask({
+        taskId,
+        requestId,
+        submittedTicker: activeTicker,
+        runtimeProviderKey,
+        anonymousTrialMode,
+        trialRunId: activeTrialRunIdRef.current,
+        controller,
+      });
+      if (requestIdRef.current !== requestId || controller.signal.aborted) {
+        return;
+      }
+      completePipelineTask(taskId, taskResult);
+    } catch (error) {
+      if (requestIdRef.current !== requestId || controller.signal.aborted) {
+        return;
+      }
+      console.error("Fetch Error:", error);
+      completePipelineTask(taskId, {
+        phase: "failed",
+        error: normalizeAnalysisError(error),
+      });
+    }
+  };
+
+  const selectReportTask = (taskId: ResearchTaskId | null) => {
+    setActiveReportTaskId(taskId);
+    if (taskId && !reportsByTask[taskId]) {
+      void runDeferredResearchTask(taskId);
+    }
   };
 
   useEffect(() => {
@@ -1178,7 +1232,7 @@ export default function EarningsAnalystApp({
             runs={pipelineRuns}
             reportsByTask={reportsByTask}
             activeTaskId={activeReportTaskId}
-            onSelectTask={setActiveReportTaskId}
+            onSelectTask={selectReportTask}
             isZh={isZh}
             timelineMetadata={timelineMetadata}
             timelineTaskTitle={timelineTaskTitle}
@@ -1449,8 +1503,8 @@ function AgentPipelinePanel({
             </p>
             <p className="text-sm text-slate-300">
               {isZh
-                ? "一次提交，三个研究 Agent 按顺序生成报告。"
-                : "One submission runs all three research agents in order."}
+                ? "先生成最新财报速读，其他 Agent 点击后按需生成。"
+                : "Latest earnings runs first; deeper agents start when selected."}
             </p>
           </div>
         </div>
@@ -1564,6 +1618,7 @@ function agentPipelinePhaseLabel(
   if (phase === "streaming") return isZh ? "生成中" : "generating";
   if (phase === "submitted") return isZh ? "已提交" : "submitted";
   if (phase === "failed") return isZh ? "失败" : "failed";
+  if (phase === "queued") return isZh ? "点击生成" : "select to run";
   return isZh ? "等待中" : "pending";
 }
 

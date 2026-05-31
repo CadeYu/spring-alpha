@@ -38,8 +38,27 @@ type ProviderJsonResponse = {
   }>;
 };
 
+type ClientEvidenceSnippet = {
+  id: string;
+  source: "sec_filing";
+  text: string;
+  score: number;
+  matchedTerms: string[];
+};
+
+type ClientEvidencePack = {
+  ticker: string;
+  taskType: ResearchTaskType;
+  retrievalMode: "client_lexical";
+  snippets: ClientEvidenceSnippet[];
+  omittedFilingChars: number;
+  note?: string;
+};
+
 const BYOK_PROVIDER_MAX_TOKENS = 3600;
 const BYOK_PROVIDER_JSON_RETRY_MAX_TOKENS = 4200;
+const BYOK_EVIDENCE_SNIPPET_LIMIT = 10;
+const BYOK_EVIDENCE_SNIPPET_MAX_CHARS = 360;
 
 export async function runClientByokAnalysis({
   ticker,
@@ -55,12 +74,17 @@ export async function runClientByokAnalysis({
     fetchFinancialFacts(normalizedTicker, signal),
     fetchFilingText(normalizedTicker, signal),
   ]);
+  const evidencePack = buildTaskEvidencePack({
+    ticker: normalizedTicker,
+    taskId,
+    filingText,
+  });
   const prompt = buildClientSynthesisPrompt({
     ticker: normalizedTicker,
     taskId,
     lang,
     facts,
-    filingText,
+    evidencePack,
   });
   const payload = await completeProviderJson({
     provider,
@@ -97,7 +121,175 @@ async function fetchFilingText(ticker: string, signal?: AbortSignal) {
   if (!response.ok) {
     return "";
   }
-  return (await response.text()).slice(0, 36_000);
+  return await response.text();
+}
+
+function buildTaskEvidencePack({
+  ticker,
+  taskId,
+  filingText,
+}: {
+  ticker: string;
+  taskId: ResearchTaskType;
+  filingText: string;
+}): ClientEvidencePack {
+  const sentences = splitEvidenceSentences(filingText);
+  const terms = taskEvidenceTerms(taskId);
+  const ranked = sentences
+    .map((sentence, index) => {
+      const lower = sentence.toLowerCase();
+      const matchedTerms = terms.filter((term) => lower.includes(term));
+      const weightedScore = matchedTerms.reduce(
+        (total, term) => total + taskEvidenceTermWeight(taskId, term),
+        0,
+      );
+      const score =
+        weightedScore +
+        (/\$|\b\d+(?:\.\d+)?%?|\b20\d{2}\b/i.test(sentence) ? 3 : 0) +
+        (index < 30 ? 2 : 0);
+      return {
+        sentence,
+        score,
+        matchedTerms,
+        index,
+      };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, BYOK_EVIDENCE_SNIPPET_LIMIT);
+  const selected =
+    ranked.length > 0
+      ? ranked
+      : sentences.slice(0, 4).map((sentence, index) => ({
+          sentence,
+          score: 1,
+          matchedTerms: [],
+          index,
+        }));
+
+  return {
+    ticker,
+    taskType: taskId,
+    retrievalMode: "client_lexical",
+    snippets: selected.map((item, index) => ({
+      id: `client-${taskId}-${index + 1}`,
+      source: "sec_filing",
+      text: trimEvidenceSnippet(item.sentence),
+      score: item.score,
+      matchedTerms: item.matchedTerms.slice(0, 6),
+    })),
+    omittedFilingChars: Math.max(
+      0,
+      filingText.length -
+        selected.reduce((total, item) => total + item.sentence.length, 0),
+    ),
+    note:
+      selected.length === 0
+        ? "No filing text was available; rely on financial facts and state evidence limits."
+        : undefined,
+  };
+}
+
+function splitEvidenceSentences(text: string): string[] {
+  return text
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9$])/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 24)
+    .slice(0, 400);
+}
+
+function taskEvidenceTerms(taskId: ResearchTaskType): string[] {
+  if (taskId === "business_driver_deep_dive") {
+    return [
+      "revenue",
+      "sales",
+      "segment",
+      "product",
+      "service",
+      "demand",
+      "customer",
+      "growth",
+      "volume",
+      "pricing",
+      "margin",
+      "mix",
+      "backlog",
+      "market",
+    ];
+  }
+  if (taskId === "cash_flow_capital_allocation") {
+    return [
+      "cash flow",
+      "operating cash",
+      "free cash flow",
+      "capital expenditure",
+      "capital expenditures",
+      "capex",
+      "repurchase",
+      "buyback",
+      "dividend",
+      "debt",
+      "liquidity",
+      "cash and cash equivalents",
+      "financing",
+      "investing",
+    ];
+  }
+  return [
+    "revenue",
+    "net income",
+    "earnings",
+    "gross margin",
+    "operating margin",
+    "eps",
+    "diluted",
+    "quarter",
+    "year over year",
+    "growth",
+    "decline",
+    "guidance",
+    "outlook",
+    "risk",
+    "demand",
+    "cash flow",
+  ];
+}
+
+function taskEvidenceTermWeight(taskId: ResearchTaskType, term: string) {
+  const metricWeights: Partial<Record<string, number>> = {
+    revenue: 16,
+    "net income": 16,
+    earnings: 14,
+    "gross margin": 18,
+    "operating margin": 18,
+    eps: 14,
+    "cash flow": 14,
+    "free cash flow": 18,
+    "operating cash": 16,
+    "capital expenditure": 16,
+    "capital expenditures": 16,
+    capex: 16,
+    repurchase: 14,
+    buyback: 14,
+    dividend: 14,
+    debt: 12,
+    liquidity: 12,
+  };
+  if (metricWeights[term]) {
+    return metricWeights[term];
+  }
+  if (taskId === "latest_earnings_readout" && term === "risk") {
+    return 4;
+  }
+  return 10;
+}
+
+function trimEvidenceSnippet(sentence: string) {
+  if (sentence.length <= BYOK_EVIDENCE_SNIPPET_MAX_CHARS) {
+    return sentence;
+  }
+  return `${sentence.slice(0, BYOK_EVIDENCE_SNIPPET_MAX_CHARS - 1).trim()}…`;
 }
 
 function buildClientSynthesisPrompt({
@@ -105,13 +297,13 @@ function buildClientSynthesisPrompt({
   taskId,
   lang,
   facts,
-  filingText,
+  evidencePack,
 }: {
   ticker: string;
   taskId: ResearchTaskType;
   lang: "zh" | "en";
   facts: FinancialFacts;
-  filingText: string;
+  evidencePack: ClientEvidencePack;
 }) {
   const languageInstruction =
     lang === "zh"
@@ -129,7 +321,7 @@ function buildClientSynthesisPrompt({
     "Every point must be evidence-bound. Use concise but specific paragraphs, not generic filler.",
     "If a fact is missing, say it is not disclosed in the supplied evidence rather than inventing it.",
     `Financial facts JSON:\n${JSON.stringify(facts).slice(0, 12_000)}`,
-    `Filing excerpt:\n${filingText || "No filing excerpt was available."}`,
+    `Task-focused evidence pack:\n${JSON.stringify(evidencePack, null, 2)}`,
     taskSchemaInstruction(taskId),
   ].join("\n\n");
 }

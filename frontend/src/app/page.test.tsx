@@ -518,15 +518,11 @@ describe("Home page", () => {
       ),
     );
     await waitFor(() =>
-      expect(taskOrder).toEqual([
-        "latest_earnings_readout",
-        "business_driver_deep_dive",
-        "cash_flow_capital_allocation",
-      ]),
+      expect(taskOrder).toEqual(["latest_earnings_readout"]),
     );
   });
 
-  it("runs all three research agents sequentially from one ticker submission", async () => {
+  it("runs deeper research agents sequentially after their tabs are selected", async () => {
     const taskOrder: string[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -775,6 +771,7 @@ describe("Home page", () => {
         name: /cash flow & capital allocation/i,
       }),
     ).toBeInTheDocument();
+    openAgentReport(/cash flow & capital allocation/i);
     expect(
       await screen.findByText("Cash flow research agent failed: validation error"),
     ).toBeInTheDocument();
@@ -890,11 +887,7 @@ describe("Home page", () => {
     expect(chartTimeScaleMock.fitContent).not.toHaveBeenCalled();
 
     await waitFor(() =>
-      expect(taskOrder).toEqual([
-        "latest_earnings_readout",
-        "business_driver_deep_dive",
-        "cash_flow_capital_allocation",
-      ]),
+      expect(taskOrder).toEqual(["latest_earnings_readout"]),
     );
     expect(screen.getByText(/AAPL market chart/i)).toBeInTheDocument();
     expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
@@ -916,7 +909,8 @@ describe("Home page", () => {
     expect(screen.queryByText("Earnings agent verdict summary.")).not.toBeInTheDocument();
   });
 
-  it("renders the agent pipeline and submits all task types", async () => {
+  it("runs latest earnings first and starts deeper agents only when selected", async () => {
+    const requestedTaskTypes: string[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -926,9 +920,13 @@ describe("Home page", () => {
         });
       }
 
+      const taskType = new URL(`http://test${url}`).searchParams.get("taskType");
+      if (taskType) {
+        requestedTaskTypes.push(taskType);
+      }
       return createSseResponse([
         {
-          executiveSummary: "Business driver report.",
+          executiveSummary: `${taskType} report.`,
           companyName: "Apple Inc.",
           period: "Q1 2026",
           filingDate: "2026-02-01",
@@ -936,6 +934,39 @@ describe("Home page", () => {
           businessDrivers: [],
           riskFactors: [],
           citations: [],
+          taskSections:
+            taskType === "business_driver_deep_dive"
+              ? businessDriverTaskSections({
+                  thesisSummary: "Business driver on-demand summary.",
+                })
+              : taskType === "cash_flow_capital_allocation"
+                ? {
+                    schemaVersion: "task_sections.v1",
+                    taskType: "cash_flow_capital_allocation",
+                    coverage: {
+                      status: "complete",
+                      missingSections: [],
+                      evidenceCount: 1,
+                    },
+                    cashFlowCapitalAllocation: {
+                      cashQualityVerdict: {
+                        headline: "Cash flow on-demand verdict",
+                        earningsBackedByCash: "mixed",
+                        summary: "Cash flow on-demand summary.",
+                      },
+                      cashMetrics: [],
+                      capitalAllocation: {
+                        capex: [],
+                        buybacks: [],
+                        dividends: [],
+                        debt: [],
+                        liquidity: [],
+                      },
+                      allocationDiscipline: [],
+                      redFlags: [],
+                    },
+                  }
+                : latestTaskSections("Latest earnings first"),
           metadata: {
             modelName: "gpt-4o-mini",
             generatedAt: "2026-03-09T10:00:00",
@@ -962,18 +993,26 @@ describe("Home page", () => {
     expect(
       await screen.findByText("Apple Inc. · Q1 2026 · 2026-02-01"),
     ).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=business_driver_deep_dive",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=cash_flow_capital_allocation",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    expect(requestedTaskTypes).toEqual(["latest_earnings_readout"]);
+
+    openAgentReport(/business driver deep dive/i);
+
+    expect(
+      await screen.findByText("Business driver on-demand summary."),
+    ).toBeInTheDocument();
+    expect(requestedTaskTypes).toEqual([
+      "latest_earnings_readout",
+      "business_driver_deep_dive",
+    ]);
+
+    openAgentReport(/cash flow & capital allocation/i);
+
+    expect(await screen.findByText("Cash flow on-demand summary.")).toBeInTheDocument();
+    expect(requestedTaskTypes).toEqual([
+      "latest_earnings_readout",
+      "business_driver_deep_dive",
+      "cash_flow_capital_allocation",
+    ]);
   });
 
   it("shows ticker suggestions from the server ticker catalog", async () => {
@@ -1097,9 +1136,11 @@ describe("Home page", () => {
 
     openAgentReport(/business driver deep dive/i);
 
-    expect(
-      (await screen.findAllByText("Missing typed taskSections")).length,
-    ).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Missing typed taskSections").length,
+      ).toBeGreaterThan(0),
+    );
     expect(screen.getByText(/Business Driver Deep Dive report did not include/i)).toBeInTheDocument();
     expect(screen.queryByText("Business Driver Research View")).not.toBeInTheDocument();
     expect(screen.queryByTestId("business-drivers")).not.toBeInTheDocument();
@@ -1112,7 +1153,11 @@ describe("Home page", () => {
 
     openAgentReport(/cash flow & capital allocation/i);
 
-    expect(screen.getAllByText("Missing typed taskSections").length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Missing typed taskSections").length,
+      ).toBeGreaterThan(0),
+    );
     expect(screen.getByText(/Cash Flow & Capital Allocation report did not include/i)).toBeInTheDocument();
     expect(screen.queryByText("Capital Allocation View")).not.toBeInTheDocument();
     expect(screen.queryByTestId("business-drivers")).not.toBeInTheDocument();
@@ -1872,15 +1917,10 @@ describe("Home page", () => {
     render(<Home />);
     submitTicker();
 
-    await waitFor(() => {
-      expect(
-        fetchMock.mock.calls.filter(([input]) =>
-          String(input).includes("/api/sec/analyze/AAPL"),
-        ),
-      ).toHaveLength(3);
-    });
     expect(await screen.findByText("Earnings agent")).toBeInTheDocument();
+    openAgentReport(/business driver deep dive/i);
     expect(await screen.findByText("Business driver agent")).toBeInTheDocument();
+    openAgentReport(/cash flow & capital allocation/i);
     expect(await screen.findByText("Cash flow agent")).toBeInTheDocument();
   });
 
@@ -2083,13 +2123,13 @@ describe("Home page", () => {
     expect(screen.getByText("Retrieval Latency")).toBeInTheDocument();
     expect(screen.getByText("Empty Retrieval")).toBeInTheDocument();
     expect(screen.getByText("Evidence Pack Size")).toBeInTheDocument();
-    expect(screen.getByText("9")).toBeInTheDocument();
-    expect(screen.getByText("6")).toBeInTheDocument();
-    expect(screen.getByText("21")).toBeInTheDocument();
-    expect(screen.getByText("12")).toBeInTheDocument();
-    expect(screen.getByText("3.8s")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.getByText("1.3s")).toBeInTheDocument();
     expect(screen.getByText("No")).toBeInTheDocument();
-    expect(screen.getByText("18 KB")).toBeInTheDocument();
+    expect(screen.getByText("6 KB")).toBeInTheDocument();
     expect(screen.queryByText("Recall@5")).not.toBeInTheDocument();
     expect(screen.queryByText("Precision@5")).not.toBeInTheDocument();
     expect(screen.queryByText("Section Accuracy")).not.toBeInTheDocument();
@@ -2321,6 +2361,20 @@ describe("Home page", () => {
       analyzeCalls = fetchMock.mock.calls.filter(([input]) =>
         String(input).includes("/api/sec/analyze/AAPL"),
       );
+      expect(analyzeCalls).toHaveLength(1);
+    });
+    openAgentReport(/business driver deep dive/i);
+    await waitFor(() => {
+      analyzeCalls = fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("/api/sec/analyze/AAPL"),
+      );
+      expect(analyzeCalls).toHaveLength(2);
+    });
+    openAgentReport(/cash flow & capital allocation/i);
+    await waitFor(() => {
+      analyzeCalls = fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("/api/sec/analyze/AAPL"),
+      );
       expect(analyzeCalls).toHaveLength(3);
     });
     const trialRunIds = analyzeCalls.map(([, init]) =>
@@ -2333,7 +2387,7 @@ describe("Home page", () => {
     );
   });
 
-  it("starts all three research agent requests before the first one resolves", async () => {
+  it("keeps deeper research requests queued until their tabs are selected", async () => {
     const deferredResponses = [
       createDeferredResponse(),
       createDeferredResponse(),
@@ -2369,7 +2423,7 @@ describe("Home page", () => {
       const analyzeCalls = fetchMock.mock.calls.filter(([input]) =>
         String(input).includes("/api/sec/analyze/AAPL"),
       );
-      expect(analyzeCalls).toHaveLength(3);
+      expect(analyzeCalls).toHaveLength(1);
     });
 
     deferredResponses[0].resolve(
@@ -2443,15 +2497,27 @@ describe("Home page", () => {
       ]),
     );
 
+    openAgentReport(/business driver deep dive|业务驱动深挖/i);
+    await waitFor(() => {
+      const analyzeCalls = fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("/api/sec/analyze/AAPL"),
+      );
+      expect(analyzeCalls).toHaveLength(2);
+    });
     openAgentReport(/latest earnings readout|最新财报速读/i);
     expect(await screen.findByText("Earnings agent verdict summary.")).toBeInTheDocument();
     expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
-
     openAgentReport(/business driver deep dive|业务驱动深挖/i);
     expect(await screen.findByText("Business driver agent summary.")).toBeInTheDocument();
     expect(screen.queryByText("Business driver agent thesis")).not.toBeInTheDocument();
 
     openAgentReport(/cash flow & capital allocation|现金流与资本配置/i);
+    await waitFor(() => {
+      const analyzeCalls = fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("/api/sec/analyze/AAPL"),
+      );
+      expect(analyzeCalls).toHaveLength(3);
+    });
     expect(await screen.findByText("Cash flow agent summary.")).toBeInTheDocument();
     expect(screen.queryByText("Cash flow agent verdict")).not.toBeInTheDocument();
   });
