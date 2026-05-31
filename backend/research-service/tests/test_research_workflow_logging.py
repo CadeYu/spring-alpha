@@ -517,6 +517,130 @@ def test_cash_flow_timeout_fallback_respects_chinese_locale() -> None:
     assert "观察下一季" in serialized
 
 
+def test_cash_flow_zh_fallback_localizes_metric_outlook_copy() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="JPM",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="JPM",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["cashQualityVerdict"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "yfinance",
+                    "metric": "net income",
+                    "value": 14640000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_income",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "operating cash flow",
+                    "value": -251800000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_ocf",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "free cash flow",
+                    "value": -211800000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_fcf",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "total debt",
+                    "value": 516812000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_debt",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "cash and short term investments",
+                    "value": 312100000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_cash",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_income",
+                    "section": "structured snapshot",
+                    "snippet": "Net income was $14.6B.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_ocf",
+                    "section": "structured cash flow",
+                    "snippet": "Operating cash flow was -$251.8B.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_fcf",
+                    "section": "structured cash flow",
+                    "snippet": "Free cash flow was -$211.8B.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_debt",
+                    "section": "structured balance sheet",
+                    "snippet": (
+                        "Structured yfinance facts reports total debt of "
+                        "516812000000.0 USD for latest_quarter filed 2026-05-01."
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_cash",
+                    "section": "structured balance sheet",
+                    "snippet": "Cash and short-term investments were $312.1B.",
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Cash flow agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    for leaked in [
+        "should be read as",
+        "operating cash flow",
+        "free cash flow",
+        "capital expenditures",
+        "current ratio",
+        "cash and short-term investments",
+        "Structured yfinance facts reports",
+        "latest_quarter",
+        "filed",
+    ]:
+        assert leaked not in serialized
+    assert "经营现金流" in serialized
+    assert "自由现金流" in serialized
+    assert "总债务" in serialized
+    assert "现金及短期投资" in serialized
+
+
 def test_latest_earnings_timeout_fallback_backfills_rich_memo_sections() -> None:
     request = AgentRequest(
         run_id="run_1",
@@ -759,7 +883,7 @@ def test_fallback_summary_hides_internal_missing_metric_markers() -> None:
     assert report is not None
     assert "Not extracted" not in report.sections["summary"]
     assert "未在当前证据包中稳定抽取" in report.sections["summary"]
-    assert "revenue: $111.2B" in report.sections["summary"]
+    assert "收入：$111.2B" in report.sections["summary"]
 
 
 def test_business_driver_timeout_fallback_uses_paragraph_sections() -> None:
@@ -922,17 +1046,104 @@ def test_business_driver_timeout_fallback_builds_distinct_evidence_paragraphs() 
     sections = report.task_sections
     assert sections.driver_thesis.summary.startswith("AMD 的业务驱动结论")
     assert sections.driver_map.revenue_bridge is not None
-    assert "revenue: $7.4B" in sections.driver_map.revenue_bridge.summary
-    assert "Revenue was $7.4B" in sections.driver_map.revenue_bridge.summary
+    assert "收入: $7.4B" in sections.driver_map.revenue_bridge.summary
+    assert "本季度收入为 $7.4B" in sections.driver_map.revenue_bridge.summary
     assert sections.driver_map.segment_momentum is not None
-    assert "Data Center segment" in sections.driver_map.segment_momentum.summary
+    assert "数据中心分部收入增长" in sections.driver_map.segment_momentum.summary
     assert sections.driver_map.margin_and_mix is not None
-    assert "Gross margin expanded" in sections.driver_map.margin_and_mix.summary
+    assert "产品组合改善推动毛利率扩张" in sections.driver_map.margin_and_mix.summary
     assert sections.driver_map.demand_signals is not None
-    assert "AI accelerators" in sections.driver_map.demand_signals.summary
+    assert "AI 加速器客户需求保持强劲" in sections.driver_map.demand_signals.summary
     serialized = report.model_dump_json()
     assert "not fully synthesized" not in serialized
     assert "final LLM" not in serialized
+
+
+def test_business_driver_zh_fallback_hides_lens_and_profile_internals() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="JPM",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="JPM",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["driverThesis"],
+        ),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "profile": {
+                    "company_name": "JPMORGAN CHASE & CO",
+                    "sector": "Financial Services",
+                    "industry": "Banks - Diversified",
+                    "security_type": "EQUITY",
+                    "business_summary": (
+                        "JPMorgan Chase & Co. operates as a bank and financial holding "
+                        "company in the United States and internationally."
+                    ),
+                }
+            },
+            metric_evidence=[
+                {
+                    "source": "yfinance",
+                    "metric": "net income",
+                    "value": 14640000000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q1",
+                    "source_id": "src_income",
+                }
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_profile",
+                    "section": "profile",
+                    "snippet": (
+                        "profile: company_name=JPMORGAN CHASE & CO, sector=Financial "
+                        "Services, industry=Banks - Diversified, security_type=EQUITY, "
+                        "business_summary=JPMorgan Chase & Co. operates as a bank and "
+                        "financial holding company in the United States."
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_income",
+                    "section": "structured snapshot",
+                    "snippet": "Net income was $14.6B.",
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Business driver agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    for leaked in [
+        "revenue bridge",
+        "segment momentum",
+        "margin and mix",
+        "demand signals",
+        "company_name=",
+        "business_summary=",
+        "security_type=",
+        "operates as a",
+    ]:
+        assert leaked not in serialized
+    assert "收入桥接" in serialized
+    assert "分部动能" in serialized
+    assert "利润率与组合" in serialized
+    assert "需求信号" in serialized
 
 
 def test_business_driver_timeout_with_evidence_returns_grounded_fallback(monkeypatch) -> None:
@@ -1236,7 +1447,7 @@ def test_business_driver_timeout_fallback_filters_footnote_and_table_of_contents
 
     assert report is not None
     serialized = report.model_dump_json()
-    assert "Wireless service revenue increased" in serialized
+    assert "无线服务收入增长" in serialized
     assert "Other revenue primarily includes" not in serialized
     assert "Table of Contents" not in serialized
     assert "| | |" not in serialized

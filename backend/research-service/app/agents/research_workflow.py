@@ -1,4 +1,5 @@
 import logging
+import re
 from time import perf_counter
 from typing import Any
 
@@ -16,6 +17,7 @@ from app.agents.report_synthesizer import (
     build_cash_flow_report_from_payload,
     build_latest_earnings_report_from_payload,
 )
+from app.agents.structured_facts import normalize_metric_name
 from app.contracts.agent import (
     AgentEvent,
     AgentPhase,
@@ -46,6 +48,78 @@ from app.contracts.report import (
 from app.contracts.research_task import ResearchTaskType
 
 logger = logging.getLogger("uvicorn.error")
+
+_ZH_METRIC_LABELS = {
+    "revenue": "收入",
+    "sales": "收入",
+    "net sales": "收入",
+    "gross margin": "毛利率",
+    "operating margin": "经营利润率",
+    "gross profit": "毛利润",
+    "operating income": "经营利润",
+    "net income": "净利润",
+    "operating cash flow": "经营现金流",
+    "free cash flow": "自由现金流",
+    "capital expenditures": "资本开支",
+    "current ratio": "流动比率",
+    "total debt": "总债务",
+    "cash and short term investments": "现金及短期投资",
+}
+
+_ZH_FALLBACK_TEXT_REPLACEMENTS = (
+    (
+        r"\bData Center segment revenue increased as EPYC demand improved\b",
+        "数据中心分部收入增长，EPYC 需求改善提供支撑",
+    ),
+    (
+        r"\bCustomer demand for AI accelerators remained strong\b",
+        "AI 加速器客户需求保持强劲",
+    ),
+    (
+        r"\bGross margin expanded because product mix improved\b",
+        "产品组合改善推动毛利率扩张",
+    ),
+    (
+        r"\bWireless service revenue increased as fixed wireless access and fiber broadband demand supported customer additions\b",
+        "无线服务收入增长，固定无线接入和光纤宽带需求支撑客户新增",
+    ),
+    (
+        r"\bRevenue was (?P<value>\$?-?\d+(?:\.\d+)?[BMK]?) in the quarter\b",
+        r"本季度收入为 \g<value>",
+    ),
+    (
+        r"\bNet income was (?P<value>\$?-?\d+(?:\.\d+)?[BMK]?)\b",
+        r"净利润为 \g<value>",
+    ),
+    (
+        r"\bOperating cash flow was (?P<value>-?\$?-?\d+(?:\.\d+)?[BMK]?)\b",
+        r"经营现金流为 \g<value>",
+    ),
+    (
+        r"\bFree cash flow was (?P<value>-?\$?-?\d+(?:\.\d+)?[BMK]?)\b",
+        r"自由现金流为 \g<value>",
+    ),
+    (
+        r"\bCash and short-term investments were (?P<value>\$?-?\d+(?:\.\d+)?[BMK]?)\b",
+        r"现金及短期投资为 \g<value>",
+    ),
+    (r"\brevenue bridge\b", "收入桥接"),
+    (r"\bsegment momentum\b", "分部动能"),
+    (r"\bmargin and mix\b", "利润率与组合"),
+    (r"\bdemand signals\b", "需求信号"),
+    (r"\bsource_ids\b", "证据来源"),
+    (r"\bfiling\b", "披露文件"),
+    (r"\bpartial\b", "阶段性"),
+    (r"\bprice\b", "价格"),
+    (r"\bcost\b", "成本"),
+    (r"\bmix\b", "组合"),
+    (r"\boperating cash flow\b", "经营现金流"),
+    (r"\bfree cash flow\b", "自由现金流"),
+    (r"\bcapital expenditures\b", "资本开支"),
+    (r"\bcurrent ratio\b", "流动比率"),
+    (r"\bcash and short-term investments\b", "现金及短期投资"),
+    (r"\bcash and short term investments\b", "现金及短期投资"),
+)
 
 
 class ResearchAgentWorkflow:
@@ -731,7 +805,11 @@ def _business_driver_fallback_lens_point(
     return EvidenceBoundPoint(
         title=title_zh if _is_zh_locale(request.language) else title_en,
         summary=summary,
-        evidence_refs=_business_driver_evidence_refs(metric, lens_refs),
+        evidence_refs=_business_driver_evidence_refs(
+            metric,
+            lens_refs,
+            zh=_is_zh_locale(request.language),
+        ),
         citation_status=citation_status,
     )
 
@@ -746,8 +824,8 @@ def _business_driver_fallback_lens_summary(
 ) -> str:
     zh = _is_zh_locale(request.language)
     metric_text = _display_metric(metric) if metric is not None else ""
-    source_text = _business_driver_source_text(source_refs)
-    signal_text = _business_driver_signal_text(signal_records)
+    source_text = _business_driver_source_text(source_refs, zh=zh)
+    signal_text = _business_driver_signal_text(signal_records, zh=zh)
     if lens in {"revenue_bridge", "margin_and_mix"}:
         evidence_text = source_text or signal_text or metric_text
     else:
@@ -756,31 +834,35 @@ def _business_driver_fallback_lens_summary(
     if zh:
         if lens == "revenue_bridge":
             anchor = (
-                f"以 {metric_text} 作为量化锚点" if metric_text else "主要依赖已检索的 filing 证据"
+                f"以 {_zh_fallback_text(metric_text)} 作为量化锚点"
+                if metric_text
+                else "主要依赖已检索的披露文件证据"
             )
             return (
-                f"{request.ticker} 的 revenue bridge {anchor}；对应证据显示：{evidence_text}。"
+                f"{request.ticker} 的收入桥接{anchor}；"
+                f"对应证据显示：{_zh_fallback_text(evidence_text)}。"
                 "这说明收入侧仍是判断业务动能的第一层证据，投资上需要继续和分部表现、利润率转化一起验证。"
-                "当前结论只限定在已检索证据内，不外推未被 source_ids 支持的需求叙事。"
+                "当前结论只限定在已检索证据内，不外推未被证据来源支持的需求叙事。"
             )
         if lens == "segment_momentum":
             return (
-                f"{request.ticker} 的 segment momentum 主要来自这条证据：{evidence_text}。"
+                f"{request.ticker} 的分部动能主要来自这条证据：{_zh_fallback_text(evidence_text)}。"
                 "如果分部或产品线层面的动能能和总收入同向，它会提高收入质量；如果只靠单一业务拉动，则后续季度需要验证可持续性。"
-                "这段判断优先使用 segment、product 或 geography 相关 filing 片段，"
+                "这段判断优先使用分部、产品或地区相关披露片段，"
                 "因此比通用宏观叙事更可追溯。"
             )
         if lens == "margin_and_mix":
-            anchor = f"量化锚点是 {metric_text}；" if metric_text else ""
+            anchor = f"量化锚点是 {_zh_fallback_text(metric_text)}；" if metric_text else ""
             return (
-                f"{request.ticker} 的 margin and mix 线索中，{anchor}关键证据是：{evidence_text}。"
+                f"{request.ticker} 的利润率与组合线索中，{anchor}"
+                f"关键证据是：{_zh_fallback_text(evidence_text)}。"
                 "这说明投资者不能只看收入方向，还要看产品组合、定价和成本是否把收入转成利润。"
-                "如果证据没有明确拆出 price、cost 和 mix，这里应保持 partial 结论。"
+                "如果证据没有明确拆出价格、成本和组合，这里应保持阶段性结论。"
             )
         return (
-            f"{request.ticker} 的 demand signals 来自：{evidence_text}。"
+            f"{request.ticker} 的需求信号来自：{_zh_fallback_text(evidence_text)}。"
             "这类信号能帮助判断收入是由真实客户需求、装机基础或订单动能驱动，还是仅由短期价格和渠道变化支撑。"
-            "在当前证据范围内，需求结论应和 revenue bridge 交叉验证，避免把单个片段解读成完整趋势。"
+            "在当前证据范围内，需求结论应和收入桥接交叉验证，避免把单个片段解读成完整趋势。"
         )
     if lens == "revenue_bridge":
         anchor = (
@@ -823,7 +905,8 @@ def _business_driver_fallback_thesis_summary(
     if _is_zh_locale(request.language):
         return (
             f"{request.ticker} 的业务驱动结论应以已检索证据为边界："
-            f"{summary} 四个核心观察分别是：{' '.join(snippets[:4])}"
+            f"{_zh_fallback_text(summary)} 四个核心观察分别是："
+            f"{_zh_fallback_text(' '.join(snippets[:4]))}"
         )
     return (
         f"{request.ticker}'s business driver thesis is bounded by the retrieved evidence: "
@@ -949,18 +1032,24 @@ def _dedupe_business_driver_refs(source_refs: list[SourceRef]) -> list[SourceRef
     return deduped[:3]
 
 
-def _business_driver_source_text(source_refs: list[SourceRef]) -> str:
+def _business_driver_source_text(source_refs: list[SourceRef], *, zh: bool = False) -> str:
     for source_ref in source_refs:
         if _is_clean_business_driver_source_ref(source_ref):
-            return _clip(source_ref.snippet, 220)
+            text = _zh_fallback_text(source_ref.snippet) if zh else source_ref.snippet
+            return _clip(text, 220)
     return ""
 
 
-def _business_driver_signal_text(signal_records: list[dict[str, Any]]) -> str:
+def _business_driver_signal_text(
+    signal_records: list[dict[str, Any]],
+    *,
+    zh: bool = False,
+) -> str:
     for record in signal_records:
         text = str(record.get("summary") or record.get("snippet") or "").strip()
         if text and not _is_noisy_business_driver_snippet(text):
-            return _clip(text, 220)
+            visible_text = _zh_fallback_text(text) if zh else text
+            return _clip(visible_text, 220)
     return ""
 
 
@@ -978,6 +1067,8 @@ def _business_driver_citation_status(
 def _business_driver_evidence_refs(
     metric: EvidenceBoundMetric | None,
     source_refs: list[SourceRef],
+    *,
+    zh: bool = False,
 ) -> list[EvidenceRef]:
     evidence_refs: list[EvidenceRef] = []
     seen: set[str] = set()
@@ -987,12 +1078,13 @@ def _business_driver_evidence_refs(
         key = evidence_ref.source_id or evidence_ref.excerpt
         if key and key not in seen:
             seen.add(key)
-            evidence_refs.append(evidence_ref)
+            evidence_refs.append(_zh_evidence_ref(evidence_ref) if zh else evidence_ref)
     for source_ref in source_refs:
         key = source_ref.source_id or source_ref.snippet
         if key and key not in seen:
             seen.add(key)
-            evidence_refs.append(_evidence_ref(source_ref))
+            evidence_ref = _evidence_ref(source_ref)
+            evidence_refs.append(_zh_evidence_ref(evidence_ref) if zh else evidence_ref)
     return evidence_refs[:3]
 
 
@@ -1201,6 +1293,11 @@ def _cash_flow_fallback_sections(
         ]
         if metric is not None
     ]
+    visible_cash_metrics = (
+        [_zh_metric_for_visible_report(metric) for metric in cash_metrics]
+        if is_zh
+        else cash_metrics
+    )
     cash_quality = _cash_quality_verdict(request, metric_map, summary)
     capex_point = _cash_flow_metric_point(
         metric_map,
@@ -1229,14 +1326,15 @@ def _cash_flow_fallback_sections(
     outlook = _fallback_point(
         _cash_flow_outlook_summary(request, metric_map, summary),
         source_refs,
-        title="Final analyst outlook",
+        title="最终现金流观察" if is_zh else "Final analyst outlook",
+        zh=is_zh,
     )
     return CashFlowCapitalAllocationSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
         coverage=coverage,
         cash_quality_verdict=cash_quality,
-        cash_metrics=cash_metrics[:7],
+        cash_metrics=visible_cash_metrics[:7],
         capital_allocation=CapitalAllocation(
             capex=[capex_point] if capex_point is not None else [],
             buybacks=[],
@@ -1361,11 +1459,16 @@ def _cash_flow_metric_point(
     return EvidenceBoundPoint(
         title=title,
         summary=(
-            f"{metric.name} 为 {metric.value}。{metric.interpretation or fallback_summary}"
+            f"{_zh_metric_name(metric.name)}为 {metric.value}。"
+            f"{_zh_fallback_text(metric.interpretation or fallback_summary)}"
             if zh
             else f"{metric.name} was {metric.value}. {metric.interpretation or fallback_summary}"
         ),
-        evidence_refs=metric.evidence_refs,
+        evidence_refs=(
+            [_zh_evidence_ref(evidence_ref) for evidence_ref in metric.evidence_refs]
+            if zh
+            else metric.evidence_refs
+        ),
         citation_status=metric.citation_status,
     )
 
@@ -1388,19 +1491,27 @@ def _cash_flow_liquidity_point(
     citation_status = CitationStatus.UNVERIFIED
     if current_ratio is not None:
         parts.append(
-            f"current ratio 为 {current_ratio.value}"
+            f"流动比率为 {current_ratio.value}"
             if zh
             else f"current ratio was {current_ratio.value}"
         )
-        evidence_refs.extend(current_ratio.evidence_refs)
+        evidence_refs.extend(
+            [_zh_evidence_ref(evidence_ref) for evidence_ref in current_ratio.evidence_refs]
+            if zh
+            else current_ratio.evidence_refs
+        )
         citation_status = current_ratio.citation_status
     if cash is not None:
         parts.append(
-            f"cash and short-term investments 为 {cash.value}"
+            f"现金及短期投资为 {cash.value}"
             if zh
             else f"cash and short-term investments were {cash.value}"
         )
-        evidence_refs.extend(cash.evidence_refs)
+        evidence_refs.extend(
+            [_zh_evidence_ref(evidence_ref) for evidence_ref in cash.evidence_refs]
+            if zh
+            else cash.evidence_refs
+        )
         citation_status = cash.citation_status
     if not parts and liquidity_refs:
         parts.append(_clip(liquidity_refs[0].snippet, 160))
@@ -1422,7 +1533,10 @@ def _cash_flow_liquidity_point(
             )
         ),
         evidence_refs=evidence_refs
-        or [_evidence_ref(source_ref) for source_ref in liquidity_refs[:2]],
+        or [
+            _zh_evidence_ref(_evidence_ref(source_ref)) if zh else _evidence_ref(source_ref)
+            for source_ref in liquidity_refs[:2]
+        ],
         citation_status=citation_status,
     )
 
@@ -1461,6 +1575,7 @@ def _cash_flow_red_flags(
                 ),
                 source_refs,
                 title="自由现金流为负" if zh else "Negative free cash flow",
+                zh=zh,
             )
         )
     if ocf is not None and capex is not None and capex > ocf > 0:
@@ -1476,6 +1591,7 @@ def _cash_flow_red_flags(
                 ),
                 source_refs,
                 title="资本开支高于经营现金流" if zh else "Capex exceeds operating cash flow",
+                zh=zh,
             )
         )
     return flags or [
@@ -1490,6 +1606,7 @@ def _cash_flow_red_flags(
             ),
             source_refs,
             title="观察下一季" if zh else "Watch next",
+            zh=zh,
         )
     ]
 
@@ -1503,7 +1620,18 @@ def _cash_flow_outlook_summary(
     fcf = _lookup_metric(metric_map, "free cash flow")
     capex = _lookup_metric(metric_map, "capital expenditures")
     if ocf is None and fcf is None and capex is None:
-        return fallback_summary
+        return _zh_fallback_text(fallback_summary) if _is_zh_locale(request.language) else fallback_summary
+    if _is_zh_locale(request.language):
+        pieces = [
+            f"{_zh_metric_name(metric.name)}为 {metric.value}"
+            for metric in [ocf, capex, fcf]
+            if metric is not None
+        ]
+        return (
+            f"{request.ticker} 的现金质量应围绕"
+            + "、".join(pieces)
+            + "判断。投资判断只有在经营现金流能够覆盖再投资、并维持自由现金流改善时才更可信。"
+        )
     pieces = [
         f"{metric.name} at {metric.value}" for metric in [ocf, capex, fcf] if metric is not None
     ]
@@ -1540,19 +1668,29 @@ def _fallback_summary(
     metrics: list[EvidenceBoundMetric],
     source_refs: list[SourceRef],
 ) -> str:
-    metric_text = ", ".join(_display_metric(metric) for metric in _present_metrics(metrics)[:3])
+    is_zh = _is_zh_locale(request.language)
+    metric_text = ", ".join(
+        (_zh_display_metric(metric) if is_zh else _display_metric(metric))
+        for metric in _present_metrics(metrics)[:3]
+    )
     missing_metrics = _missing_metric_names(metrics)
     missing_text = _missing_metric_boundary_text(
         missing_metrics,
-        zh=_is_zh_locale(request.language),
+        zh=is_zh,
     )
-    evidence_text = _clip(source_refs[0].snippet, 180) if source_refs else "evidence was collected"
+    evidence_text = (
+        _clip(_zh_fallback_text(source_refs[0].snippet), 180)
+        if is_zh and source_refs
+        else _clip(source_refs[0].snippet, 180)
+        if source_refs
+        else "evidence was collected"
+    )
     base = metric_text or evidence_text
-    if _is_zh_locale(request.language):
+    if is_zh:
         boundary = f"；{missing_text}" if missing_text else ""
         return (
             f"{request.ticker} 的证据收集已完成，"
-            "当前报告先以已验证的 SEC 指标和 filing 片段形成保守结论："
+            "当前报告先以已验证的 SEC 指标和披露片段形成保守结论："
             f"{base}{boundary}。这份结论应视为证据优先版本，后续需要继续观察同一指标在下一季度是否延续。"
         )
     boundary = f"; {missing_text}" if missing_text else ""
@@ -1570,15 +1708,21 @@ def _fallback_claims(
 ) -> list[EvidenceBoundClaim]:
     if not source_refs:
         return []
+    zh = _is_zh_locale(request.language)
+    visible_source_refs = (
+        [_zh_source_ref(source_ref) for source_ref in source_refs]
+        if zh
+        else source_refs
+    )
     claims = [
         EvidenceBoundClaim(
             claim_id=f"{request.run_id}:fallback_claim:1",
             text=summary,
-            citation_status=source_refs[0].citation_status,
-            source_refs=source_refs[:3],
+            citation_status=visible_source_refs[0].citation_status,
+            source_refs=visible_source_refs[:3],
         )
     ]
-    for index, source_ref in enumerate(source_refs[1:3], start=2):
+    for index, source_ref in enumerate(visible_source_refs[1:3], start=2):
         claims.append(
             EvidenceBoundClaim(
                 claim_id=f"{request.run_id}:fallback_claim:{index}",
@@ -1595,11 +1739,15 @@ def _fallback_point(
     source_refs: list[SourceRef],
     *,
     title: str = "Evidence-backed fallback",
+    zh: bool = False,
 ) -> EvidenceBoundPoint:
     return EvidenceBoundPoint(
         title=title,
         summary=summary,
-        evidence_refs=[_evidence_ref(source_ref) for source_ref in source_refs[:1]],
+        evidence_refs=[
+            _zh_evidence_ref(_evidence_ref(source_ref)) if zh else _evidence_ref(source_ref)
+            for source_ref in source_refs[:1]
+        ],
         citation_status=(
             source_refs[0].citation_status if source_refs else CitationStatus.UNVERIFIED
         ),
@@ -1613,6 +1761,22 @@ def _evidence_ref(source_ref: SourceRef) -> EvidenceRef:
         filing_date=source_ref.filing_date,
         accession_number=source_ref.accession_number,
         source_id=source_ref.source_id,
+    )
+
+
+def _zh_source_ref(source_ref: SourceRef) -> SourceRef:
+    return source_ref.model_copy(
+        update={
+            "snippet": _zh_fallback_text(source_ref.snippet),
+        }
+    )
+
+
+def _zh_evidence_ref(evidence_ref: EvidenceRef) -> EvidenceRef:
+    return evidence_ref.model_copy(
+        update={
+            "excerpt": _zh_fallback_text(evidence_ref.excerpt),
+        }
     )
 
 
@@ -1646,6 +1810,88 @@ def _metric_value(value: object, unit: object) -> str:
 
 def _display_metric(metric: EvidenceBoundMetric) -> str:
     return f"{metric.name}: {metric.value}"
+
+
+def _zh_display_metric(metric: EvidenceBoundMetric) -> str:
+    return f"{_zh_metric_name(metric.name)}：{metric.value}"
+
+
+def _zh_metric_name(metric_name: str) -> str:
+    normalized = normalize_metric_name(metric_name)
+    return _ZH_METRIC_LABELS.get(normalized, metric_name)
+
+
+def _zh_metric_for_visible_report(metric: EvidenceBoundMetric) -> EvidenceBoundMetric:
+    return metric.model_copy(
+        update={
+            "name": _zh_metric_name(metric.name),
+            "interpretation": _zh_fallback_text(metric.interpretation),
+            "evidence_refs": [_zh_evidence_ref(ref) for ref in metric.evidence_refs],
+        }
+    )
+
+
+def _zh_fallback_text(value: str) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if not text:
+        return text
+    text = _rewrite_profile_snippet_for_zh(text)
+    text = _rewrite_structured_metric_snippet_for_zh(text)
+    for pattern, replacement in _ZH_FALLBACK_TEXT_REPLACEMENTS:
+        text = re.sub(pattern, replacement, text, flags=re.I)
+    text = re.sub(r"\bnet income\b", "净利润", text, flags=re.I)
+    text = re.sub(r"\bgross margin\b", "毛利率", text, flags=re.I)
+    text = re.sub(r"\brevenue\b", "收入", text, flags=re.I)
+    text = re.sub(r"\bfiling\b", "披露文件", text, flags=re.I)
+    text = re.sub(r"\blatest quarter\b", "最近季度", text, flags=re.I)
+    text = re.sub(r"\bwas\b", "为", text, flags=re.I)
+    text = re.sub(r"\bwere\b", "为", text, flags=re.I)
+    text = re.sub(r"\s+([，。；：,.!?;:])", r"\1", text)
+    return text.strip()
+
+
+def _rewrite_profile_snippet_for_zh(text: str) -> str:
+    if "business_summary=" not in text and "company_name=" not in text:
+        return text
+    company = _profile_field(text, "company_name") or "公司"
+    sector = _profile_field(text, "sector")
+    industry = _profile_field(text, "industry")
+    parts = [f"{company} 的业务画像已收集"]
+    if sector or industry:
+        parts.append(
+            "行业暴露集中在"
+            + " / ".join(part for part in [sector, industry] if part)
+        )
+    return "，".join(parts) + "。"
+
+
+def _profile_field(text: str, field: str) -> str:
+    match = re.search(
+        rf"{re.escape(field)}=([^,。;；]+)",
+        text,
+        flags=re.I,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def _rewrite_structured_metric_snippet_for_zh(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        metric = _zh_metric_name(match.group("metric"))
+        value = _format_fallback_metric_value(float(match.group("value")), match.group("unit"))
+        if match.group("unit").upper() == "USD" and not value.startswith("$"):
+            value = f"${value}"
+        period = match.group("period").replace("_", " ").strip()
+        return f"{period} {metric}为 {value}。"
+
+    return re.sub(
+        r"Structured\s+yfinance\s+facts\s+reports\s+"
+        r"(?P<metric>[A-Za-z ]+?)\s+of\s+"
+        r"(?P<value>-?\d+(?:\.\d+)?)\s+(?P<unit>USD|pure|percent|percentage|x|ratio)"
+        r"\s+for\s+(?P<period>[^.。]+?)(?:\s+filed\s+[^.。]+)?(?:\.|。|$)",
+        replace,
+        text,
+        flags=re.I,
+    )
 
 
 def _present_metrics(metrics: list[EvidenceBoundMetric]) -> list[EvidenceBoundMetric]:
