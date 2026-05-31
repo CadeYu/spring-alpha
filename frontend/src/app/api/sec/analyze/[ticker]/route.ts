@@ -4,6 +4,8 @@ import { isResearchTaskId } from "@/lib/researchTasks";
 import { visitorCookieName } from "@/lib/auth";
 
 const ANALYSIS_PROXY_TIMEOUT_MS = 240_000;
+const INITIAL_FETCH_ATTEMPTS = 2;
+const INITIAL_FETCH_RETRY_DELAY_MS = 350;
 const VISITOR_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 const DEFAULT_LOCAL_BACKEND_URL = "http://127.0.0.1:8082";
 const DEFAULT_PROD_BACKEND_URL = "http://45.77.171.32";
@@ -58,7 +60,7 @@ export async function GET(
       once: true,
     });
 
-    const response = await fetch(backendUrl, {
+    const response = await fetchBackendEventStream(backendUrl, {
       headers: {
         Accept: "text/event-stream",
         "X-Auth-Mode": authMode,
@@ -170,4 +172,30 @@ function resolveBackendUrl() {
   }
 
   return DEFAULT_LOCAL_BACKEND_URL;
+}
+
+async function fetchBackendEventStream(
+  backendUrl: string,
+  init: RequestInit,
+) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= INITIAL_FETCH_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetch(backendUrl, init);
+    } catch (error) {
+      lastError = error;
+      if (
+        attempt >= INITIAL_FETCH_ATTEMPTS ||
+        (init.signal instanceof AbortSignal && init.signal.aborted)
+      ) {
+        break;
+      }
+      await delay(INITIAL_FETCH_RETRY_DELAY_MS);
+    }
+  }
+  throw lastError;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

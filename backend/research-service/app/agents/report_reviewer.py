@@ -44,6 +44,13 @@ _GENERIC_SUMMARY_PATTERNS = (
     r"\bneeds to be monitored\b",
 )
 
+_TEMPLATE_THESIS_HEADLINES = {
+    "结构化 facts 支撑方向性业务判断",
+    "业务驱动证据优先结论",
+    "structured facts support a directional business-driver read",
+    "evidence-backed business driver thesis",
+}
+
 _ALLOWED_UPPERCASE_TERMS = {
     "AI",
     "AMD",
@@ -85,6 +92,7 @@ def _review_driver_thesis(
 ) -> None:
     if not _needs_business_driver_rewrite(thesis.summary, language) and not (
         _needs_business_driver_rewrite(thesis.headline, language)
+        or _is_template_thesis_headline(thesis.headline)
     ):
         return
     headline, durability, summary = business_driver_thesis_backfill(context, language)
@@ -116,6 +124,11 @@ def _needs_business_driver_rewrite(text: str, language: str | None) -> bool:
     if not _has_investor_meaning(normalized, language):
         return True
     return False
+
+
+def _is_template_thesis_headline(value: str) -> bool:
+    normalized = " ".join(value.split()).strip().lower()
+    return normalized in _TEMPLATE_THESIS_HEADLINES
 
 
 def _reviewer_summary(

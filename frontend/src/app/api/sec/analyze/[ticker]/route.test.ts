@@ -155,4 +155,29 @@ describe("analysis SSE bridge", () => {
       }),
     );
   });
+
+  it("retries transient backend fetch failures before the SSE stream starts", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data:{}\n\n"));
+        controller.close();
+      },
+    });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(new Response(stream, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/sec/analyze/NKE?lang=zh&model=siliconflow&taskType=business_driver_deep_dive",
+      ),
+      { params: Promise.resolve({ ticker: "NKE" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toEqual(fetchMock.mock.calls[0][0]);
+  });
 });

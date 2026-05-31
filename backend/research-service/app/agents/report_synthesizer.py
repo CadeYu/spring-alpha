@@ -104,6 +104,31 @@ def _is_zh_locale(language: str | None) -> bool:
     return str(language or "").lower().startswith("zh")
 
 
+def _english_leak_score(text: str) -> int:
+    allowed_terms = {
+        "AI",
+        "AMD",
+        "API",
+        "CPU",
+        "CPUs",
+        "GPU",
+        "GPUs",
+        "KPI",
+        "KPIs",
+        "RAG",
+        "SEC",
+        "USD",
+    }
+    tokens = re.findall(r"[A-Za-z][A-Za-z\-]{2,}", text)
+    return len(
+        [
+            token
+            for token in tokens
+            if token not in allowed_terms and not token.isupper()
+        ]
+    )
+
+
 class _SynthesizedPoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -375,7 +400,20 @@ def build_latest_earnings_report_from_payload(
         watch_next,
         dashboard_metrics,
     )
-    company_profile = _company_profile_from_synthesis(payload, state, source_refs_by_id)
+    company_profile = _company_profile_from_synthesis(
+        payload,
+        state,
+        source_refs_by_id,
+        request.language,
+    )
+    payload.topline_verdict = _latest_topline_verdict_with_repair(
+        payload.topline_verdict,
+        key_takeaways,
+        driver_snapshot,
+        risk_snapshot,
+        dashboard_metrics,
+        request.language,
+    )
     task_sections = LatestEarningsSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
@@ -1295,6 +1333,75 @@ def _latest_earnings_report_summary(
     return _trim_sentence(rich_summary, max_chars=520)
 
 
+def _latest_topline_verdict_with_repair(
+    verdict: ToplineVerdict,
+    key_takeaways: list[EvidenceBoundPoint],
+    driver_snapshot: list[EvidenceBoundPoint],
+    risk_snapshot: list[EvidenceBoundPoint],
+    dashboard_metrics: list[EvidenceBoundMetric],
+    language: str | None,
+) -> ToplineVerdict:
+    if not _is_incomplete_latest_verdict_text(verdict.headline) and not (
+        _is_incomplete_latest_verdict_text(verdict.summary)
+        or _too_short_latest_summary(verdict.summary)
+    ):
+        return verdict
+    repaired_summary = _latest_earnings_report_summary(
+        "",
+        key_takeaways,
+        driver_snapshot,
+        risk_snapshot,
+        dashboard_metrics,
+    )
+    if not repaired_summary:
+        return verdict
+    repaired_headline = _latest_headline_from_repaired_summary(
+        repaired_summary,
+        language,
+    )
+    return ToplineVerdict(
+        headline=repaired_headline,
+        summary=repaired_summary,
+        verdict=verdict.verdict,
+        confidence=verdict.confidence,
+    )
+
+
+def _is_incomplete_latest_verdict_text(value: str) -> bool:
+    normalized = " ".join(str(value or "").split()).strip()
+    if not normalized:
+        return True
+    if normalized.endswith(("财报呈现", "财报呈现。")):
+        return True
+    return bool(re.fullmatch(r"[A-Z]{1,6}\s+FY\d{4}\s+Q\d\s*财报呈现。?", normalized))
+
+
+def _too_short_latest_summary(value: str) -> bool:
+    normalized = " ".join(str(value or "").split()).strip()
+    return len(normalized) < 36
+
+
+def _latest_headline_from_repaired_summary(
+    summary: str,
+    language: str | None,
+) -> str:
+    normalized = " ".join(summary.split()).strip()
+    if not normalized:
+        return (
+            "财报质量需要更多证据验证"
+            if _is_zh_locale(language)
+            else "Earnings quality needs evidence checks"
+        )
+    if _is_zh_locale(language):
+        first_boundary = min(
+            [index for index in (normalized.find("。"), normalized.find("；")) if index >= 0]
+            or [len(normalized)]
+        )
+        headline = normalized[:first_boundary].strip(" ：:，,。；;")
+        return _clip(headline, 54) or "财报质量需要更多证据验证"
+    return _complete_sentence_headline(normalized, max_chars=96)
+
+
 def _has_supplemental_point_text(point: dict[str, object]) -> bool:
     return any(
         str(point.get(key) or "").strip()
@@ -1359,11 +1466,17 @@ def build_cash_flow_report_from_payload(
         cash_metrics,
         request.language,
     )
+    cash_quality_verdict = _cash_quality_verdict_with_repair(
+        payload.cash_quality_verdict,
+        cash_metrics,
+        state.ticker,
+        request.language,
+    )
     task_sections = CashFlowCapitalAllocationSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
         coverage=_cash_flow_coverage(payload, source_refs),
-        cash_quality_verdict=payload.cash_quality_verdict,
+        cash_quality_verdict=cash_quality_verdict,
         cash_metrics=[
             _metric_with_evidence_guardrail(metric, state, source_refs_by_id, request.language)
             for metric in cash_metrics
@@ -1398,7 +1511,7 @@ def build_cash_flow_report_from_payload(
         ticker=state.ticker,
         task_type=request.task_type,
         task_sections=task_sections,
-        sections={"summary": payload.cash_quality_verdict.summary, "synthesis": "llm"},
+        sections={"summary": cash_quality_verdict.summary, "synthesis": "llm"},
         claims=_claims_from_payload(request, payload.claims, source_refs, source_refs_by_id),
         retrieval_records=state.retrieval_records,
     )
@@ -1502,6 +1615,124 @@ def _normalize_cash_flow_payload(
         if key in normalized
     }
     return _sanitize_payload_user_text(normalized)
+
+
+def _cash_quality_verdict_with_repair(
+    verdict: CashQualityVerdict,
+    cash_metrics: list[_SynthesizedMetric],
+    ticker: str,
+    language: str | None,
+) -> CashQualityVerdict:
+    if not _needs_cash_quality_repair(verdict, language):
+        return verdict
+    return CashQualityVerdict(
+        headline=_cash_quality_repaired_headline(verdict, language),
+        earnings_backed_by_cash=verdict.earnings_backed_by_cash,
+        summary=_cash_quality_repaired_summary(verdict, cash_metrics, ticker, language),
+    )
+
+
+def _needs_cash_quality_repair(
+    verdict: CashQualityVerdict,
+    language: str | None,
+) -> bool:
+    headline = " ".join(verdict.headline.split()).strip()
+    summary = " ".join(verdict.summary.split()).strip()
+    if _is_zh_locale(language) and headline in {
+        "盈利有现金生成支撑。",
+        "盈利有现金生成支撑",
+    }:
+        return True
+    if len(summary) < 70:
+        return True
+    return False
+
+
+def _cash_quality_repaired_headline(
+    verdict: CashQualityVerdict,
+    language: str | None,
+) -> str:
+    if _is_zh_locale(language):
+        if verdict.earnings_backed_by_cash == "yes":
+            return "现金流对盈利形成支撑，但仍需检验再投资后弹性。"
+        if verdict.earnings_backed_by_cash == "mixed":
+            return "现金流质量呈现混合信号。"
+        if verdict.earnings_backed_by_cash == "no":
+            return "盈利质量缺少现金流支撑。"
+        return "现金质量仍需要更多证据验证。"
+    if verdict.earnings_backed_by_cash == "yes":
+        return "Cash flow supports earnings, with reinvestment still worth checking."
+    if verdict.earnings_backed_by_cash == "mixed":
+        return "Cash-flow quality is mixed."
+    if verdict.earnings_backed_by_cash == "no":
+        return "Earnings lack cash-flow support."
+    return "Cash quality still needs more evidence."
+
+
+def _cash_quality_repaired_summary(
+    verdict: CashQualityVerdict,
+    cash_metrics: list[_SynthesizedMetric],
+    ticker: str,
+    language: str | None,
+) -> str:
+    metric_text = _cash_metric_summary_text(cash_metrics, language)
+    if _is_zh_locale(language):
+        if verdict.earnings_backed_by_cash == "yes":
+            return (
+                f"{ticker} 的现金质量结论不能只停留在“经营现金流和自由现金流为正”。"
+                f"{metric_text} 这说明盈利至少有现金生成验证，投资上更重要的是观察"
+                "经营现金流能否持续覆盖资本开支、回购、分红和债务需求。若下一季自由现金流"
+                "仍保持为正，资本配置弹性会更可信；若现金流回落，则当前结论需要降级。"
+            )
+        if verdict.earnings_backed_by_cash == "mixed":
+            return (
+                f"{ticker} 的现金质量呈现混合信号。{metric_text} 投资上应把经营现金流、"
+                "自由现金流和资本开支放在一起判断，避免只看单一现金指标。"
+            )
+        return (
+            f"{ticker} 的现金质量仍需要更多验证。{metric_text} 投资上应继续观察现金流"
+            "是否能覆盖再投资和资本回报需求。"
+        )
+    if verdict.earnings_backed_by_cash == "yes":
+        return (
+            f"{ticker}'s cash-quality read should go beyond saying operating cash flow and "
+            f"free cash flow were positive. {metric_text} This supports earnings quality, "
+            "but investors still need to watch whether operating cash flow can keep funding "
+            "capex, buybacks, dividends, and debt needs after reinvestment."
+        )
+    if verdict.earnings_backed_by_cash == "mixed":
+        return (
+            f"{ticker}'s cash-quality read is mixed. {metric_text} Investors should judge "
+            "operating cash flow, free cash flow, and capex together instead of relying on "
+            "one cash metric."
+        )
+    return (
+        f"{ticker}'s cash quality still needs more evidence. {metric_text} Investors should "
+        "watch whether cash generation can fund reinvestment and capital returns."
+    )
+
+
+def _cash_metric_summary_text(
+    cash_metrics: list[_SynthesizedMetric],
+    language: str | None,
+) -> str:
+    metrics = [
+        metric
+        for metric in cash_metrics
+        if _normalize_metric_name(metric.name)
+        in {
+            "operating cash flow",
+            "free cash flow",
+            "capital expenditures",
+            "net income",
+        }
+    ][:4]
+    if not metrics:
+        return "关键现金流 KPI 已收集。" if _is_zh_locale(language) else "Cash-flow KPIs were collected."
+    pieces = [f"{metric.name}={metric.value}" for metric in metrics]
+    if _is_zh_locale(language):
+        return "关键 KPI 包括 " + "，".join(pieces) + "。"
+    return "Key KPIs include " + ", ".join(pieces) + "."
 
 
 def _normalize_capital_allocation(value: dict[str, object]) -> dict[str, object]:
@@ -3432,9 +3663,14 @@ def _latest_coverage(
 def _company_profile_from_payload(
     profile: _SynthesizedCompanyProfile,
     source_refs_by_id: dict[str, SourceRef],
+    state: AgentState,
+    language: str | None,
 ) -> CompanyProfileSection:
+    summary = _concise_company_profile(profile.summary)
+    if _is_zh_locale(language) and _english_leak_score(summary) >= 4:
+        summary = _zh_company_profile_summary(state, profile.summary)
     return CompanyProfileSection(
-        summary=_concise_company_profile(profile.summary),
+        summary=summary,
         evidence_refs=[
             _evidence_ref(source_refs_by_id[source_id]) for source_id in profile.source_ids
         ],
@@ -3446,12 +3682,20 @@ def _company_profile_from_synthesis(
     payload: _LatestEarningsSynthesis,
     state: AgentState,
     source_refs_by_id: dict[str, SourceRef],
+    language: str | None,
 ) -> CompanyProfileSection | None:
     if payload.company_profile is not None:
-        return _company_profile_from_payload(payload.company_profile, source_refs_by_id)
+        return _company_profile_from_payload(
+            payload.company_profile,
+            source_refs_by_id,
+            state,
+            language,
+        )
     business_summary = _company_profile_summary_from_facts(state)
     if not business_summary:
         return None
+    if _is_zh_locale(language) and _english_leak_score(business_summary) >= 4:
+        business_summary = _zh_company_profile_summary(state, business_summary)
     return CompanyProfileSection(
         summary=business_summary,
         evidence_refs=[],
@@ -3472,6 +3716,45 @@ def _company_profile_raw_summary_from_facts(state: AgentState) -> str:
         or state.evidence_memory.facts.get("description")
         or ""
     ).strip()
+
+
+def _zh_company_profile_summary(state: AgentState, raw_summary: str) -> str:
+    company = _company_name_from_state_or_summary(state, raw_summary)
+    sector = str(
+        state.evidence_memory.facts.get("sector")
+        or state.evidence_memory.facts.get("market_sector")
+        or ""
+    ).strip()
+    industry = str(
+        state.evidence_memory.facts.get("industry")
+        or state.evidence_memory.facts.get("market_industry")
+        or ""
+    ).strip()
+    classification = " / ".join(item for item in (sector, industry) if item)
+    if classification:
+        return (
+            f"{company} 的业务画像显示其行业暴露集中在 {classification}；"
+            "后续财报解读应把收入增长、利润率和现金流放在同一经营框架下验证。"
+        )
+    return (
+        f"{company} 的业务摘要提供了产品、客户和市场暴露线索；"
+        "后续财报解读应重点观察收入增长、利润率和现金流是否相互印证。"
+    )
+
+
+def _company_name_from_state_or_summary(state: AgentState, raw_summary: str) -> str:
+    facts = state.evidence_memory.facts
+    for key in ("company_name", "companyName", "name", "longName"):
+        value = str(facts.get(key) or "").strip()
+        if value:
+            return value
+    match = re.match(
+        r"^([A-Z][A-Za-z0-9&.\- ]{1,80}?)(?: provides| designs| develops| operates| is |,)",
+        raw_summary,
+    )
+    if match:
+        return match.group(1).strip()
+    return state.ticker
 
 
 def _concise_company_profile(summary: str, *, max_sentences: int = 2) -> str:

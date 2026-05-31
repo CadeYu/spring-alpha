@@ -126,7 +126,7 @@ def business_driver_facts_backfill_summary(
     language: str | None,
 ) -> str:
     company = context.company or "the company"
-    profile = _business_driver_profile_hint(context)
+    profile = _business_driver_profile_hint(context, language)
     revenue = context.revenue or "the available revenue base"
     margin = (
         context.gross_margin
@@ -209,9 +209,9 @@ def business_driver_thesis_backfill(
         or context.operating_income
         or "the available margin facts"
     )
-    profile = _business_driver_profile_hint(context)
+    profile = _business_driver_profile_hint(context, language)
     if _is_zh_locale(language):
-        headline = "结构化 facts 支撑方向性业务判断"
+        headline = f"{company} 业务驱动需要同时看收入与利润率"
         summary = (
             f"{company} 的业务驱动结论不能只依赖 RAG 命中的 segment 片段；"
             f"结构化 facts 已提供收入 {revenue} 和利润率/盈利锚点 {margin}。"
@@ -220,7 +220,7 @@ def business_driver_thesis_backfill(
         )
         return headline, "mixed", summary
 
-    headline = "Structured facts support a directional business-driver read"
+    headline = f"{company} revenue and margin anchors drive the business read"
     summary = (
         f"{company}'s business-driver thesis should not depend only on retrieved segment "
         f"RAG snippets; structured facts already provide revenue of {revenue} and a "
@@ -394,9 +394,18 @@ def _business_driver_first_signal_summary(state: AgentState) -> str:
     return signals[0] if signals else ""
 
 
-def _business_driver_profile_hint(context: BusinessDriverFactsContext) -> str:
+def _business_driver_profile_hint(
+    context: BusinessDriverFactsContext,
+    language: str | None = None,
+) -> str:
     summary = _clip(context.business_summary, 220) if context.business_summary else ""
     classification = " / ".join(item for item in (context.sector, context.industry) if item)
+    if _is_zh_locale(language):
+        if classification:
+            return f"其行业暴露集中在 {classification}。"
+        if summary:
+            return "现有业务摘要提供了产品、客户和市场暴露线索。"
+        return "现有资料已提供基础业务画像。"
     if summary and classification:
         return f"{summary} ({classification})."
     if summary:

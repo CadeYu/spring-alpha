@@ -723,6 +723,332 @@ def test_latest_earnings_backfills_top_level_summary_when_model_summary_is_too_s
     assert "Comparable sales pressure" in report.sections["summary"]
 
 
+def test_latest_earnings_repairs_incomplete_topline_verdict_text() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "CVX",
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "business_summary": (
+                        "Chevron explores, produces, refines, and markets energy products."
+                    )
+                },
+                source_refs=[
+                    {
+                        "source_id": "src_1",
+                        "section": "Results of Operations",
+                        "snippet": (
+                            "Revenue declined while upstream realization and downstream "
+                            "margins created a mixed earnings backdrop."
+                        ),
+                        "citation_status": "supported",
+                    }
+                ],
+            ),
+        }
+    )
+    payload = {
+        "company_profile": {
+            "summary": "Chevron explores, produces, refines, and markets energy products.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "CVX FY2026 Q1财报呈现",
+            "summary": "CVX FY2026 Q1财报呈现",
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "收入和利润率共同决定本季质量",
+                "summary": (
+                    "收入变化需要和上游实现价格、下游利润率一起阅读。"
+                    "这使本季更像混合质量的财报，而不是单一方向的增长故事。"
+                ),
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$47.6B",
+                    "period": "2026-Q1",
+                    "interpretation": "收入是判断能源需求和价格实现的第一层锚点。",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Operating income",
+                    "value": "$5.1B",
+                    "period": "2026-Q1",
+                    "interpretation": "经营利润检验收入能否转化为盈利质量。",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+            ],
+            "chart_focus": ["Revenue", "Operating income"],
+        },
+        "driver_snapshot": [
+            {
+                "title": "上游价格实现仍是核心变量",
+                "summary": "上游价格实现决定收入质量，后续需要观察油气价格和产量是否同向改善。",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "risk_snapshot": [
+            {
+                "title": "下游利润率波动仍需跟踪",
+                "summary": "下游利润率波动可能抵消收入规模，对下一季盈利质量构成主要不确定性。",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    verdict = report.task_sections.topline_verdict
+    assert verdict.headline != "CVX FY2026 Q1财报呈现"
+    assert verdict.summary != "CVX FY2026 Q1财报呈现"
+    assert not verdict.headline.endswith("财报呈现")
+    assert "收入和利润率共同决定本季质量" in verdict.summary
+    assert "上游价格实现仍是核心变量" in verdict.summary
+
+
+def test_business_driver_reviewer_rewrites_template_thesis_headline() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "Advanced Micro Devices, Inc.",
+                    "market_sector": "Technology",
+                    "market_industry": "Semiconductors",
+                    "business_summary": (
+                        "AMD designs CPUs, GPUs, adaptive computing products, and "
+                        "data-center accelerators."
+                    ),
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 7438000000,
+                            "unit": "USD",
+                            "period": "2026-Q1",
+                        },
+                        {
+                            "name": "gross margin",
+                            "value": 0.52,
+                            "unit": "percent",
+                            "period": "2026-Q1",
+                        },
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 7438000000,
+                        "unit": "USD",
+                        "fact_period": "2026-Q1",
+                    },
+                    {
+                        "metric": "gross margin",
+                        "value": 0.52,
+                        "unit": "percent",
+                        "fact_period": "2026-Q1",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "结构化 facts 支撑方向性业务判断",
+                "durability": "mixed",
+                "summary": (
+                    "结构化 facts 已提供收入和利润率锚点，业务驱动结论应写成方向性判断。"
+                    "投资者需要继续观察增长和利润率韧性。"
+                ),
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "收入桥接",
+                    "summary": "收入桥接要看增长是否能延续到下一季经营质量。",
+                    "citation_status": "partial",
+                },
+                "segment_momentum": {
+                    "title": "分部动能",
+                    "summary": "分部动能需要用产品和客户暴露来补充判断。",
+                    "citation_status": "partial",
+                },
+                "margin_and_mix": {
+                    "title": "利润率与组合",
+                    "summary": "利润率与组合决定收入是否能转化为经营杠杆。",
+                    "citation_status": "partial",
+                },
+                "demand_signals": {
+                    "title": "需求信号",
+                    "summary": "需求信号需要和收入增长、产品暴露交叉验证。",
+                    "citation_status": "partial",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    thesis = report.task_sections.driver_thesis
+    assert thesis.headline != "结构化 facts 支撑方向性业务判断"
+    assert thesis.headline != "业务驱动证据优先结论"
+    assert "AMD" in thesis.headline or "Advanced Micro Devices" in thesis.headline
+    assert "$7.4B" in thesis.summary
+    assert "52.0%" in thesis.summary
+
+
+def test_chinese_company_profile_does_not_echo_raw_english_business_summary() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "NVDA",
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "business_summary": (
+                        "NVIDIA Corporation provides graphics, compute, and networking "
+                        "solutions in the United States, Taiwan, China, and internationally."
+                    )
+                },
+                source_refs=[
+                    {
+                        "source_id": "src_1",
+                        "section": "business_summary",
+                        "snippet": (
+                            "NVIDIA Corporation provides graphics, compute, and networking "
+                            "solutions in the United States, Taiwan, China, and internationally."
+                        ),
+                        "citation_status": "supported",
+                    }
+                ],
+            ),
+        }
+    )
+    payload = {
+        "company_profile": {
+            "summary": (
+                "NVIDIA Corporation provides graphics, compute, and networking solutions "
+                "in the United States, Taiwan, China, and internationally."
+            ),
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "NVDA 本季收入和利润率仍然强劲。",
+            "summary": "收入增长和利润率仍是本季判断的核心，现金流需要继续观察。",
+            "verdict": "positive",
+            "confidence": "medium",
+        },
+        "key_takeaways": [],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$44.1B",
+                    "period": "2026-Q1",
+                    "interpretation": "收入是需求强度的第一层锚点。",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+            "chart_focus": ["Revenue"],
+        },
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    profile = report.task_sections.company_profile
+    assert profile is not None
+    assert "provides graphics" not in profile.summary
+    assert "United States" not in profile.summary
+    assert "NVIDIA" in profile.summary
+    assert "业务" in profile.summary
+
+
+def test_cash_flow_positive_verdict_uses_investor_dense_summary() -> None:
+    report = build_cash_flow_report_from_payload(
+        _make_request(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION, "zh"),
+        _make_state(language="zh").model_copy(
+            update={
+                "ticker": "AMD",
+                "task_type": ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+                "evidence_memory": EvidenceMemory(
+                    source_refs=[
+                        {
+                            "source_id": "src_1",
+                            "section": "Cash flows",
+                            "snippet": "Operating cash flow and free cash flow were both positive.",
+                            "citation_status": "supported",
+                        }
+                    ],
+                ),
+            }
+        ),
+        {
+            "cash_quality_verdict": {
+                "headline": "盈利有现金生成支撑。",
+                "earnings_backed_by_cash": "yes",
+                "summary": (
+                    "AMD 经营现金流和自由现金流均为正，管理层具备真实资本配置能力。"
+                ),
+            },
+            "cash_metrics": [
+                {
+                    "name": "Operating cash flow",
+                    "value": "$1.3B",
+                    "period": "2026-Q1",
+                    "interpretation": "经营现金流为正，说明利润质量至少有现金验证。",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Free cash flow",
+                    "value": "$950M",
+                    "period": "2026-Q1",
+                    "interpretation": "自由现金流为正，说明再投资后仍有资金弹性。",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+            ],
+            "capital_allocation": {},
+            "allocation_discipline": [],
+            "red_flags": [],
+            "claims": [],
+        },
+    )
+
+    verdict = report.task_sections.cash_quality_verdict
+    assert verdict.headline != "盈利有现金生成支撑。"
+    assert verdict.summary != "AMD 经营现金流和自由现金流均为正，管理层具备真实资本配置能力。"
+    assert "Operating cash flow" in verdict.summary
+    assert "Free cash flow" in verdict.summary
+    assert "投资" in verdict.summary
+
+
 def test_latest_earnings_prompt_requests_evidence_dense_memo_sections() -> None:
     prompt = _user_prompt(
         request=_make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "en"),
