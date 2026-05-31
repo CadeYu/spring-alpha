@@ -1239,43 +1239,37 @@ test.describe("Spring Alpha smoke", () => {
       });
     });
 
-    await page.route("https://api.siliconflow.cn/v1/chat/completions", async (route) => {
-      const body = route.request().postDataJSON() as {
-        messages?: Array<{ content?: string }>;
-      };
-      const prompt = body.messages?.[0]?.content ?? "";
-      const isMsft = prompt.includes("Ticker: MSFT");
+    await mockAnalyzeRoute(page, async (route) => {
+      const url = new URL(route.request().url());
+      const ticker = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+      const isMsft = ticker === "MSFT";
       await route.fulfill({
         status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  executiveSummary: isMsft ? "Microsoft thesis." : "Tesla thesis.",
-                  companyName: isMsft ? "Microsoft Corporation" : "Tesla, Inc.",
-                  period: isMsft ? "Q2 2026" : "Q1 2026",
-                  filingDate: isMsft ? "2026-07-30" : "2026-03-31",
-                  citations: [],
-                  taskSections: {
-                    ...typedTaskSections("latest_earnings_readout"),
-                    latestEarnings: {
-                      ...typedTaskSections("latest_earnings_readout").latestEarnings,
-                      toplineVerdict: {
-                        headline: isMsft ? "Microsoft typed thesis." : "Tesla typed thesis.",
-                        verdict: "mixed",
-                        summary: isMsft
-                          ? "Microsoft revenue stayed strong."
-                          : "Tesla revenue stayed under pressure.",
-                      },
-                    },
-                  },
-                }),
+        contentType: "text/event-stream",
+        body: sseBody([
+          {
+            executiveSummary: isMsft ? "Microsoft thesis." : "Tesla thesis.",
+            companyName: isMsft ? "Microsoft Corporation" : "Tesla, Inc.",
+            period: isMsft ? "Q2 2026" : "Q1 2026",
+            filingDate: isMsft ? "2026-07-30" : "2026-03-31",
+            citations: [],
+            taskSections: {
+              ...typedTaskSections("latest_earnings_readout"),
+              latestEarnings: {
+                ...typedTaskSections("latest_earnings_readout").latestEarnings,
+                toplineVerdict: {
+                  headline: isMsft
+                    ? "Microsoft typed thesis."
+                    : "Tesla typed thesis.",
+                  verdict: "mixed",
+                  summary: isMsft
+                    ? "Microsoft revenue stayed strong."
+                    : "Tesla revenue stayed under pressure.",
+                },
               },
             },
-          ],
-        }),
+          },
+        ]),
       });
     });
 
