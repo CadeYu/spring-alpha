@@ -301,6 +301,7 @@ def test_latest_earnings_rich_sections_are_preserved_in_typed_contract() -> None
     assert sections.drivers_and_draggers.draggers[0].title == "Cost pressure"
     assert sections.bull_bear_read.bull_case[0].title == "Revenue base is durable"
     assert sections.bull_bear_read.bear_case[0].title == "Margin recovery is not proven"
+    assert "利润率 recovery" not in sections.bull_bear_read.bear_case[0].title
     assert sections.bull_bear_read.balanced_read.title == "Balanced read"
     assert sections.watch_next[0].metric == "operating_margin"
     assert sections.watch_next[0].evidence_refs[0].source_id == "src_1"
@@ -1388,6 +1389,155 @@ def test_latest_earnings_zh_metric_backfills_use_investor_copy_not_short_labels(
     assert "下一季" in quality.growth_quality.summary
 
 
+def test_latest_earnings_zh_quality_backfill_matches_localized_metric_names() -> None:
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        _make_state(language="zh").model_copy(
+            update={
+                "ticker": "NVDA",
+                "task_type": ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "evidence_memory": EvidenceMemory(
+                    source_refs=[
+                        {
+                            "source_id": "src_revenue",
+                            "section": "structured snapshot",
+                            "snippet": "Revenue was $44.1B.",
+                            "citation_status": "supported",
+                        },
+                        {
+                            "source_id": "src_margin",
+                            "section": "structured snapshot",
+                            "snippet": "Gross margin was 73.5%.",
+                            "citation_status": "supported",
+                        },
+                        {
+                            "source_id": "src_cash",
+                            "section": "structured snapshot",
+                            "snippet": "Operating cash flow was $27.7B.",
+                            "citation_status": "supported",
+                        },
+                    ],
+                ),
+            }
+        ),
+        {
+            "company_profile": None,
+            "topline_verdict": {
+                "headline": "NVDA 本季财报质量需要同时看收入、利润率和现金。",
+                "summary": "NVDA 本季财报质量需要同时看收入、利润率和现金。",
+                "verdict": "positive",
+                "confidence": "medium",
+            },
+            "key_takeaways": [],
+            "financial_dashboard": {
+                "metrics": [
+                    {
+                        "name": "收入",
+                        "value": "$44.1B",
+                        "period": "FY2026-Q1",
+                        "interpretation": "收入是增长质量锚点。",
+                        "source_ids": ["src_revenue"],
+                        "citation_status": "supported",
+                    },
+                    {
+                        "name": "毛利率",
+                        "value": "73.5%",
+                        "period": "FY2026-Q1",
+                        "interpretation": "毛利率是利润质量锚点。",
+                        "source_ids": ["src_margin"],
+                        "citation_status": "supported",
+                    },
+                    {
+                        "name": "经营现金流",
+                        "value": "$27.7B",
+                        "period": "FY2026-Q1",
+                        "interpretation": "经营现金流是现金质量锚点。",
+                        "source_ids": ["src_cash"],
+                        "citation_status": "supported",
+                    },
+                ],
+                "chart_focus": ["revenue", "gross_margin", "operating_cash_flow"],
+            },
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "quality_of_quarter": None,
+            "drivers_and_draggers": None,
+            "bull_bear_read": None,
+            "watch_next": [],
+            "claims": [],
+        },
+    )
+
+    quality = report.task_sections.quality_of_quarter
+    assert quality is not None
+    assert quality.growth_quality is not None
+    assert quality.margin_quality is not None
+    assert quality.cash_quality is not None
+    assert "收入为 $44.1B" in quality.growth_quality.summary
+    assert "毛利率为 73.5%" in quality.margin_quality.summary
+    assert "经营现金流为 $27.7B" in quality.cash_quality.summary
+    assert "收入为 $44.1B" not in quality.margin_quality.summary
+    assert "收入为 $44.1B" not in quality.cash_quality.summary
+
+
+def test_latest_earnings_zh_rewrites_structured_yfinance_sentences_after_term_replacements() -> None:
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        _make_state(language="zh").model_copy(
+            update={
+                "ticker": "CVX",
+                "task_type": ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "evidence_memory": EvidenceMemory(
+                    source_refs=[
+                        {
+                            "source_id": "src_revenue",
+                            "section": "structured snapshot",
+                            "snippet": "Revenue was $47.6B.",
+                            "citation_status": "supported",
+                        }
+                    ],
+                ),
+            }
+        ),
+        {
+            "company_profile": None,
+            "topline_verdict": {
+                "headline": "CVX 本季财报需要结合收入和油价周期判断。",
+                "summary": "CVX 本季财报需要结合收入和油价周期判断。",
+                "verdict": "mixed",
+                "confidence": "medium",
+            },
+            "key_takeaways": [
+                {
+                    "title": "收入",
+                    "summary": (
+                        "Structured yfinance facts reports revenue of 47556000000 USD "
+                        "for FY2026 Q1 filed 2026-05-07."
+                    ),
+                    "source_ids": ["src_revenue"],
+                    "citation_status": "supported",
+                }
+            ],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "quality_of_quarter": None,
+            "drivers_and_draggers": None,
+            "bull_bear_read": None,
+            "watch_next": [],
+            "claims": [],
+        },
+    )
+
+    visible_text = report.task_sections.key_takeaways[0].summary
+    assert "FY2026 Q1 收入为 $47.6B" in visible_text
+    assert "Structured" not in visible_text
+    assert "reports" not in visible_text
+    assert " of " not in visible_text
+    assert " USD " not in visible_text
+    assert "filed" not in visible_text
+
+
 def test_cash_flow_short_capital_allocation_points_are_expanded_from_metrics() -> None:
     request = AgentRequest(
         run_id="run_1",
@@ -1459,6 +1609,105 @@ def test_cash_flow_short_capital_allocation_points_are_expanded_from_metrics() -
     assert "$145.0M" in serialized
     assert "$10.3B" in serialized
     assert "0.79x" in serialized
+
+
+def test_cash_flow_zh_visible_copy_strips_investor_relevance_labels() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="BA",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="BA",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "operating cash flow", "value": 1040000000, "unit": "USD"},
+                    {"name": "capital expenditures", "value": 44200000000, "unit": "USD"},
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Structured yfinance cash flow metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "BA 现金质量仍需观察。",
+            "earnings_backed_by_cash": "mixed",
+            "summary": "Investor relevance: cash conversion pace needs proof.",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {
+            "capex": [
+                {
+                    "title": "Capex",
+                    "summary": "Investor relevance: capex pace is still the main cash use.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+        },
+        "allocation_discipline": [
+            {
+                "title": "Strengths",
+                "summary": "Strengths: operating cash flow stayed positive.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "red_flags": [
+            {
+                "title": "Weaknesses",
+                "summary": "Weaknesses: capex pace can pressure free cash flow.",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    sections = report.task_sections
+    visible_text = " ".join(
+        [
+            sections.cash_quality_verdict.headline,
+            sections.cash_quality_verdict.summary,
+            *(point.title for point in sections.capital_allocation.capex),
+            *(point.summary for point in sections.capital_allocation.capex),
+            *(point.title for point in sections.allocation_discipline),
+            *(point.summary for point in sections.allocation_discipline),
+            *(point.title for point in sections.red_flags),
+            *(point.summary for point in sections.red_flags),
+        ]
+    )
+    for leaked in [
+        "Investor relevance",
+        "Strengths",
+        "Weaknesses",
+        "capex",
+        "pace",
+        "is still",
+        "stayed positive",
+        "can pressure",
+    ]:
+        assert leaked not in visible_text
+    assert "投资含义" in visible_text
+    assert "支撑因素" in visible_text
+    assert "风险因素" in visible_text
+    assert "资本开支" in visible_text
+    assert "节奏" in visible_text
 
 
 def test_chinese_company_profile_does_not_echo_raw_english_business_summary() -> None:
@@ -3542,6 +3791,67 @@ def test_cash_flow_fact_backfills_respect_chinese_locale() -> None:
     assert "债务负担" in sections.capital_allocation.debt[0].title
     assert "资产负债表韧性" in sections.capital_allocation.liquidity[0].title
     assert "观察下一季现金信号" in sections.red_flags[0].title
+
+
+def test_cash_flow_short_existing_red_flags_are_expanded_from_metrics() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="AMD",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="AMD",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "operating cash flow", "value": 3820000000, "unit": "USD"},
+                    {"name": "capital expenditures", "value": 620000000, "unit": "USD"},
+                    {"name": "free cash flow", "value": 3200000000, "unit": "USD"},
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Structured yfinance cash flow metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "AMD 现金质量稳健。",
+            "earnings_backed_by_cash": "yes",
+            "summary": "经营现金流和自由现金流均为正。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {},
+        "allocation_discipline": [],
+        "red_flags": [
+            {
+                "title": "自由现金流口径异常",
+                "summary": "营运资本波动放大",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    red_flag = report.task_sections.red_flags[0]
+    assert len(red_flag.summary) >= 35
+    assert "营运资本波动放大" in red_flag.summary
+    assert "自由现金流" in red_flag.summary
+    assert "资本开支" in red_flag.summary
+    assert "下修" in red_flag.summary or "观察" in red_flag.summary
 
 
 def test_cash_flow_unsupported_capital_points_are_removed_without_structured_metrics() -> None:

@@ -120,8 +120,22 @@ _ZH_METRIC_LABELS = {
     "buybacks": "回购",
     "dividends": "分红",
 }
+_ZH_METRIC_NORMALIZED_ALIASES = {
+    normalize_metric_name(label): normalized
+    for normalized, label in _ZH_METRIC_LABELS.items()
+}
 
 _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
+    (re.compile(r"\bInvestor relevance\s*[:：]", flags=re.I), "投资含义："),
+    (re.compile(r"\bEvidence limit\s*[:：]", flags=re.I), "证据限制："),
+    (re.compile(r"\bStrengths\s*[:：]", flags=re.I), "支撑因素："),
+    (re.compile(r"\bWeaknesses\s*[:：]", flags=re.I), "风险因素："),
+    (re.compile(r"\bInvestor implication\s*[:：]", flags=re.I), "投资含义："),
+    (re.compile(r"\bInvestor relevance\b", flags=re.I), "投资含义"),
+    (re.compile(r"\bEvidence limit\b", flags=re.I), "证据限制"),
+    (re.compile(r"\bStrengths\b", flags=re.I), "支撑因素"),
+    (re.compile(r"\bWeaknesses\b", flags=re.I), "风险因素"),
+    (re.compile(r"\bInvestor implication\b", flags=re.I), "投资含义"),
     (re.compile(r"\bRAG\b", flags=re.I), "检索证据"),
     (re.compile(r"\bfacts\b", flags=re.I), "结构化数据"),
     (re.compile(r"\bthesis\b", flags=re.I), "结论"),
@@ -138,9 +152,23 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\byfinance\b", flags=re.I), "结构化行情数据"),
     (re.compile(r"\bfiled\b", flags=re.I), "披露于"),
     (re.compile(r"\bcapex\b", flags=re.I), "资本开支"),
+    (re.compile(r"\bgross margin\b", flags=re.I), "毛利率"),
+    (re.compile(r"\boperating margin\b", flags=re.I), "经营利润率"),
+    (re.compile(r"\bmargins\b", flags=re.I), "利润率"),
+    (re.compile(r"\bpace\b", flags=re.I), "节奏"),
+    (re.compile(r"\bis still the\b", flags=re.I), "仍是"),
+    (re.compile(r"\bis still\b", flags=re.I), "仍然"),
+    (re.compile(r"\bstayed positive\b", flags=re.I), "保持为正"),
+    (re.compile(r"\bcan pressure\b", flags=re.I), "可能压制"),
+    (re.compile(r"\bneeds proof\b", flags=re.I), "仍需验证"),
+    (re.compile(r"\bcash conversion\b", flags=re.I), "现金转化"),
+    (re.compile(r"\bmain cash use\b", flags=re.I), "主要现金用途"),
+    (re.compile(r"\bcash use\b", flags=re.I), "现金用途"),
     (re.compile(r"\bCapital Expenditures\b", flags=re.I), "资本开支"),
     (re.compile(r"\bOperating Cash Flow\b", flags=re.I), "经营现金流"),
+    (re.compile(r"\boperating cash flow\b", flags=re.I), "经营现金流"),
     (re.compile(r"\bFree Cash Flow\b", flags=re.I), "自由现金流"),
+    (re.compile(r"\bfree cash flow\b", flags=re.I), "自由现金流"),
     (re.compile(r"\bCurrent Ratio\b", flags=re.I), "流动比率"),
     (re.compile(r"\bTotal Debt\b", flags=re.I), "总债务"),
     (
@@ -1752,11 +1780,21 @@ def _cash_quality_verdict_with_repair(
     language: str | None,
 ) -> CashQualityVerdict:
     if not _needs_cash_quality_repair(verdict, language):
-        return verdict
+        return CashQualityVerdict(
+            headline=_localize_visible_text(verdict.headline, language),
+            earnings_backed_by_cash=verdict.earnings_backed_by_cash,
+            summary=_localize_visible_text(verdict.summary, language),
+        )
     return CashQualityVerdict(
-        headline=_cash_quality_repaired_headline(verdict, language),
+        headline=_localize_visible_text(
+            _cash_quality_repaired_headline(verdict, language),
+            language,
+        ),
         earnings_backed_by_cash=verdict.earnings_backed_by_cash,
-        summary=_cash_quality_repaired_summary(verdict, cash_metrics, ticker, language),
+        summary=_localize_visible_text(
+            _cash_quality_repaired_summary(verdict, cash_metrics, ticker, language),
+            language,
+        ),
     )
 
 
@@ -2270,11 +2308,16 @@ def _metric_by_name(
     metrics: list[EvidenceBoundMetric],
     needles: tuple[str, ...],
 ) -> EvidenceBoundMetric | None:
+    normalized_needles = tuple(normalize_metric_name(needle) for needle in needles)
     for metric in metrics:
-        normalized = _normalize_metric_name(metric.name)
-        if any(needle in normalized for needle in needles):
+        metric_keys = _metric_match_keys(metric.name)
+        if any(
+            needle in metric_key
+            for metric_key in metric_keys
+            for needle in normalized_needles
+        ):
             return metric
-    return metrics[0] if metrics else None
+    return metrics[0] if len(metrics) == 1 else None
 
 
 def _points_or_backfill(
@@ -2642,14 +2685,17 @@ def _cash_flow_red_flags_with_backfill(
     metrics: list[_SynthesizedMetric],
     language: str | None = None,
 ) -> list[_SynthesizedPoint]:
-    if red_flags:
-        return red_flags
     is_zh = _is_zh_locale(language)
     ocf = _synthesized_metric_by_name(metrics, ("operating cash flow",))
     fcf = _synthesized_metric_by_name(metrics, ("free cash flow",))
     capex = _synthesized_metric_by_name(metrics, ("capital expenditures", "capex"))
     current_ratio = _synthesized_metric_by_name(metrics, ("current ratio",))
     anchor = fcf or ocf or capex or current_ratio
+    if red_flags:
+        return [
+            _expand_short_cash_flow_red_flag(point, anchor, language)
+            for point in red_flags
+        ]
     if anchor is None:
         return []
     watch_items = []
@@ -2703,13 +2749,49 @@ def _cash_flow_red_flags_with_backfill(
     ]
 
 
+def _expand_short_cash_flow_red_flag(
+    point: _SynthesizedPoint,
+    anchor: _SynthesizedMetric | None,
+    language: str | None,
+) -> _SynthesizedPoint:
+    summary = _localize_visible_text(" ".join(point.summary.split()).strip(), language)
+    if len(summary) >= 35 or anchor is None:
+        return point.model_copy(update={"summary": summary})
+    is_zh = _is_zh_locale(language)
+    if is_zh:
+        anchor_label = _localize_metric_name(anchor.name, language)
+        expanded = (
+            f"{summary}。下一季需要观察{anchor_label}是否仍能支撑自由现金流，"
+            "并确认资本开支不会进一步压缩现金缓冲；若该信号转弱，现金质量判断需要下修。"
+        )
+    else:
+        expanded = (
+            f"{summary}. Watch whether {anchor.name} still supports free cash flow "
+            "and whether capex further narrows the cash buffer next quarter."
+        )
+    return point.model_copy(
+        update={
+            "summary": expanded,
+            "source_ids": point.source_ids or anchor.source_ids,
+            "citation_status": point.citation_status
+            if point.source_ids
+            else anchor.citation_status,
+        }
+    )
+
+
 def _synthesized_metric_by_name(
     metrics: list[_SynthesizedMetric],
     needles: tuple[str, ...],
 ) -> _SynthesizedMetric | None:
+    normalized_needles = tuple(normalize_metric_name(needle) for needle in needles)
     for metric in metrics:
-        normalized_name = _normalize_metric_name(metric.name)
-        if any(needle in normalized_name for needle in needles):
+        metric_keys = _metric_match_keys(metric.name)
+        if any(
+            needle in metric_key
+            for metric_key in metric_keys
+            for needle in normalized_needles
+        ):
             return metric
     return None
 
@@ -4415,10 +4497,19 @@ def _localize_metric_name(metric_name: str | None, language: str | None) -> str:
     return _ZH_METRIC_LABELS.get(normalized, name)
 
 
+def _metric_match_keys(metric_name: str | None) -> tuple[str, ...]:
+    normalized = _normalize_metric_name(str(metric_name or ""))
+    alias = _ZH_METRIC_NORMALIZED_ALIASES.get(normalized)
+    if alias is not None:
+        return (normalized, alias)
+    return (normalized,)
+
+
 def _localize_visible_text(value: str, language: str | None) -> str:
     text = str(value or "")
     if not _is_zh_locale(language):
         return text
+    text = _rewrite_structured_yfinance_metric_sentence(text)
     for pattern, replacement in _ZH_VISIBLE_TECH_TERM_REPLACEMENTS:
         text = pattern.sub(replacement, text)
     text = _rewrite_structured_yfinance_metric_sentence(text)
@@ -4449,9 +4540,10 @@ def _rewrite_structured_yfinance_metric_sentence(text: str) -> str:
         return f"{period} {metric}为 {value}。"
 
     return re.sub(
-        r"结构化数据披露\s+(?P<metric>[A-Za-z ]+?)\s+of\s+"
+        r"(?:Structured\s+yfinance\s+facts\s+reports|结构化数据披露)\s+"
+        r"(?P<metric>[A-Za-z ]+?)\s+of\s+"
         r"(?P<value>-?\d+(?:\.\d+)?)\s+(?P<unit>USD|pure|percent|percentage|x|ratio)"
-        r"\s+for\s+(?P<period>[^.。]+)(?:\.|。)?",
+        r"\s+for\s+(?P<period>[^.。]+?)(?:\s+filed\s+[^.。]+)?(?:\.|。|$)",
         replace,
         text,
         flags=re.I,
