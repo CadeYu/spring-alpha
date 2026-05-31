@@ -87,7 +87,14 @@ describe("runClientByokAnalysis", () => {
 
     expect(providerCalls).toBe(2);
     expect(report.companyName).toBe("NVIDIA Corporation");
-    expect(report.taskSections?.latestEarnings?.toplineVerdict.summary).toBe(
+    if (
+      !report.taskSections ||
+      !("latestEarnings" in report.taskSections) ||
+      !report.taskSections.latestEarnings
+    ) {
+      throw new Error("Expected latest earnings task section envelope.");
+    }
+    expect(report.taskSections.latestEarnings.toplineVerdict.summary).toBe(
       "NVIDIA revenue growth was led by data center demand.",
     );
   });
