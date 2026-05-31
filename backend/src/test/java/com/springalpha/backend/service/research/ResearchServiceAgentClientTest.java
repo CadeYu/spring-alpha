@@ -10,6 +10,7 @@ import reactor.core.publisher.Mono;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -59,6 +60,62 @@ class ResearchServiceAgentClientTest {
         assertEquals(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, result.taskType());
         assertEquals("ok", result.status());
         assertEquals("TSLA", result.finalReport().get("ticker"));
+    }
+
+    @Test
+    void runSendsProviderKeyOnlyInThePythonAgentRequestBody() throws IOException {
+        AtomicBoolean sawRequest = new AtomicBoolean(false);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/agent/runs", exchange -> {
+            sawRequest.set(true);
+            assertEquals("POST", exchange.getRequestMethod());
+            assertEquals("/agent/runs", exchange.getRequestURI().getPath());
+            assertNull(exchange.getRequestURI().getQuery());
+            String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(requestBody.contains("\"llm_api_key\":\"test-request-scoped-key\""));
+            byte[] body = """
+                    {
+                      "run_id": "run_secure_key",
+                      "task_type": "latest_earnings_readout",
+                      "status": "ok",
+                      "events": [],
+                      "degraded_reasons": [],
+                      "final_report": {
+                        "ticker": "AAPL"
+                      }
+                    }
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream output = exchange.getResponseBody()) {
+                output.write(body);
+            }
+        });
+        server.start();
+        try {
+            ResearchServiceAgentClient client = new ResearchServiceAgentClient(
+                    WebClient.builder(),
+                    "http://127.0.0.1:" + server.getAddress().getPort(),
+                    Duration.ofSeconds(5));
+
+            ResearchAgentResult result = client.run(new ResearchAgentRequest(
+                    "run_secure_key",
+                    "AAPL",
+                    ResearchTaskType.LATEST_EARNINGS_READOUT,
+                    "en",
+                    2,
+                    "siliconflow",
+                    "Pro/moonshotai/Kimi-K2.6",
+                    "test-request-scoped-key",
+                    java.util.Map.of(),
+                    java.util.List.of())).block();
+
+            assertTrue(sawRequest.get());
+            assertNotNull(result);
+            assertEquals("run_secure_key", result.runId());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test

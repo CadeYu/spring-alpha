@@ -58,11 +58,12 @@ class SecControllerTest {
     }
 
     @Test
-    void analyzeEndpointRejectsProviderKeysBecauseByokRunsInTheBrowser() {
+    void analyzeEndpointAllowsAuthenticatedProviderKeysWithoutAnonymousTrialLedger() {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
         FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
-        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
+        FakeTrialLedgerService trialLedgerService = new FakeTrialLedgerService(true);
+        SecController controller = new SecController(secService, analysisService, trialLedgerService);
 
         WebTestClient client = WebTestClient.bindToController(controller)
                 .controllerAdvice(new ApiExceptionHandler())
@@ -70,14 +71,16 @@ class SecControllerTest {
 
         client.get()
                 .uri("/api/sec/analyze/AAPL?taskType=latest_earnings_readout")
-                .header("X-Provider-API-Key", "sk-test")
+                .header("X-Auth-Mode", "authenticated")
+                .header("X-Provider-API-Key", "test-provider-key")
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
-                .expectStatus().isBadRequest()
-                .expectBody(String.class)
-                .value(body -> assertTrue(body.contains("SERVER_BYOK_KEY_REJECTED")));
+                .expectStatus().isOk();
 
-        assertEquals(0, analysisService.callCount);
+        assertEquals(1, analysisService.callCount);
+        assertEquals("test-provider-key", analysisService.lastOpenAiApiKey);
+        assertEquals(0, trialLedgerService.authorizeCount);
+        assertEquals(0, trialLedgerService.confirmCount);
     }
 
     @Test

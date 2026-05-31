@@ -166,7 +166,7 @@ class FinancialAnalysisServiceTest {
 
         ProviderAuthenticationException thrown = assertThrows(
                 ProviderAuthenticationException.class,
-                () -> service.analyzeStock("TSLA", "zh", "siliconflow", "sk-invalid")
+                () -> service.analyzeStock("TSLA", "zh", "siliconflow", "test-invalid-key")
                         .collectList()
                         .block());
 

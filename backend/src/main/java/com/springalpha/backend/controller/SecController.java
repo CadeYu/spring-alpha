@@ -72,7 +72,6 @@ public class SecController {
             @RequestParam(defaultValue = ResearchTaskType.DEFAULT_REQUEST_VALUE) String taskType,
             @RequestHeader HttpHeaders headers) {
         ResearchTaskType researchTaskType = parseResearchTaskType(taskType);
-        rejectServerSideByokKey(headers);
         String providerApiKey = resolveProviderApiKey(headers);
         Optional<AnonymousTrialContext> anonymousTrial = authorizeTrialAccess(headers, providerApiKey);
         log.info("REST request to analyze stock: {}, lang: {}, model: {}, llmModel: {}, taskType: {}",
@@ -114,17 +113,6 @@ public class SecController {
                     HttpStatus.PAYMENT_REQUIRED);
         }
         return Optional.of(new AnonymousTrialContext(visitorId, trialRunId, ipHash));
-    }
-
-    private void rejectServerSideByokKey(HttpHeaders headers) {
-        String providerApiKey = resolveProviderApiKey(headers);
-        if (providerApiKey == null || providerApiKey.isBlank()) {
-            return;
-        }
-        throw new TrialAccessException(
-                "Provider API keys must be used by the browser-direct BYOK path and are not accepted by this server route.",
-                "SERVER_BYOK_KEY_REJECTED",
-                HttpStatus.BAD_REQUEST);
     }
 
     private void confirmTrialAccess(AnonymousTrialContext context) {

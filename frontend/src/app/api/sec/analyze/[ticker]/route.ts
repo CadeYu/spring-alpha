@@ -26,16 +26,6 @@ export async function GET(
   const providerApiKey =
     request.headers.get("x-provider-api-key") ||
     request.headers.get("x-openai-api-key");
-  if (providerApiKey && providerApiKey.trim()) {
-    return new Response(
-      JSON.stringify({
-        error:
-          "Provider API keys must be used by the browser-direct BYOK path and are not accepted by this server route.",
-        code: "SERVER_BYOK_KEY_REJECTED",
-      }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
-  }
   const visitorId =
     request.cookies.get(visitorCookieName)?.value || randomUUID();
   const authMode = request.headers.get("x-auth-mode") || "anonymous";
@@ -73,6 +63,9 @@ export async function GET(
         Accept: "text/event-stream",
         "X-Auth-Mode": authMode,
         "X-Visitor-Id": visitorId,
+        ...(providerApiKey?.trim()
+          ? { "X-Provider-API-Key": providerApiKey.trim() }
+          : {}),
         ...(trialRunId ? { "X-Trial-Run-Id": trialRunId } : {}),
         ...(clientIpHash ? { "X-Client-IP-Hash": clientIpHash } : {}),
       },

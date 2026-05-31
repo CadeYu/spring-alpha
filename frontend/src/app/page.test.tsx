@@ -172,24 +172,6 @@ function submitTicker(ticker = "AAPL") {
   fireEvent.click(screen.getByRole("button", { name: /analyze|开始分析/i }));
 }
 
-function createProviderJsonResponse(report: unknown): Response {
-  return new Response(
-    JSON.stringify({
-      choices: [
-        {
-          message: {
-            content: JSON.stringify(report),
-          },
-        },
-      ],
-    }),
-    {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    },
-  );
-}
-
 describe("Home page", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -287,7 +269,7 @@ describe("Home page", () => {
     render(<Home />);
 
     fireEvent.change(screen.getByPlaceholderText("Enter your SiliconFlow key"), {
-      target: { value: "sk-siliconflow-secret-1234" },
+      target: { value: "test-provider-key-secret-1234" },
     });
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
@@ -2599,7 +2581,7 @@ describe("Home page", () => {
       ]);
     });
 
-    window.localStorage.setItem("spring-alpha-siliconflow-key", "sk-stale-local-key");
+    window.localStorage.setItem("spring-alpha-siliconflow-key", "test-stale-local-key");
     window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
     vi.stubGlobal("fetch", fetchMock);
 
@@ -2849,49 +2831,43 @@ describe("Home page", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("uses saved provider keys only in browser-direct BYOK calls", async () => {
+  it("uses saved provider keys only in full server-agent BYOK requests", async () => {
     mockSessionStatus = "authenticated";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/api/java/financial/")) {
-        return new Response(
-          JSON.stringify({
-            companyName: "Tesla, Inc.",
-            period: "FY 2025",
-            filingDate: "2026-01-29",
-            revenue: 100,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-      if (url.includes("/api/java/sec/10k/")) {
-        return new Response("Revenue grew from deliveries.", {
+      if (url.includes("/api/market/chart/")) {
+        return new Response(JSON.stringify({ candles: [] }), {
           status: 200,
-          headers: { "Content-Type": "text/plain" },
+          headers: { "Content-Type": "application/json" },
         });
       }
-      if (url.includes("api.siliconflow.cn/v1/chat/completions")) {
+      if (url.includes("/api/sec/analyze/")) {
+        expect(url).not.toContain("test-provider-key-123");
         expect(init?.headers).toEqual(
           expect.objectContaining({
-            Authorization: "Bearer sk-test-123",
+            "X-Auth-Mode": "authenticated",
+            "X-Provider-API-Key": "test-provider-key-123",
           }),
         );
-        return createProviderJsonResponse({
-          executiveSummary: "Tesla browser-direct thesis.",
+        return createSseResponse([{
+          executiveSummary: "Tesla server-agent thesis.",
           companyName: "Tesla, Inc.",
           period: "FY 2025",
           filingDate: "2026-01-29",
+          generatedAt: "2026-01-30T00:00:00Z",
           citations: [],
           taskSections: {
             schemaVersion: "task_sections.v1",
             taskType: "latest_earnings_readout",
+            coverage: {
+              status: "complete",
+              missingSections: [],
+              evidenceCount: 1,
+            },
             latestEarnings: {
               toplineVerdict: {
-                headline: "Browser direct typed thesis",
-                summary: "Tesla browser-direct thesis.",
+                headline: "Server agent typed thesis",
+                summary: "Tesla server-agent thesis.",
                 verdict: "mixed",
                 confidence: "medium",
               },
@@ -2901,7 +2877,7 @@ describe("Home page", () => {
               riskSnapshot: [],
             },
           },
-        });
+        }]);
       }
 
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
@@ -2914,7 +2890,7 @@ describe("Home page", () => {
     fireEvent.change(
       screen.getByPlaceholderText(/enter your siliconflow key/i),
       {
-        target: { value: "sk-test-123" },
+        target: { value: "test-provider-key-123" },
       },
     );
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -2927,23 +2903,30 @@ describe("Home page", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining("api.siliconflow.cn/v1/chat/completions"),
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+        expect.stringContaining("/api/sec/analyze/AAPL?"),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            "X-Auth-Mode": "authenticated",
+            "X-Provider-API-Key": "test-provider-key-123",
+          }),
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
+    openAgentReport(/latest earnings readout/i);
     expect(
-      fetchMock.mock.calls.some(([input]) => String(input).includes("/api/sec/analyze/")),
-    ).toBe(false);
+      await screen.findByText("Tesla server-agent thesis."),
+    ).toBeInTheDocument();
     expect(
-      fetchMock.mock.calls.some(([, init]) =>
-        JSON.stringify(init?.headers ?? {}).includes("X-Provider-API-Key"),
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes("api.siliconflow.cn/v1/chat/completions"),
       ),
     ).toBe(false);
   });
 
-  it("normalizes loose BYOK latest earnings collections before rendering", async () => {
+  it("renders server-agent BYOK latest earnings sections from SSE", async () => {
     mockSessionStatus = "authenticated";
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/market/chart/")) {
         return new Response(JSON.stringify({ candles: [] }), {
@@ -2951,28 +2934,16 @@ describe("Home page", () => {
           headers: { "Content-Type": "application/json" },
         });
       }
-      if (url.includes("/api/java/financial/")) {
-        return new Response(
-          JSON.stringify({
-            companyName: "NVIDIA Corporation",
-            period: "Q1 FY2027",
-            filingDate: "2026-05-27",
+      if (url.includes("/api/sec/analyze/")) {
+        expect(url).not.toContain("test-provider-key-123");
+        expect(init?.headers).toEqual(
+          expect.objectContaining({
+            "X-Auth-Mode": "authenticated",
+            "X-Provider-API-Key": "test-provider-key-123",
           }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
         );
-      }
-      if (url.includes("/api/java/sec/10k/")) {
-        return new Response("Data center revenue accelerated.", {
-          status: 200,
-          headers: { "Content-Type": "text/plain" },
-        });
-      }
-      if (url.includes("api.siliconflow.cn/v1/chat/completions")) {
-        return createProviderJsonResponse({
-          executiveSummary: "NVDA browser-direct thesis.",
+        return createSseResponse([{
+          executiveSummary: "NVDA server-agent thesis.",
           companyName: "NVIDIA Corporation",
           period: "Q1 FY2027",
           filingDate: "2026-05-27",
@@ -2980,6 +2951,11 @@ describe("Home page", () => {
           taskSections: {
             schemaVersion: "task_sections.v1",
             taskType: "latest_earnings_readout",
+            coverage: {
+              status: "complete",
+              missingSections: [],
+              evidenceCount: 1,
+            },
             latestEarnings: {
               toplineVerdict: {
                 headline: "Data center demand led the quarter.",
@@ -2987,41 +2963,51 @@ describe("Home page", () => {
                 verdict: "positive",
                 confidence: "medium",
               },
-              keyTakeaways: {
+              keyTakeaways: [{
                 title: "Revenue accelerated",
                 summary: "Data center revenue accelerated.",
                 evidenceRefs: [],
                 citationStatus: "supported",
-              },
+              }],
               financialDashboard: {
-                metrics: {
+                metrics: [{
                   name: "Revenue",
                   value: "$44.1B",
                   interpretation: "Revenue accelerated.",
                   evidenceRefs: [],
                   citationStatus: "supported",
-                },
-                chartFocus: "revenue",
+                }],
+                chartFocus: ["revenue"],
               },
               driverSnapshot: [],
               riskSnapshot: [],
               driversAndDraggers: {
-                drivers: {
+                drivers: [{
                   title: "Data center demand",
                   summary: "Demand remained the main driver.",
                   evidenceRefs: [],
                   citationStatus: "supported",
-                },
-                draggers: "No material dragger was provided.",
+                }],
+                draggers: [{
+                  title: "No material dragger",
+                  summary: "No material dragger was provided.",
+                  evidenceRefs: [],
+                  citationStatus: "partial",
+                }],
               },
               bullBearRead: {
-                bullCase: {
+                bullCase: [{
                   title: "Bull case",
                   summary: "Demand can remain durable.",
                   evidenceRefs: [],
                   citationStatus: "supported",
-                },
-                bearCase: "Export restrictions remain a risk.",
+                }],
+                bearCase: [{
+                  title: "Bear case",
+                  summary: "Export restrictions remain a risk.",
+                  evidenceRefs: [],
+                  citationStatus: "partial",
+                }],
                 balancedRead: {
                   title: "Balanced read",
                   summary: "The setup is positive but policy risk remains.",
@@ -3029,16 +3015,16 @@ describe("Home page", () => {
                   citationStatus: "partial",
                 },
               },
-              watchNext: {
+              watchNext: [{
                 title: "Watch supply",
                 metric: "supply",
                 whyItMatters: "Supply will determine how much demand converts to revenue.",
                 evidenceRefs: [],
                 citationStatus: "supported",
-              },
+              }],
             },
           },
-        });
+        }]);
       }
 
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
@@ -3050,7 +3036,7 @@ describe("Home page", () => {
     fireEvent.change(
       screen.getByPlaceholderText(/enter your siliconflow key/i),
       {
-        target: { value: "sk-test-123" },
+        target: { value: "test-provider-key-123" },
       },
     );
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -3067,31 +3053,37 @@ describe("Home page", () => {
     expect(
       screen.getByText("Supply will determine how much demand converts to revenue."),
     ).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes("api.siliconflow.cn/v1/chat/completions"),
+      ),
+    ).toBe(false);
   });
 
   it("surfaces explicit invalid-key errors for BYOK providers instead of rendering an empty report shell", async () => {
     mockSessionStatus = "authenticated";
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/api/java/financial/")) {
-        return new Response(JSON.stringify([]), {
+      if (url.includes("/api/market/chart/")) {
+        return new Response(JSON.stringify({ candles: [] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
       }
-      if (url.includes("/api/java/sec/10k/")) {
-        return new Response("Revenue evidence.", {
-          status: 200,
-          headers: { "Content-Type": "text/plain" },
-        });
-      }
-      if (url.includes("api.siliconflow.cn/v1/chat/completions")) {
+      if (url.includes("/api/sec/analyze/")) {
+        expect(url).not.toContain("test-invalid-provider-key");
+        expect(init?.headers).toEqual(
+          expect.objectContaining({
+            "X-Auth-Mode": "authenticated",
+            "X-Provider-API-Key": "test-invalid-provider-key",
+          }),
+        );
         return new Response(
           JSON.stringify({
-            error: {
-              message:
-                "SiliconFlow API key is invalid or unauthorized for this project",
-            },
+            error:
+              "SiliconFlow API key is invalid or unauthorized for this project",
+            code: "SILICONFLOW_API_KEY_INVALID",
+            source: "siliconflow",
           }),
           {
             status: 401,
@@ -3110,7 +3102,7 @@ describe("Home page", () => {
     fireEvent.change(
       screen.getByPlaceholderText(/enter your siliconflow key/i),
       {
-        target: { value: "sk-invalid-test" },
+        target: { value: "test-invalid-provider-key" },
       },
     );
     fireEvent.click(screen.getByRole("button", { name: /save/i }));

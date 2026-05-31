@@ -65,10 +65,6 @@ import {
   formatMetricInterpretation,
   formatMetricName,
 } from "@/lib/reportMetricCopy";
-import {
-  runClientByokAnalysis,
-  type ClientByokProvider,
-} from "@/lib/byok/clientAnalysis";
 
 const BYOK_PROVIDERS = [
   {
@@ -666,15 +662,6 @@ export default function EarningsAnalystApp({
     console.log(
       `Fetching ${taskId} analysis for ${submittedTicker} using ${model}/${selectedProviderModel.id} in ${lang}...`,
     );
-    if (runtimeProviderKey) {
-      return runClientByokResearchTask({
-        taskId,
-        requestId,
-        submittedTicker,
-        runtimeProviderKey,
-        controller,
-      });
-    }
     const analysisParams = new URLSearchParams({
       lang,
       model,
@@ -682,7 +669,10 @@ export default function EarningsAnalystApp({
       taskType: taskId,
     });
     const requestHeaders: Record<string, string> = {};
-    if (anonymousTrialMode && trialRunId) {
+    if (runtimeProviderKey) {
+      requestHeaders["X-Auth-Mode"] = "authenticated";
+      requestHeaders["X-Provider-API-Key"] = runtimeProviderKey;
+    } else if (anonymousTrialMode && trialRunId) {
       requestHeaders["X-Auth-Mode"] = "anonymous";
       requestHeaders["X-Trial-Run-Id"] = trialRunId;
     }
@@ -764,59 +754,6 @@ export default function EarningsAnalystApp({
 
       buffer = lines[lines.length - 1];
     }
-    return { phase: "received" };
-  };
-
-  const runClientByokResearchTask = async ({
-    taskId,
-    requestId,
-    submittedTicker,
-    runtimeProviderKey,
-    controller,
-  }: {
-    taskId: ResearchTaskId;
-    requestId: number;
-    submittedTicker: string;
-    runtimeProviderKey: string;
-    controller: AbortController;
-  }): Promise<{ phase: "received" | "failed"; error?: AnalysisErrorState }> => {
-    setRunState((current) =>
-      current && current.ticker === submittedTicker
-        ? { ...current, phase: promoteAnalysisRunPhase(current.phase, "streaming") }
-        : current,
-    );
-    setPipelineRuns((current) =>
-      current.map((run) =>
-        run.taskId === taskId ? { ...run, phase: "streaming" } : run,
-      ),
-    );
-
-    const report = await runClientByokAnalysis({
-      ticker: submittedTicker,
-      taskId,
-      lang,
-      provider: model as ClientByokProvider,
-      model: selectedProviderModel.id,
-      apiKey: runtimeProviderKey,
-      signal: controller.signal,
-    });
-
-    if (requestIdRef.current !== requestId || controller.signal.aborted) {
-      return { phase: "failed" };
-    }
-
-    setRunState((current) =>
-      current && current.ticker === submittedTicker
-        ? {
-            ...current,
-            phase: promoteAnalysisRunPhase(current.phase, "received"),
-          }
-        : current,
-    );
-    setReportsByTask((current) => ({
-      ...current,
-      [taskId]: report,
-    }));
     return { phase: "received" };
   };
 
@@ -1128,8 +1065,8 @@ export default function EarningsAnalystApp({
                   </p>
                   <p className="text-xs text-slate-400">
                     {isZh
-                      ? `仅保存在当前浏览器本地，并由浏览器直连 ${selectedProvider.name}；不会发送到 Spring Alpha 后端。`
-                      : `Stored only in this browser and used for browser-direct ${selectedProvider.name} calls; it is not sent to Spring Alpha servers.`}
+                      ? `仅保存在当前浏览器本地；分析时会通过 HTTPS 临时发送到 Spring Alpha 后端，用于本次完整 Agent 分析，不存储、不记录。`
+                      : `Stored only in this browser; sent over HTTPS only for the current full Agent run and never stored or logged by Spring Alpha.`}
                   </p>
                 </div>
                 <span
@@ -1387,8 +1324,8 @@ function AnalysisRunStatusPanel({
               </span>
               <span className="rounded border border-slate-700 bg-slate-950/60 px-2 py-1 text-slate-400">
                 {isZh
-                  ? "匿名试用走真实后端 Agent；BYOK Key 仅在浏览器端直连 provider"
-                  : "Anonymous trial uses the server agent; BYOK keys stay in browser-direct provider calls"}
+                  ? "匿名试用和登录 BYOK 都走完整后端 Agent；BYOK Key 仅本次请求临时使用"
+                  : "Anonymous trial and signed-in BYOK both use the full server Agent; BYOK keys are request-scoped only"}
               </span>
             </div>
             {pipelineRuns.length > 0 && (

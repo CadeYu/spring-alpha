@@ -25,7 +25,7 @@ describe("analysis SSE bridge", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("rejects provider keys because BYOK calls must stay in the browser", async () => {
+  it("forwards authenticated provider keys to the backend without putting them in the URL", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode("data:{}\n\n"));
@@ -39,19 +39,27 @@ describe("analysis SSE bridge", () => {
       new NextRequest(
         "http://localhost/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
         {
-          headers: { "X-Provider-API-Key": "sk-test-123" },
+          headers: {
+            "X-Auth-Mode": "authenticated",
+            "X-Provider-API-Key": "test-provider-key-123",
+          },
         },
       ),
       { params: Promise.resolve({ ticker: "AAPL" }) },
     );
 
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      error:
-        "Provider API keys must be used by the browser-direct BYOK path and are not accepted by this server route.",
-      code: "SERVER_BYOK_KEY_REJECTED",
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [backendUrl, requestInit] = fetchMock.mock.calls[0];
+    expect(String(backendUrl)).not.toContain("test-provider-key-123");
+    expect(requestInit).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "X-Auth-Mode": "authenticated",
+          "X-Provider-API-Key": "test-provider-key-123",
+        }),
+      }),
+    );
   });
 
   it("uses the production backend url on Vercel when no explicit backend url is configured", async () => {
