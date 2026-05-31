@@ -38,6 +38,9 @@ type ProviderJsonResponse = {
   }>;
 };
 
+const BYOK_PROVIDER_MAX_TOKENS = 3600;
+const BYOK_PROVIDER_JSON_RETRY_MAX_TOKENS = 4200;
+
 export async function runClientByokAnalysis({
   ticker,
   taskId,
@@ -197,33 +200,54 @@ async function completeOpenAiCompatibleJson({
     provider === "siliconflow"
       ? "https://api.siliconflow.cn/v1"
       : "https://api.openai.com/v1";
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.2,
-      max_tokens: 2200,
-    }),
-    signal,
-  });
-  const body = (await response.json().catch(() => ({}))) as ProviderJsonResponse & {
-    error?: { message?: string; code?: string };
+  const requestCompletion = async (completionPrompt: string, maxTokens: number) => {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "user",
+            content: completionPrompt,
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        max_tokens: maxTokens,
+      }),
+      signal,
+    });
+    const body = (await response.json().catch(() => ({}))) as ProviderJsonResponse & {
+      error?: { message?: string; code?: string };
+    };
+    if (!response.ok) {
+      throw providerError(provider, response.status, body.error?.message);
+    }
+    return parseJsonObject(body.choices?.[0]?.message?.content ?? "");
   };
-  if (!response.ok) {
-    throw providerError(provider, response.status, body.error?.message);
+
+  try {
+    return await requestCompletion(prompt, BYOK_PROVIDER_MAX_TOKENS);
+  } catch (error) {
+    if (!isJsonSyntaxError(error)) {
+      throw error;
+    }
+    try {
+      return await requestCompletion(
+        buildJsonRetryPrompt(prompt),
+        BYOK_PROVIDER_JSON_RETRY_MAX_TOKENS,
+      );
+    } catch (retryError) {
+      if (isJsonSyntaxError(retryError)) {
+        throw providerJsonError();
+      }
+      throw retryError;
+    }
   }
-  return parseJsonObject(body.choices?.[0]?.message?.content ?? "");
 }
 
 async function completeGeminiJson({
@@ -237,34 +261,55 @@ async function completeGeminiJson({
   prompt: string;
   signal?: AbortSignal;
 }) {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-      model,
-    )}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.2,
-          maxOutputTokens: 2200,
+  const requestCompletion = async (completionPrompt: string, maxOutputTokens: number) => {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        model,
+      )}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
         },
-      }),
-      signal,
-    },
-  );
-  const body = (await response.json().catch(() => ({}))) as ProviderJsonResponse & {
-    error?: { message?: string; code?: string };
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: completionPrompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.2,
+            maxOutputTokens,
+          },
+        }),
+        signal,
+      },
+    );
+    const body = (await response.json().catch(() => ({}))) as ProviderJsonResponse & {
+      error?: { message?: string; code?: string };
+    };
+    if (!response.ok) {
+      throw providerError("gemini", response.status, body.error?.message);
+    }
+    return parseJsonObject(body.candidates?.[0]?.content?.parts?.[0]?.text ?? "");
   };
-  if (!response.ok) {
-    throw providerError("gemini", response.status, body.error?.message);
+
+  try {
+    return await requestCompletion(prompt, BYOK_PROVIDER_MAX_TOKENS);
+  } catch (error) {
+    if (!isJsonSyntaxError(error)) {
+      throw error;
+    }
+    try {
+      return await requestCompletion(
+        buildJsonRetryPrompt(prompt),
+        BYOK_PROVIDER_JSON_RETRY_MAX_TOKENS,
+      );
+    } catch (retryError) {
+      if (isJsonSyntaxError(retryError)) {
+        throw providerJsonError();
+      }
+      throw retryError;
+    }
   }
-  return parseJsonObject(body.candidates?.[0]?.content?.parts?.[0]?.text ?? "");
 }
 
 function parseJsonObject(content: string) {
@@ -273,6 +318,20 @@ function parseJsonObject(content: string) {
     throw new Error("Provider returned an empty JSON response.");
   }
   return JSON.parse(trimmed) as Record<string, unknown>;
+}
+
+function isJsonSyntaxError(error: unknown) {
+  return error instanceof SyntaxError;
+}
+
+function buildJsonRetryPrompt(prompt: string) {
+  return `${prompt}\n\nThe previous response was invalid or truncated JSON. Return a smaller strict JSON object now. Keep summaries concise, cap arrays at 3 items, and do not include markdown fences.`;
+}
+
+function providerJsonError() {
+  return new Error(
+    "Provider returned incomplete JSON twice. Please retry, choose a shorter task, or switch models.",
+  );
 }
 
 function providerError(provider: ClientByokProvider, status: number, message?: string) {
