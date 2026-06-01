@@ -85,6 +85,10 @@ _ZH_FALLBACK_TEXT_REPLACEMENTS = (
         "产品组合改善推动毛利率扩张",
     ),
     (
+        r"\bCustomer concentration and supply constraints remain key risks\b",
+        "客户集中度和供应约束仍是主要风险",
+    ),
+    (
         r"\bWireless service revenue increased as fixed wireless access and fiber broadband demand supported customer additions\b",
         "无线服务收入增长，固定无线接入和光纤宽带需求支撑客户新增",
     ),
@@ -407,6 +411,7 @@ def _fallback_report_from_state(
             request,
             state,
             _latest_earnings_fallback_payload(
+                ticker=request.ticker,
                 summary=summary,
                 metrics=present_metrics[:3],
                 source_refs=source_refs,
@@ -457,6 +462,7 @@ def _fallback_report_from_state(
 
 def _latest_earnings_fallback_payload(
     *,
+    ticker: str,
     summary: str,
     metrics: list[EvidenceBoundMetric],
     source_refs: list[SourceRef],
@@ -467,21 +473,40 @@ def _latest_earnings_fallback_payload(
     primary_source_ids = fallback_source_ids[:1]
     primary_metric = _primary_fallback_metric(metrics)
     risk_source = _risk_source_ref(source_refs, primary_source_ids)
+    fallback_view = _latest_earnings_structured_fallback_view(
+        metrics=metrics,
+        source_refs=source_refs,
+        summary=summary,
+        ticker=ticker,
+        is_zh=is_zh,
+    )
     return {
         "company_profile": None,
         "topline_verdict": {
-            "headline": "证据兜底财报判断" if is_zh else "Evidence-backed fallback earnings view",
-            "summary": summary,
+            "headline": fallback_view["headline"],
+            "summary": fallback_view["summary"],
             "verdict": "mixed",
             "confidence": "low",
         },
         "key_takeaways": [
             _fallback_payload_point(
-                title="证据兜底判断" if is_zh else "Evidence-backed fallback",
-                summary=summary,
-                source_ids=primary_source_ids,
+                title=fallback_view["takeaway_title"],
+                summary=fallback_view["takeaway_summary"],
+                source_ids=fallback_view["takeaway_source_ids"] or primary_source_ids,
                 citation_status=_fallback_citation_status(source_refs),
-            )
+            ),
+            *(
+                [
+                    _fallback_payload_point(
+                        title=fallback_view["profit_title"],
+                        summary=fallback_view["profit_summary"],
+                        source_ids=fallback_view["profit_source_ids"] or primary_source_ids,
+                        citation_status=_fallback_citation_status(source_refs),
+                    )
+                ]
+                if fallback_view["profit_summary"]
+                else []
+            ),
         ],
         "financial_dashboard": {
             "metrics": [
@@ -494,7 +519,11 @@ def _latest_earnings_fallback_payload(
         "driver_snapshot": [
             _fallback_payload_point(
                 title=_driver_fallback_title(primary_metric, is_zh),
-                summary=_driver_fallback_summary(primary_metric, summary, is_zh),
+                summary=_driver_fallback_summary(
+                    primary_metric,
+                    fallback_view["summary"],
+                    is_zh,
+                ),
                 source_ids=_metric_source_ids(primary_metric) or primary_source_ids,
                 citation_status=_fallback_citation_status(source_refs),
             )
@@ -502,7 +531,11 @@ def _latest_earnings_fallback_payload(
         "risk_snapshot": [
             _fallback_payload_point(
                 title=_risk_fallback_title(risk_source, is_zh),
-                summary=_risk_fallback_summary(risk_source, is_zh),
+                summary=_risk_fallback_summary(
+                    risk_source,
+                    is_zh,
+                    context=fallback_view["summary"],
+                ),
                 source_ids=(
                     [risk_source.source_id] if risk_source is not None else primary_source_ids
                 ),
@@ -537,11 +570,144 @@ def _primary_fallback_metric(
     return present_metrics[0]
 
 
+def _latest_earnings_structured_fallback_view(
+    *,
+    ticker: str,
+    metrics: list[EvidenceBoundMetric],
+    source_refs: list[SourceRef],
+    summary: str,
+    is_zh: bool,
+) -> dict[str, object]:
+    metric_map = {
+        _normalize_metric_lookup_key(metric.name): metric
+        for metric in metrics
+        if not _is_missing_metric(metric)
+    }
+    revenue = _first_metric(
+        metric_map,
+        ("revenue", "sales", "net sales"),
+    )
+    profit = _first_metric(
+        metric_map,
+        ("operating income", "operating profit", "gross margin", "gross profit", "net income"),
+    )
+    cash = _first_metric(
+        metric_map,
+        ("operating cash flow", "free cash flow"),
+    )
+    risk_source = _risk_source_ref(source_refs, _metric_source_ids(revenue))
+    risk_text = _visible_source_snippet(risk_source, is_zh=is_zh)
+    revenue_text = _visible_metric_sentence(revenue, is_zh=is_zh)
+    profit_text = _visible_metric_sentence(profit, is_zh=is_zh)
+    cash_text = _visible_metric_sentence(cash, is_zh=is_zh)
+    metric_clauses = [text for text in (revenue_text, profit_text, cash_text) if text]
+    fallback_summary = _zh_fallback_text(summary) if is_zh else summary
+
+    if is_zh:
+        headline_subject = ticker or "本季度"
+        headline_metric = revenue_text or profit_text or cash_text or "已收集的关键指标"
+        headline = f"{headline_subject} 收入与利润表现仍需结合现金流验证"
+        summary_parts = [
+            f"{ticker or '该公司'} 本季分析以已验证指标为基础，{headline_metric}",
+        ]
+        if profit_text:
+            summary_parts.append(f"{profit_text}，用于判断收入是否转化为利润质量")
+        if cash_text:
+            summary_parts.append(f"{cash_text}，用于交叉验证会计利润的现金支撑")
+        if risk_text:
+            summary_parts.append(f"主要风险观察来自披露片段：{risk_text}")
+        summary_parts.append("因此这是一份保守但可执行的财报读数，下一季应继续验证收入、利润率和现金流是否同向改善。")
+        report_summary = "；".join(summary_parts)
+        takeaway_summary = (
+            f"增长质量的核心锚点是{revenue_text or headline_metric}。"
+            "如果后续季度收入继续扩张，同时利润率没有明显回落，当前财报判断会更有支撑；"
+            "反之，收入增速放缓会削弱这份读数的安全边际。"
+        )
+        profit_summary = (
+            f"利润质量需要重点看{profit_text or headline_metric}。"
+            f"{'同时，' + cash_text + '，这能帮助判断利润是否有现金流支撑。' if cash_text else '在缺少现金流锚点时，这一判断仍需保守处理。'}"
+        )
+        return {
+            "headline": headline,
+            "summary": report_summary,
+            "takeaway_title": "增长质量",
+            "takeaway_summary": takeaway_summary,
+            "takeaway_source_ids": _metric_source_ids(revenue),
+            "profit_title": "利润与现金转化",
+            "profit_summary": profit_summary,
+            "profit_source_ids": _metric_source_ids(profit) or _metric_source_ids(cash),
+        }
+
+    headline_subject = ticker or "The quarter"
+    headline_metric = revenue_text or profit_text or cash_text or "the collected metrics"
+    report_summary = (
+        f"{headline_subject} should be read from verified financial anchors: "
+        f"{', '.join(metric_clauses) if metric_clauses else fallback_summary}. "
+        "The conservative conclusion is to judge growth, margin conversion, and cash support together "
+        "rather than treating one metric as a standalone signal."
+    )
+    if risk_text:
+        report_summary += f" The main risk context is: {risk_text}"
+    takeaway_summary = (
+        f"Growth quality is anchored by {revenue_text or headline_metric}. "
+        "If revenue continues to expand without margin deterioration, the earnings read gains support; "
+        "if growth slows, the view should stay cautious."
+    )
+    profit_summary = (
+        f"Profit quality should be checked against {profit_text or headline_metric}. "
+        f"{'Cash support is visible through ' + cash_text + '.' if cash_text else 'Without a cash-flow anchor, this remains a partial view.'}"
+    )
+    return {
+        "headline": f"{headline_subject} needs revenue, profit, and cash-flow confirmation",
+        "summary": report_summary,
+        "takeaway_title": "Growth quality",
+        "takeaway_summary": takeaway_summary,
+        "takeaway_source_ids": _metric_source_ids(revenue),
+        "profit_title": "Profit and cash conversion",
+        "profit_summary": profit_summary,
+        "profit_source_ids": _metric_source_ids(profit) or _metric_source_ids(cash),
+    }
+
+
+def _first_metric(
+    metric_map: dict[str, EvidenceBoundMetric],
+    names: tuple[str, ...],
+) -> EvidenceBoundMetric | None:
+    for name in names:
+        metric = metric_map.get(_normalize_metric_lookup_key(name))
+        if metric is not None:
+            return metric
+    return None
+
+
+def _visible_metric_sentence(
+    metric: EvidenceBoundMetric | None,
+    *,
+    is_zh: bool,
+) -> str:
+    if metric is None:
+        return ""
+    if is_zh:
+        return f"{_zh_metric_name(metric.name)}为 {metric.value}"
+    return f"{metric.name} was {metric.value}"
+
+
+def _visible_source_snippet(
+    source_ref: SourceRef | None,
+    *,
+    is_zh: bool,
+) -> str:
+    if source_ref is None:
+        return ""
+    text = _zh_fallback_text(source_ref.snippet) if is_zh else source_ref.snippet
+    return _clip(text, 180)
+
+
 def _driver_fallback_title(metric: EvidenceBoundMetric | None, is_zh: bool = False) -> str:
     if metric is None:
-        return "证据锚点" if is_zh else "Evidence anchor"
+        return "财报驱动观察" if is_zh else "Earnings driver watch"
     if is_zh:
-        return f"{_title_case_metric(metric.name)} 证据锚点"
+        return f"{_zh_metric_name(metric.name)}驱动观察"
     return f"{_title_case_metric(metric.name)} evidence anchor"
 
 
@@ -554,12 +720,12 @@ def _driver_fallback_summary(
         return summary
     if is_zh:
         return (
-            f"{metric.name} 为 {metric.value}，是最终综合完成前最清晰的财报驱动证据。"
-            f"{metric.interpretation}"
+            f"{_zh_metric_name(metric.name)}为 {metric.value}，是本季财报最清晰的量化驱动之一。"
+            f"{_zh_fallback_text(metric.interpretation)}"
         )
     return (
-        f"{metric.name} of {metric.value} is the clearest available earnings driver "
-        f"before final synthesis completed. {metric.interpretation}"
+        f"{metric.name} of {metric.value} is one of the clearest available earnings "
+        f"drivers in the collected evidence. {metric.interpretation}"
     )
 
 
@@ -1152,22 +1318,33 @@ def _risk_fallback_title(source_ref: SourceRef | None, is_zh: bool = False) -> s
     return f"{_clip_title(source_ref.section)} risk watch"
 
 
-def _risk_fallback_summary(source_ref: SourceRef | None, is_zh: bool = False) -> str:
+def _risk_fallback_summary(
+    source_ref: SourceRef | None,
+    is_zh: bool = False,
+    *,
+    context: object = "",
+) -> str:
     if source_ref is None:
         if is_zh:
-            return "最终 LLM 综合未完成，因此风险框架在下一次完整分析前仍应视为部分判断。"
+            context_text = str(context or "").strip()
+            return (
+                f"{context_text} 风险判断仍应保持保守，下一季需要继续验证收入、利润率和现金流是否同向改善。"
+                if context_text
+                else "风险判断仍应保持保守，下一季需要继续验证收入、利润率和现金流是否同向改善。"
+            )
         return (
-            "The final LLM synthesis did not complete, so risk framing remains "
-            "partial until the next full analysis run."
+            "Risk framing should stay conservative until revenue, margin, and cash-flow "
+            "signals confirm the same direction next quarter."
         )
     if is_zh:
+        snippet = _visible_source_snippet(source_ref, is_zh=True)
         return (
-            f"{_clip(source_ref.snippet, 180)} 在最终综合能够重新核对驱动与风险证据前，"
-            "这会让财报判断保持均衡。"
+            f"{snippet} 这条风险证据说明当前财报读数不能只看单一增长指标，"
+            "还要继续验证需求、利润率和现金流是否同时改善。"
         )
     return (
         f"{_clip(source_ref.snippet, 180)} This keeps the earnings read balanced "
-        "until final synthesis can reconcile the driver and risk evidence."
+        "because investors still need confirmation across demand, margins, and cash flow."
     )
 
 
@@ -1816,7 +1993,7 @@ def _metric_interpretation(
         return f"SEC companyfacts concept {concept}."
     if source_ref is not None:
         return _clip(source_ref.snippet, 220)
-    return "Evidence-backed metric collected before final synthesis failed."
+    return "Metric was collected from available structured financial evidence."
 
 
 def _metric_value(value: object, unit: object) -> str:

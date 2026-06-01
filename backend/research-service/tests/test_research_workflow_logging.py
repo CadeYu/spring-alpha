@@ -826,9 +826,16 @@ def test_latest_earnings_timeout_fallback_respects_chinese_locale() -> None:
     assert "evidence anchor" not in serialized
     assert "risk watch" not in serialized
     assert "Risk Factors risk watch" not in serialized
-    assert "证据兜底财报判断" in serialized
-    assert "证据锚点" in serialized
+    assert "证据兜底财报判断" not in serialized
+    assert "最终综合" not in serialized
+    assert "收入与利润表现" in serialized
+    assert "增长质量" in serialized
     assert "风险观察" in serialized
+    sections = report.task_sections
+    assert "收入为 $35.1B" in sections.topline_verdict.summary
+    assert "经营利润为 $21.9B" in sections.topline_verdict.summary
+    assert len(sections.key_takeaways) >= 2
+    assert all(len(item.summary) >= 35 for item in sections.key_takeaways[:2])
 
 
 def test_fallback_summary_hides_internal_missing_metric_markers() -> None:
