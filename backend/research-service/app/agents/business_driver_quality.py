@@ -227,7 +227,7 @@ def business_driver_thesis_backfill(
             or "可用利润率和盈利数据"
         )
         profile = _business_driver_profile_hint(context, language)
-        headline = f"{company} 业务驱动需要同时看收入与利润率"
+        headline = f"{company} 业务驱动需要同时验证收入、利润率、需求韧性与分部质量"
         summary = (
             f"{company} 的业务驱动结论应同时看收入 {revenue} 与利润率锚点 {margin}。"
             f"{profile} 对投资者来说，关键不是单季收入数字本身，而是收入规模、"

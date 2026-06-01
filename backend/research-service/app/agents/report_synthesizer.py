@@ -187,6 +187,7 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (_ascii_term_pattern("B2B"), "企业端"),
     (_ascii_term_pattern("EPS"), "每股收益"),
     (_ascii_term_pattern("MLR"), "医疗损失率"),
+    (re.compile(r"\bSegment\s+momentum\b", flags=re.I), "分部动能"),
     (re.compile(r"\bDebt\s*/\s*Equity\b", flags=re.I), "债务/股东权益"),
     (re.compile(r"\bDebt[-\s]+to[-\s]+Equity\b", flags=re.I), "债务/股东权益"),
     (re.compile(r"\bremaining performance obligations?\b", flags=re.I), "剩余履约义务"),
@@ -1761,6 +1762,10 @@ def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
             "现有证据仍不完整，仍需后续披露验证。",
         ),
         (
+            re.compile(r"无法形成完整判断[。；;]?"),
+            "现有证据仍不完整，仍需后续披露验证。",
+        ),
+        (
             re.compile(r"无法验证([^。；;]*?)([。；;])"),
             r"仍需后续披露验证\1\2",
         ),
@@ -3211,12 +3216,14 @@ def _expand_short_capital_point(
             metric_label = _localize_metric_name(metric.name, language)
             expanded = (
                 f"{metric_label}为 {metric.value}，需要和经营现金流、自由现金流一起判断"
-                "资产负债表压力。"
+                "资产负债表压力；如果现金生成放缓，再融资成本、利息负担或债务到期节奏"
+                "都可能压缩股东回报。"
             )
         else:
             metric_label = _localize_metric_name(metric.name, language)
             expanded = (
-                f"{metric_label}为 {metric.value}，这是短期流动性和资本配置余地的关键锚点。"
+                f"{metric_label}为 {metric.value}，这是短期流动性和资本配置余地的关键锚点；"
+                "投资者需要确认短期负债不会挤压再投资、分红或债务偿还空间。"
             )
     elif metric_kind == "capital expenditures":
         expanded = (

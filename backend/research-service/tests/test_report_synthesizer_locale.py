@@ -2955,6 +2955,143 @@ def test_business_driver_zh_reviewer_localizes_basic_materials_classification() 
     assert "特种化学品" in serialized
 
 
+def test_business_driver_zh_visible_copy_localizes_consumer_defensive_classification() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "CCEP",
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "COCA-COLA EUROPACIFIC PARTNERS PLC",
+                    "market_sector": "Consumer Defensive",
+                    "market_industry": "Beverages - Non - Alcoholic",
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 5025000000,
+                            "unit": "USD",
+                            "period": "FY2026-Q1",
+                        }
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 5025000000,
+                        "unit": "USD",
+                        "fact_period": "FY2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    }
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "CCEP 业务驱动需要验证",
+                "durability": "mixed",
+                "summary": (
+                    "CCEP 的行业暴露集中在 Consumer Defensive / "
+                    "Beverages - Non - Alcoholic。"
+                ),
+            },
+            "driver_map": {
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": (
+                        "其行业暴露集中在 Consumer Defensive / "
+                        "Beverages - Non - Alcoholic。"
+                    ),
+                    "citation_status": "partial",
+                }
+            },
+            "claims": [],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    for leaked in ("Consumer Defensive", "Beverages - Non - Alcoholic"):
+        assert leaked not in serialized
+    assert "防御消费" in serialized
+    assert "非酒精饮料" in serialized
+
+
+def test_business_driver_zh_fact_backfill_headline_is_informative_enough_for_core_scan() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "LIN",
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "LINDE PLC",
+                    "market_sector": "Basic Materials",
+                    "market_industry": "Specialty Chemicals",
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 8793000000,
+                            "unit": "USD",
+                            "period": "FY2026-Q1",
+                        },
+                        {
+                            "name": "gross margin",
+                            "value": 0.485,
+                            "unit": "pure",
+                            "period": "FY2026-Q1",
+                        },
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 8793000000,
+                        "unit": "USD",
+                        "fact_period": "FY2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    },
+                    {
+                        "metric": "gross margin",
+                        "value": 0.485,
+                        "unit": "pure",
+                        "fact_period": "FY2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "No evidence for this lens.",
+                "durability": "unclear",
+                "summary": "No evidence for this lens.",
+            },
+            "driver_map": {
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "No evidence for this lens.",
+                    "citation_status": "missing",
+                }
+            },
+            "claims": [],
+        },
+    )
+
+    headline = report.task_sections.driver_thesis.headline
+    assert len(" ".join(headline.split())) >= 35
+    assert "收入" in headline
+    assert "利润率" in headline
+    assert "需求" in headline
+
+
 def test_business_driver_thesis_placeholder_is_recovered_from_structured_facts() -> None:
     state = _make_state(language="zh").model_copy(
         update={
@@ -5171,6 +5308,90 @@ def test_cash_flow_zh_visible_copy_repairs_weak_evidence_and_object_leaks() -> N
     assert "仍需后续披露验证" in visible_text
     assert "资本开支" in visible_text
     assert "风险信号" in visible_text
+
+
+def test_cash_flow_zh_short_debt_and_liquidity_points_expand_with_investor_context() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="CCEP",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="CCEP",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "total debt", "value": 10690000000, "unit": "USD"},
+                    {"name": "current ratio", "value": 0.8, "unit": "ratio"},
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Structured balance sheet metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "CCEP 现金质量需要结合债务与流动性观察。",
+            "earnings_backed_by_cash": "mixed",
+            "summary": "债务与流动比率决定资本配置余地。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {
+            "debt": [
+                {
+                    "title": "债务负担",
+                    "summary": "总债务偏高",
+                    "source_ids": ["src_1"],
+                    "citation_status": "partial",
+                }
+            ],
+            "liquidity": [
+                {
+                    "title": "流动性",
+                    "summary": "流动比率偏低",
+                    "source_ids": ["src_1"],
+                    "citation_status": "partial",
+                }
+            ],
+        },
+        "allocation_discipline": [
+            {
+                "title": "资本配置纪律",
+                "summary": "无法形成完整判断。现有证据未覆盖股东回报。",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    debt_summary = report.task_sections.capital_allocation.debt[0].summary
+    liquidity_summary = report.task_sections.capital_allocation.liquidity[0].summary
+    discipline_summary = report.task_sections.allocation_discipline[0].summary
+    assert len(" ".join(debt_summary.split())) >= 55
+    assert len(" ".join(liquidity_summary.split())) >= 55
+    assert "总债务" in debt_summary
+    assert "经营现金流" in debt_summary
+    assert "再融资" in debt_summary or "利息" in debt_summary
+    assert "流动比率" in liquidity_summary
+    assert "短期负债" in liquidity_summary
+    assert "再投资" in liquidity_summary or "资本配置" in liquidity_summary
+    assert "无法形成完整判断" not in discipline_summary
+    assert "后续披露" in discipline_summary
 
 
 def test_cash_flow_unsupported_capital_points_are_removed_without_structured_metrics() -> None:
