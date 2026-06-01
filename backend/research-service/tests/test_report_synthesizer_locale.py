@@ -5825,6 +5825,78 @@ def test_cash_flow_zh_short_debt_and_liquidity_points_expand_with_investor_conte
     assert "后续披露" in discipline_summary
 
 
+def test_cash_flow_zh_short_allocation_discipline_expands_with_cash_kpi_context() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="PAYX",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="PAYX",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "net income", "value": 519000000, "unit": "USD"},
+                    {"name": "operating cash flow", "value": 1557000000, "unit": "USD"},
+                    {"name": "capital expenditures", "value": 131000000, "unit": "USD"},
+                    {"name": "free cash flow", "value": 1426000000, "unit": "USD"},
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "structured cash flow",
+                    "snippet": "Structured cash flow metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "PAYX 现金质量有现金流支撑。",
+            "earnings_backed_by_cash": "yes",
+            "summary": "经营现金流显著高于净利润。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {
+            "capex": [
+                {
+                    "title": "资本开支",
+                    "summary": "资本开支为 $131.0M。",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ]
+        },
+        "allocation_discipline": [
+            {
+                "title": "配置纪律",
+                "summary": "资本配置呈现",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    discipline_summary = report.task_sections.allocation_discipline[0].summary
+    assert discipline_summary != "资本配置呈现"
+    assert len(" ".join(discipline_summary.split())) >= 55
+    assert "经营现金流" in discipline_summary
+    assert "净利润" in discipline_summary
+    assert "资本开支" in discipline_summary or "自由现金流" in discipline_summary
+    assert "投资者" in discipline_summary or "现金质量" in discipline_summary
+
+
 def test_cash_flow_unsupported_capital_points_are_removed_without_structured_metrics() -> None:
     request = AgentRequest(
         run_id="run_1",

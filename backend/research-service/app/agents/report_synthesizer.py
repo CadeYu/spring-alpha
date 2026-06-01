@@ -2117,6 +2117,11 @@ def build_cash_flow_report_from_payload(
         cash_metrics,
         request.language,
     )
+    allocation_discipline = _cash_flow_allocation_discipline_with_repair(
+        payload.allocation_discipline,
+        cash_metrics,
+        request.language,
+    )
     cash_quality_verdict = _cash_quality_verdict_with_repair(
         payload.cash_quality_verdict,
         cash_metrics,
@@ -2156,7 +2161,7 @@ def build_cash_flow_report_from_payload(
         ),
         allocation_discipline=[
             _point_from_payload(point, source_refs_by_id, request.language)
-            for point in payload.allocation_discipline
+            for point in allocation_discipline
         ],
         red_flags=[
             _point_from_payload(point, source_refs_by_id, request.language)
@@ -3322,6 +3327,119 @@ def _expand_short_capital_point(
             if point.source_ids
             else metric.citation_status,
         }
+    )
+
+
+def _cash_flow_allocation_discipline_with_repair(
+    points: list[_SynthesizedPoint],
+    metrics: list[_SynthesizedMetric],
+    language: str | None,
+) -> list[_SynthesizedPoint]:
+    anchor = _allocation_discipline_anchor(metrics)
+    return [
+        _expand_short_allocation_discipline_point(point, metrics, anchor, language)
+        for point in points
+    ]
+
+
+def _allocation_discipline_anchor(
+    metrics: list[_SynthesizedMetric],
+) -> _SynthesizedMetric | None:
+    for names in (
+        ("operating cash flow",),
+        ("free cash flow",),
+        ("capital expenditures", "capex"),
+        ("net income",),
+    ):
+        metric = _synthesized_metric_by_name(metrics, names)
+        if metric is not None:
+            return metric
+    return metrics[0] if metrics else None
+
+
+def _expand_short_allocation_discipline_point(
+    point: _SynthesizedPoint,
+    metrics: list[_SynthesizedMetric],
+    anchor: _SynthesizedMetric | None,
+    language: str | None,
+) -> _SynthesizedPoint:
+    summary = _localize_visible_text(" ".join(point.summary.split()).strip(), language)
+    if len(summary) >= 35 or anchor is None or _is_zh_evidence_boundary_summary(summary, language):
+        return point.model_copy(update={"summary": summary})
+    is_zh = _is_zh_locale(language)
+    ocf = _synthesized_metric_by_name(metrics, ("operating cash flow",))
+    fcf = _synthesized_metric_by_name(metrics, ("free cash flow",))
+    capex = _synthesized_metric_by_name(metrics, ("capital expenditures", "capex"))
+    net_income = _synthesized_metric_by_name(metrics, ("net income",))
+    if is_zh:
+        evidence_parts = _cash_flow_metric_phrase_parts(
+            (ocf, net_income, capex, fcf),
+            language,
+        )
+        if evidence_parts:
+            expanded = (
+                "资本配置纪律需要结合"
+                + "、".join(evidence_parts)
+                + "判断；投资者应重点确认经营现金流是否持续覆盖再投资，"
+                "以及自由现金流是否仍能支撑股东回报和资产负债表韧性。"
+            )
+        else:
+            expanded = (
+                f"{_localize_metric_name(anchor.name, language)}为 {anchor.value}，"
+                "是判断资本配置纪律的主要现金流锚点；投资者应继续跟踪这一指标"
+                "是否能覆盖再投资、债务需求和潜在股东回报。"
+            )
+    else:
+        evidence_parts = _cash_flow_metric_phrase_parts(
+            (ocf, net_income, capex, fcf),
+            language,
+        )
+        if evidence_parts:
+            expanded = (
+                "Allocation discipline should be judged against "
+                + ", ".join(evidence_parts)
+                + "; investors should confirm that operating cash flow continues "
+                "to fund reinvestment while preserving free-cash-flow flexibility."
+            )
+        else:
+            expanded = (
+                f"{anchor.name} of {anchor.value} is the main cash-flow anchor for "
+                "allocation discipline; investors should track whether it can fund "
+                "reinvestment, debt needs, and potential shareholder returns."
+            )
+    return point.model_copy(
+        update={
+            "summary": expanded,
+            "source_ids": point.source_ids or anchor.source_ids,
+            "citation_status": point.citation_status
+            if point.source_ids
+            else anchor.citation_status,
+        }
+    )
+
+
+def _cash_flow_metric_phrase_parts(
+    metrics: tuple[_SynthesizedMetric | None, ...],
+    language: str | None,
+) -> list[str]:
+    parts = []
+    for metric in metrics:
+        if metric is None:
+            continue
+        if _is_zh_locale(language):
+            parts.append(f"{_localize_metric_name(metric.name, language)} {metric.value}")
+        else:
+            parts.append(f"{metric.name.lower()} of {metric.value}")
+    return parts
+
+
+def _is_zh_evidence_boundary_summary(summary: str, language: str | None) -> bool:
+    if not _is_zh_locale(language):
+        return False
+    return len(summary) >= 18 and (
+        "后续披露" in summary
+        or "证据仍不完整" in summary
+        or "现有证据" in summary
     )
 
 
