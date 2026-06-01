@@ -97,6 +97,13 @@ async function clickAnalyzeButton(page: import("@playwright/test").Page) {
   await button.click();
 }
 
+async function selectChineseLocale(page: import("@playwright/test").Page) {
+  await page.locator("select").selectOption("zh");
+  await expect(
+    page.getByRole("region", { name: /Agent 流水线/i }),
+  ).toBeVisible();
+}
+
 const TASK_E2E_CASES = [
   {
     taskType: "latest_earnings_readout",
@@ -928,7 +935,7 @@ test.describe("Spring Alpha smoke", () => {
     });
 
     await page.goto("/app");
-    await page.locator("select").selectOption("zh");
+    await selectChineseLocale(page);
     await page
       .locator('input[placeholder*="股票代码"], input[placeholder*="Ticker"]')
       .fill("TSLA");
@@ -1003,7 +1010,7 @@ test.describe("Spring Alpha smoke", () => {
     });
 
     await page.goto("/app");
-    await page.locator("select").selectOption("zh");
+    await selectChineseLocale(page);
     await page
       .locator('input[placeholder*="股票代码"], input[placeholder*="Ticker"]')
       .fill("TSLA");
