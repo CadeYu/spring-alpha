@@ -5962,6 +5962,70 @@ def test_cash_flow_zh_short_allocation_discipline_expands_with_cash_kpi_context(
     assert "投资者" in discipline_summary or "现金质量" in discipline_summary
 
 
+def test_cash_flow_zh_short_red_flags_expand_without_cash_flow_anchor() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="FER",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="FER",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={"metrics": []},
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "market snapshot",
+                    "snippet": "Revenue and operating margin were available.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "FER 现金流证据仍不完整。",
+            "earnings_backed_by_cash": "unclear",
+            "summary": "经营现金流、资本支出、自由现金流均未披露。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {},
+        "allocation_discipline": [],
+        "red_flags": [
+            {
+                "title": "关键现金流指标缺失",
+                "summary": "关键现金流指标集体缺失：经营现金流、资本支出、自由现金流均未披露",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            },
+            {
+                "title": "估值错配",
+                "summary": "运营利润率9.4%与49.6倍PE的严重错配",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            },
+        ],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    red_flag_summaries = [
+        point.summary for point in report.task_sections.red_flags
+    ]
+    for summary in red_flag_summaries:
+        assert len(" ".join(summary.split())) >= 55
+        assert "投资者" in summary or "下一季" in summary
+    assert "经营现金流" in red_flag_summaries[0]
+    assert "自由现金流" in red_flag_summaries[0]
+    assert "估值" in red_flag_summaries[1] or "利润率" in red_flag_summaries[1]
+
+
 def test_cash_flow_unsupported_capital_points_are_removed_without_structured_metrics() -> None:
     request = AgentRequest(
         run_id="run_1",

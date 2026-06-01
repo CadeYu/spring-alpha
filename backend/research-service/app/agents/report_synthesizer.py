@@ -3572,8 +3572,11 @@ def _expand_short_cash_flow_red_flag(
     language: str | None,
 ) -> _SynthesizedPoint:
     summary = _localize_visible_text(" ".join(point.summary.split()).strip(), language)
-    if len(summary) >= 35 or anchor is None:
+    if len(summary) >= 35:
         return point.model_copy(update={"summary": summary})
+    if anchor is None:
+        expanded = _expand_short_cash_flow_red_flag_without_anchor(summary, language)
+        return point.model_copy(update={"summary": expanded})
     is_zh = _is_zh_locale(language)
     if is_zh:
         anchor_label = _localize_metric_name(anchor.name, language)
@@ -3622,6 +3625,31 @@ def _expand_short_cash_flow_red_flag(
             if point.source_ids
             else anchor.citation_status,
         }
+    )
+
+
+def _expand_short_cash_flow_red_flag_without_anchor(
+    summary: str,
+    language: str | None,
+) -> str:
+    if _is_zh_locale(language):
+        if any(term in summary for term in ("经营现金流", "自由现金流", "资本支出", "资本开支")):
+            return (
+                f"{summary}。这会削弱投资者对利润转化为现金的验证能力；下一季应优先确认"
+                "经营现金流、资本开支和自由现金流是否同步披露，并判断会计利润是否真正形成现金回收。"
+            )
+        if "利润率" in summary or "PE" in summary or "估值" in summary:
+            return (
+                f"{summary}。这意味着估值要求与经营质量之间需要更多现金流证据支撑；"
+                "投资者应跟踪后续利润率、经营现金流和自由现金流是否能共同支持当前定价。"
+            )
+        return (
+            f"{summary}。这一风险需要放到现金生成、再投资需求和资产负债表韧性中一起判断；"
+            "下一季应确认相关披露是否改善，否则现金质量判断仍需保持折价。"
+        )
+    return (
+        f"{summary}. Investors should validate this risk against operating cash flow, "
+        "capex, free cash flow, and balance sheet flexibility in the next reporting cycle."
     )
 
 
