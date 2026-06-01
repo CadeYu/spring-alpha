@@ -112,6 +112,14 @@ _ZH_FALLBACK_TEXT_REPLACEMENTS = (
         r"\bCash and short-term investments were (?P<value>\$?-?\d+(?:\.\d+)?[BMK]?)\b",
         r"现金及短期投资为 \g<value>",
     ),
+    (
+        r"\bSEC companyfacts concept\s+[A-Za-z0-9]+\.?",
+        "SEC 公司事实指标提供了对应指标来源。",
+    ),
+    (
+        r"\bPaymentsToAcquirePropertyPlantAndEquipment\b",
+        "购置固定资产相关资本开支",
+    ),
     (r"\brevenue bridge\b", "收入桥接"),
     (r"\bsegment momentum\b", "分部动能"),
     (r"\bmargin and mix\b", "利润率与组合"),
@@ -1007,13 +1015,13 @@ def _business_driver_fallback_lens_summary(
             anchor = (
                 f"以 {_zh_fallback_text(metric_text)} 作为收入观察起点"
                 if metric_text
-                else "主要依赖已检索的披露文件证据"
+                else "主要依赖当前可用披露"
             )
             return (
                 f"{request.ticker} 的收入桥接{anchor}；"
                 f"对应证据显示：{_zh_fallback_text(evidence_text)}。"
                 "这说明收入侧仍是判断业务动能的第一层证据，投资上需要继续和分部表现、利润率转化一起验证。"
-                "当前结论只限定在已检索证据内，不外推未被证据来源支持的需求叙事。"
+                "当前结论只限定在已收集证据内，不外推未被证据来源支持的需求叙事。"
             )
         if lens == "segment_momentum":
             return (
@@ -1075,7 +1083,7 @@ def _business_driver_fallback_thesis_summary(
     snippets = [_clip(point.summary, 140) for point in points if point.summary.strip()]
     if _is_zh_locale(request.language):
         return (
-            f"{request.ticker} 的业务驱动结论应以已检索证据为边界："
+            f"{request.ticker} 的业务驱动结论应以当前证据为边界："
             f"{_zh_fallback_text(summary)} 四个核心观察分别是："
             f"{_zh_fallback_text(' '.join(snippets[:4]))}"
         )
@@ -1702,7 +1710,12 @@ def _cash_flow_liquidity_point(
         )
         citation_status = cash.citation_status
     if not parts and liquidity_refs:
-        parts.append(_clip(liquidity_refs[0].snippet, 160))
+        snippet = (
+            _zh_fallback_text(liquidity_refs[0].snippet)
+            if zh
+            else liquidity_refs[0].snippet
+        )
+        parts.append(_clip(snippet, 160))
         citation_status = liquidity_refs[0].citation_status
     return EvidenceBoundPoint(
         title="资产负债表韧性" if zh else "Balance sheet resilience",
@@ -1923,7 +1936,10 @@ def _fallback_claims(
         claims.append(
             EvidenceBoundClaim(
                 claim_id=f"{request.run_id}:fallback_claim:{index}",
-                text=_clip(source_ref.snippet, 220),
+                text=_clip(
+                    _zh_fallback_text(source_ref.snippet) if zh else source_ref.snippet,
+                    220,
+                ),
                 citation_status=source_ref.citation_status,
                 source_refs=[source_ref],
             )
@@ -2108,7 +2124,10 @@ def _is_missing_metric(metric: EvidenceBoundMetric) -> bool:
 def _missing_metric_boundary_text(metric_names: list[str], *, zh: bool) -> str:
     if not metric_names:
         return ""
-    visible_names = ", ".join(metric_names[:3])
+    visible_names = ", ".join(
+        _zh_metric_name(metric_name) if zh else metric_name
+        for metric_name in metric_names[:3]
+    )
     if zh:
         return f"{visible_names} 未在当前证据包中稳定抽取，不能作为强结论"
     return (

@@ -80,8 +80,8 @@ def summarize_english_business_snippet_for_zh(text: str) -> str:
     )
     if "segment" in lower and any(marker in lower for marker in segment_markers):
         return (
-            "已检索到分部或业务线披露片段，说明公司存在可追踪的业务线暴露，"
-            "但当前中文摘要仅作为方向性证据。"
+            "分部或业务线披露显示，公司存在可追踪的业务线暴露；"
+            "当前结论应作为方向性经营证据。"
         )
     profile_markers = (
         "operates as",
@@ -91,7 +91,7 @@ def summarize_english_business_snippet_for_zh(text: str) -> str:
         "manufactures",
     )
     if any(marker in lower for marker in profile_markers) and _english_word_count(normalized) >= 8:
-        return "已检索到英文业务摘要，说明公司具备可分析的产品、客户或市场暴露线索。"
+        return "业务摘要显示，公司具备可分析的产品、客户或市场暴露线索。"
     return normalized
 
 

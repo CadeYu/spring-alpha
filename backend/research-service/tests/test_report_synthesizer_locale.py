@@ -5571,6 +5571,108 @@ def test_cash_flow_zh_visible_copy_repairs_undisclosed_metric_and_list_leaks() -
     assert "资本开支" in visible_text
 
 
+def test_cash_flow_zh_visible_copy_sanitizes_raw_source_sentences() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="PAYX",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="PAYX",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={"metrics": []},
+            source_refs=[
+                {
+                    "source_id": "src_ocf",
+                    "section": "structured cash flow",
+                    "snippet": (
+                        "Structured yfinance facts reports operating cash flow of "
+                        "1557100000 USD for 2026Q3 filed 2026-03-26."
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_capex",
+                    "section": "SEC companyfacts",
+                    "snippet": (
+                        "SEC companyfacts concept "
+                        "PaymentsToAcquirePropertyPlantAndEquipment."
+                    ),
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "现金质量仍需要更多证据。",
+            "earnings_backed_by_cash": "unclear",
+            "summary": (
+                "PAYX 的证据收集已完成：free cash flow, current ratio, total debt "
+                "未在当前证据包中稳定抽取。"
+            ),
+        },
+        "cash_metrics": [],
+        "capital_allocation": {
+            "capex": [
+                {
+                    "title": "资本开支",
+                    "summary": (
+                        "资本开支为 $131.3M。SEC companyfacts concept "
+                        "PaymentsToAcquirePropertyPlantAndEquipment."
+                    ),
+                    "source_ids": ["src_capex"],
+                    "citation_status": "supported",
+                }
+            ],
+            "liquidity": [
+                {
+                    "title": "流动性",
+                    "summary": (
+                        "流动性背景：Structured yfinance facts reports operating cash flow "
+                        "of 1557100000 USD for 2026Q3 filed 2026-03-26.。"
+                        "这决定管理层有多少时间把投资转化为现金回报。"
+                    ),
+                    "source_ids": ["src_ocf"],
+                    "citation_status": "supported",
+                }
+            ],
+        },
+        "allocation_discipline": [],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    sections = report.task_sections
+    visible_text = " ".join(
+        [
+            sections.cash_quality_verdict.summary,
+            *(point.summary for point in sections.capital_allocation.capex),
+            *(point.summary for point in sections.capital_allocation.liquidity),
+        ]
+    )
+    for leaked in (
+        "free cash flow",
+        "current ratio",
+        "total debt",
+        "Structured yfinance facts reports",
+        "SEC companyfacts concept",
+        "PaymentsToAcquirePropertyPlantAndEquipment",
+        "filed",
+    ):
+        assert leaked not in visible_text
+    assert "现金流" in visible_text
+    assert "投资" in visible_text
+    assert "再投资" in visible_text
+
+
 def test_cash_flow_zh_short_debt_and_liquidity_points_expand_with_investor_context() -> None:
     request = AgentRequest(
         run_id="run_1",

@@ -277,6 +277,11 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\bdemand signals\b", flags=re.I), "需求信号"),
     (re.compile(r"\bmarket context\b", flags=re.I), "市场背景"),
     (re.compile(r"\bStructured yfinance facts reports\b", flags=re.I), "结构化数据披露"),
+    (re.compile(r"\bSEC\s+companyfacts\s+concept\b", flags=re.I), "SEC 公司事实指标"),
+    (
+        re.compile(r"\bPaymentsToAcquirePropertyPlantAndEquipment\b", flags=re.I),
+        "购置固定资产相关资本开支",
+    ),
     (re.compile(r"\byfinance\b", flags=re.I), "结构化行情数据"),
     (re.compile(r"\bfiled\b", flags=re.I), "披露于"),
     (re.compile(r"(?<![A-Za-z])capex(?=[\u4e00-\u9fff])", flags=re.I), "资本开支"),
@@ -1803,9 +1808,40 @@ def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
     )
     for pattern, replacement in replacements:
         text = pattern.sub(replacement, text)
+    text = _localize_missing_metric_boundaries(text)
     text = re.sub(r"\[\s*'([^']+)'\s*,\s*'([^']+)'\s*\]", r"\1、\2", text)
     text = re.sub(r"\[\s*'([^']+)'\s*\]", r"\1", text)
     return text
+
+
+def _localize_missing_metric_boundaries(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        localized_names = _localize_metric_list(match.group("names"))
+        return f"{localized_names}{match.group('suffix')}"
+
+    metric_names = "|".join(
+        re.escape(metric_name)
+        for metric_name in sorted(_ZH_METRIC_LABELS, key=len, reverse=True)
+    )
+    return re.sub(
+        rf"(?P<names>(?:{metric_names})(?:\s*,\s*(?:{metric_names}))*)"
+        r"(?P<suffix>\s+未在当前证据包中稳定抽取)",
+        replace,
+        text,
+        flags=re.I,
+    )
+
+
+def _localize_metric_list(value: str) -> str:
+    localized = value
+    for metric_name in sorted(_ZH_METRIC_LABELS, key=len, reverse=True):
+        localized = re.sub(
+            rf"(?<![A-Za-z]){re.escape(metric_name)}(?![A-Za-z])",
+            _ZH_METRIC_LABELS[metric_name],
+            localized,
+            flags=re.I,
+        )
+    return localized
 
 
 def _rewrite_placeholder_availability_text(value: str) -> str:
@@ -5222,12 +5258,22 @@ def _rewrite_structured_yfinance_metric_sentence(text: str) -> str:
         period = match.group("period").strip()
         return f"{period} {metric}为 {value}。"
 
-    return re.sub(
+    rewritten = re.sub(
         r"(?:Structured\s+yfinance\s+facts\s+reports|结构化数据披露)\s+"
         r"(?P<metric>[A-Za-z ]+?)\s+of\s+"
         r"(?P<value>-?\d+(?:\.\d+)?)\s+(?P<unit>USD|pure|percent|percentage|x|ratio)"
         r"\s+for\s+(?P<period>[^.。]+?)(?:\s+filed\s+[^.。]+)?(?:\.|。|$)",
         replace,
+        text,
+        flags=re.I,
+    )
+    return _rewrite_sec_companyfacts_concept_sentence(rewritten)
+
+
+def _rewrite_sec_companyfacts_concept_sentence(text: str) -> str:
+    return re.sub(
+        r"SEC\s+公司事实指标\s+[A-Za-z0-9]+(?:[.。]|$)",
+        "SEC 公司事实指标提供了对应指标来源。",
         text,
         flags=re.I,
     )

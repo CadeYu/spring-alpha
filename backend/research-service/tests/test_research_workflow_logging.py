@@ -639,6 +639,7 @@ def test_cash_flow_zh_fallback_localizes_metric_outlook_copy() -> None:
         "free cash flow",
         "capital expenditures",
         "current ratio",
+        "total debt",
         "cash and short-term investments",
         "Structured yfinance facts reports",
         "latest_quarter",
@@ -649,6 +650,124 @@ def test_cash_flow_zh_fallback_localizes_metric_outlook_copy() -> None:
     assert "自由现金流" in serialized
     assert "总债务" in serialized
     assert "现金及短期投资" in serialized
+
+
+def test_cash_flow_zh_fallback_localizes_missing_metric_boundaries() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="PAYX",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="PAYX",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["cashQualityVerdict"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "yfinance",
+                    "metric": "net income",
+                    "value": 519300000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q3",
+                    "source_id": "src_income",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "operating cash flow",
+                    "value": 1557100000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q3",
+                    "source_id": "src_ocf",
+                },
+                {
+                    "source": "sec_companyfacts",
+                    "metric": "capital expenditures",
+                    "value": 131300000,
+                    "unit": "USD",
+                    "fact_period": "2026-Q3",
+                    "source_id": "src_capex",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "free cash flow",
+                    "value": None,
+                    "unit": "USD",
+                    "fact_period": "2026-Q3",
+                    "source_id": "src_fcf",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "current ratio",
+                    "value": None,
+                    "unit": "ratio",
+                    "fact_period": "2026-Q3",
+                    "source_id": "src_current",
+                },
+                {
+                    "source": "yfinance",
+                    "metric": "total debt",
+                    "value": None,
+                    "unit": "USD",
+                    "fact_period": "2026-Q3",
+                    "source_id": "src_debt",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_income",
+                    "section": "structured snapshot",
+                    "snippet": "Net income was $519.3M.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_ocf",
+                    "section": "structured cash flow",
+                    "snippet": (
+                        "Structured yfinance facts reports operating cash flow of "
+                        "1557100000 USD for 2026Q3 filed 2026-03-26."
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_capex",
+                    "section": "SEC companyfacts",
+                    "snippet": "SEC companyfacts concept PaymentsToAcquirePropertyPlantAndEquipment.",
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Cash flow agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    for leaked in [
+        "free cash flow",
+        "current ratio",
+        "total debt",
+        "Structured yfinance facts reports",
+        "SEC companyfacts concept",
+        "PaymentsToAcquirePropertyPlantAndEquipment",
+        "filed",
+    ]:
+        assert leaked not in serialized
+    assert "自由现金流" in serialized
+    assert "流动比率" in serialized
+    assert "总债务" in serialized
+    assert "SEC 公司事实指标" in serialized
 
 
 def test_latest_earnings_timeout_fallback_backfills_rich_memo_sections() -> None:
@@ -1209,10 +1328,65 @@ def test_business_driver_zh_fallback_summarizes_english_segment_profile_snippets
         "The Compute & Networking segment provides",
         "accelerated computing platforms",
         "networking solutions",
+        "已检索到",
     ]:
         assert leaked not in serialized
-    assert "已检索到分部或业务线披露片段" in serialized
+    assert "分部或业务线披露" in serialized
     assert "分部动能" in serialized
+
+
+def test_business_driver_zh_fallback_summarizes_english_profile_without_internal_copy() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="CCEP",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="CCEP",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["driverThesis"],
+        ),
+        evidence_memory=EvidenceMemory(
+            source_refs=[
+                {
+                    "source_id": "src_profile",
+                    "section": "business summary",
+                    "snippet": (
+                        "Coca-Cola Europacific Partners operates as a bottling partner "
+                        "and provides non-alcoholic ready-to-drink beverages to retail "
+                        "customers across Europe and the Asia Pacific region."
+                    ),
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Business driver agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    for leaked in [
+        "Coca-Cola Europacific Partners operates as",
+        "provides non-alcoholic",
+        "已检索到",
+        "英文业务摘要",
+        "检索",
+    ]:
+        assert leaked not in serialized
+    assert "产品" in serialized
+    assert "客户" in serialized
+    assert "市场暴露" in serialized
 
 
 def test_business_driver_timeout_with_evidence_returns_grounded_fallback(monkeypatch) -> None:
