@@ -1095,6 +1095,75 @@ def test_latest_earnings_zh_visible_copy_localizes_crm_finance_terms() -> None:
     assert "剩余履约义务" in visible_text
 
 
+def test_latest_earnings_cash_quality_backfill_without_cash_metric_avoids_template_copy() -> None:
+    state = _make_state(language="zh")
+    payload = {
+        "company_profile": {
+            "summary": "UnitedHealth Group provides healthcare benefits and services.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "UNH 本季收入增长但利润转化承压。",
+            "summary": (
+                "UNH 本季收入规模仍大，但运营费用率上升压低了利润转化。"
+                "管理层将投入重点放在消费者体验和医疗服务方体验。"
+            ),
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "运营投入压低利润转化",
+                "summary": (
+                    "运营费用率上升来自 people, process and technology 投资，目标是改善"
+                    "消费者和医疗服务方体验；这解释了高毛利向低营业利润率的转化断裂。"
+                ),
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$111.7B",
+                    "period": "FY2026-Q1",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Gross Margin",
+                    "value": "88.5%",
+                    "period": "FY2026-Q1",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+            ],
+            "chart_focus": ["Revenue", "Gross Margin"],
+        },
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    serialized = report.model_dump_json()
+    cash_summary = report.task_sections.quality_of_quarter.cash_quality.summary
+    assert "支撑背景" not in cash_summary
+    assert "现金质量以经营现金流或自由现金流证据为锚" not in cash_summary
+    assert "下一季" in cash_summary
+    assert len(cash_summary) >= 70
+    assert "people, process" not in serialized.lower()
+    assert "people, process 和 科技" not in serialized
+    assert "人员、流程和技术" in serialized
+
+
 def test_business_driver_reviewer_rewrites_template_thesis_headline() -> None:
     state = _make_state(language="zh").model_copy(
         update={

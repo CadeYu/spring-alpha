@@ -150,6 +150,14 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\breturn on investment\b", flags=re.I), "投资回报率"),
     (re.compile(r"\bcapex\s+pace\b", flags=re.I), "资本开支节奏"),
     (re.compile(r"\bworking capital\b", flags=re.I), "营运资本"),
+    (
+        re.compile(r"\bpeople,\s*process\s+(?:and|和)\s+technology\b", flags=re.I),
+        "人员、流程和技术",
+    ),
+    (
+        re.compile(r"\bpeople,\s*process\s+(?:and|和)\s+科技\b", flags=re.I),
+        "人员、流程和技术",
+    ),
     (re.compile(r"\bInvestors should watch\b", flags=re.I), "投资者应观察"),
     (re.compile(r"\bhas strength from\b", flags=re.I), "的支撑来自"),
     (re.compile(r"\bremains sensitive to\b", flags=re.I), "仍受制于"),
@@ -2704,16 +2712,23 @@ def _quality_point_from_metric(
             ),
             evidence_refs=metric.evidence_refs,
             citation_status=metric.citation_status,
-        )
+    )
     if key_takeaways:
         point = key_takeaways[0]
+        if is_zh:
+            return EvidenceBoundPoint(
+                title=title,
+                summary=_latest_quality_context_summary_zh(
+                    title,
+                    fallback_summary,
+                    point.summary,
+                ),
+                evidence_refs=point.evidence_refs,
+                citation_status=point.citation_status,
+            )
         return EvidenceBoundPoint(
             title=title,
-            summary=(
-                f"{fallback_summary} 支撑背景：{point.summary}"
-                if is_zh
-                else f"{fallback_summary} Supporting context: {point.summary}"
-            ),
+            summary=f"{fallback_summary} Supporting context: {point.summary}",
             evidence_refs=point.evidence_refs,
             citation_status=point.citation_status,
         )
@@ -2780,6 +2795,46 @@ def _quality_context_sentence_zh(value: str) -> str:
     if not text:
         return ""
     return f"结合本季要点看，{text.rstrip('。')}。"
+
+
+def _latest_quality_context_summary_zh(
+    title: str,
+    fallback_summary: str,
+    context: str,
+) -> str:
+    localized_context = _first_investor_context_zh(
+        [
+            EvidenceBoundPoint(
+                title=title,
+                summary=context,
+                evidence_refs=[],
+                citation_status=CitationStatus.PARTIAL,
+            )
+        ]
+    )
+    if title == "现金质量":
+        return (
+            "本季缺少可直接展示的经营现金流或自由现金流指标，因此现金质量需要用利润转化和经营投入线索保守判断。"
+            f"{_quality_context_sentence_zh(localized_context)}"
+            "下一季应优先确认经营现金流、自由现金流和资本开支是否同向支持当前盈利判断。"
+        )
+    if title == "增长质量":
+        return (
+            "本季增长质量需要先从已披露的业务变化和收入相关线索判断。"
+            f"{_quality_context_sentence_zh(localized_context)}"
+            "下一季应确认这条增长线索是否继续转化为收入、利润率和现金生成。"
+        )
+    if title == "利润率质量":
+        return (
+            "本季利润率质量需要结合成本、费用和业务组合变化判断。"
+            f"{_quality_context_sentence_zh(localized_context)}"
+            "下一季应观察成本投入是否继续压制经营杠杆，或开始释放利润弹性。"
+        )
+    return (
+        f"{fallback_summary}"
+        f"{_quality_context_sentence_zh(localized_context)}"
+        "下一季需要把该判断和新的经营指标交叉验证。"
+    )
 
 
 def _metric_by_name(
