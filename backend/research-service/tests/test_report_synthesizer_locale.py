@@ -3849,7 +3849,10 @@ def test_latest_earnings_zh_visible_copy_localizes_online_business_leaks() -> No
             "financial_dashboard": {"metrics": [], "chart_focus": []},
             "driver_snapshot": [
                 {
-                    "summary": "Digital Experience evidence remains intact for B2B customers.",
+                    "summary": (
+                        "Digital Experience evidence remains intact for B2B customers, "
+                        "while ARPU提升 and ARR增长 can support SaaS扩张."
+                    ),
                     "source_ids": [],
                     "citation_status": "supported",
                 }
@@ -3946,6 +3949,9 @@ def test_latest_earnings_zh_visible_copy_localizes_online_business_leaks() -> No
         "Optum Health",
         "Optum Insight",
         "Optum Rx",
+        "ARPU",
+        "ARR",
+        "SaaS",
         "EPS",
         "prior authorization",
     ):
@@ -3959,6 +3965,9 @@ def test_latest_earnings_zh_visible_copy_localizes_online_business_leaks() -> No
     assert "Optum 健康" in visible_text
     assert "数据分析" in visible_text
     assert "Optum 药房福利" in visible_text
+    assert "每用户平均收入" in visible_text
+    assert "年度经常性收入" in visible_text
+    assert "订阅软件" in visible_text
     assert "每股收益" in visible_text
 
 
