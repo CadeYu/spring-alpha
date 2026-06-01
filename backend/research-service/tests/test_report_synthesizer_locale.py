@@ -3861,6 +3861,49 @@ def test_latest_earnings_zh_visible_copy_localizes_online_business_leaks() -> No
                     "citation_status": "partial",
                 }
             ],
+            "drivers_and_draggers": {
+                "drivers": [
+                    {
+                        "summary": (
+                            "Optum Health/Insight/Rx and UnitedHealthcare的协同效应 "
+                            "can support the long-term case."
+                        ),
+                        "source_ids": [],
+                        "citation_status": "supported",
+                    }
+                ],
+                "draggers": [
+                    {
+                        "summary": (
+                            "Medicare Advantage费率 and prior authorization reform "
+                            "can change UnitedHealthcare pricing."
+                        ),
+                        "source_ids": [],
+                        "citation_status": "partial",
+                    }
+                ],
+            },
+            "bull_bear_read": {
+                "bull_case": [
+                    {
+                        "summary": (
+                            "Optum Health and Optum Rx can support UnitedHealthcare."
+                        ),
+                        "source_ids": [],
+                        "citation_status": "supported",
+                    }
+                ],
+                "bear_case": [
+                    {
+                        "summary": (
+                            "Medicare Advantage and MLR pressure can reset EPS expectations."
+                        ),
+                        "source_ids": [],
+                        "citation_status": "partial",
+                    }
+                ],
+                "balanced_read": None,
+            },
             "claims": [],
         },
     )
@@ -3873,6 +3916,24 @@ def test_latest_earnings_zh_visible_copy_localizes_online_business_leaks() -> No
         *(point.summary for point in sections.key_takeaways),
         *(point.summary for point in sections.driver_snapshot),
         *(point.summary for point in sections.risk_snapshot),
+        *(
+            point.summary
+            for point in (
+                sections.drivers_and_draggers.drivers
+                if sections.drivers_and_draggers
+                else []
+            )
+        ),
+        *(
+            point.summary
+            for point in (
+                sections.drivers_and_draggers.draggers
+                if sections.drivers_and_draggers
+                else []
+            )
+        ),
+        *(point.summary for point in (sections.bull_bear_read.bull_case if sections.bull_bear_read else [])),
+        *(point.summary for point in (sections.bull_bear_read.bear_case if sections.bull_bear_read else [])),
     ]
     visible_text = "\n".join(visible_parts)
     for leaked in (
@@ -3883,8 +3944,10 @@ def test_latest_earnings_zh_visible_copy_localizes_online_business_leaks() -> No
         "MLR",
         "UnitedHealthcare",
         "Optum Health",
+        "Optum Insight",
         "Optum Rx",
         "EPS",
+        "prior authorization",
     ):
         assert leaked not in visible_text
     assert "数字体验" in visible_text
@@ -3894,6 +3957,7 @@ def test_latest_earnings_zh_visible_copy_localizes_online_business_leaks() -> No
     assert "医疗损失率" in visible_text
     assert "联合健康保险" in visible_text
     assert "Optum 健康" in visible_text
+    assert "数据分析" in visible_text
     assert "Optum 药房福利" in visible_text
     assert "每股收益" in visible_text
 
