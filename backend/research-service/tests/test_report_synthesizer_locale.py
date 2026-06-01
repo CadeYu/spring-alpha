@@ -3712,6 +3712,63 @@ def test_latest_earnings_zh_visible_copy_localizes_common_business_terms() -> No
     assert "重估" in serialized
 
 
+def test_latest_earnings_zh_visible_copy_localizes_adobe_business_terms() -> None:
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        _make_state(language="zh").model_copy(
+            update={
+                "ticker": "ADBE",
+                "task_type": ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "evidence_memory": EvidenceMemory(source_refs=[]),
+            }
+        ),
+        {
+            "company_profile": {
+                "summary": "Adobe provides Digital Media software for creators.",
+                "source_ids": [],
+                "citation_status": "unverified",
+            },
+            "topline_verdict": {
+                "headline": "Creative Cloud and Document Cloud can lift ARPU.",
+                "summary": (
+                    "Digital Media ARR improved as Creative Cloud and Document Cloud "
+                    "pricing lifted ARPU."
+                ),
+                "verdict": "mixed",
+                "confidence": "medium",
+            },
+            "key_takeaways": [
+                {
+                    "summary": (
+                        "Creative Cloud and Document Cloud adoption lifted ARPU in "
+                        "Digital Media."
+                    ),
+                    "source_ids": [],
+                    "citation_status": "supported",
+                }
+            ],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [
+                {
+                    "summary": "Digital Media growth depends on Creative Cloud ARPU.",
+                    "source_ids": [],
+                    "citation_status": "supported",
+                }
+            ],
+            "risk_snapshot": [],
+            "claims": [],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    for leaked in ("Digital Media", "Creative Cloud", "Document Cloud", "ARPU"):
+        assert leaked not in serialized
+    assert "数字媒体" in serialized
+    assert "创意云" in serialized
+    assert "文档云" in serialized
+    assert "每用户平均收入" in serialized
+
+
 def test_cash_flow_fact_backfill_keeps_core_metrics_and_adds_resilience_points() -> None:
     request = AgentRequest(
         run_id="run_1",
