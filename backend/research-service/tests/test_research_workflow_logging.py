@@ -1389,6 +1389,58 @@ def test_business_driver_zh_fallback_summarizes_english_profile_without_internal
     assert "市场暴露" in serialized
 
 
+def test_business_driver_zh_fallback_summarizes_engages_in_profile_snippets() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="FER",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="FER",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["driverThesis"],
+        ),
+        evidence_memory=EvidenceMemory(
+            source_refs=[
+                {
+                    "source_id": "src_profile",
+                    "section": "business summary",
+                    "snippet": (
+                        "It engages in the development and construction of energy "
+                        "transmission and renewable generation energy infrastructure, "
+                        "as well as rendering of services regarding energy efficiency."
+                    ),
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Business driver agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    for leaked in [
+        "It engages in",
+        "rendering of services",
+        "energy transmission",
+        "renewable generation",
+    ]:
+        assert leaked not in serialized
+    assert "业务摘要显示" in serialized or "业务线披露显示" in serialized
+    assert "业务线" in serialized or "市场暴露" in serialized
+
+
 def test_business_driver_timeout_with_evidence_returns_grounded_fallback(monkeypatch) -> None:
     request = AgentRequest(
         run_id="run_1",

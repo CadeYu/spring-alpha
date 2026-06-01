@@ -89,6 +89,8 @@ def summarize_english_business_snippet_for_zh(text: str) -> str:
         "sells",
         "designs",
         "manufactures",
+        "engages in",
+        "rendering of services",
     )
     if any(marker in lower for marker in profile_markers) and _english_word_count(normalized) >= 8:
         return "业务摘要显示，公司具备可分析的产品、客户或市场暴露线索。"

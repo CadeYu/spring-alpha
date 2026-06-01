@@ -5673,6 +5673,74 @@ def test_cash_flow_zh_visible_copy_sanitizes_raw_source_sentences() -> None:
     assert "再投资" in visible_text
 
 
+def test_cash_flow_zh_visible_copy_sanitizes_risk_factor_lists() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="CCEP",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="CCEP",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={"metrics": []},
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "structured balance sheet",
+                    "snippet": "Current ratio was 0.80x.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "CCEP 现金质量评级为受限可见。",
+            "earnings_backed_by_cash": "unclear",
+            "summary": "现金缓冲紧张，仍需后续披露验证现金转换效率。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {},
+        "allocation_discipline": [
+            {
+                "title": "配置纪律",
+                "summary": (
+                    "配置纪律仍需后续披露评估。 风险因素： "
+                    "['无运营现金流证据，无法验证盈利质量', "
+                    "'无资本支出证据，无法判断投资纪律', "
+                    "'无股东回报证据，无法评估分配优先序']"
+                ),
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    visible_text = " ".join(
+        point.summary for point in report.task_sections.allocation_discipline
+    )
+    for leaked in (
+        "['",
+        "']",
+        "无法验证",
+        "无法判断",
+        "无法评估",
+    ):
+        assert leaked not in visible_text
+    assert "风险因素" in visible_text
+    assert "运营现金流证据仍不完整" in visible_text
+    assert "投资纪律" in visible_text
+
+
 def test_cash_flow_zh_short_debt_and_liquidity_points_expand_with_investor_context() -> None:
     request = AgentRequest(
         run_id="run_1",

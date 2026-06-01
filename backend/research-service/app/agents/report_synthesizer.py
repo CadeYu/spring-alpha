@@ -1760,6 +1760,7 @@ def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
     text = str(value or "")
     if not _is_zh_locale(language):
         return text
+    text = _rewrite_quoted_list_text(text)
     replacements = (
         (
             re.compile(r"文件未披露([^。；;]*?)，无法判断([^。；;]*?)([。；;])"),
@@ -1786,32 +1787,44 @@ def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
             "现有证据仍不完整，仍需后续披露评估。",
         ),
         (
-            re.compile(r"无法验证([^。；;]*?)([。；;])"),
+            re.compile(r"无法验证([^。；;、]*?)([。；;、]|$)"),
             r"仍需后续披露验证\1\2",
         ),
         (
-            re.compile(r"无法直接判定([^。；;]*?)([。；;])"),
+            re.compile(r"无法直接判定([^。；;、]*?)([。；;、]|$)"),
             r"仍需后续披露验证\1\2",
         ),
         (
-            re.compile(r"无法评估([^。；;]*?)([。；;])"),
+            re.compile(r"无法评估([^。；;、]*?)([。；;、]|$)"),
             r"仍需后续披露评估\1\2",
         ),
         (
-            re.compile(r"投资者无法判断([^。；;]*?)([。；;])"),
+            re.compile(r"投资者无法判断([^。；;、]*?)([。；;、]|$)"),
             r"投资者仍需后续披露验证\1\2",
         ),
         (
-            re.compile(r"无法判断([^。；;]*?)([。；;])"),
+            re.compile(r"无法判断([^。；;、]*?)([。；;、]|$)"),
             r"仍需后续披露验证\1\2",
         ),
     )
     for pattern, replacement in replacements:
         text = pattern.sub(replacement, text)
+    text = re.sub(
+        r"无([^，。、]+证据)，仍需后续披露(验证|评估)",
+        r"\1仍不完整，仍需后续披露\2",
+        text,
+    )
     text = _localize_missing_metric_boundaries(text)
-    text = re.sub(r"\[\s*'([^']+)'\s*,\s*'([^']+)'\s*\]", r"\1、\2", text)
     text = re.sub(r"\[\s*'([^']+)'\s*\]", r"\1", text)
     return text
+
+
+def _rewrite_quoted_list_text(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        items = re.findall(r"'([^']+)'", match.group(0))
+        return "、".join(items)
+
+    return re.sub(r"\[(?:\s*'[^']+'\s*,?)+\]", replace, text)
 
 
 def _localize_missing_metric_boundaries(text: str) -> str:
