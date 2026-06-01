@@ -161,17 +161,47 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\bSaaS\b", flags=re.I), "订阅软件"),
     (re.compile(r"\bARR\b", flags=re.I), "年度经常性收入"),
     (re.compile(r"\bARPU\b", flags=re.I), "每用户平均收入"),
+    (re.compile(r"\bEPS\b", flags=re.I), "每股收益"),
+    (re.compile(r"\bMLR\b", flags=re.I), "医疗损失率"),
     (re.compile(r"\bP\s*/\s*E\b", flags=re.I), "市盈率"),
     (re.compile(r"\bPE\b", flags=re.I), "市盈率"),
+    (re.compile(r"\bDigital\s+Experience\b", flags=re.I), "数字体验"),
     (re.compile(r"\bDigital\s+Media\b", flags=re.I), "数字媒体"),
     (re.compile(r"\bCreative\s+Cloud\b", flags=re.I), "创意云"),
     (re.compile(r"\bDocument\s+Cloud\b", flags=re.I), "文档云"),
     (re.compile(r"\bMicrosoft\s+Designer\b", flags=re.I), "微软 Designer"),
     (re.compile(r"\bCanva\b", flags=re.I), "Canva"),
     (re.compile(r"\bFirefly\b", flags=re.I), "Firefly"),
+    (re.compile(r"\bMedicare\s+Advantage\b", flags=re.I), "联邦医保优势计划"),
+    (re.compile(r"\bUnitedHealthcare\b", flags=re.I), "联合健康保险"),
+    (re.compile(r"\bOptum\s+Health\b", flags=re.I), "Optum 健康"),
+    (re.compile(r"\bOptum\s+Insight\b", flags=re.I), "Optum 数据分析"),
+    (re.compile(r"\bOptum\s+Rx\b", flags=re.I), "Optum 药房福利"),
     (re.compile(r"\bmonetization\b", flags=re.I), "商业化"),
     (re.compile(r"\bmonetize\b", flags=re.I), "商业化"),
     (re.compile(r"\bpricing\b", flags=re.I), "定价"),
+    (re.compile(r"\boutlook\b", flags=re.I), "展望"),
+    (re.compile(r"\bexpectations\b", flags=re.I), "预期"),
+    (re.compile(r"\bpressure\b", flags=re.I), "压力"),
+    (re.compile(r"\bcustomers\b", flags=re.I), "客户"),
+    (re.compile(r"\bB2B\b", flags=re.I), "企业端"),
+    (re.compile(r"\bThe\s+证据\s+显示\b", flags=re.I), "证据显示"),
+    (re.compile(r"\bThe\s+证据\b", flags=re.I), "证据"),
+    (re.compile(r"\bthe\s+数字体验\b", flags=re.I), "数字体验"),
+    (re.compile(r"\bevidence\b", flags=re.I), "证据"),
+    (re.compile(r"\bintact\b", flags=re.I), "仍然成立"),
+    (re.compile(r"\bis\s+仍然成立\b", flags=re.I), "仍然成立"),
+    (re.compile(r"\bcurrent\b", flags=re.I), "当前"),
+    (re.compile(r"\bindicates\b", flags=re.I), "显示"),
+    (re.compile(r"\bshows\b", flags=re.I), "显示"),
+    (re.compile(r"\breset\b", flags=re.I), "重置"),
+    (re.compile(r"\bcan\s+change\b", flags=re.I), "可能改变"),
+    (re.compile(r"\bchange\b", flags=re.I), "改变"),
+    (re.compile(r"\bcan support\b", flags=re.I), "可以支撑"),
+    (re.compile(r"\bdespite\b", flags=re.I), "尽管"),
+    (re.compile(r"\bwhile\b", flags=re.I), "同时"),
+    (re.compile(r"\bcombines\b", flags=re.I), "结合"),
+    (re.compile(r"\bwith\b", flags=re.I), "与"),
     (re.compile(r"\badoption\b", flags=re.I), "采用率"),
     (re.compile(r"\badopts?\b", flags=re.I), "采用"),
     (re.compile(r"\bcreators?\b", flags=re.I), "创作者"),
@@ -4426,7 +4456,8 @@ def _company_profile_raw_summary_from_facts(state: AgentState) -> str:
 
 
 def _zh_company_profile_summary(state: AgentState, raw_summary: str) -> str:
-    company = _company_name_from_state_or_summary(state, raw_summary)
+    localized_summary = _localize_visible_text(raw_summary, "zh")
+    company = _company_name_from_state_or_summary(state, localized_summary)
     sector = str(
         state.evidence_memory.facts.get("sector")
         or state.evidence_memory.facts.get("market_sector")

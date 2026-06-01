@@ -3808,6 +3808,96 @@ def test_latest_earnings_zh_company_profile_localizes_mixed_english_terms() -> N
     assert "数字媒体" in profile.summary
 
 
+def test_latest_earnings_zh_visible_copy_localizes_online_business_leaks() -> None:
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        _make_state(language="zh").model_copy(
+            update={
+                "ticker": "UNH",
+                "task_type": ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "evidence_memory": EvidenceMemory(source_refs=[]),
+            }
+        ),
+        {
+            "company_profile": {
+                "summary": (
+                    "Adobe combines Digital Experience with Digital Media, while "
+                    "UnitedHealth depends on Medicare Advantage, MLR, and Optum Rx."
+                ),
+                "source_ids": [],
+                "citation_status": "unverified",
+            },
+            "topline_verdict": {
+                "headline": "Digital Experience evidence is intact.",
+                "summary": (
+                    "Current evidence indicates the Digital Experience segment is intact. "
+                    "Medicare Advantage pricing and MLR can change the EPS outlook."
+                ),
+                "verdict": "mixed",
+                "confidence": "medium",
+            },
+            "key_takeaways": [
+                {
+                    "summary": (
+                        "The evidence shows Optum Health and Optum Rx can support "
+                        "UnitedHealthcare despite Medicare Advantage pressure."
+                    ),
+                    "source_ids": [],
+                    "citation_status": "supported",
+                }
+            ],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [
+                {
+                    "summary": "Digital Experience evidence remains intact for B2B customers.",
+                    "source_ids": [],
+                    "citation_status": "supported",
+                }
+            ],
+            "risk_snapshot": [
+                {
+                    "summary": "MLR and Medicare Advantage pressure can reset EPS expectations.",
+                    "source_ids": [],
+                    "citation_status": "partial",
+                }
+            ],
+            "claims": [],
+        },
+    )
+
+    sections = report.task_sections
+    visible_parts = [
+        sections.company_profile.summary if sections.company_profile else "",
+        sections.topline_verdict.headline,
+        sections.topline_verdict.summary,
+        *(point.summary for point in sections.key_takeaways),
+        *(point.summary for point in sections.driver_snapshot),
+        *(point.summary for point in sections.risk_snapshot),
+    ]
+    visible_text = "\n".join(visible_parts)
+    for leaked in (
+        "Digital Experience",
+        "evidence",
+        "intact",
+        "Medicare Advantage",
+        "MLR",
+        "UnitedHealthcare",
+        "Optum Health",
+        "Optum Rx",
+        "EPS",
+    ):
+        assert leaked not in visible_text
+    assert "数字体验" in visible_text
+    assert "证据" in visible_text
+    assert "仍然成立" in visible_text
+    assert "联邦医保优势计划" in visible_text
+    assert "医疗损失率" in visible_text
+    assert "联合健康保险" in visible_text
+    assert "Optum 健康" in visible_text
+    assert "Optum 药房福利" in visible_text
+    assert "每股收益" in visible_text
+
+
 def test_cash_flow_fact_backfill_keeps_core_metrics_and_adds_resilience_points() -> None:
     request = AgentRequest(
         run_id="run_1",
