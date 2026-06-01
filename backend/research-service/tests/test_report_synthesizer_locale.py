@@ -1085,7 +1085,21 @@ def test_latest_earnings_zh_visible_copy_localizes_crm_finance_terms() -> None:
         payload,
     )
 
-    visible_text = report.model_dump_json()
+    sections = report.task_sections
+    visible_text = " ".join(
+        [
+            sections.company_profile.summary,
+            sections.topline_verdict.headline,
+            sections.topline_verdict.summary,
+            *(item.title for item in sections.key_takeaways),
+            *(item.summary for item in sections.key_takeaways),
+            *(metric.interpretation for metric in sections.financial_dashboard.metrics),
+            *(item.title for item in sections.driver_snapshot),
+            *(item.summary for item in sections.driver_snapshot),
+            *(item.title for item in sections.risk_snapshot),
+            *(item.summary for item in sections.risk_snapshot),
+        ]
+    )
     lowered = visible_text.lower()
     assert "debt/equity" not in lowered
     assert "debt-to-equity" not in lowered
@@ -1526,8 +1540,235 @@ def test_business_driver_zh_visible_copy_removes_internal_retrieval_terms() -> N
     assert "Structured yfinance facts reports" not in visible_text
     assert "segment revenue" not in visible_text
     assert "收入为 $111.7B" in visible_text
-    assert "毛利率为 88.5%" in visible_text
+    assert "88.5%" in visible_text
     assert "分部收入" in visible_text
+
+
+def test_business_driver_zh_reviewer_does_not_emit_internal_directional_copy() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "ADP",
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "Automatic Data Processing Inc.",
+                    "market_sector": "Technology",
+                    "market_industry": "Software - Application",
+                    "business_summary": (
+                        "ADP provides payroll, human capital management, and employer "
+                        "services to enterprise customers."
+                    ),
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 5890000000,
+                            "unit": "USD",
+                            "period": "FY2026-Q1",
+                        },
+                        {
+                            "name": "gross margin",
+                            "value": 0.483,
+                            "unit": "pure",
+                            "period": "FY2026-Q1",
+                        },
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 5890000000,
+                        "unit": "USD",
+                        "fact_period": "FY2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    },
+                    {
+                        "metric": "gross margin",
+                        "value": 0.483,
+                        "unit": "pure",
+                        "fact_period": "FY2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "结构化 facts 支撑方向性业务判断",
+                "durability": "mixed",
+                "summary": "业务驱动结论不能只依赖检索到的分部片段。",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "Revenue bridge is important for investors.",
+                    "citation_status": "partial",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "Segment momentum is important for investors.",
+                    "citation_status": "partial",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "Margin and mix is important for investors.",
+                    "citation_status": "partial",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "Demand signals are important for investors.",
+                    "citation_status": "partial",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    sections = report.task_sections
+    points = sections.driver_map
+    assert points.revenue_bridge is not None
+    assert points.segment_momentum is not None
+    assert points.margin_and_mix is not None
+    assert points.demand_signals is not None
+    visible_text = " ".join(
+        [
+            sections.driver_thesis.headline,
+            sections.driver_thesis.summary,
+            points.revenue_bridge.title,
+            points.revenue_bridge.summary,
+            points.segment_momentum.title,
+            points.segment_momentum.summary,
+            points.margin_and_mix.title,
+            points.margin_and_mix.summary,
+            points.demand_signals.title,
+            points.demand_signals.summary,
+        ]
+    )
+    for term in (
+        "不能只依赖检索",
+        "应写成方向性判断",
+        "方向性判断",
+        "结构化数据已提供",
+        "结构化 facts",
+        "检索到的分部片段",
+        "现有业务画像",
+        "部分支撑",
+        "量化锚点",
+    ):
+        assert term not in visible_text
+    assert "投资" in visible_text
+    assert "$5.9B" in visible_text
+    assert "48.3%" in visible_text
+
+
+def test_business_driver_zh_visible_copy_removes_legacy_anchor_and_english_fragments() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "INSM",
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "Insmed Incorporated",
+                    "market_sector": "Healthcare",
+                    "market_industry": "Biotechnology",
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 306000000,
+                            "unit": "USD",
+                            "period": "FY2026-Q1",
+                        }
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 306000000,
+                        "unit": "USD",
+                        "fact_period": "FY2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    }
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Insmed 收入与需求需要验证",
+                "durability": "mixed",
+                "summary": "收入增长需要和现金流、利润率一起观察。",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": (
+                        "INSM 的收入桥接以收入 $306.0M 作为量化锚点；"
+                        "对应 evidence 显示 the Company recognizes revenue when a customer obtains control. "
+                        "当前 demand signal 需要避免 price in 过度乐观预期。"
+                    ),
+                    "citation_status": "partial",
+                },
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "分部动能仍需观察产品收入是否延续。",
+                    "citation_status": "partial",
+                },
+                "margin_and_mix": {
+                    "title": "Margin and mix",
+                    "summary": "margin 和 timing 会影响利润质量。",
+                    "citation_status": "partial",
+                },
+                "demand_signals": {
+                    "title": "Demand signals",
+                    "summary": "likely SBC 和客户控制权转移会影响收入确认节奏。",
+                    "citation_status": "partial",
+                },
+            },
+            "claims": [],
+        },
+    )
+
+    sections = report.task_sections
+    points = sections.driver_map
+    assert points.revenue_bridge is not None
+    assert points.segment_momentum is not None
+    assert points.margin_and_mix is not None
+    assert points.demand_signals is not None
+    visible_text = " ".join(
+        [
+            sections.driver_thesis.headline,
+            sections.driver_thesis.summary,
+            points.revenue_bridge.title,
+            points.revenue_bridge.summary,
+            points.segment_momentum.title,
+            points.segment_momentum.summary,
+            points.margin_and_mix.title,
+            points.margin_and_mix.summary,
+            points.demand_signals.title,
+            points.demand_signals.summary,
+        ]
+    )
+    for term in (
+        "量化锚点",
+        "evidence",
+        "the Company",
+        "demand signal",
+        "price in",
+        "margin",
+        "timing",
+        "likely SBC",
+    ):
+        assert term.lower() not in visible_text.lower()
+    assert "收入" in visible_text
+    assert "需求" in visible_text
 
 
 def test_latest_earnings_rewrites_weak_evidence_phrasing_in_extended_sections() -> None:
@@ -2582,7 +2823,8 @@ def test_business_driver_placeholder_is_recovered_from_structured_facts() -> Non
     assert "NVIDIA" in combined
     assert "$44.1B" in combined
     assert "61.3%" in combined
-    assert "方向性判断" in combined
+    assert "方向性判断" not in combined
+    assert any(term in combined for term in ("投资者", "需求", "利润率", "经营"))
     assert all(point.citation_status == "partial" for point in points if point is not None)
 
 
@@ -2737,7 +2979,8 @@ def test_business_driver_thesis_placeholder_is_recovered_from_structured_facts()
     assert "Advanced Micro Devices" in thesis.summary
     assert "$7.4B" in thesis.summary
     assert "52.0%" in thesis.summary
-    assert "方向性判断" in thesis.summary
+    assert "方向性判断" not in thesis.summary
+    assert any(term in thesis.summary for term in ("投资者", "收入", "利润率", "经营质量"))
     assert report.sections is not None
     assert report.sections["summary"] == thesis.summary
 
@@ -4688,6 +4931,77 @@ def test_cash_flow_short_existing_red_flags_are_expanded_from_metrics() -> None:
     assert "自由现金流" in red_flag.summary
     assert "资本开支" in red_flag.summary
     assert "下修" in red_flag.summary or "观察" in red_flag.summary
+
+
+def test_cash_flow_short_existing_red_flags_expand_with_distinct_metric_context() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="DASH",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="DASH",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "operating cash flow", "value": 594000000, "unit": "USD"},
+                    {"name": "capital expenditures", "value": 174000000, "unit": "USD"},
+                    {"name": "free cash flow", "value": 537000000, "unit": "USD"},
+                    {"name": "current ratio", "value": 1.43, "unit": "ratio"},
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Structured yfinance cash flow metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "DASH 现金质量改善。",
+            "earnings_backed_by_cash": "mixed",
+            "summary": "经营现金流和自由现金流均为正。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {},
+        "allocation_discipline": [],
+        "red_flags": [
+            {
+                "title": "自由现金流持续性",
+                "summary": "自由现金流持续性",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            },
+            {
+                "title": "国际扩张资本化",
+                "summary": "国际扩张资本化",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            },
+        ],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    summaries = [point.summary for point in report.task_sections.red_flags]
+    assert len(summaries) == 2
+    assert summaries[0] != summaries[1]
+    joined = " ".join(summaries)
+    assert "自由现金流是否仍能支撑自由现金流" not in joined
+    assert joined.count("下一季需要观察") <= 1
+    assert "经营现金流" in joined
+    assert "资本开支" in joined
+    assert "流动比率" in joined or "扩张" in joined
 
 
 def test_cash_flow_unsupported_capital_points_are_removed_without_structured_metrics() -> None:

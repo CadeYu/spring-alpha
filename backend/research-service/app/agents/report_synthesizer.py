@@ -138,6 +138,14 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
         "自由现金流收益率",
     ),
     (re.compile(r"\bfree cash flow yield\b", flags=re.I), "自由现金流收益率"),
+    (re.compile(r"\bprice[-\s]+in\b", flags=re.I), "计入估值"),
+    (re.compile(r"\blikely\s+SBC\b", flags=re.I), "可能的股权激励"),
+    (re.compile(r"\bstock[-\s]+based compensation\b", flags=re.I), "股权激励"),
+    (re.compile(r"\btiming\b", flags=re.I), "确认时点"),
+    (re.compile(r"\bdemand signals?\b", flags=re.I), "需求信号"),
+    (re.compile(r"\bthe\s+Company\b", flags=re.I), "公司"),
+    (re.compile(r"\bCompany\b", flags=re.I), "公司"),
+    (re.compile(r"\bmargin\b", flags=re.I), "利润率"),
     (
         re.compile(r"(?<![A-Za-z])OCF\s*/\s*NI(?![A-Za-z])", flags=re.I),
         "经营现金流/净利润",
@@ -1735,7 +1743,7 @@ def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
         ),
         (
             re.compile(r"证据不足，?无法判断[。；;]?"),
-            "现有证据只支持方向性判断，仍需用后续披露验证。",
+            "现有证据仍不完整，后续披露需要继续验证这条投资线索。",
         ),
         (
             re.compile(r"无法判断([^。；;]*?)([。；;])"),
@@ -2922,7 +2930,7 @@ def _cash_metrics_with_fact_backfill(
                 interpretation=(
                     (
                         f"{_localize_metric_name(name, language)}来自 SEC companyfacts，"
-                        "可作为现金流和资本配置能力的量化锚点。"
+                        "可作为现金流和资本配置能力的核心指标。"
                     )
                     if is_zh
                     else (
@@ -2947,7 +2955,7 @@ def _cash_metrics_with_fact_backfill(
                 interpretation=(
                     (
                         f"{_localize_metric_name(name, language)}来自结构化财务数据，"
-                        "可作为现金流和资本配置能力的量化锚点。"
+                        "可作为现金流和资本配置能力的核心指标。"
                     )
                     if is_zh
                     else (
@@ -3293,10 +3301,38 @@ def _expand_short_cash_flow_red_flag(
     is_zh = _is_zh_locale(language)
     if is_zh:
         anchor_label = _localize_metric_name(anchor.name, language)
-        expanded = (
-            f"{summary}。下一季需要观察{anchor_label}是否仍能支撑自由现金流，"
-            "并确认资本开支不会进一步压缩现金缓冲；若该信号转弱，现金质量判断需要下修。"
-        )
+        normalized_anchor = _normalize_metric_name(anchor.name)
+        if "扩张" in summary or "资本化" in summary or "再投资" in summary:
+            expanded = (
+                f"{summary}。下一季应重点看资本开支和并购投入是否继续消耗现金，"
+                f"以及{anchor_label}能否覆盖增长投资；若投入加速但收入或利润率没有同步改善，"
+                "资本配置质量需要下修。"
+            )
+        elif normalized_anchor == "free cash flow":
+            expanded = (
+                f"{summary}。下一季应观察自由现金流在扣除资本开支后是否保持为正，"
+                "并确认经营现金流没有被营运资本波动侵蚀；若两者同时转弱，现金质量需要下修。"
+            )
+        elif normalized_anchor == "operating cash flow":
+            expanded = (
+                f"{summary}。下一季应观察经营现金流能否继续覆盖资本开支和债务需求，"
+                "并确认自由现金流没有被再投资节奏压缩；若覆盖能力下降，现金质量需要下修。"
+            )
+        elif normalized_anchor == "capital expenditures":
+            expanded = (
+                f"{summary}。下一季应观察资本开支是否继续低于经营现金流，"
+                "以及再投资是否带来收入或利润率改善；若只增加投入而没有经营回报，现金质量需要下修。"
+            )
+        elif normalized_anchor == "current ratio":
+            expanded = (
+                f"{summary}。下一季应观察流动比率 {anchor.value} 是否保持安全，"
+                "并确认短期负债没有挤压自由现金流；若流动性转弱，资本配置空间会收缩。"
+            )
+        else:
+            expanded = (
+                f"{summary}。下一季应观察{anchor_label}是否延续，"
+                "并结合经营现金流、资本开支和流动性判断现金质量是否转弱。"
+            )
     else:
         expanded = (
             f"{summary}. Watch whether {anchor.name} still supports free cash flow "
@@ -4346,24 +4382,20 @@ def _business_driver_backfill_summary(
     if _is_zh_locale(language):
         summaries = {
             "revenue_bridge": (
-                "收入桥接证据仍然不完整，但现有 filing 证据指向"
-                f"{evidence_hint}。在缺少完整分业务收入拆分前，"
-                "这应被视为有证据约束的方向性判断。"
+                f"收入桥接的可用披露指向{evidence_hint}。投资者应关注收入增长"
+                "是否能被分业务或区域拆分验证，而不是只看单季收入规模。"
             ),
             "segment_momentum": (
-                "分部动能证据仍然不完整，但现有 filing 证据指向"
-                f"{evidence_hint}。在缺少完整分部增速与利润率前，"
-                "这应被视为有证据约束的方向性判断。"
+                f"分部动能的可用披露指向{evidence_hint}。投资者应关注核心业务线"
+                "是否与总收入同向改善，以及利润率是否同步支撑增长质量。"
             ),
             "margin_and_mix": (
-                "利润率与组合证据仍然不完整，但现有 filing 证据指向"
-                f"{evidence_hint}。在缺少完整分部利润率或产品组合拆分前，"
-                "这应被视为有证据约束的方向性判断。"
+                f"利润率与组合的可用披露指向{evidence_hint}。投资者应关注产品组合、"
+                "定价和成本是否把收入增长转化为经营杠杆。"
             ),
             "demand_signals": (
-                "需求信号证据仍然不完整，但现有 filing 证据指向"
-                f"{evidence_hint}。在缺少订单、积压、销量或留存数据前，"
-                "这应被视为有证据约束的方向性判断。"
+                f"需求信号的可用披露指向{evidence_hint}。投资者应继续跟踪订单、"
+                "积压、销量、留存或客户扩张数据，确认需求韧性。"
             ),
         }
         return summaries[lens_name]

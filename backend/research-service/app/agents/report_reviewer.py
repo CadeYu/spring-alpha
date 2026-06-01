@@ -162,28 +162,24 @@ def _reviewer_zh_summary(lens_name: str, context: BusinessDriverFactsContext) ->
     profile = _zh_business_profile_hint(context)
     summaries = {
         "revenue_bridge": (
-            f"{company} 的收入桥接应先锚定结构化数据：最新收入为 {revenue}。"
-            f"{profile} 这说明当前最重要的投资含义是判断增长是否来自可持续需求，"
-            "而不是只看单季收入规模。由于分业务或区域拆分仍不完整，这一结论属于"
-            "方向性判断，并应标记为部分支撑。"
+            f"{company} 最新收入为 {revenue}，这是判断业务动能的第一层锚点。"
+            f"{profile} 投资上更重要的是看增长是否来自可持续需求，"
+            "以及后续分业务或区域拆分能否验证收入质量。"
         ),
         "segment_momentum": (
-            f"{company} 的分部动能不能因为分部证据不足就留空；现有业务画像显示"
-            f"{profile} 因此该段应退化为业务线暴露分析：看核心产品、客户场景和收入结构"
-            "是否继续贡献增长。对投资者来说，重点是判断增长来源是否集中、是否可延续，"
-            "目前结论仍是方向性判断。"
+            f"{company} 的分部动能应先从产品、客户和业务线暴露入手。{profile}"
+            "如果核心业务线与总收入同向改善，收入质量会更可信；"
+            "如果增长集中在单一业务，投资者需要重新验证持续性。"
         ),
         "margin_and_mix": (
-            f"{company} 的利润率与组合判断应锚定毛利率为 {margin}，并结合收入 {revenue} "
-            "观察规模增长是否能转化为经营杠杆。对投资者来说，关键是收入质量和产品组合"
-            "是否支撑利润率韧性，而不是只复述收入变化。由于成本项和分部利润率证据仍有限，"
-            "该结论应视为部分支撑。"
+            f"{company} 的利润率锚点为 {margin}，需要和收入 {revenue} 一起判断。"
+            "投资者应关注收入增长能否转化为经营杠杆，以及产品组合、定价和成本"
+            "是否继续支撑利润率韧性。"
         ),
         "demand_signals": (
-            f"{company} 的直接需求指标仍不完整，但收入 {revenue}、业务暴露和市场语境"
-            "可以作为需求代理。对投资者来说，关键是判断需求是否能继续支撑收入质量和"
-            "利润率韧性，而不是让缺少订单、积压或销量数据导致空白结论。当前结论是"
-            "方向性判断，后续需要更细的需求证据验证。"
+            f"{company} 的需求观察先看收入 {revenue} 与业务暴露是否同向。"
+            "投资者需要确认需求能否继续支撑收入质量和利润率韧性；"
+            "后续应重点跟踪订单、积压、销量、留存或客户扩张数据。"
         ),
     }
     return summaries[lens_name]
@@ -198,7 +194,7 @@ def _zh_business_profile_hint(context: BusinessDriverFactsContext) -> str:
         )
     if context.business_summary:
         return "其业务摘要提供了产品和客户暴露线索。"
-    return "现有资料已提供基础业务画像。"
+    return "投资者需要结合行业暴露和后续披露验证这条业务主线。"
 
 
 def _english_leak_score(text: str) -> int:

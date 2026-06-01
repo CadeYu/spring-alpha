@@ -1005,7 +1005,7 @@ def _business_driver_fallback_lens_summary(
     if zh:
         if lens == "revenue_bridge":
             anchor = (
-                f"以 {_zh_fallback_text(metric_text)} 作为量化锚点"
+                f"以 {_zh_fallback_text(metric_text)} 作为收入观察起点"
                 if metric_text
                 else "主要依赖已检索的披露文件证据"
             )
@@ -1023,7 +1023,7 @@ def _business_driver_fallback_lens_summary(
                 "因此比通用宏观叙事更可追溯。"
             )
         if lens == "margin_and_mix":
-            anchor = f"量化锚点是 {_zh_fallback_text(metric_text)}；" if metric_text else ""
+            anchor = f"关键指标是 {_zh_fallback_text(metric_text)}；" if metric_text else ""
             return (
                 f"{request.ticker} 的利润率与组合线索中，{anchor}"
                 f"关键证据是：{_zh_fallback_text(evidence_text)}。"

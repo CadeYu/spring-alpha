@@ -145,25 +145,24 @@ def business_driver_facts_backfill_summary(
         )
         summaries = {
             "revenue_bridge": (
-                f"{company} 的收入桥接需要更多分部证据，但结构化数据已显示收入为 {revenue}。"
-                f"{profile} 因此当前可给出方向性判断：增长解读应先锚定已披露收入规模，"
-                "再等待更细的分业务或区域拆分来验证质量。"
+                f"{company} 最新收入为 {revenue}，这是判断业务动能的第一层锚点。"
+                f"{profile} 投资上更重要的是看收入增长是否来自可持续需求，"
+                "并在后续披露中验证分业务或区域拆分质量。"
             ),
             "segment_momentum": (
-                f"{company} 的分部动能缺少完整 segment 明细，但业务摘要显示 {profile}。"
-                "这意味着分部判断可以先退化为产品和业务线暴露分析，而不是空白结论。"
-                "当前应把该段视为方向性判断，并继续等待更细的 segment revenue 或利润率证据。"
+                f"{company} 的分部动能应先从产品、客户和业务线暴露入手。{profile}"
+                "如果后续披露显示核心业务线与总收入同向改善，收入质量会更可信；"
+                "若增长只集中在单一业务，则持续性需要重新验证。"
             ),
             "margin_and_mix": (
-                f"{company} 的利润率与组合证据不完整，但结构化数据给出的毛利率为 {margin}。"
-                f"结合收入 {revenue}，当前可判断经营质量需要看收入增长是否能转化为利润率韧性。"
-                "这属于方向性判断，后续仍需产品组合、成本项或分部利润率来验证。"
+                f"{company} 的利润率锚点为 {margin}，需要和收入 {revenue} 一起判断。"
+                "投资者应关注收入增长能否转化为经营杠杆，以及产品组合、定价和成本"
+                "是否继续支撑利润率韧性。"
             ),
             "demand_signals": (
-                f"{company} 的直接需求指标不足，但现有业务/市场信号指向 {demand}。"
-                f"在没有订单、积压、销量或留存数据前，应把收入 {revenue} "
-                "与业务暴露一起作为需求代理。"
-                "这不是完整需求证明，但能避免把可用 facts 误写成无法判断。"
+                f"{company} 的需求观察先看收入 {revenue} 与业务暴露是否同向，"
+                f"当前可用信号指向 {demand}。后续需要用订单、积压、销量或留存数据"
+                "确认需求韧性，而不是只看单季收入规模。"
             ),
         }
         return summaries[lens_name]
@@ -230,10 +229,10 @@ def business_driver_thesis_backfill(
         profile = _business_driver_profile_hint(context, language)
         headline = f"{company} 业务驱动需要同时看收入与利润率"
         summary = (
-            f"{company} 的业务驱动结论不能只依赖检索到的分部片段；"
-            f"结构化数据已提供收入 {revenue} 和毛利率/盈利锚点 {margin}。"
-            f"{profile} 因此当前结论应写成方向性判断：先用收入规模、业务暴露和利润率锚点"
-            "判断经营质量，再等待更细的分部收入、产品组合和需求指标验证。"
+            f"{company} 的业务驱动结论应同时看收入 {revenue} 与利润率锚点 {margin}。"
+            f"{profile} 对投资者来说，关键不是单季收入数字本身，而是收入规模、"
+            "业务暴露和利润率能否共同说明经营质量；后续披露需要继续验证分部收入、"
+            "产品组合和需求指标。"
         )
         return headline, "mixed", summary
 
@@ -435,7 +434,7 @@ def _business_driver_profile_hint(
             )
         if summary:
             return "现有业务摘要提供了产品、客户和市场暴露线索。"
-        return "现有资料已提供基础业务画像。"
+        return "投资者需要结合行业暴露和后续披露验证这条业务主线。"
     if summary and classification:
         return f"{summary} ({classification})."
     if summary:
