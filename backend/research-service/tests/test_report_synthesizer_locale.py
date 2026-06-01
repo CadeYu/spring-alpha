@@ -6026,6 +6026,65 @@ def test_cash_flow_zh_short_red_flags_expand_without_cash_flow_anchor() -> None:
     assert "估值" in red_flag_summaries[1] or "利润率" in red_flag_summaries[1]
 
 
+def test_cash_flow_zh_visible_copy_localizes_adjacent_rating_terms() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="CCEP",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="CCEP",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "current ratio", "value": 0.8, "unit": "ratio"},
+                    {"name": "total debt", "value": 10690000000, "unit": "USD"},
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "structured balance sheet",
+                    "snippet": "Debt and liquidity metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "CCEP 现金质量承压。",
+            "earnings_backed_by_cash": "mixed",
+            "summary": "流动性承压。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {},
+        "allocation_discipline": [],
+        "red_flags": [
+            {
+                "title": "下调风险",
+                "summary": "现金质量结论将从Caution下调至Negative",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    red_flag_summary = report.task_sections.red_flags[0].summary
+    assert "Caution" not in red_flag_summary
+    assert "Negative" not in red_flag_summary
+    assert "谨慎" in red_flag_summary
+    assert "偏承压" in red_flag_summary
+
+
 def test_cash_flow_unsupported_capital_points_are_removed_without_structured_metrics() -> None:
     request = AgentRequest(
         run_id="run_1",
