@@ -129,13 +129,13 @@ def business_driver_facts_backfill_summary(
     if _is_zh_locale(language):
         company = context.company or "该公司"
         profile = _business_driver_profile_hint(context, language)
-        revenue = context.revenue or "可用收入数据"
+        revenue = context.revenue or "当前未披露可量化收入"
         margin = (
             context.gross_margin
             or context.operating_margin
             or context.net_margin
             or context.operating_income
-            or "可用利润率和盈利数据"
+            or "当前未披露可量化利润率"
         )
         demand = (
             context.demand_signal
@@ -218,13 +218,13 @@ def business_driver_thesis_backfill(
 ) -> tuple[str, str, str]:
     if _is_zh_locale(language):
         company = context.company or "该公司"
-        revenue = context.revenue or "可用收入数据"
+        revenue = context.revenue or "当前未披露可量化收入"
         margin = (
             context.gross_margin
             or context.operating_margin
             or context.net_margin
             or context.operating_income
-            or "可用利润率和盈利数据"
+            or "当前未披露可量化利润率"
         )
         profile = _business_driver_profile_hint(context, language)
         headline = f"{company} 业务驱动需要同时验证收入、利润率、需求韧性与分部质量"

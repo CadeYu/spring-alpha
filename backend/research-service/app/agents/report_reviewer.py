@@ -151,13 +151,13 @@ def _reviewer_summary(
 
 def _reviewer_zh_summary(lens_name: str, context: BusinessDriverFactsContext) -> str:
     company = context.company or "该公司"
-    revenue = context.revenue or "可用收入数据"
+    revenue = context.revenue or "当前未披露可量化收入"
     margin = (
         context.gross_margin
         or context.operating_margin
         or context.net_margin
         or context.operating_income
-        or "可用利润率和盈利数据"
+        or "当前未披露可量化利润率"
     )
     profile = _zh_business_profile_hint(context)
     summaries = {

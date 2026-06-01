@@ -1770,8 +1770,16 @@ def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
             r"仍需后续披露验证\1\2",
         ),
         (
+            re.compile(r"无法直接判定([^。；;]*?)([。；;])"),
+            r"仍需后续披露验证\1\2",
+        ),
+        (
             re.compile(r"无法评估([^。；;]*?)([。；;])"),
             r"仍需后续披露评估\1\2",
+        ),
+        (
+            re.compile(r"投资者无法判断([^。；;]*?)([。；;])"),
+            r"投资者仍需后续披露验证\1\2",
         ),
         (
             re.compile(r"无法判断([^。；;]*?)([。；;])"),
@@ -4625,7 +4633,10 @@ def _company_profile_from_payload(
     summary = _concise_company_profile(profile.summary)
     if _is_zh_locale(language):
         summary = _localize_visible_text(summary, language)
-        if _english_leak_score(summary) >= 4:
+        if _english_leak_score(summary) >= 4 or _is_name_only_company_profile(
+            summary,
+            state,
+        ):
             summary = _zh_company_profile_summary(state, profile.summary)
     return CompanyProfileSection(
         summary=summary,
@@ -4665,6 +4676,25 @@ def _company_profile_from_synthesis(
 
 def _company_profile_summary_from_facts(state: AgentState) -> str:
     return _concise_company_profile(_company_profile_raw_summary_from_facts(state))
+
+
+def _is_name_only_company_profile(summary: str, state: AgentState) -> bool:
+    normalized = re.sub(r"[^A-Za-z0-9]+", "", str(summary or "")).lower()
+    if not normalized:
+        return True
+    facts = state.evidence_memory.facts
+    candidates = [
+        state.ticker,
+        facts.get("company_name"),
+        facts.get("companyName"),
+        facts.get("name"),
+        facts.get("longName"),
+    ]
+    for candidate in candidates:
+        candidate_key = re.sub(r"[^A-Za-z0-9]+", "", str(candidate or "")).lower()
+        if candidate_key and normalized == candidate_key:
+            return True
+    return len(str(summary or "").strip()) < 18 and _english_leak_score(summary) > 0
 
 
 def _company_profile_raw_summary_from_facts(state: AgentState) -> str:

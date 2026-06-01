@@ -16,6 +16,8 @@ _ZH_MARKET_CLASSIFICATION_LABELS = {
     "beverages - non - alcoholic": "非酒精饮料",
     "beverages - non-alcoholic": "非酒精饮料",
     "beverages non alcoholic": "非酒精饮料",
+    "industrials": "工业",
+    "infrastructure operations": "基础设施运营",
     "credit services": "信贷与支付服务",
     "banks - diversified": "综合银行",
     "consumer cyclical": "可选消费",

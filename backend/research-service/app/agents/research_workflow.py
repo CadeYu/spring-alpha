@@ -606,7 +606,7 @@ def _latest_earnings_structured_fallback_view(
     if is_zh:
         headline_subject = ticker or "本季度"
         headline_metric = revenue_text or profit_text or cash_text or "已收集的关键指标"
-        headline = f"{headline_subject} 收入与利润表现仍需结合现金流验证"
+        headline = f"{headline_subject} 收入、利润率与现金流需要同步验证"
         summary_parts = [
             f"{ticker or '该公司'} 本季分析以已验证指标为基础，{headline_metric}",
         ]

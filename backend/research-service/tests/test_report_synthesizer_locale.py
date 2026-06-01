@@ -1368,7 +1368,7 @@ def test_business_driver_template_headline_rewrites_even_when_summary_is_long() 
     assert "业务驱动证据优先结论" not in serialized
 
 
-def test_business_driver_zh_backfill_never_uses_english_available_placeholders() -> None:
+def test_business_driver_zh_backfill_never_uses_placeholder_metric_copy() -> None:
     state = _make_state(language="zh").model_copy(
         update={
             "ticker": "JPM",
@@ -1424,8 +1424,10 @@ def test_business_driver_zh_backfill_never_uses_english_available_placeholders()
     assert "the available" not in serialized
     assert "available revenue" not in serialized
     assert "available margin" not in serialized
-    assert "可用收入数据" in serialized
-    assert "可用利润率" in serialized
+    assert "可用收入数据" not in serialized
+    assert "可用利润率" not in serialized
+    assert "当前未披露可量化收入" in serialized
+    assert "当前未披露可量化利润率" in serialized
     assert "无法判断" not in serialized
 
 
@@ -2410,6 +2412,53 @@ def test_chinese_company_profile_localizes_market_classification_labels() -> Non
     assert "Technology" not in profile.summary
     assert "Consumer Electronics" not in profile.summary
     assert "科技 / 消费电子" in profile.summary
+
+
+def test_chinese_company_profile_replaces_name_only_summary_with_business_context() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "FER",
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "Ferrovial N.V.",
+                    "market_sector": "Industrials",
+                    "market_industry": "Infrastructure Operations",
+                },
+                source_refs=[],
+            ),
+        }
+    )
+    payload = {
+        "company_profile": {
+            "summary": "Ferrovial N. V.",
+            "source_ids": [],
+            "citation_status": "unverified",
+        },
+        "topline_verdict": {
+            "headline": "FER 本季收入和利润率需要继续验证。",
+            "summary": "收入、利润率和现金流需要共同验证本季质量。",
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [],
+        "financial_dashboard": {"metrics": [], "chart_focus": []},
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    profile = report.task_sections.company_profile
+    assert profile is not None
+    assert profile.summary != "Ferrovial N. V."
+    assert "FER" in profile.summary or "Ferrovial" in profile.summary
+    assert "业务" in profile.summary
+    assert "收入" in profile.summary
 
 
 def test_cash_flow_positive_verdict_uses_investor_dense_summary() -> None:
@@ -5291,6 +5340,8 @@ def test_cash_flow_zh_visible_copy_repairs_weak_evidence_and_object_leaks() -> N
     )
     for leaked in (
         "无法判断",
+        "无法直接判定",
+        "投资者无法判断",
         "无法评估",
         "无法验证",
         "证据 context",
@@ -5308,6 +5359,64 @@ def test_cash_flow_zh_visible_copy_repairs_weak_evidence_and_object_leaks() -> N
     assert "仍需后续披露验证" in visible_text
     assert "资本开支" in visible_text
     assert "风险信号" in visible_text
+
+
+def test_cash_flow_zh_visible_copy_repairs_unable_to_determine_investor_language() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="CCEP",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="CCEP",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={"metrics": []},
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "market snapshot",
+                    "snippet": "Debt and liquidity metrics were available.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "CCEP 现金质量需要继续验证。",
+            "earnings_backed_by_cash": "unclear",
+            "summary": "目前无法直接判定现金转换效率；投资者无法判断管理层配置效率。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {},
+        "allocation_discipline": [
+            {
+                "title": "资本配置纪律",
+                "summary": "在数据真空下，投资者无法判断管理层是否优先偿债。",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    visible_text = " ".join(
+        [
+            report.task_sections.cash_quality_verdict.summary,
+            *(point.summary for point in report.task_sections.allocation_discipline),
+        ]
+    )
+    assert "无法直接判定" not in visible_text
+    assert "投资者无法判断" not in visible_text
+    assert "仍需后续披露验证" in visible_text
 
 
 def test_cash_flow_zh_short_debt_and_liquidity_points_expand_with_investor_context() -> None:

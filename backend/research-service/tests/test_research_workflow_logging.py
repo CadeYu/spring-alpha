@@ -828,7 +828,7 @@ def test_latest_earnings_timeout_fallback_respects_chinese_locale() -> None:
     assert "Risk Factors risk watch" not in serialized
     assert "证据兜底财报判断" not in serialized
     assert "最终综合" not in serialized
-    assert "收入与利润表现" in serialized
+    assert "收入、利润率与现金流需要同步验证" in serialized
     assert "增长质量" in serialized
     assert "风险观察" in serialized
     sections = report.task_sections
