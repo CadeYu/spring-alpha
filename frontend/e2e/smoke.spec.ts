@@ -98,10 +98,16 @@ async function clickAnalyzeButton(page: import("@playwright/test").Page) {
 }
 
 async function selectChineseLocale(page: import("@playwright/test").Page) {
-  await page.locator("select").selectOption("zh");
+  await expect(
+    page.getByRole("region", { name: /agent pipeline|Agent 流水线/i }),
+  ).toBeVisible();
+  const localeSelect = page.locator("select").first();
+  await expect(localeSelect).toBeEnabled();
+  await localeSelect.selectOption("zh");
+  await expect(localeSelect).toHaveValue("zh");
   await expect(
     page.getByRole("region", { name: /Agent 流水线/i }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 10_000 });
 }
 
 const TASK_E2E_CASES = [
