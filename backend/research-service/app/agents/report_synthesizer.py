@@ -158,6 +158,16 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\bWeaknesses\b", flags=re.I), "风险因素"),
     (re.compile(r"\bInvestor implication\b", flags=re.I), "投资含义"),
     (re.compile(r"\bRAG\b", flags=re.I), "检索证据"),
+    (re.compile(r"\bSaaS\b", flags=re.I), "订阅软件"),
+    (re.compile(r"\bARR\b", flags=re.I), "年度经常性收入"),
+    (re.compile(r"\bP\s*/\s*E\b", flags=re.I), "市盈率"),
+    (re.compile(r"\bPE\b", flags=re.I), "市盈率"),
+    (re.compile(r"\bmonetization\b", flags=re.I), "商业化"),
+    (re.compile(r"\bmonetize\b", flags=re.I), "商业化"),
+    (re.compile(r"\bupsell\b", flags=re.I), "增购"),
+    (re.compile(r"\brerating\b", flags=re.I), "重估"),
+    (re.compile(r"\bre-rating\b", flags=re.I), "重估"),
+    (re.compile(r"\bMarTech\b", flags=re.I), "营销科技"),
     (re.compile(r"\bfacts\b", flags=re.I), "结构化数据"),
     (re.compile(r"\bthesis\b", flags=re.I), "结论"),
     (re.compile(r"\bsource[_ ]?ids?\b", flags=re.I), "证据来源"),
@@ -4406,7 +4416,9 @@ def _zh_company_profile_summary(state: AgentState, raw_summary: str) -> str:
         or state.evidence_memory.facts.get("market_industry")
         or ""
     ).strip()
-    classification = " / ".join(item for item in (sector, industry) if item)
+    classification = localize_market_classifications_in_text(
+        " / ".join(item for item in (sector, industry) if item)
+    )
     if classification:
         return (
             f"{company} 的业务画像显示其行业暴露集中在 {classification}；"

@@ -1879,6 +1879,55 @@ def test_chinese_company_profile_does_not_echo_raw_english_business_summary() ->
     assert "业务" in profile.summary
 
 
+def test_chinese_company_profile_localizes_market_classification_labels() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "AAPL",
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "Apple Inc.",
+                    "market_sector": "Technology",
+                    "market_industry": "Consumer Electronics",
+                },
+                source_refs=[],
+            ),
+        }
+    )
+    payload = {
+        "company_profile": {
+            "summary": (
+                "Apple Inc. 的业务画像显示其行业暴露集中在 "
+                "Technology / Consumer Electronics。"
+            ),
+            "source_ids": [],
+            "citation_status": "unverified",
+        },
+        "topline_verdict": {
+            "headline": "AAPL 本季收入和利润率仍然稳健。",
+            "summary": "收入增长、利润率和现金流共同支撑本季判断。",
+            "verdict": "positive",
+            "confidence": "medium",
+        },
+        "key_takeaways": [],
+        "financial_dashboard": {"metrics": [], "chart_focus": []},
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    profile = report.task_sections.company_profile
+    assert profile is not None
+    assert "Technology" not in profile.summary
+    assert "Consumer Electronics" not in profile.summary
+    assert "科技 / 消费电子" in profile.summary
+
+
 def test_cash_flow_positive_verdict_uses_investor_dense_summary() -> None:
     report = build_cash_flow_report_from_payload(
         _make_request(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION, "zh"),
@@ -3613,6 +3662,54 @@ def test_cash_flow_zh_visible_copy_localizes_provider_point_fields() -> None:
     assert "经营现金流/净利润" in serialized
     assert "资本开支节奏" in serialized
     assert "支撑因素" in serialized
+
+
+def test_latest_earnings_zh_visible_copy_localizes_common_business_terms() -> None:
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        _make_state(language="zh").model_copy(
+            update={
+                "ticker": "ADBE",
+                "task_type": ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "evidence_memory": EvidenceMemory(source_refs=[]),
+            }
+        ),
+        {
+            "company_profile": {
+                "summary": "Adobe uses SaaS monetization and upsell motions.",
+                "source_ids": [],
+                "citation_status": "unverified",
+            },
+            "topline_verdict": {
+                "headline": "SaaS monetization supports ARR and P/E rerating.",
+                "summary": (
+                    "SaaS monetization and upsell could improve ARR, while P/E still "
+                    "needs support from operating cash flow."
+                ),
+                "verdict": "mixed",
+                "confidence": "medium",
+            },
+            "key_takeaways": [
+                {
+                    "summary": "ARR monetization improved through upsell.",
+                    "source_ids": [],
+                    "citation_status": "supported",
+                }
+            ],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "claims": [],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    for leaked in ("monetization", "upsell", "P/E", "rerating"):
+        assert leaked not in serialized
+    assert "商业化" in serialized
+    assert "增购" in serialized
+    assert "市盈率" in serialized
+    assert "重估" in serialized
 
 
 def test_cash_flow_fact_backfill_keeps_core_metrics_and_adds_resilience_points() -> None:
