@@ -127,10 +127,20 @@ _ZH_METRIC_NORMALIZED_ALIASES = {
 }
 
 _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
-    (re.compile(r"\bFCF\s+yield\b", flags=re.I), "自由现金流收益率"),
+    (
+        re.compile(r"(?<![A-Za-z])FCF\s+yield(?![A-Za-z])", flags=re.I),
+        "自由现金流收益率",
+    ),
     (re.compile(r"\bfree cash flow yield\b", flags=re.I), "自由现金流收益率"),
-    (re.compile(r"\bFCF\b", flags=re.I), "自由现金流"),
-    (re.compile(r"\bROI\b", flags=re.I), "投资回报率"),
+    (
+        re.compile(r"(?<![A-Za-z])OCF\s*/\s*NI(?![A-Za-z])", flags=re.I),
+        "经营现金流/净利润",
+    ),
+    (re.compile(r"(?<![A-Za-z])ROIC(?![A-Za-z])", flags=re.I), "投入资本回报率"),
+    (re.compile(r"(?<![A-Za-z])FCF(?![A-Za-z])", flags=re.I), "自由现金流"),
+    (re.compile(r"(?<![A-Za-z])ROI(?![A-Za-z])", flags=re.I), "投资回报率"),
+    (re.compile(r"(?<![A-Za-z])OCF(?![A-Za-z])", flags=re.I), "经营现金流"),
+    (re.compile(r"(?<![A-Za-z])NI(?![A-Za-z])", flags=re.I), "净利润"),
     (re.compile(r"\breturn on investment\b", flags=re.I), "投资回报率"),
     (re.compile(r"\bcapex\s+pace\b", flags=re.I), "资本开支节奏"),
     (re.compile(r"\bworking capital\b", flags=re.I), "营运资本"),

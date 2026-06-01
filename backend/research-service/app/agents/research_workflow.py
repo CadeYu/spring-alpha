@@ -1425,22 +1425,28 @@ def _cash_quality_verdict(
             ),
         )
     if ocf is not None and fcf is not None and ocf > 0 and fcf > 0:
+        if is_zh:
+            capex_clause = (
+                f"同时资本开支为 {_format_metric_value(capex)}，"
+                if capex is not None
+                else "同时仍要核对资本开支节奏，"
+            )
+            return CashQualityVerdict(
+                headline="现金流验证盈利，但再投资后弹性仍是关键。",
+                earnings_backed_by_cash="yes",
+                summary=(
+                    f"{request.ticker} 经营现金流为 {_format_metric_value(ocf)}，"
+                    f"自由现金流为 {_format_metric_value(fcf)}，说明本期利润至少有现金生成支撑。"
+                    f"{capex_clause}投资判断不能只看现金流为正，还要看经营现金流能否持续覆盖再投资，"
+                    "并在下一季继续转化为稳定的自由现金流。"
+                ),
+            )
         return CashQualityVerdict(
-            headline=(
-                "盈利有现金生成支撑。"
-                if is_zh
-                else "Earnings are supported by cash generation."
-            ),
+            headline="Earnings are supported by cash generation.",
             earnings_backed_by_cash="yes",
             summary=(
-                (
-                    f"{request.ticker} 经营现金流和自由现金流均为正，管理层具备真实资本配置能力。"
-                )
-                if is_zh
-                else (
-                    f"{request.ticker} produced positive operating cash flow and free cash "
-                    "flow, giving management real capital allocation capacity."
-                )
+                f"{request.ticker} produced positive operating cash flow and free cash "
+                "flow, giving management real capital allocation capacity."
             ),
         )
     return CashQualityVerdict(
@@ -1665,6 +1671,15 @@ def _metric_float(metric: EvidenceBoundMetric | None) -> float | None:
         return float(raw) * multiplier
     except ValueError:
         return None
+
+
+def _format_metric_value(value: float) -> str:
+    abs_value = abs(value)
+    if abs_value >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.1f}B"
+    if abs_value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    return f"{value:g}"
 
 
 def _fallback_summary(

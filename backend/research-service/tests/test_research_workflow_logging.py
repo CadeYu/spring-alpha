@@ -511,7 +511,17 @@ def test_cash_flow_timeout_fallback_respects_chinese_locale() -> None:
     assert "Capex and reinvestment" not in serialized
     assert "Balance sheet resilience" not in serialized
     assert "Watch next" not in serialized
-    assert report.task_sections.cash_quality_verdict.headline == "盈利有现金生成支撑。"
+    verdict = report.task_sections.cash_quality_verdict
+    assert verdict.headline != "盈利有现金生成支撑。"
+    assert (
+        verdict.summary
+        != "AMD 经营现金流和自由现金流均为正，管理层具备真实资本配置能力。"
+    )
+    assert "经营现金流" in verdict.summary
+    assert "自由现金流" in verdict.summary
+    assert "资本开支" in verdict.summary
+    assert "投资" in verdict.summary
+    assert len(verdict.summary) >= 70
     assert "资本开支与再投资" in serialized
     assert "资产负债表韧性" in serialized
     assert "观察下一季" in serialized

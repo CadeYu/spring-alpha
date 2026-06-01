@@ -3559,14 +3559,18 @@ def test_cash_flow_zh_visible_copy_localizes_provider_point_fields() -> None:
             "cash_quality_verdict": {
                 "headline": "Cash conversion is mixed.",
                 "earnings_backed_by_cash": "mixed",
-                "summary": "FCF yield and ROI should improve as capex pace normalizes.",
+                "summary": (
+                    "FCF yield and ROI should improve as capex pace normalizes. "
+                    "Low FCF may be temporary, but ROIC dilution and OCF/NI quality "
+                    "still need monitoring."
+                ),
             },
             "cash_metrics": [],
             "capital_allocation": {
                 "capex": [
                     {
                         "title": "Capex pace",
-                        "summary": "Capex pace can pressure FCF yield.",
+                        "summary": "Capex pace can pressure FCF yield and ROIC.",
                         "source_ids": ["src_1"],
                         "citation_status": "supported",
                     }
@@ -3577,8 +3581,10 @@ def test_cash_flow_zh_visible_copy_localizes_provider_point_fields() -> None:
                     "title": "Allocation discipline",
                     "summary": "",
                     "strengths": "FCF yield has strength from working capital.",
-                    "weaknesses": "ROI remains sensitive to capex pace.",
-                    "investor_implication": "Investors should watch ROI and FCF yield.",
+                    "weaknesses": "ROI remains sensitive to capex pace and low FCF.",
+                    "investor_implication": (
+                        "Investors should watch ROI, ROIC, OCF/NI, and FCF yield."
+                    ),
                     "source_ids": ["src_1"],
                     "citation_status": "supported",
                 }
@@ -3589,10 +3595,22 @@ def test_cash_flow_zh_visible_copy_localizes_provider_point_fields() -> None:
     )
 
     serialized = report.model_dump_json()
-    for leaked in ("FCF", "FCF yield", "ROI", "capex pace", "Strengths:", "Weaknesses:"):
+    for leaked in (
+        "FCF",
+        "FCF yield",
+        "ROI",
+        "ROIC",
+        "OCF",
+        "NI",
+        "capex pace",
+        "Strengths:",
+        "Weaknesses:",
+    ):
         assert leaked not in serialized
     assert "自由现金流收益率" in serialized
     assert "投资回报率" in serialized
+    assert "投入资本回报率" in serialized
+    assert "经营现金流/净利润" in serialized
     assert "资本开支节奏" in serialized
     assert "支撑因素" in serialized
 
