@@ -167,9 +167,13 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (_ascii_term_pattern("SaaS"), "订阅软件"),
     (_ascii_term_pattern("ARR"), "年度经常性收入"),
     (_ascii_term_pattern("ARPU"), "每用户平均收入"),
+    (_ascii_term_pattern("RPO"), "剩余履约义务"),
     (_ascii_term_pattern("B2B"), "企业端"),
     (_ascii_term_pattern("EPS"), "每股收益"),
     (_ascii_term_pattern("MLR"), "医疗损失率"),
+    (re.compile(r"\bDebt\s*/\s*Equity\b", flags=re.I), "债务/股东权益"),
+    (re.compile(r"\bDebt[-\s]+to[-\s]+Equity\b", flags=re.I), "债务/股东权益"),
+    (re.compile(r"\bremaining performance obligations?\b", flags=re.I), "剩余履约义务"),
     (re.compile(r"\bP\s*/\s*E\b", flags=re.I), "市盈率"),
     (re.compile(r"\bPE\b", flags=re.I), "市盈率"),
     (_ascii_term_pattern("Digital Experience"), "数字体验"),
@@ -213,6 +217,12 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\bcan\s+change\b", flags=re.I), "可能改变"),
     (re.compile(r"\bchange\b", flags=re.I), "改变"),
     (re.compile(r"\bcan support\b", flags=re.I), "可以支撑"),
+    (re.compile(r"\bremain key checks\b", flags=re.I), "仍是关键观察项"),
+    (re.compile(r"\bare the key follow-up checks\b", flags=re.I), "是关键后续观察项"),
+    (re.compile(r"\bshould confirm whether\b", flags=re.I), "应确认"),
+    (re.compile(r"\bis needed to validate whether\b", flags=re.I), "需要验证"),
+    (re.compile(r"\bconverts? into contracted demand\b", flags=re.I), "转化为合约需求"),
+    (re.compile(r"\bcan pressure valuation if\b", flags=re.I), "在以下情况下可能压制估值："),
     (re.compile(r"\bprior\s+authorization\s+reform\b", flags=re.I), "事前授权改革"),
     (re.compile(r"\bdespite\b", flags=re.I), "尽管"),
     (re.compile(r"\bwhile\b", flags=re.I), "同时"),
@@ -314,6 +324,18 @@ _ZH_VISIBLE_PHRASE_REPLACEMENTS = (
     (
         re.compile(r"\bRevenue improved\b", flags=re.I),
         "收入改善",
+    ),
+    (
+        re.compile(r"\bRevenue was ([^。.!?]+)\.?", flags=re.I),
+        r"收入为 \1。",
+    ),
+    (
+        re.compile(r"\bGross margin was ([^。.!?]+)\.?", flags=re.I),
+        r"毛利率为 \1。",
+    ),
+    (
+        re.compile(r"\bOperating cash flow was ([^。.!?]+)\.?", flags=re.I),
+        r"经营现金流为 \1。",
     ),
     (
         re.compile(r"\bRevenue grew against a mixed demand backdrop\.?", flags=re.I),
@@ -2661,19 +2683,24 @@ def _quality_point_from_metric(
 ) -> EvidenceBoundPoint | None:
     if metric is not None:
         metric_label = _localize_metric_name(metric.name, "zh" if is_zh else None)
+        if is_zh:
+            return EvidenceBoundPoint(
+                title=title,
+                summary=_latest_metric_quality_summary_zh(
+                    title,
+                    metric_label,
+                    metric.value,
+                    metric.interpretation,
+                    key_takeaways,
+                ),
+                evidence_refs=metric.evidence_refs,
+                citation_status=metric.citation_status,
+            )
         return EvidenceBoundPoint(
             title=title,
             summary=(
-                (
-                    f"{metric_label}为 {metric.value}，是本季{title}的量化锚点。"
-                    f"{_localize_visible_text(metric.interpretation, 'zh')} "
-                    "下一季需要继续验证这个指标是否和收入、利润率及现金流方向一致。"
-                )
-                if is_zh
-                else (
-                    f"{metric.name} of {metric.value} is the evidence anchor. "
-                    f"{metric.interpretation}"
-                )
+                f"{metric.name} of {metric.value} is the evidence anchor. "
+                f"{metric.interpretation}"
             ),
             evidence_refs=metric.evidence_refs,
             citation_status=metric.citation_status,
@@ -2691,6 +2718,68 @@ def _quality_point_from_metric(
             citation_status=point.citation_status,
         )
     return _point_from_source_refs(title, fallback_summary, source_refs)
+
+
+def _latest_metric_quality_summary_zh(
+    title: str,
+    metric_label: str,
+    metric_value: str,
+    interpretation: str,
+    key_takeaways: list[EvidenceBoundPoint],
+) -> str:
+    localized_interpretation = _localize_visible_text(interpretation, "zh")
+    takeaway_context = _first_investor_context_zh(key_takeaways)
+    metric_sentence = f"{metric_label}为 {metric_value}"
+    if title == "增长质量":
+        return (
+            f"{metric_sentence}，这说明本季需求或业务规模仍有可量化支撑。"
+            f"{_quality_interpretation_sentence_zh(localized_interpretation)}"
+            f"{_quality_context_sentence_zh(takeaway_context)}"
+            "投资上更关键的是下一季收入增长能否和利润率、现金生成同步，而不是只看单季收入数字。"
+        )
+    if title == "利润率质量":
+        return (
+            f"{metric_sentence}，这直接检验收入增长是否真正转化为经营杠杆。"
+            f"{_quality_interpretation_sentence_zh(localized_interpretation)}"
+            f"{_quality_context_sentence_zh(takeaway_context)}"
+            "若下一季成本投入继续快于收入扩张，这一利润质量判断需要下调；若利润率维持或改善，财报含金量会更高。"
+        )
+    if title == "现金质量":
+        return (
+            f"{metric_sentence}，这让本季盈利判断不只停留在利润表，而是有现金生成维度验证。"
+            f"{_quality_interpretation_sentence_zh(localized_interpretation)}"
+            f"{_quality_context_sentence_zh(takeaway_context)}"
+            "下一季应继续观察经营现金流或自由现金流能否覆盖再投资、资本回报和债务需求。"
+        )
+    return (
+        f"{metric_sentence}，为本季财报质量提供了可跟踪证据。"
+        f"{_quality_interpretation_sentence_zh(localized_interpretation)}"
+        f"{_quality_context_sentence_zh(takeaway_context)}"
+        "后续需要把该指标和收入、利润率及现金流方向放在一起验证。"
+    )
+
+
+def _first_investor_context_zh(points: list[EvidenceBoundPoint]) -> str:
+    for point in points:
+        summary = _localize_visible_text(point.summary, "zh")
+        normalized = " ".join(summary.split())
+        if len(normalized) >= 24:
+            return _trim_sentence(normalized, max_chars=120)
+    return ""
+
+
+def _quality_interpretation_sentence_zh(value: str) -> str:
+    text = " ".join(str(value or "").split())
+    if not text or text in {"已报告指标。", "已报告指标"}:
+        return ""
+    return f"{text.rstrip('。')}。"
+
+
+def _quality_context_sentence_zh(value: str) -> str:
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ""
+    return f"结合本季要点看，{text.rstrip('。')}。"
 
 
 def _metric_by_name(

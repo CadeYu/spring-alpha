@@ -921,6 +921,180 @@ def test_latest_earnings_repairs_incomplete_topline_verdict_text() -> None:
     assert "上游价格实现仍是核心变量" in verdict.summary
 
 
+def test_latest_earnings_quality_backfill_writes_investor_memo_copy() -> None:
+    state = _make_state(language="zh")
+    payload = {
+        "company_profile": {
+            "summary": "Adobe provides digital media and digital experience software.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "ADBE 本季收入增长和利润率都保持稳健。",
+            "summary": (
+                "ADBE 本季营收继续增长，毛利率仍处高位，自由现金流提供支撑。"
+                "投资者需要同时观察订阅成本和 AI 基础设施投入是否压制后续利润率。"
+            ),
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "订阅收入韧性仍在",
+                "summary": (
+                    "营收同比增长至 64 亿美元，说明订阅模式仍有韧性；但成本端规模效应"
+                    "并不充分，后续需要观察 AI 投入是否侵蚀利润率。"
+                ),
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$6.40B",
+                    "period": "FY2026-Q1",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Gross Margin",
+                    "value": "89.6%",
+                    "period": "FY2026-Q1",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Free Cash Flow",
+                    "value": "$2.92B",
+                    "period": "FY2026-Q1",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                },
+            ],
+            "chart_focus": ["Revenue", "Gross Margin", "Free Cash Flow"],
+        },
+        "driver_snapshot": [
+            {
+                "title": "AI 功能嵌入产品生态",
+                "summary": "生成式 AI 功能有助于维持创意云留存，但商业化仍需更多订单证据。",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "risk_snapshot": [
+            {
+                "title": "AI 算力投入可能压制利润率",
+                "summary": "如果订阅成本增速持续高于收入增速，毛利率高位会面临边际压力。",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    quality = report.task_sections.quality_of_quarter
+    summaries = [
+        quality.growth_quality.summary,
+        quality.margin_quality.summary,
+        quality.cash_quality.summary,
+    ]
+    joined = "\n".join(summaries)
+
+    assert "量化锚点" not in joined
+    assert "已报告指标" not in joined
+    assert "支撑背景" not in joined
+    assert all(len(summary) >= 70 for summary in summaries)
+    assert "订阅模式仍有韧性" in quality.growth_quality.summary
+    assert "AI 投入是否侵蚀利润率" in quality.margin_quality.summary
+    assert "自由现金流" in quality.cash_quality.summary
+    assert "现金生成" in quality.cash_quality.summary
+
+
+def test_latest_earnings_zh_visible_copy_localizes_crm_finance_terms() -> None:
+    state = _make_state(language="zh")
+    payload = {
+        "company_profile": {
+            "summary": "Salesforce provides CRM software and AI agents.",
+            "source_ids": ["src_1"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "CRM revenue improved while balance sheet risk stayed visible.",
+            "summary": (
+                "Revenue grew while 1.15x Debt/Equity and RPO growth remain key checks. "
+                "Remaining performance obligation should confirm whether Agentforce demand "
+                "is becoming measurable."
+            ),
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "Debt/Equity and RPO are the key follow-up checks",
+                "summary": (
+                    "Debt-to-Equity remained elevated, while RPO should show whether "
+                    "remaining performance obligations are accelerating."
+                ),
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "$11.1B",
+                    "period": "FY2027-Q1",
+                    "interpretation": "Revenue anchors the growth read.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+            "chart_focus": ["Revenue"],
+        },
+        "driver_snapshot": [
+            {
+                "title": "RPO demand signal",
+                "summary": "RPO growth is needed to validate whether Agentforce converts into contracted demand.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "risk_snapshot": [
+            {
+                "title": "Debt/Equity risk",
+                "summary": "Debt/Equity can pressure valuation if free cash flow weakens.",
+                "source_ids": ["src_1"],
+                "citation_status": "supported",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    visible_text = report.model_dump_json()
+    lowered = visible_text.lower()
+    assert "debt/equity" not in lowered
+    assert "debt-to-equity" not in lowered
+    assert "remaining performance obligation" not in lowered
+    assert "rpo" not in lowered
+    assert "债务/股东权益" in visible_text
+    assert "剩余履约义务" in visible_text
+
+
 def test_business_driver_reviewer_rewrites_template_thesis_headline() -> None:
     state = _make_state(language="zh").model_copy(
         update={
