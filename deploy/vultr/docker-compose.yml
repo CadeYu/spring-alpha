@@ -31,8 +31,7 @@ services:
     env_file:
       - ./.env.vultr
     environment:
-      LIVE_RAG_RETRIEVAL_MODE: qdrant
-      RAG_VECTOR_STORE_PROVIDER: qdrant
+      LIVE_RAG_RETRIEVAL_MODE: local
     expose:
       - "8090"
     healthcheck:
