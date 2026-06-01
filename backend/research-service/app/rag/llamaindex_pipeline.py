@@ -682,6 +682,14 @@ def build_embedding_backend_from_env() -> EmbeddingBackend:
 
 
 def build_live_rag_pipeline_from_env() -> "LlamaIndexRagPipeline":
+    if _live_rag_retrieval_mode() in {"hybrid", "qdrant", "vector"}:
+        embedding_backend = build_embedding_backend_from_env()
+        return LlamaIndexRagPipeline(
+            enable_hybrid_retrieval=True,
+            embedding_backend=embedding_backend,
+            vector_store=build_vector_store_from_env(embedding_backend),
+        )
+
     embedding_backend = DeterministicFinancialEmbeddingBackend()
     return LlamaIndexRagPipeline(
         enable_hybrid_retrieval=False,
@@ -1051,6 +1059,10 @@ def _default_embedding_provider_name() -> str:
     if getenv("GEMINI_API_KEY"):
         return EmbeddingProvider.GEMINI.value
     return EmbeddingProvider.DETERMINISTIC.value
+
+
+def _live_rag_retrieval_mode() -> str:
+    return getenv("LIVE_RAG_RETRIEVAL_MODE", "local").strip().lower()
 
 
 def _provider_default_api_key(provider: EmbeddingProvider) -> str | None:

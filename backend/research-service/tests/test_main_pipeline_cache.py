@@ -218,5 +218,44 @@ def test_live_rag_pipeline_defaults_to_local_retrieval(monkeypatch):
 
     assert pipeline is not None
     assert captured["enable_hybrid_retrieval"] is False
-    assert isinstance(captured["embedding_backend"], rag_pipeline_module.DeterministicFinancialEmbeddingBackend)
+    assert isinstance(
+        captured["embedding_backend"],
+        rag_pipeline_module.DeterministicFinancialEmbeddingBackend,
+    )
     assert isinstance(captured["vector_store"], rag_pipeline_module.InMemoryVectorStore)
+
+
+def test_live_rag_pipeline_uses_hybrid_qdrant_when_enabled(monkeypatch):
+    from app.rag import llamaindex_pipeline as rag_pipeline_module
+
+    captured: dict[str, object] = {}
+    fake_embedding_backend = object()
+    fake_vector_store = object()
+
+    class FakePipeline:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    def fake_build_vector_store(embedding_backend):
+        assert embedding_backend is fake_embedding_backend
+        return fake_vector_store
+
+    monkeypatch.setenv("LIVE_RAG_RETRIEVAL_MODE", "qdrant")
+    monkeypatch.setattr(rag_pipeline_module, "LlamaIndexRagPipeline", FakePipeline)
+    monkeypatch.setattr(
+        rag_pipeline_module,
+        "build_embedding_backend_from_env",
+        lambda: fake_embedding_backend,
+    )
+    monkeypatch.setattr(
+        rag_pipeline_module,
+        "build_vector_store_from_env",
+        fake_build_vector_store,
+    )
+
+    pipeline = rag_pipeline_module.build_live_rag_pipeline_from_env()
+
+    assert pipeline is not None
+    assert captured["enable_hybrid_retrieval"] is True
+    assert captured["embedding_backend"] is fake_embedding_backend
+    assert captured["vector_store"] is fake_vector_store
