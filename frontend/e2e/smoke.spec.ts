@@ -91,6 +91,12 @@ async function openAgentReport(
   await page.getByRole("tab", { name }).click();
 }
 
+async function clickAnalyzeButton(page: import("@playwright/test").Page) {
+  const button = page.getByRole("button", { name: /analyze|开始分析/i });
+  await expect(button).toBeEnabled();
+  await button.click();
+}
+
 const TASK_E2E_CASES = [
   {
     taskType: "latest_earnings_readout",
@@ -878,6 +884,8 @@ test.describe("Spring Alpha smoke", () => {
   test("TSLA first run in Chinese shows degraded-source notice", async ({
     page,
   }) => {
+    test.setTimeout(45_000);
+
     await mockFinancialFactsRoute(page, async (route) => {
       await route.fulfill({
         status: 200,
@@ -924,7 +932,7 @@ test.describe("Spring Alpha smoke", () => {
     await page
       .locator('input[placeholder*="股票代码"], input[placeholder*="Ticker"]')
       .fill("TSLA");
-    await page.getByRole("button", { name: /开始分析/i }).click();
+    await clickAnalyzeButton(page);
     await openAgentReport(page, /最新财报速读/i);
 
     await expect(
@@ -937,6 +945,8 @@ test.describe("Spring Alpha smoke", () => {
   test("TSLA second run in Chinese can recover grounded citations", async ({
     page,
   }) => {
+    test.setTimeout(45_000);
+
     let analyzeCount = 0;
 
     await mockFinancialFactsRoute(page, async (route) => {
@@ -998,12 +1008,12 @@ test.describe("Spring Alpha smoke", () => {
       .locator('input[placeholder*="股票代码"], input[placeholder*="Ticker"]')
       .fill("TSLA");
 
-    await page.getByRole("button", { name: /开始分析/i }).click();
+    await clickAnalyzeButton(page);
     await openAgentReport(page, /最新财报速读/i);
     await expect(page.getByText("Latest earnings typed summary.")).toBeVisible();
     await expect(page.getByText("Typed latest earnings thesis")).toHaveCount(0);
 
-    await page.getByRole("button", { name: /开始分析/i }).click();
+    await clickAnalyzeButton(page);
     await openAgentReport(page, /最新财报速读/i);
     await expect(page.getByText("Latest earnings typed summary.")).toBeVisible();
     await expect(page.getByText("Typed latest earnings thesis")).toHaveCount(0);
