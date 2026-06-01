@@ -3769,6 +3769,45 @@ def test_latest_earnings_zh_visible_copy_localizes_adobe_business_terms() -> Non
     assert "每用户平均收入" in serialized
 
 
+def test_latest_earnings_zh_company_profile_localizes_mixed_english_terms() -> None:
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        _make_state(language="zh").model_copy(
+            update={
+                "ticker": "ADBE",
+                "task_type": ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "evidence_memory": EvidenceMemory(source_refs=[]),
+            }
+        ),
+        {
+            "company_profile": {
+                "summary": (
+                    "Adobe 是全球领先的创意与文档软件平台，通过 Digital Media "
+                    "等业务为个人、团队及企业提供内容创作、发布与推广工具。"
+                ),
+                "source_ids": [],
+                "citation_status": "unverified",
+            },
+            "topline_verdict": {
+                "headline": "本季表现分化。",
+                "summary": "本季表现分化。",
+                "verdict": "mixed",
+                "confidence": "medium",
+            },
+            "key_takeaways": [],
+            "financial_dashboard": {"metrics": [], "chart_focus": []},
+            "driver_snapshot": [],
+            "risk_snapshot": [],
+            "claims": [],
+        },
+    )
+
+    profile = report.task_sections.company_profile
+    assert profile is not None
+    assert "Digital Media" not in profile.summary
+    assert "数字媒体" in profile.summary
+
+
 def test_cash_flow_fact_backfill_keeps_core_metrics_and_adds_resilience_points() -> None:
     request = AgentRequest(
         run_id="run_1",

@@ -4370,8 +4370,10 @@ def _company_profile_from_payload(
     language: str | None,
 ) -> CompanyProfileSection:
     summary = _concise_company_profile(profile.summary)
-    if _is_zh_locale(language) and _english_leak_score(summary) >= 4:
-        summary = _zh_company_profile_summary(state, profile.summary)
+    if _is_zh_locale(language):
+        summary = _localize_visible_text(summary, language)
+        if _english_leak_score(summary) >= 4:
+            summary = _zh_company_profile_summary(state, profile.summary)
     return CompanyProfileSection(
         summary=summary,
         evidence_refs=[
@@ -4397,8 +4399,10 @@ def _company_profile_from_synthesis(
     business_summary = _company_profile_summary_from_facts(state)
     if not business_summary:
         return None
-    if _is_zh_locale(language) and _english_leak_score(business_summary) >= 4:
-        business_summary = _zh_company_profile_summary(state, business_summary)
+    if _is_zh_locale(language):
+        business_summary = _localize_visible_text(business_summary, language)
+        if _english_leak_score(business_summary) >= 4:
+            business_summary = _zh_company_profile_summary(state, business_summary)
     return CompanyProfileSection(
         summary=business_summary,
         evidence_refs=[],
