@@ -4895,6 +4895,71 @@ def test_cash_flow_fact_backfill_keeps_core_metrics_and_adds_resilience_points()
     assert report.task_sections.capital_allocation.dividends == []
 
 
+def test_cash_flow_zh_default_capital_allocation_points_include_investor_context() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="LIN",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="LIN",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={
+                "metrics": [
+                    {"name": "operating cash flow", "value": 2240000000, "unit": "USD"},
+                    {"name": "capital expenditures", "value": 1340000000, "unit": "USD"},
+                    {"name": "free cash flow", "value": 898000000, "unit": "USD"},
+                    {"name": "current ratio", "value": 0.83, "unit": "ratio"},
+                    {"name": "total debt", "value": 26300000000, "unit": "USD"},
+                    {
+                        "name": "cash and short term investments",
+                        "value": 4000000000,
+                        "unit": "USD",
+                    },
+                ]
+            },
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "structured cash flow",
+                    "snippet": "Structured cash flow and balance sheet metrics.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "LIN 现金流有经营现金流支撑。",
+            "earnings_backed_by_cash": "mixed",
+            "summary": "经营现金流覆盖资本开支后仍有自由现金流。",
+        },
+        "cash_metrics": [],
+        "capital_allocation": {},
+        "allocation_discipline": [],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    capex_summary = report.task_sections.capital_allocation.capex[0].summary
+    debt_summary = report.task_sections.capital_allocation.debt[0].summary
+    liquidity_summary = report.task_sections.capital_allocation.liquidity[0].summary
+    for summary in (capex_summary, debt_summary, liquidity_summary):
+        assert len(" ".join(summary.split())) >= 55
+        assert "投资者" in summary or "管理层" in summary
+    assert "经营现金流" in capex_summary
+    assert "自由现金流" in capex_summary
+    assert "资产负债表" in debt_summary
+    assert "流动比率" in liquidity_summary
+
+
 def test_cash_flow_partial_llm_metrics_are_completed_from_structured_facts() -> None:
     request = AgentRequest(
         run_id="run_1",

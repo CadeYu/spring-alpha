@@ -3158,38 +3158,32 @@ def _capital_allocation_with_fact_backfill(
         else []
     )
     if not capex and capex_metric is not None:
+        ocf_metric = _synthesized_metric_by_name(metrics, ("operating cash flow",))
+        fcf_metric = _synthesized_metric_by_name(metrics, ("free cash flow",))
         capex.append(
             _cash_flow_point_from_metric(
                 capex_metric,
                 title="资本开支与再投资" if is_zh else "Capex and reinvestment",
-                summary=(
-                    (
-                        f"{_localize_metric_name(capex_metric.name, language)}为 {capex_metric.value}，"
-                        "是现金再投资的主要去向。"
-                    )
-                    if is_zh
-                    else (
-                        f"{capex_metric.name} of {capex_metric.value} is the main "
-                        "reinvestment use of cash."
-                    )
+                summary=_default_capex_allocation_summary(
+                    capex_metric,
+                    ocf_metric,
+                    fcf_metric,
+                    language,
                 ),
             )
         )
     if not debt and debt_metric is not None:
+        ocf_metric = _synthesized_metric_by_name(metrics, ("operating cash flow",))
+        fcf_metric = _synthesized_metric_by_name(metrics, ("free cash flow",))
         debt.append(
             _cash_flow_point_from_metric(
                 debt_metric,
                 title="债务负担" if is_zh else "Debt load",
-                summary=(
-                    (
-                        f"{_localize_metric_name(debt_metric.name, language)}为 {debt_metric.value}，"
-                        "需要和现金生成能力一起评估资产负债表风险。"
-                    )
-                    if is_zh
-                    else (
-                        f"{debt_metric.name} of {debt_metric.value} frames balance sheet "
-                        "risk against cash generation."
-                    )
+                summary=_default_debt_allocation_summary(
+                    debt_metric,
+                    ocf_metric,
+                    fcf_metric,
+                    language,
                 ),
             )
         )
@@ -3217,19 +3211,9 @@ def _capital_allocation_with_fact_backfill(
             liquidity.append(
                 _SynthesizedPoint(
                     title="资产负债表韧性" if is_zh else "Balance sheet resilience",
-                    summary=(
-                        (
-                            "流动性由"
-                            + "和".join(liquidity_parts)
-                            + "支撑，这决定管理层还有多少空间继续投入再投资。"
-                        )
-                        if is_zh
-                        else (
-                            "Liquidity is anchored by "
-                            + " and ".join(liquidity_parts)
-                            + ", which determines how much room management has "
-                            "to fund reinvestment."
-                        )
+                    summary=_default_liquidity_allocation_summary(
+                        liquidity_parts,
+                        language,
                     ),
                     source_ids=_dedupe_strings(source_ids),
                     citation_status=citation_status,
@@ -3327,6 +3311,76 @@ def _expand_short_capital_point(
             if point.source_ids
             else metric.citation_status,
         }
+    )
+
+
+def _default_capex_allocation_summary(
+    capex: _SynthesizedMetric,
+    ocf: _SynthesizedMetric | None,
+    fcf: _SynthesizedMetric | None,
+    language: str | None,
+) -> str:
+    if _is_zh_locale(language):
+        cash_anchor = (
+            f"经营现金流 {ocf.value}" if ocf is not None else "经营现金流"
+        )
+        fcf_anchor = f"、自由现金流 {fcf.value}" if fcf is not None else ""
+        return (
+            f"{_localize_metric_name(capex.name, language)}为 {capex.value}，"
+            f"需要和{cash_anchor}{fcf_anchor}一起判断再投资强度；投资者应确认资本开支"
+            "没有持续吞噬现金弹性，并观察项目回报能否转化为收入、利润率或现金流改善。"
+        )
+    cash_anchor = f"operating cash flow of {ocf.value}" if ocf is not None else "operating cash flow"
+    fcf_anchor = f" and free cash flow of {fcf.value}" if fcf is not None else ""
+    return (
+        f"{capex.name} of {capex.value} should be read against {cash_anchor}{fcf_anchor}; "
+        "investors should confirm reinvestment is not consuming cash flexibility "
+        "without later revenue, margin, or cash-flow improvement."
+    )
+
+
+def _default_debt_allocation_summary(
+    debt: _SynthesizedMetric,
+    ocf: _SynthesizedMetric | None,
+    fcf: _SynthesizedMetric | None,
+    language: str | None,
+) -> str:
+    if _is_zh_locale(language):
+        cash_anchor = (
+            f"经营现金流 {ocf.value}" if ocf is not None else "现金生成能力"
+        )
+        fcf_anchor = f"和自由现金流 {fcf.value}" if fcf is not None else ""
+        return (
+            f"{_localize_metric_name(debt.name, language)}为 {debt.value}，"
+            f"需要结合{cash_anchor}{fcf_anchor}评估资产负债表压力；投资者应关注"
+            "再融资成本、利息负担和债务到期节奏是否会挤压再投资或股东回报空间。"
+        )
+    cash_anchor = f"operating cash flow of {ocf.value}" if ocf is not None else "cash generation"
+    fcf_anchor = f" and free cash flow of {fcf.value}" if fcf is not None else ""
+    return (
+        f"{debt.name} of {debt.value} should be judged against {cash_anchor}{fcf_anchor}; "
+        "investors should watch whether refinancing costs, interest burden, or "
+        "maturities pressure reinvestment and shareholder returns."
+    )
+
+
+def _default_liquidity_allocation_summary(
+    liquidity_parts: list[str],
+    language: str | None,
+) -> str:
+    if _is_zh_locale(language):
+        return (
+            "流动性由"
+            + "和".join(liquidity_parts)
+            + "支撑，这决定管理层还有多少空间继续投入再投资；投资者应关注"
+            "短期负债、现金缓冲和经营现金流是否足以承受资本开支、债务需求或周期波动。"
+        )
+    return (
+        "Liquidity is anchored by "
+        + " and ".join(liquidity_parts)
+        + ", which determines how much room management has to fund reinvestment; "
+        "investors should watch whether short-term liabilities, cash buffers, and "
+        "operating cash flow can absorb capex, debt needs, or cycle pressure."
     )
 
 
