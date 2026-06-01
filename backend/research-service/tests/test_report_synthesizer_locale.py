@@ -2890,6 +2890,71 @@ def test_business_driver_zh_reviewer_localizes_market_classification() -> None:
     assert "半导体" in serialized
 
 
+def test_business_driver_zh_reviewer_localizes_basic_materials_classification() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "LIN",
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "LINDE PLC",
+                    "market_sector": "Basic Materials",
+                    "market_industry": "Specialty Chemicals",
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 8793000000,
+                            "unit": "USD",
+                            "period": "FY2026-Q1",
+                        },
+                        {
+                            "name": "gross margin",
+                            "value": 0.485,
+                            "unit": "pure",
+                            "period": "FY2026-Q1",
+                        },
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 8793000000,
+                        "unit": "USD",
+                        "fact_period": "FY2026-Q1",
+                        "source": "preloaded_financial_facts",
+                    }
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Evidence is thin.",
+                "durability": "unclear",
+                "summary": "No evidence for this lens.",
+            },
+            "driver_map": {
+                "revenue_bridge": {
+                    "title": "Revenue bridge",
+                    "summary": "No evidence for this lens.",
+                    "citation_status": "missing",
+                }
+            },
+            "claims": [],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    for leaked in ("Basic Materials", "Specialty Chemicals"):
+        assert leaked not in serialized
+    assert "基础材料" in serialized
+    assert "特种化学品" in serialized
+
+
 def test_business_driver_thesis_placeholder_is_recovered_from_structured_facts() -> None:
     state = _make_state(language="zh").model_copy(
         update={
@@ -5002,6 +5067,110 @@ def test_cash_flow_short_existing_red_flags_expand_with_distinct_metric_context(
     assert "经营现金流" in joined
     assert "资本开支" in joined
     assert "流动比率" in joined or "扩张" in joined
+
+
+def test_cash_flow_zh_visible_copy_repairs_weak_evidence_and_object_leaks() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="FER",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="FER",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={"metrics": []},
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "market snapshot",
+                    "snippet": "Revenue and operating margin were available.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": (
+                "FER 的现金质量当前处于无法验证状态。核心现金流指标在 证据 context 中全部缺失，"
+                "无法支撑对现金转换效率的任何判断。"
+            ),
+            "earnings_backed_by_cash": "unclear",
+            "summary": (
+                "FER 的现金质量当前处于无法验证状态。核心现金流指标在 证据 context 中全部缺失，"
+                "无法支撑对现金转换效率的任何判断。"
+            ),
+        },
+        "cash_metrics": [],
+        "capital_allocation": {
+            "liquidity": [
+                {
+                    "title": "Liquidity placeholder",
+                    "summary": (
+                        "经营现金流为 {'value': None, 'trend': None, "
+                        "'quality_note': '核心指标缺失，无法评估利润向现金的转换效率', '证据来源': []}，"
+                        "是资本配置能力的核心信号。"
+                    ),
+                    "source_ids": ["src_1"],
+                    "citation_status": "partial",
+                }
+            ]
+        },
+        "allocation_discipline": [
+            {
+                "title": "Discipline placeholder",
+                "summary": "资本配置纪律无法评估。证据 pack 完全空白，无法判断管理层配置效率。",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "red_flags": [
+            {
+                "title": "Disclosure red flag",
+                "summary": "下季度若 filing 仍未披露经营现金流与 capital expenditures，应视为 red flag。",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    sections = report.task_sections
+    visible_text = " ".join(
+        [
+            sections.cash_quality_verdict.headline,
+            sections.cash_quality_verdict.summary,
+            *(point.summary for point in sections.capital_allocation.liquidity),
+            *(point.summary for point in sections.allocation_discipline),
+            *(point.summary for point in sections.red_flags),
+        ]
+    )
+    for leaked in (
+        "无法判断",
+        "无法评估",
+        "无法验证",
+        "证据 context",
+        "证据 pack",
+        "'value'",
+        "'trend'",
+        "'quality_note'",
+        "None",
+        "[]",
+        "filing",
+        "capital expenditures",
+        "red flag",
+    ):
+        assert leaked not in visible_text
+    assert "仍需后续披露验证" in visible_text
+    assert "资本开支" in visible_text
+    assert "风险信号" in visible_text
 
 
 def test_cash_flow_unsupported_capital_points_are_removed_without_structured_metrics() -> None:

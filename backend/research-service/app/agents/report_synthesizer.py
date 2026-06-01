@@ -1732,6 +1732,17 @@ def _sanitize_user_text(value: str) -> str:
     return text.strip()
 
 
+def _rewrite_visible_object_leaks(value: str, language: str | None = None) -> str:
+    text = str(value or "")
+    if not _is_zh_locale(language):
+        return text
+    text = re.sub(r"\{[^{}]*(?:'value'|'trend'|'quality_note'|None|\[\])[^{}]*\}", "相关现金流指标", text)
+    text = re.sub(r"\s*证据\s*(?:context|pack)\s*", "证据材料", text, flags=re.I)
+    text = re.sub(r"\bfiling\b", "披露文件", text, flags=re.I)
+    text = re.sub(r"\bred\s+flag\b", "风险信号", text, flags=re.I)
+    return text
+
+
 def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
     text = str(value or "")
     if not _is_zh_locale(language):
@@ -1746,8 +1757,20 @@ def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
             "现有证据仍不完整，后续披露需要继续验证这条投资线索。",
         ),
         (
+            re.compile(r"无法形成明确判断[。；;]?"),
+            "现有证据仍不完整，仍需后续披露验证。",
+        ),
+        (
+            re.compile(r"无法验证([^。；;]*?)([。；;])"),
+            r"仍需后续披露验证\1\2",
+        ),
+        (
+            re.compile(r"无法评估([^。；;]*?)([。；;])"),
+            r"仍需后续披露评估\1\2",
+        ),
+        (
             re.compile(r"无法判断([^。；;]*?)([。；;])"),
-            r"仍需用后续披露验证\1\2",
+            r"仍需后续披露验证\1\2",
         ),
     )
     for pattern, replacement in replacements:
@@ -5104,11 +5127,15 @@ def _localize_visible_text(value: str, language: str | None) -> str:
     if not _is_zh_locale(language):
         return text
     text = localize_market_classifications_in_text(text)
+    text = _rewrite_visible_object_leaks(text, language)
+    text = _rewrite_weak_evidence_text(text, language)
     text = _rewrite_structured_yfinance_metric_sentence(text)
     for pattern, replacement in _ZH_VISIBLE_PHRASE_REPLACEMENTS:
         text = pattern.sub(replacement, text)
     for pattern, replacement in _ZH_VISIBLE_TECH_TERM_REPLACEMENTS:
         text = pattern.sub(replacement, text)
+    text = _rewrite_visible_object_leaks(text, language)
+    text = _rewrite_weak_evidence_text(text, language)
     text = _rewrite_structured_yfinance_metric_sentence(text)
     text = re.sub(r"\s{2,}", " ", text)
     text = re.sub(r"\s+([，。；：,.!?;:])", r"\1", text)

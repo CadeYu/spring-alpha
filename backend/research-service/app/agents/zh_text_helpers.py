@@ -10,6 +10,8 @@ _ZH_MARKET_CLASSIFICATION_LABELS = {
     "software application": "应用软件",
     "semiconductors": "半导体",
     "financial services": "金融服务",
+    "basic materials": "基础材料",
+    "specialty chemicals": "特种化学品",
     "credit services": "信贷与支付服务",
     "banks - diversified": "综合银行",
     "consumer cyclical": "可选消费",
