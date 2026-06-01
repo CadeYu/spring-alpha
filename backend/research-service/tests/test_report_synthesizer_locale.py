@@ -2461,6 +2461,75 @@ def test_chinese_company_profile_replaces_name_only_summary_with_business_contex
     assert "收入" in profile.summary
 
 
+def test_latest_earnings_zh_visible_copy_localizes_common_financial_terms() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "CCEP",
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "COCA-COLA EUROPACIFIC PARTNERS PLC",
+                    "market_sector": "Consumer Defensive",
+                    "market_industry": "Beverages - Non - Alcoholic",
+                },
+                source_refs=[],
+            ),
+        }
+    )
+    payload = {
+        "company_profile": None,
+        "topline_verdict": {
+            "headline": "CCEP Gross margin and volume remain uncertain.",
+            "summary": (
+                "Gross margin, volume, COGS and current ratio are the key variables. "
+                "P/B remains elevated."
+            ),
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [
+            {
+                "title": "Gross margin missing",
+                "summary": "Gross margin and volume need confirmation.",
+                "source_ids": [],
+                "citation_status": "partial",
+            }
+        ],
+        "financial_dashboard": {"metrics": [], "chart_focus": []},
+        "driver_snapshot": [
+            {
+                "title": "Volume",
+                "summary": "volume and COGS determine margin quality.",
+                "source_ids": [],
+                "citation_status": "partial",
+            }
+        ],
+        "risk_snapshot": [
+            {
+                "title": "Current ratio",
+                "summary": "current ratio and P/B should be watched.",
+                "source_ids": [],
+                "citation_status": "partial",
+            }
+        ],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    serialized = report.model_dump_json()
+    for leaked in ("Gross", "volume", "COGS", "current ratio", "P/B"):
+        assert leaked not in serialized
+    assert "毛利率" in serialized
+    assert "销量" in serialized
+    assert "销售成本" in serialized
+    assert "流动比率" in serialized
+    assert "市净率" in serialized
+
+
 def test_cash_flow_positive_verdict_uses_investor_dense_summary() -> None:
     report = build_cash_flow_report_from_payload(
         _make_request(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION, "zh"),
@@ -5356,7 +5425,7 @@ def test_cash_flow_zh_visible_copy_repairs_weak_evidence_and_object_leaks() -> N
         "red flag",
     ):
         assert leaked not in visible_text
-    assert "仍需后续披露验证" in visible_text
+    assert "后续披露" in visible_text
     assert "资本开支" in visible_text
     assert "风险信号" in visible_text
 
@@ -5416,7 +5485,90 @@ def test_cash_flow_zh_visible_copy_repairs_unable_to_determine_investor_language
     )
     assert "无法直接判定" not in visible_text
     assert "投资者无法判断" not in visible_text
-    assert "仍需后续披露验证" in visible_text
+    assert "后续披露" in visible_text
+
+
+def test_cash_flow_zh_visible_copy_repairs_undisclosed_metric_and_list_leaks() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="FER",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="FER",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        task_policy=default_task_policy(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION),
+        evidence_memory=EvidenceMemory(
+            facts={"metrics": []},
+            source_refs=[
+                {
+                    "source_id": "src_1",
+                    "section": "market snapshot",
+                    "snippet": "Revenue and operating margin were available.",
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+    payload = {
+        "cash_quality_verdict": {
+            "headline": "FER现金质量无法在当前证据基础上得出明确结论。",
+            "earnings_backed_by_cash": "unclear",
+            "summary": "FER现金质量无法在当前证据基础上得出明确结论。",
+        },
+        "cash_metrics": [
+            {
+                "name": "capital expenditures",
+                "value": "未披露",
+                "interpretation": "Capital expenditure was not disclosed.",
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "capital_allocation": {},
+        "allocation_discipline": [
+            {
+                "title": "资本配置纪律",
+                "summary": (
+                    "无法评判。证据包完全缺失资本配置历史。支撑因素： "
+                    "['股息支付稳定', '自由现金流覆盖资本开支'] 风险因素： "
+                    "['capex回报指标缺失']"
+                ),
+                "source_ids": ["src_1"],
+                "citation_status": "partial",
+            }
+        ],
+        "red_flags": [],
+        "claims": [],
+    }
+
+    report = build_cash_flow_report_from_payload(request, state, payload)
+
+    sections = report.task_sections
+    visible_text = " ".join(
+        [
+            sections.cash_quality_verdict.headline,
+            sections.cash_quality_verdict.summary,
+            *(point.summary for point in sections.capital_allocation.capex),
+            *(point.summary for point in sections.allocation_discipline),
+        ]
+    )
+    assert sections.capital_allocation.capex == []
+    for leaked in (
+        "无法得出明确结论",
+        "无法评判",
+        "资本开支为 未披露",
+        "['",
+        "']",
+        "capex",
+        "Capital expenditure",
+    ):
+        assert leaked not in visible_text
+    assert "后续披露" in visible_text
+    assert "资本开支" in visible_text
 
 
 def test_cash_flow_zh_short_debt_and_liquidity_points_expand_with_investor_context() -> None:

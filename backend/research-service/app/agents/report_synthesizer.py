@@ -141,6 +141,11 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\bprice[-\s]+in\b", flags=re.I), "计入估值"),
     (re.compile(r"\blikely\s+SBC\b", flags=re.I), "可能的股权激励"),
     (re.compile(r"\bstock[-\s]+based compensation\b", flags=re.I), "股权激励"),
+    (re.compile(r"\bgross\s+margin\b", flags=re.I), "毛利率"),
+    (re.compile(r"\bcurrent\s+ratio\b", flags=re.I), "流动比率"),
+    (re.compile(r"\bP\s*/\s*B\b", flags=re.I), "市净率"),
+    (re.compile(r"\bprice[-\s]+to[-\s]+book\b", flags=re.I), "市净率"),
+    (_ascii_term_pattern("COGS"), "销售成本"),
     (re.compile(r"\btiming\b", flags=re.I), "确认时点"),
     (re.compile(r"\bdemand signals?\b", flags=re.I), "需求信号"),
     (re.compile(r"\bthe\s+Company\b", flags=re.I), "公司"),
@@ -214,6 +219,7 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\bexpectations\b", flags=re.I), "预期"),
     (re.compile(r"\bpressure\b", flags=re.I), "压力"),
     (re.compile(r"\bcustomers\b", flags=re.I), "客户"),
+    (re.compile(r"\bvolume\b", flags=re.I), "销量"),
     (re.compile(r"\bThe\s+evidence\s+shows\b", flags=re.I), "证据显示"),
     (re.compile(r"\bThe\s+evidence\b", flags=re.I), "证据"),
     (re.compile(r"\bThe\s+证据\s+显示\b", flags=re.I), "证据显示"),
@@ -273,6 +279,7 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\bStructured yfinance facts reports\b", flags=re.I), "结构化数据披露"),
     (re.compile(r"\byfinance\b", flags=re.I), "结构化行情数据"),
     (re.compile(r"\bfiled\b", flags=re.I), "披露于"),
+    (re.compile(r"(?<![A-Za-z])capex(?=[\u4e00-\u9fff])", flags=re.I), "资本开支"),
     (re.compile(r"\bcapex\b", flags=re.I), "资本开支"),
     (re.compile(r"\bgross margin\b", flags=re.I), "毛利率"),
     (re.compile(r"\boperating margin\b", flags=re.I), "经营利润率"),
@@ -1766,6 +1773,14 @@ def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
             "现有证据仍不完整，仍需后续披露验证。",
         ),
         (
+            re.compile(r"无法在当前证据基础上得出明确结论[。；;]?"),
+            "现有证据仍不完整，仍需后续披露验证。",
+        ),
+        (
+            re.compile(r"无法评判[。；;]?"),
+            "现有证据仍不完整，仍需后续披露评估。",
+        ),
+        (
             re.compile(r"无法验证([^。；;]*?)([。；;])"),
             r"仍需后续披露验证\1\2",
         ),
@@ -1788,6 +1803,8 @@ def _rewrite_weak_evidence_text(value: str, language: str | None = None) -> str:
     )
     for pattern, replacement in replacements:
         text = pattern.sub(replacement, text)
+    text = re.sub(r"\[\s*'([^']+)'\s*,\s*'([^']+)'\s*\]", r"\1、\2", text)
+    text = re.sub(r"\[\s*'([^']+)'\s*\]", r"\1", text)
     return text
 
 
@@ -5019,9 +5036,14 @@ def _has_fact_value(record: dict[str, Any]) -> bool:
 def _metric_value_needs_evidence(value: str, interpretation: str) -> bool:
     normalized = f"{value} {interpretation}".lower()
     markers = (
+        "未披露",
+        "缺失",
+        "不可用",
+        "未提供",
         "not discernible",
         "not extracted",
         "not provided",
+        "not disclosed",
         "specific financial figures not extracted",
         "see cited evidence",
         "n/a",
