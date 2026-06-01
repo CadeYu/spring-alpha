@@ -16,6 +16,7 @@ from app.agents.structured_facts import (
     cash_flow_metric_records_from_facts,
     normalize_metric_name,
 )
+from app.agents.zh_text_helpers import localize_market_classifications_in_text
 from app.contracts.agent import AgentRequest, AgentState
 from app.contracts.report import (
     BullBearRead,
@@ -126,6 +127,16 @@ _ZH_METRIC_NORMALIZED_ALIASES = {
 }
 
 _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
+    (re.compile(r"\bFCF\s+yield\b", flags=re.I), "自由现金流收益率"),
+    (re.compile(r"\bfree cash flow yield\b", flags=re.I), "自由现金流收益率"),
+    (re.compile(r"\bFCF\b", flags=re.I), "自由现金流"),
+    (re.compile(r"\bROI\b", flags=re.I), "投资回报率"),
+    (re.compile(r"\breturn on investment\b", flags=re.I), "投资回报率"),
+    (re.compile(r"\bcapex\s+pace\b", flags=re.I), "资本开支节奏"),
+    (re.compile(r"\bworking capital\b", flags=re.I), "营运资本"),
+    (re.compile(r"\bInvestors should watch\b", flags=re.I), "投资者应观察"),
+    (re.compile(r"\bhas strength from\b", flags=re.I), "的支撑来自"),
+    (re.compile(r"\bremains sensitive to\b", flags=re.I), "仍受制于"),
     (re.compile(r"\bInvestor relevance\s*[:：]", flags=re.I), "投资含义："),
     (re.compile(r"\bEvidence limit\s*[:：]", flags=re.I), "证据限制："),
     (re.compile(r"\bStrengths\s*[:：]", flags=re.I), "支撑因素："),
@@ -163,6 +174,7 @@ _ZH_VISIBLE_TECH_TERM_REPLACEMENTS = (
     (re.compile(r"\bmixed\b", flags=re.I), "表现分化"),
     (re.compile(r"\bpositive\b", flags=re.I), "偏积极"),
     (re.compile(r"\bnegative\b", flags=re.I), "偏承压"),
+    (re.compile(r"\bstrength\b", flags=re.I), "支撑因素"),
     (re.compile(r"\bmedium\b", flags=re.I), "中等"),
     (re.compile(r"\bhigh\b", flags=re.I), "高"),
     (re.compile(r"\blow\b", flags=re.I), "低"),
@@ -4824,6 +4836,7 @@ def _localize_visible_text(value: str, language: str | None) -> str:
     text = str(value or "")
     if not _is_zh_locale(language):
         return text
+    text = localize_market_classifications_in_text(text)
     text = _rewrite_structured_yfinance_metric_sentence(text)
     for pattern, replacement in _ZH_VISIBLE_PHRASE_REPLACEMENTS:
         text = pattern.sub(replacement, text)

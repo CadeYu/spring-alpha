@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from app.agents.structured_facts import normalize_metric_name, structured_metric_records_from_facts
+from app.agents.zh_text_helpers import localize_market_classification
 from app.contracts.agent import AgentState
 
 BUSINESS_DRIVER_CORE_METRICS = [
@@ -428,7 +429,10 @@ def _business_driver_profile_hint(
     classification = " / ".join(item for item in (context.sector, context.industry) if item)
     if _is_zh_locale(language):
         if classification:
-            return f"其行业暴露集中在 {classification}。"
+            return (
+                f"其行业暴露集中在 "
+                f"{localize_market_classification(context.sector, context.industry)}。"
+            )
         if summary:
             return "现有业务摘要提供了产品、客户和市场暴露线索。"
         return "现有资料已提供基础业务画像。"

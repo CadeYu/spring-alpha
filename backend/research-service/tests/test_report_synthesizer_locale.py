@@ -2294,6 +2294,68 @@ def test_business_driver_placeholder_is_recovered_from_structured_facts() -> Non
     assert all(point.citation_status == "partial" for point in points if point is not None)
 
 
+def test_business_driver_zh_reviewer_localizes_market_classification() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "company_name": "NVIDIA Corporation",
+                    "market_sector": "Technology",
+                    "market_industry": "Semiconductors",
+                    "business_summary": (
+                        "NVIDIA sells accelerated computing platforms for data center, "
+                        "gaming, professional visualization, and automotive markets."
+                    ),
+                    "metrics": [
+                        {
+                            "name": "revenue",
+                            "value": 44062000000,
+                            "unit": "USD",
+                            "period": "2026-04-27",
+                        }
+                    ],
+                },
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "value": 44062000000,
+                        "unit": "USD",
+                        "fact_period": "2026-04-27",
+                        "source": "sec_companyfacts",
+                    }
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "driver_thesis": {
+                "headline": "Evidence is thin.",
+                "durability": "unclear",
+                "summary": "No evidence for this lens.",
+            },
+            "driver_map": {
+                "segment_momentum": {
+                    "title": "Segment momentum",
+                    "summary": "No evidence for this lens.",
+                    "citation_status": "missing",
+                }
+            },
+            "claims": [],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    for leaked in ("Technology", "Semiconductors", "Technology / Semiconductors"):
+        assert leaked not in serialized
+    assert "科技" in serialized
+    assert "半导体" in serialized
+
+
 def test_business_driver_thesis_placeholder_is_recovered_from_structured_facts() -> None:
     state = _make_state(language="zh").model_copy(
         update={
@@ -3472,6 +3534,67 @@ def test_cash_flow_qualitative_metric_is_moved_to_allocation_discipline() -> Non
         payload["allocation_discipline"][0]["summary"]
         == "mixed - cash flow exists but quality remains thin."
     )
+
+
+def test_cash_flow_zh_visible_copy_localizes_provider_point_fields() -> None:
+    report = build_cash_flow_report_from_payload(
+        _make_request(ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION, "zh"),
+        _make_state(language="zh").model_copy(
+            update={
+                "ticker": "AAPL",
+                "task_type": ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+                "evidence_memory": EvidenceMemory(
+                    source_refs=[
+                        {
+                            "source_id": "src_1",
+                            "section": "cash flow",
+                            "snippet": "Free cash flow and capex were disclosed.",
+                            "citation_status": "supported",
+                        }
+                    ],
+                ),
+            }
+        ),
+        {
+            "cash_quality_verdict": {
+                "headline": "Cash conversion is mixed.",
+                "earnings_backed_by_cash": "mixed",
+                "summary": "FCF yield and ROI should improve as capex pace normalizes.",
+            },
+            "cash_metrics": [],
+            "capital_allocation": {
+                "capex": [
+                    {
+                        "title": "Capex pace",
+                        "summary": "Capex pace can pressure FCF yield.",
+                        "source_ids": ["src_1"],
+                        "citation_status": "supported",
+                    }
+                ]
+            },
+            "allocation_discipline": [
+                {
+                    "title": "Allocation discipline",
+                    "summary": "",
+                    "strengths": "FCF yield has strength from working capital.",
+                    "weaknesses": "ROI remains sensitive to capex pace.",
+                    "investor_implication": "Investors should watch ROI and FCF yield.",
+                    "source_ids": ["src_1"],
+                    "citation_status": "supported",
+                }
+            ],
+            "red_flags": [],
+            "claims": [],
+        },
+    )
+
+    serialized = report.model_dump_json()
+    for leaked in ("FCF", "FCF yield", "ROI", "capex pace", "Strengths:", "Weaknesses:"):
+        assert leaked not in serialized
+    assert "自由现金流收益率" in serialized
+    assert "投资回报率" in serialized
+    assert "资本开支节奏" in serialized
+    assert "支撑因素" in serialized
 
 
 def test_cash_flow_fact_backfill_keeps_core_metrics_and_adds_resilience_points() -> None:

@@ -18,6 +18,11 @@ from app.agents.report_synthesizer import (
     build_latest_earnings_report_from_payload,
 )
 from app.agents.structured_facts import normalize_metric_name
+from app.agents.zh_text_helpers import (
+    localize_market_classification,
+    localize_market_classifications_in_text,
+    summarize_english_business_snippet_for_zh,
+)
 from app.contracts.agent import (
     AgentEvent,
     AgentPhase,
@@ -1835,8 +1840,10 @@ def _zh_fallback_text(value: str) -> str:
     text = " ".join(str(value or "").split()).strip()
     if not text:
         return text
+    text = summarize_english_business_snippet_for_zh(text)
     text = _rewrite_profile_snippet_for_zh(text)
     text = _rewrite_structured_metric_snippet_for_zh(text)
+    text = localize_market_classifications_in_text(text)
     for pattern, replacement in _ZH_FALLBACK_TEXT_REPLACEMENTS:
         text = re.sub(pattern, replacement, text, flags=re.I)
     text = re.sub(r"\bnet income\b", "净利润", text, flags=re.I)
@@ -1860,7 +1867,7 @@ def _rewrite_profile_snippet_for_zh(text: str) -> str:
     if sector or industry:
         parts.append(
             "行业暴露集中在"
-            + " / ".join(part for part in [sector, industry] if part)
+            + localize_market_classification(sector, industry)
         )
     return "，".join(parts) + "。"
 

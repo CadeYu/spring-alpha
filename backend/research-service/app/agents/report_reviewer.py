@@ -9,6 +9,7 @@ from app.agents.business_driver_quality import (
     business_driver_facts_context,
     business_driver_thesis_backfill,
 )
+from app.agents.zh_text_helpers import localize_market_classification
 from app.contracts.agent import AgentState
 from app.contracts.report import CitationStatus, DriverThesis
 
@@ -191,7 +192,10 @@ def _reviewer_zh_summary(lens_name: str, context: BusinessDriverFactsContext) ->
 def _zh_business_profile_hint(context: BusinessDriverFactsContext) -> str:
     classification = " / ".join(item for item in (context.sector, context.industry) if item)
     if classification:
-        return f"其行业暴露集中在 {classification}。"
+        return (
+            f"其行业暴露集中在 "
+            f"{localize_market_classification(context.sector, context.industry)}。"
+        )
     if context.business_summary:
         return "其业务摘要提供了产品和客户暴露线索。"
     return "现有资料已提供基础业务画像。"

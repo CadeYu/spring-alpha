@@ -1146,6 +1146,58 @@ def test_business_driver_zh_fallback_hides_lens_and_profile_internals() -> None:
     assert "需求信号" in serialized
 
 
+def test_business_driver_zh_fallback_summarizes_english_segment_profile_snippets() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="NVDA",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="NVDA",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=["get_company_facts", "search_metric_evidence"],
+            required_outputs=["driverThesis"],
+        ),
+        evidence_memory=EvidenceMemory(
+            source_refs=[
+                {
+                    "source_id": "src_segment",
+                    "section": "segment disclosure",
+                    "snippet": (
+                        "The company operates through two segments: Compute & Networking "
+                        "and Graphics. The Compute & Networking segment provides data "
+                        "center accelerated computing platforms and networking solutions."
+                    ),
+                    "citation_status": "supported",
+                }
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Business driver agent final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    for leaked in [
+        "The company operates through two segments",
+        "The Compute & Networking segment provides",
+        "accelerated computing platforms",
+        "networking solutions",
+    ]:
+        assert leaked not in serialized
+    assert "已检索到分部或业务线披露片段" in serialized
+    assert "分部动能" in serialized
+
+
 def test_business_driver_timeout_with_evidence_returns_grounded_fallback(monkeypatch) -> None:
     request = AgentRequest(
         run_id="run_1",
