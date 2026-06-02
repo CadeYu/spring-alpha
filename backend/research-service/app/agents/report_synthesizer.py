@@ -5287,6 +5287,7 @@ def _has_fact_value(record: dict[str, Any]) -> bool:
     return record.get("value") is not None and str(record.get("source") or "") in {
         "sec_companyfacts",
         "preloaded_financial_facts",
+        "yfinance_metric",
     }
 
 

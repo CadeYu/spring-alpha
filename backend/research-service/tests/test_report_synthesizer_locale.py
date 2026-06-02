@@ -787,6 +787,147 @@ def test_latest_earnings_dashboard_metrics_prefer_structured_units() -> None:
     assert metric_values == ["$151.1M", "29.1%", "-$13.0M"]
 
 
+def test_latest_earnings_dashboard_metrics_prefer_yfinance_metric_units() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "evidence_memory": EvidenceMemory(
+                facts={
+                    "business_summary": (
+                        "Applied Optoelectronics supplies optical networking products."
+                    ),
+                },
+                source_refs=[
+                    {
+                        "source_id": "revenue_fact",
+                        "section": "yfinance structured snapshot",
+                        "snippet": (
+                            "Structured yfinance facts reports revenue of "
+                            "151144000 USD for FY2026 Q1."
+                        ),
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "gross_margin_fact",
+                        "section": "yfinance structured snapshot",
+                        "snippet": (
+                            "Structured yfinance facts reports gross margin of "
+                            "0.291 pure for FY2026 Q1."
+                        ),
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "operating_income_fact",
+                        "section": "yfinance structured snapshot",
+                        "snippet": (
+                            "Structured yfinance facts reports operating income of "
+                            "-12877000 USD for FY2026 Q1."
+                        ),
+                        "citation_status": "supported",
+                    },
+                ],
+                metric_evidence=[
+                    {
+                        "metric": "revenue",
+                        "normalized_metric": "revenue",
+                        "value": 151144000,
+                        "unit": "USD",
+                        "fact_period": "FY2026 Q1",
+                        "source_id": "revenue_fact",
+                        "source": "yfinance_metric",
+                    },
+                    {
+                        "metric": "gross margin",
+                        "normalized_metric": "gross margin",
+                        "value": 0.291,
+                        "unit": "pure",
+                        "fact_period": "FY2026 Q1",
+                        "source_id": "gross_margin_fact",
+                        "source": "yfinance_metric",
+                    },
+                    {
+                        "metric": "operating income",
+                        "normalized_metric": "operating income",
+                        "value": -12877000,
+                        "unit": "USD",
+                        "fact_period": "FY2026 Q1",
+                        "source_id": "operating_income_fact",
+                        "source": "yfinance_metric",
+                    },
+                ],
+            )
+        }
+    )
+    payload = {
+        "company_profile": {
+            "summary": "Applied Optoelectronics supplies optical networking products.",
+            "source_ids": ["revenue_fact"],
+            "citation_status": "supported",
+        },
+        "topline_verdict": {
+            "headline": "AAOI revenue improved but operating loss remains visible.",
+            "summary": (
+                "Revenue, gross margin and operating income should be read together "
+                "because profitability remains negative."
+            ),
+            "verdict": "mixed",
+            "confidence": "medium",
+        },
+        "key_takeaways": [],
+        "financial_dashboard": {
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "value": "151.1",
+                    "period": "latest_quarter",
+                    "interpretation": "Revenue anchors the quarter.",
+                    "source_ids": ["revenue_fact"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Gross Margin",
+                    "value": "29.1",
+                    "period": "latest_quarter",
+                    "interpretation": "Gross margin checks pricing and mix.",
+                    "source_ids": ["gross_margin_fact"],
+                    "citation_status": "supported",
+                },
+                {
+                    "name": "Operating Income",
+                    "value": "-12.9",
+                    "period": "latest_quarter",
+                    "interpretation": "Operating income checks leverage quality.",
+                    "source_ids": ["operating_income_fact"],
+                    "citation_status": "supported",
+                },
+            ],
+            "chart_focus": ["revenue", "gross_margin", "operating_income"],
+        },
+        "driver_snapshot": [],
+        "risk_snapshot": [],
+        "claims": [],
+    }
+
+    report = build_latest_earnings_report_from_payload(
+        _make_request(ResearchTaskType.LATEST_EARNINGS_READOUT, "zh"),
+        state,
+        payload,
+    )
+
+    metric_values = [
+        metric.value for metric in report.task_sections.financial_dashboard.metrics
+    ]
+    metric_source_ids = [
+        metric.evidence_refs[0].source_id
+        for metric in report.task_sections.financial_dashboard.metrics
+    ]
+    assert metric_values == ["$151.1M", "29.1%", "-$12.9M"]
+    assert metric_source_ids == [
+        "revenue_fact",
+        "gross_margin_fact",
+        "operating_income_fact",
+    ]
+
+
 def test_latest_earnings_watch_next_metric_backfill_respects_chinese_locale() -> None:
     state = _make_state(language="zh")
     payload = {
