@@ -32,8 +32,8 @@ describe("analysis SSE bridge", () => {
         controller.close();
       },
     });
-    const fetchMock = vi.fn(async (..._args: Parameters<typeof fetch>) =>
-      new Response(stream, { status: 200 }),
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response(stream, { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -71,7 +71,9 @@ describe("analysis SSE bridge", () => {
         controller.close();
       },
     });
-    const fetchMock = vi.fn(async () => new Response(stream, { status: 200 }));
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response(stream, { status: 200 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     vi.stubEnv("VERCEL", "1");
     vi.stubEnv("BACKEND_URL", "");
