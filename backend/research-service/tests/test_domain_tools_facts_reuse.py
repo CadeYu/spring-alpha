@@ -238,6 +238,55 @@ def test_search_metric_evidence_uses_preloaded_facts_without_rag_when_all_metric
     assert all(":sec_companyfacts:" in ref["source_id"] for ref in result.source_refs)
 
 
+def test_search_metric_evidence_labels_yfinance_preloaded_facts_as_yfinance_metrics() -> None:
+    pipeline = _CountingPipeline()
+    service = LlamaIndexResearchToolService(pipeline, facts_provider=None)  # type: ignore[arg-type]
+    state = _state_with_facts(
+        metrics=[
+            {
+                "name": "revenue",
+                "value": 151_144_000,
+                "unit": "USD",
+                "period": "FY2026 Q1",
+                "source": "preloaded_financial_facts",
+            },
+            {
+                "name": "gross margin",
+                "value": 0.2906,
+                "unit": "pure",
+                "period": "FY2026 Q1",
+                "source": "preloaded_financial_facts",
+            },
+            {
+                "name": "operating income",
+                "value": -12_991_000,
+                "unit": "USD",
+                "period": "FY2026 Q1",
+                "source": "preloaded_financial_facts",
+            },
+        ]
+    )
+
+    result = service.search_metric_evidence(
+        MetricEvidenceInput(
+            run_id=state.run_id,
+            ticker="AAOI",
+            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+            metrics=["revenue", "gross margin", "operating income"],
+            period="latest_quarter",
+        ),
+        state,
+    )
+
+    assert result.status == ToolStatus.OK
+    assert pipeline.calls == 0
+    assert {record["source"] for record in result.data["records"]} == {
+        "preloaded_financial_facts"
+    }
+    assert all(":yfinance_metric:" in ref["source_id"] for ref in result.source_refs)
+    assert not any(":sec_companyfacts:" in ref["source_id"] for ref in result.source_refs)
+
+
 def test_base_search_metric_evidence_uses_raw_yfinance_quarterly_facts() -> None:
     service = ResearchToolService(facts_provider=None)
     state = AgentState(
@@ -387,6 +436,56 @@ def test_build_evidence_pack_uses_two_task_queries_for_latest_earnings() -> None
 
     assert len(pipeline.queries) == 1
     assert "revenue" in pipeline.queries[0]
+
+
+def test_build_evidence_pack_labels_preloaded_metrics_as_yfinance_metrics() -> None:
+    pipeline = _EvidencePackRecordingPipeline()
+    state = _state_with_facts(
+        metrics=[
+            {
+                "name": "revenue",
+                "value": 151_144_000,
+                "unit": "USD",
+                "period": "FY2026 Q1",
+                "source": "preloaded_financial_facts",
+            },
+        ]
+    ).model_copy(update={"task_type": ResearchTaskType.LATEST_EARNINGS_READOUT})
+    captured: dict[str, object] = {}
+
+    tool = create_agent_evidence_pack_tool(
+        request=type(
+            "Request",
+            (),
+            {
+                "run_id": state.run_id,
+                "ticker": state.ticker,
+                "task_type": state.task_type,
+            },
+        )(),
+        state_getter=lambda: state,
+        state_setter=lambda next_state: None,
+        rag_pipeline=pipeline,  # type: ignore[arg-type]
+        summary="Built SEC filing evidence pack for latest earnings.",
+        run_domain_tool=lambda current_state, tool_name, summary, result, tool_input=None: (
+            current_state,
+            captured.setdefault("output", result.data) or "{}",
+        ),
+    )
+
+    tool.invoke({"focus": "revenue", "top_k": 5})
+
+    output = captured["output"]
+    assert isinstance(output, dict)
+    evidence_pack = output["evidence_pack"]
+    assert isinstance(evidence_pack, dict)
+    metric_facts = evidence_pack["metric_facts"]
+    assert isinstance(metric_facts, list)
+    assert any(
+        fact.get("source_type") == "yfinance_metric" and fact.get("metric") == "revenue"
+        for fact in metric_facts
+        if isinstance(fact, dict)
+    )
 
 
 def test_get_market_context_returns_preloaded_market_context_without_network() -> None:

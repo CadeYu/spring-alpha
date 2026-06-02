@@ -2,6 +2,7 @@ package com.springalpha.backend.service;
 
 import com.springalpha.backend.financial.contract.AnalysisReport;
 import com.springalpha.backend.financial.contract.ResearchTaskType;
+import com.springalpha.backend.financial.service.MarketSupplementalData;
 import com.springalpha.backend.service.provider.ProviderCredentialValidator;
 import com.springalpha.backend.service.research.ResearchAgentClient;
 import com.springalpha.backend.service.research.ResearchAgentReportMapper;
@@ -15,6 +16,9 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -273,6 +277,14 @@ public class FinancialAnalysisService {
     private List<Map<String, Object>> agentMetricFacts(
             com.springalpha.backend.financial.model.FinancialFacts financialFacts) {
         List<Map<String, Object>> metrics = new ArrayList<>();
+        List<String> seenMetrics = new ArrayList<>();
+        for (Map<String, Object> metric : yfinanceAgentMetricFacts(financialFacts)) {
+            metrics.add(metric);
+            Object name = metric.get("name");
+            if (name != null) {
+                seenMetrics.add(name.toString().trim().toLowerCase(Locale.ROOT));
+            }
+        }
         addMetricFact(metrics, "revenue", financialFacts.getRevenue(), "USD", financialFacts);
         addMetricFact(metrics, "gross profit", financialFacts.getGrossProfit(), "USD", financialFacts);
         addMetricFact(metrics, "gross margin", financialFacts.getGrossMargin(), "pure", financialFacts);
@@ -311,7 +323,126 @@ public class FinancialAnalysisService {
             financialFacts.getAdditionalMetrics().forEach((name, value) ->
                     addMetricFact(metrics, name, value, financialFacts.getCurrency(), financialFacts));
         }
+        return metrics.stream()
+                .filter(metric -> {
+                    Object name = metric.get("name");
+                    if (name == null) {
+                        return false;
+                    }
+                    String normalizedName = name.toString().trim().toLowerCase(Locale.ROOT);
+                    if (seenMetrics.contains(normalizedName)
+                            && !"yfinance".equals(metric.get("provider"))) {
+                        return false;
+                    }
+                    if (!seenMetrics.contains(normalizedName)) {
+                        seenMetrics.add(normalizedName);
+                    }
+                    return true;
+                })
+                .toList();
+    }
+
+    private List<Map<String, Object>> yfinanceAgentMetricFacts(
+            com.springalpha.backend.financial.model.FinancialFacts financialFacts) {
+        if (financialFacts.getTicker() == null || financialFacts.getTicker().isBlank()
+                || secService.getFinancialDataService() == null) {
+            return List.of();
+        }
+        List<MarketSupplementalData.QuarterlyFinancialSnapshot> snapshots =
+                secService.getFinancialDataService().getMarketQuarterlyFinancials(
+                        financialFacts.getTicker(),
+                        "quarterly");
+        MarketSupplementalData.QuarterlyFinancialSnapshot snapshot = latestQuarterlySnapshot(snapshots);
+        if (snapshot == null) {
+            return List.of();
+        }
+
+        List<Map<String, Object>> metrics = new ArrayList<>();
+        addYfinanceMetricFact(metrics, "revenue", snapshot.revenue(), "USD", snapshot, financialFacts);
+        addYfinanceMetricFact(metrics, "gross profit", snapshot.grossProfit(), "USD", snapshot, financialFacts);
+        addYfinanceMetricFact(
+                metrics,
+                "gross margin",
+                divide(snapshot.grossProfit(), snapshot.revenue()),
+                "pure",
+                snapshot,
+                financialFacts);
+        addYfinanceMetricFact(metrics, "operating income", snapshot.operatingIncome(), "USD", snapshot, financialFacts);
+        addYfinanceMetricFact(
+                metrics,
+                "operating margin",
+                divide(snapshot.operatingIncome(), snapshot.revenue()),
+                "pure",
+                snapshot,
+                financialFacts);
+        addYfinanceMetricFact(metrics, "net income", snapshot.netIncome(), "USD", snapshot, financialFacts);
+        addYfinanceMetricFact(
+                metrics,
+                "net margin",
+                divide(snapshot.netIncome(), snapshot.revenue()),
+                "pure",
+                snapshot,
+                financialFacts);
+        addYfinanceMetricFact(
+                metrics,
+                "operating cash flow",
+                snapshot.operatingCashFlow(),
+                "USD",
+                snapshot,
+                financialFacts);
+        addYfinanceMetricFact(
+                metrics,
+                "capital expenditures",
+                snapshot.capitalExpenditures(),
+                "USD",
+                snapshot,
+                financialFacts);
+        addYfinanceMetricFact(metrics, "free cash flow", snapshot.freeCashFlow(), "USD", snapshot, financialFacts);
+        addYfinanceMetricFact(
+                metrics,
+                "cash and short term investments",
+                snapshot.cashAndShortTermInvestments(),
+                "USD",
+                snapshot,
+                financialFacts);
+        addYfinanceMetricFact(metrics, "current assets", snapshot.currentAssets(), "USD", snapshot, financialFacts);
+        addYfinanceMetricFact(
+                metrics,
+                "current liabilities",
+                snapshot.currentLiabilities(),
+                "USD",
+                snapshot,
+                financialFacts);
+        addYfinanceMetricFact(
+                metrics,
+                "current ratio",
+                divide(snapshot.currentAssets(), snapshot.currentLiabilities()),
+                "x",
+                snapshot,
+                financialFacts);
+        addYfinanceMetricFact(metrics, "total debt", snapshot.totalDebt(), "USD", snapshot, financialFacts);
         return metrics;
+    }
+
+    private void addYfinanceMetricFact(
+            List<Map<String, Object>> metrics,
+            String name,
+            BigDecimal value,
+            String unit,
+            MarketSupplementalData.QuarterlyFinancialSnapshot snapshot,
+            com.springalpha.backend.financial.model.FinancialFacts financialFacts) {
+        if (value == null) {
+            return;
+        }
+        Map<String, Object> metric = new LinkedHashMap<>();
+        metric.put("name", name);
+        metric.put("value", value);
+        putIfPresent(metric, "unit", normalizedMetricUnit(unit, financialFacts));
+        putIfPresent(metric, "period", yfinancePeriod(snapshot, financialFacts));
+        putIfPresent(metric, "filed", snapshot.periodEnd());
+        metric.put("source", "yfinance_metric");
+        metric.put("provider", "yfinance");
+        metrics.add(metric);
     }
 
     private void addMetricFact(
@@ -329,8 +460,61 @@ public class FinancialAnalysisService {
         putIfPresent(metric, "unit", normalizedMetricUnit(unit, financialFacts));
         putIfPresent(metric, "period", financialFacts.getPeriod());
         putIfPresent(metric, "filed", financialFacts.getFilingDate());
-        metric.put("source", "preloaded_financial_facts");
+        metric.put("source", "sec_companyfacts");
         metrics.add(metric);
+    }
+
+    private MarketSupplementalData.QuarterlyFinancialSnapshot latestQuarterlySnapshot(
+            List<MarketSupplementalData.QuarterlyFinancialSnapshot> snapshots) {
+        if (snapshots == null || snapshots.isEmpty()) {
+            return null;
+        }
+        MarketSupplementalData.QuarterlyFinancialSnapshot best = null;
+        LocalDate bestDate = null;
+        for (MarketSupplementalData.QuarterlyFinancialSnapshot snapshot : snapshots) {
+            if (snapshot == null) {
+                continue;
+            }
+            LocalDate current = parseDate(snapshot.periodEnd());
+            if (current == null) {
+                if (best == null) {
+                    best = snapshot;
+                }
+                continue;
+            }
+            if (bestDate == null || current.isAfter(bestDate)) {
+                best = snapshot;
+                bestDate = current;
+            }
+        }
+        return best;
+    }
+
+    private String yfinancePeriod(
+            MarketSupplementalData.QuarterlyFinancialSnapshot snapshot,
+            com.springalpha.backend.financial.model.FinancialFacts financialFacts) {
+        if (financialFacts.getPeriod() != null && !financialFacts.getPeriod().isBlank()) {
+            return financialFacts.getPeriod();
+        }
+        return snapshot.periodEnd();
+    }
+
+    private BigDecimal divide(BigDecimal numerator, BigDecimal denominator) {
+        if (numerator == null || denominator == null || denominator.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        return numerator.divide(denominator, 4, RoundingMode.HALF_UP);
+    }
+
+    private LocalDate parseDate(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
     }
 
     private String normalizedMetricUnit(

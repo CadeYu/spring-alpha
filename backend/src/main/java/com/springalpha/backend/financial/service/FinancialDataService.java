@@ -2,6 +2,7 @@ package com.springalpha.backend.financial.service;
 
 import com.springalpha.backend.financial.model.FinancialFacts;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -46,6 +47,12 @@ public interface FinancialDataService {
 
     default Optional<String> resolveSecSearchIdentifier(String ticker) {
         return Optional.empty();
+    }
+
+    default List<MarketSupplementalData.QuarterlyFinancialSnapshot> getMarketQuarterlyFinancials(
+            String ticker,
+            String reportType) {
+        return List.of();
     }
 
     String[] getSupportedTickers();

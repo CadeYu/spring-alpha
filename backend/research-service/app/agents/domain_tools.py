@@ -984,18 +984,23 @@ def _companyfacts_source_ref(
     metric_slug = _metric_slug(normalized_metric)
     value_text = f"{value} {unit}".strip()
     source = str(fact.get("source") or "")
+    source_namespace = (
+        "yfinance_metric"
+        if source in {"preloaded_financial_facts", "yfinance_metric"}
+        else "sec_companyfacts"
+    )
     section = (
         "yfinance structured snapshot"
-        if source == "preloaded_financial_facts"
+        if source in {"preloaded_financial_facts", "yfinance_metric"}
         else "SEC companyfacts"
     )
     source_label = (
         "Structured yfinance facts"
-        if source == "preloaded_financial_facts"
+        if source in {"preloaded_financial_facts", "yfinance_metric"}
         else f"SEC companyfacts {concept}"
     )
     return {
-        "source_id": f"{run_id}:sec_companyfacts:{metric_slug}",
+        "source_id": f"{run_id}:{source_namespace}:{metric_slug}",
         "section": section,
         "snippet": (
             f"{source_label} reports {normalized_metric} of "
@@ -1055,10 +1060,14 @@ def _companyfacts_source_id_from_refs(
     normalized_metric: str,
     source_refs: list[dict[str, object]],
 ) -> str | None:
-    suffix = f":sec_companyfacts:{_metric_slug(normalized_metric)}"
+    metric_slug = _metric_slug(normalized_metric)
+    suffixes = (
+        f":yfinance_metric:{metric_slug}",
+        f":sec_companyfacts:{metric_slug}",
+    )
     for source_ref in source_refs:
         source_id = str(source_ref.get("source_id") or "")
-        if source_id.endswith(suffix):
+        if any(source_id.endswith(suffix) for suffix in suffixes):
             return source_id
     return None
 

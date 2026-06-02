@@ -102,13 +102,13 @@ def _with_metric_facts(data: dict[str, Any], state: AgentState) -> dict[str, Any
 
 def _metric_facts_from_state(state: AgentState) -> list[dict[str, Any]]:
     return [
-        *_sec_companyfacts_metric_facts(state.evidence_memory.facts),
+        *_structured_metric_facts(state.evidence_memory.facts),
         *_profile_facts(state.evidence_memory.facts),
         *_metric_evidence_facts(state.evidence_memory.metric_evidence),
     ]
 
 
-def _sec_companyfacts_metric_facts(facts: dict[str, Any]) -> list[dict[str, Any]]:
+def _structured_metric_facts(facts: dict[str, Any]) -> list[dict[str, Any]]:
     metrics = facts.get("metrics")
     if not isinstance(metrics, list):
         return []
@@ -122,7 +122,7 @@ def _sec_companyfacts_metric_facts(facts: dict[str, Any]) -> list[dict[str, Any]
         metric_facts.append(
             _compact_dict(
                 {
-                "source_type": "sec_companyfacts",
+                "source_type": _metric_source_type(metric),
                 "metric": name,
                 "value": metric.get("value"),
                 "unit": _optional_str(metric.get("unit")),
@@ -131,6 +131,13 @@ def _sec_companyfacts_metric_facts(facts: dict[str, Any]) -> list[dict[str, Any]
             )
         )
     return metric_facts
+
+
+def _metric_source_type(metric: dict[str, Any]) -> str:
+    source = _optional_str(metric.get("source"))
+    if source in {"preloaded_financial_facts", "yfinance_metric"}:
+        return "yfinance_metric"
+    return "sec_companyfacts"
 
 
 def _profile_facts(facts: dict[str, Any]) -> list[dict[str, Any]]:

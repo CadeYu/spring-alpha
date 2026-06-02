@@ -3,6 +3,7 @@ package com.springalpha.backend.service;
 import com.springalpha.backend.financial.contract.AnalysisReport;
 import com.springalpha.backend.financial.contract.ResearchTaskType;
 import com.springalpha.backend.financial.model.FinancialFacts;
+import com.springalpha.backend.financial.service.MarketSupplementalData;
 import com.springalpha.backend.service.provider.ProviderAuthenticationException;
 import com.springalpha.backend.service.provider.ProviderCredentialValidator;
 import com.springalpha.backend.service.research.ResearchAgentClient;
@@ -152,6 +153,41 @@ class FinancialAnalysisServiceTest {
                 .block();
 
         assertEquals("qdrant", researchAgentClient.lastRequest.ragMode());
+    }
+
+    @Test
+    void analyzeStockPrefersYfinanceQuarterlySnapshotForAgentMetricFacts() {
+        FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
+        FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.success();
+        FinancialAnalysisService service = new FinancialAnalysisService(
+                new FakeSecService(),
+                credentialValidator,
+                researchAgentClient,
+                new com.springalpha.backend.service.research.ResearchAgentReportMapper());
+
+        service.analyzeStock(
+                "AAOI",
+                "zh",
+                "siliconflow",
+                "secret",
+                ResearchTaskType.LATEST_EARNINGS_READOUT)
+                .collectList()
+                .block();
+
+        assertTrue(researchAgentClient.lastRequest.facts().get("metrics") instanceof List<?>);
+        List<?> metrics = (List<?>) researchAgentClient.lastRequest.facts().get("metrics");
+        assertTrue(metrics.stream()
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .anyMatch(metric -> "revenue".equals(metric.get("name"))
+                        && new BigDecimal("151144000").equals(metric.get("value"))
+                        && "yfinance".equals(metric.get("provider"))
+                        && "yfinance_metric".equals(metric.get("source"))));
+        assertFalse(metrics.stream()
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .anyMatch(metric -> "revenue".equals(metric.get("name"))
+                        && new BigDecimal("150000000").equals(metric.get("value"))));
     }
 
     @Test
@@ -500,7 +536,9 @@ class FinancialAnalysisServiceTest {
                             .marketSector("Consumer Cyclical")
                             .marketIndustry("Auto Manufacturers")
                             .marketBusinessSummary("Tesla designs electric vehicles and energy systems.")
-                            .revenue(new BigDecimal("25500000000"))
+                            .revenue("AAOI".equals(ticker)
+                                    ? new BigDecimal("150000000")
+                                    : new BigDecimal("25500000000"))
                             .grossProfit(new BigDecimal("4650000000"))
                             .grossMargin(new BigDecimal("0.1823"))
                             .operatingIncome(new BigDecimal("2100000000"))
@@ -521,6 +559,28 @@ class FinancialAnalysisServiceTest {
                 public java.util.List<com.springalpha.backend.financial.model.HistoricalDataPoint> getHistoricalData(
                         String ticker) {
                     return java.util.List.of();
+                }
+
+                @Override
+                public java.util.List<MarketSupplementalData.QuarterlyFinancialSnapshot> getMarketQuarterlyFinancials(
+                        String ticker,
+                        String reportType) {
+                    if (!"AAOI".equals(ticker)) {
+                        return java.util.List.of();
+                    }
+                    return java.util.List.of(new MarketSupplementalData.QuarterlyFinancialSnapshot(
+                            "2026-03-31",
+                            new BigDecimal("151144000"),
+                            new BigDecimal("43930000"),
+                            new BigDecimal("-12991000"),
+                            new BigDecimal("-16710000"),
+                            new BigDecimal("-85350000"),
+                            new BigDecimal("5860000"),
+                            new BigDecimal("-91110000"),
+                            new BigDecimal("440000000"),
+                            new BigDecimal("600000000"),
+                            new BigDecimal("158000000"),
+                            new BigDecimal("90000000")));
                 }
 
                 @Override

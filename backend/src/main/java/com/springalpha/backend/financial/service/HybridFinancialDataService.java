@@ -141,6 +141,27 @@ public class HybridFinancialDataService implements FinancialDataService {
         return secFinancialDataService.resolveSecSearchIdentifier(ticker);
     }
 
+    @Override
+    public List<MarketSupplementalData.QuarterlyFinancialSnapshot> getMarketQuarterlyFinancials(
+            String ticker,
+            String reportType) {
+        if (marketEnrichmentService == null) {
+            return List.of();
+        }
+        try {
+            MarketSupplementalData supplementalData = marketEnrichmentService.getSupplementalData(
+                    ticker.toUpperCase(),
+                    normalizeReportType(reportType));
+            if (supplementalData == null || supplementalData.quarterlyFinancials() == null) {
+                return List.of();
+            }
+            return supplementalData.quarterlyFinancials();
+        } catch (Exception error) {
+            log.warn("⚠️ Market quarterly facts unavailable for {}: {}", ticker, error.getMessage());
+            return List.of();
+        }
+    }
+
     private FinancialFacts loadFinancialFacts(String upperTicker, String reportType) {
         FinancialFacts facts = secFinancialDataService.getFinancialFacts(upperTicker, reportType);
         if (facts != null) {
