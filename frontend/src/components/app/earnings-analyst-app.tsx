@@ -24,6 +24,7 @@ import {
   Bot,
   BriefcaseBusiness,
   ChartColumnIncreasing,
+  DatabaseZap,
   WalletCards,
   AlertTriangle,
   MessageSquareText,
@@ -131,6 +132,30 @@ const BYOK_PROVIDERS = [
 
 type ByokProviderId = (typeof BYOK_PROVIDERS)[number]["id"];
 type ByokProvider = (typeof BYOK_PROVIDERS)[number];
+type RagMode = "local" | "qdrant";
+
+const RAG_MODE_OPTIONS: {
+  id: RagMode;
+  label: string;
+  labelZh: string;
+  description: string;
+  descriptionZh: string;
+}[] = [
+  {
+    id: "local",
+    label: "Fast Local",
+    labelZh: "快速本地",
+    description: "Lexical retrieval plus rerank, optimized for live speed",
+    descriptionZh: "本地 lexical retrieval + rerank，优先保障线上速度",
+  },
+  {
+    id: "qdrant",
+    label: "Qdrant Vector",
+    labelZh: "Qdrant 向量",
+    description: "Experimental vector retrieval using Qdrant",
+    descriptionZh: "实验性 Qdrant 向量检索",
+  },
+];
 
 function defaultLlmModelForProvider(provider: ByokProvider) {
   return provider.models[0].id;
@@ -140,6 +165,14 @@ function maskProviderKey(key: string) {
   const trimmedKey = key.trim();
   if (!trimmedKey) return "";
   return `••••••••••••${trimmedKey.slice(-4)}`;
+}
+
+function ragModeLabel(mode: RagMode, locale: "zh" | "en") {
+  const option = RAG_MODE_OPTIONS.find((candidate) => candidate.id === mode);
+  if (!option) {
+    return mode;
+  }
+  return locale === "zh" ? option.labelZh : option.label;
 }
 
 type AnalysisErrorState = {
@@ -329,6 +362,7 @@ export default function EarningsAnalystApp({
   const [selectedLlmModel, setSelectedLlmModel] = useState<string>(
     BYOK_PROVIDERS[0].models[0].id,
   );
+  const [ragMode, setRagMode] = useState<RagMode>("local");
   const [providerApiKey, setProviderApiKey] = useState("");
   const [providerKeySaved, setProviderKeySaved] = useState(false);
   const [providerSavedKeyPreview, setProviderSavedKeyPreview] = useState("");
@@ -565,7 +599,7 @@ export default function EarningsAnalystApp({
     setRunState({
       ticker: submittedTicker,
       taskTitle: isZh ? "全部研究 Agent" : "All research agents",
-      providerName: selectedProvider.name,
+      providerName: `${selectedProvider.name} · ${ragModeLabel(ragMode, lang)}`,
       phase: "submitted",
       startedAt,
     });
@@ -667,6 +701,7 @@ export default function EarningsAnalystApp({
       model,
       llmModel: selectedProviderModel.id,
       taskType: taskId,
+      ragMode,
     });
     const requestHeaders: Record<string, string> = {};
     if (runtimeProviderKey) {
@@ -1050,6 +1085,47 @@ export default function EarningsAnalystApp({
                       </span>
                       <span className="mt-1 block text-xs leading-5 text-slate-500">
                         {isZh ? providerModel.descriptionZh : providerModel.description}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2">
+              <DatabaseZap className="mt-1 w-4 h-4 text-slate-500" />
+              <span className="mt-1 text-xs text-slate-500">
+                {isZh ? "检索:" : "Retrieval:"}
+              </span>
+              <div
+                role="radiogroup"
+                aria-label={isZh ? "RAG 检索模式" : "RAG retrieval"}
+                className="grid flex-1 gap-2 sm:grid-cols-2"
+              >
+                {RAG_MODE_OPTIONS.map((option) => (
+                  <label
+                    key={option.id}
+                    className={cn(
+                      "flex min-h-14 cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors",
+                      ragMode === option.id
+                        ? "border-emerald-500/60 bg-emerald-950/30 text-emerald-100"
+                        : "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="rag-mode"
+                      value={option.id}
+                      checked={ragMode === option.id}
+                      onChange={() => setRagMode(option.id)}
+                      className="mt-1 h-4 w-4 accent-emerald-500"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">
+                        {isZh ? option.labelZh : option.label}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500">
+                        {isZh ? option.descriptionZh : option.description}
                       </span>
                     </span>
                   </label>

@@ -57,6 +57,11 @@ class LlmProvider(StrEnum):
     GEMINI = "gemini"
 
 
+class RagMode(StrEnum):
+    LOCAL = "local"
+    QDRANT = "qdrant"
+
+
 class AgentFilingDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -83,6 +88,7 @@ class AgentRequest(BaseModel):
     llm_provider: LlmProvider | None = None
     llm_model: str | None = Field(default=None, min_length=1, max_length=128)
     llm_api_key: str | None = Field(default=None, min_length=1, exclude=True, repr=False)
+    rag_mode: RagMode = RagMode.LOCAL
     facts: dict[str, Any] = Field(default_factory=dict)
     filings: list[AgentFilingDocument] = Field(default_factory=list)
 

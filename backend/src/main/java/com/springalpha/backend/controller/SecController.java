@@ -37,6 +37,7 @@ import java.util.UUID;
 @CrossOrigin(origins = "*")
 public class SecController {
     private static final String REPORT_TYPE_QUARTERLY = "quarterly";
+    private static final String DEFAULT_RAG_MODE = "local";
 
     private static final Logger log = LoggerFactory.getLogger(SecController.class);
 
@@ -70,16 +71,18 @@ public class SecController {
             @RequestParam(defaultValue = "") String model,
             @RequestParam(defaultValue = "") String llmModel,
             @RequestParam(defaultValue = ResearchTaskType.DEFAULT_REQUEST_VALUE) String taskType,
+            @RequestParam(defaultValue = DEFAULT_RAG_MODE) String ragMode,
             @RequestHeader HttpHeaders headers) {
         ResearchTaskType researchTaskType = parseResearchTaskType(taskType);
+        String normalizedRagMode = parseRagMode(ragMode);
         String providerApiKey = resolveProviderApiKey(headers);
         Optional<AnonymousTrialContext> anonymousTrial = authorizeTrialAccess(headers, providerApiKey);
-        log.info("REST request to analyze stock: {}, lang: {}, model: {}, llmModel: {}, taskType: {}",
-                ticker, lang, model, llmModel, researchTaskType.requestValue());
+        log.info("REST request to analyze stock: {}, lang: {}, model: {}, llmModel: {}, taskType: {}, ragMode: {}",
+                ticker, lang, model, llmModel, researchTaskType.requestValue(), normalizedRagMode);
         // The analysis flow calls external SEC/Yahoo/Python Agent services, so move
         // the stream off the Netty event loop.
         return Flux.defer(() -> analysisService.analyzeStock(ticker, lang, model, llmModel, providerApiKey,
-                researchTaskType))
+                researchTaskType, normalizedRagMode))
                 .doOnNext(report -> anonymousTrial.ifPresent(this::confirmTrialAccess))
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -172,6 +175,14 @@ public class SecController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         }
+    }
+
+    private String parseRagMode(String ragMode) {
+        String normalized = ragMode == null ? DEFAULT_RAG_MODE : ragMode.trim().toLowerCase();
+        if (DEFAULT_RAG_MODE.equals(normalized) || "qdrant".equals(normalized)) {
+            return normalized;
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported ragMode: " + ragMode);
     }
 
     private record AnonymousTrialContext(UUID visitorId, UUID trialRunId, Optional<String> ipHash) {

@@ -131,6 +131,30 @@ class FinancialAnalysisServiceTest {
     }
 
     @Test
+    void analyzeStockForwardsSelectedRagModeToResearchAgent() {
+        FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
+        FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.success();
+        FinancialAnalysisService service = new FinancialAnalysisService(
+                new FakeSecService(),
+                credentialValidator,
+                researchAgentClient,
+                new com.springalpha.backend.service.research.ResearchAgentReportMapper());
+
+        service.analyzeStock(
+                "AAPL",
+                "en",
+                "siliconflow",
+                "Pro/moonshotai/Kimi-K2.6",
+                "secret",
+                ResearchTaskType.LATEST_EARNINGS_READOUT,
+                "qdrant")
+                .collectList()
+                .block();
+
+        assertEquals("qdrant", researchAgentClient.lastRequest.ragMode());
+    }
+
+    @Test
     void analyzeStockForwardsConfiguredProviderKeyWhenRequestKeyIsBlank() {
         FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
         credentialValidator.configuredApiKey = "configured-provider-key";

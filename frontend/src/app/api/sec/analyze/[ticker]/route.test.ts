@@ -84,12 +84,16 @@ describe("analysis SSE bridge", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "http://45.77.171.32/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout",
-      ),
-      expect.anything(),
+    const [backendUrl] = fetchMock.mock.calls[0];
+    const parsedBackendUrl = new URL(String(backendUrl));
+    expect(parsedBackendUrl.origin).toBe("http://45.77.171.32");
+    expect(parsedBackendUrl.pathname).toBe("/api/sec/analyze/AAPL");
+    expect(parsedBackendUrl.searchParams.get("lang")).toBe("en");
+    expect(parsedBackendUrl.searchParams.get("model")).toBe("siliconflow");
+    expect(parsedBackendUrl.searchParams.get("taskType")).toBe(
+      "latest_earnings_readout",
     );
+    expect(parsedBackendUrl.searchParams.get("ragMode")).toBe("local");
   });
 
   it("forwards the selected provider model to the backend", async () => {
@@ -114,6 +118,48 @@ describe("analysis SSE bridge", () => {
       expect.stringContaining("llmModel=deepseek-ai%2Fdeepseek-v4-flash"),
       expect.anything(),
     );
+  });
+
+  it("forwards the selected RAG retrieval mode to the backend", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data:{}\n\n"));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn(async () => new Response(stream, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout&ragMode=qdrant",
+      ),
+      { params: Promise.resolve({ ticker: "AAPL" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("ragMode=qdrant"),
+      expect.anything(),
+    );
+  });
+
+  it("rejects unsupported RAG retrieval modes before calling the backend", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/sec/analyze/AAPL?lang=en&model=siliconflow&taskType=latest_earnings_readout&ragMode=remote",
+      ),
+      { params: Promise.resolve({ ticker: "AAPL" }) },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Unsupported ragMode: remote",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("forwards anonymous visitor context when no BYOK key is present", async () => {

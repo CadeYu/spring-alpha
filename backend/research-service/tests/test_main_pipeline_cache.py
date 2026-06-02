@@ -22,7 +22,7 @@ def test_request_filings_reuse_the_same_pipeline_for_identical_payloads(monkeypa
 
     fake_pipeline = FakePipeline()
 
-    def fake_build_live_rag_pipeline_from_env():
+    def fake_build_live_rag_pipeline_from_env(rag_mode=None):
         build_calls()
         return fake_pipeline
 
@@ -80,7 +80,7 @@ def test_request_pipeline_cache_evicts_oldest_entry_when_full(monkeypatch):
         "MSFT": FakePipeline("MSFT"),
     }
 
-    def fake_build_live_rag_pipeline_from_env():
+    def fake_build_live_rag_pipeline_from_env(rag_mode=None):
         build_calls()
         current_ticker = "AAPL" if build_calls.call_count == 1 else "MSFT"
         return pipelines[current_ticker]
@@ -153,7 +153,7 @@ def test_request_pipeline_cache_reuses_one_in_flight_build_for_same_key(monkeypa
 
     fake_pipeline = FakePipeline()
 
-    def fake_build_live_rag_pipeline_from_env():
+    def fake_build_live_rag_pipeline_from_env(rag_mode=None):
         build_calls()
         build_started.set()
         allow_build_to_finish.wait(timeout=2)
@@ -201,6 +201,59 @@ def test_request_pipeline_cache_reuses_one_in_flight_build_for_same_key(monkeypa
     assert build_calls.call_count == 1
     assert len(results) == 2
     assert all(result is fake_pipeline for result in results)
+
+
+def test_request_pipeline_cache_separates_local_and_qdrant_modes(monkeypatch):
+    app_main._REQUEST_PIPELINE_CACHE = OrderedDict()
+    app_main._REQUEST_PIPELINE_IN_FLIGHT.clear()
+    build_modes: list[str | None] = []
+
+    class FakePipeline:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def ingest_filing(self, filing: AgentFilingDocument) -> None:
+            return None
+
+    def fake_build_live_rag_pipeline_from_env(rag_mode=None):
+        build_modes.append(rag_mode)
+        return FakePipeline(str(rag_mode))
+
+    monkeypatch.setattr(
+        app_main,
+        "build_live_rag_pipeline_from_env",
+        fake_build_live_rag_pipeline_from_env,
+    )
+
+    base_request = dict(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
+        language="en",
+        llm_provider=LlmProvider.SILICONFLOW,
+        llm_model="deepseek-ai/deepseek-v4-flash",
+        llm_api_key="sk-test",
+        filings=[
+            AgentFilingDocument(
+                ticker="AAPL",
+                filing_type="10-Q",
+                filing_date="2026-03-31",
+                accession_number="0001",
+                text="Revenue grew.",
+            )
+        ],
+    )
+
+    local_request = AgentRequest(**base_request)
+    qdrant_request = AgentRequest(**{**base_request, "rag_mode": "qdrant"})
+
+    local_pipeline = app_main._cached_request_pipeline(local_request)
+    qdrant_pipeline = app_main._cached_request_pipeline(qdrant_request)
+
+    assert local_pipeline is not qdrant_pipeline
+    assert build_modes == ["local", "qdrant"]
+    assert app_main._request_pipeline_cache_key(local_request).startswith("local:")
+    assert app_main._request_pipeline_cache_key(qdrant_request).startswith("qdrant:")
 
 
 def test_live_rag_pipeline_defaults_to_local_retrieval(monkeypatch):
@@ -254,6 +307,38 @@ def test_live_rag_pipeline_uses_hybrid_qdrant_when_enabled(monkeypatch):
     )
 
     pipeline = rag_pipeline_module.build_live_rag_pipeline_from_env()
+
+    assert pipeline is not None
+    assert captured["enable_hybrid_retrieval"] is True
+    assert captured["embedding_backend"] is fake_embedding_backend
+    assert captured["vector_store"] is fake_vector_store
+
+
+def test_live_rag_pipeline_uses_request_scoped_qdrant_mode(monkeypatch):
+    from app.rag import llamaindex_pipeline as rag_pipeline_module
+
+    captured: dict[str, object] = {}
+    fake_embedding_backend = object()
+    fake_vector_store = object()
+
+    class FakePipeline:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setenv("LIVE_RAG_RETRIEVAL_MODE", "local")
+    monkeypatch.setattr(rag_pipeline_module, "LlamaIndexRagPipeline", FakePipeline)
+    monkeypatch.setattr(
+        rag_pipeline_module,
+        "build_embedding_backend_from_env",
+        lambda: fake_embedding_backend,
+    )
+    monkeypatch.setattr(
+        rag_pipeline_module,
+        "build_vector_store_from_env",
+        lambda embedding_backend: fake_vector_store,
+    )
+
+    pipeline = rag_pipeline_module.build_live_rag_pipeline_from_env("qdrant")
 
     assert pipeline is not None
     assert captured["enable_hybrid_retrieval"] is True

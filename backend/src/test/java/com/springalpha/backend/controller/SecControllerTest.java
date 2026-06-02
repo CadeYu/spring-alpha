@@ -104,6 +104,44 @@ class SecControllerTest {
     }
 
     @Test
+    void analyzeEndpointPassesSelectedRagModeToService() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
+
+        WebTestClient client = WebTestClient.bindToController(controller).build();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?lang=en&model=siliconflow&ragMode=qdrant")
+                .header("X-Visitor-Id", "2cc57d20-ebd4-49bd-b53d-2c935bd9e01c")
+                .header("X-Trial-Run-Id", "7f2819ce-042c-4a54-ac27-74294d2f9ca3")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isOk();
+
+        assertEquals("qdrant", analysisService.lastRagMode);
+    }
+
+    @Test
+    void analyzeEndpointRejectsUnsupportedRagModeBeforeCallingService() {
+        FakeFinancialDataService financialDataService = new FakeFinancialDataService();
+        FakeSecService secService = new FakeSecService(financialDataService);
+        FakeFinancialAnalysisService analysisService = new FakeFinancialAnalysisService(secService, financialDataService);
+        SecController controller = new SecController(secService, analysisService, new FakeTrialLedgerService(true));
+
+        WebTestClient client = WebTestClient.bindToController(controller).build();
+
+        client.get()
+                .uri("/api/sec/analyze/AAPL?ragMode=remote")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        assertEquals(0, analysisService.callCount);
+    }
+
+    @Test
     void analyzeEndpointPassesLatestEarningsReadoutTaskTypeToService() {
         FakeFinancialDataService financialDataService = new FakeFinancialDataService();
         FakeSecService secService = new FakeSecService(financialDataService);
@@ -376,6 +414,7 @@ class SecControllerTest {
         private String lastLang;
         private String lastModel;
         private String lastLlmModel;
+        private String lastRagMode;
         private String lastReportType;
         private String lastOpenAiApiKey;
         private ResearchTaskType lastTaskType;
@@ -397,16 +436,23 @@ class SecControllerTest {
         @Override
         public Flux<AnalysisReport> analyzeStock(String ticker, String lang, String model, String openAiApiKey,
                 ResearchTaskType taskType) {
-            return analyzeStock(ticker, lang, model, null, openAiApiKey, taskType);
+            return analyzeStock(ticker, lang, model, null, openAiApiKey, taskType, "local");
         }
 
         @Override
         public Flux<AnalysisReport> analyzeStock(String ticker, String lang, String model, String llmModel,
                 String openAiApiKey, ResearchTaskType taskType) {
+            return analyzeStock(ticker, lang, model, llmModel, openAiApiKey, taskType, "local");
+        }
+
+        @Override
+        public Flux<AnalysisReport> analyzeStock(String ticker, String lang, String model, String llmModel,
+                String openAiApiKey, ResearchTaskType taskType, String ragMode) {
             this.callCount++;
             this.lastLang = lang;
             this.lastModel = model;
             this.lastLlmModel = llmModel;
+            this.lastRagMode = ragMode;
             this.lastReportType = "quarterly";
             this.lastOpenAiApiKey = openAiApiKey;
             this.lastTaskType = taskType;

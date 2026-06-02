@@ -262,6 +262,49 @@ describe("Home page", () => {
     });
   });
 
+  it("defaults to fast local retrieval and can forward Qdrant retrieval mode", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          executiveSummary: "Apple report.",
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          keyMetrics: [],
+          businessDrivers: [],
+          riskFactors: [],
+          citations: [],
+          taskSections: latestTaskSections("Apple thesis"),
+        },
+      ]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+
+    expect(
+      screen.getByRole("radiogroup", { name: /rag retrieval/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /fast local/i })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: /qdrant vector/i }));
+    submitTicker("AAPL");
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("ragMode=qdrant"),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+  });
+
   it("shows a masked saved-key state after the provider key is saved", () => {
     window.localStorage.removeItem("spring-alpha-siliconflow-key");
     vi.stubGlobal("fetch", vi.fn());
@@ -444,7 +487,9 @@ describe("Home page", () => {
       await screen.findByText("Apple Inc. · Q1 2026 · 2026-02-01"),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout",
+      expect.stringContaining(
+        "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout&ragMode=local",
+      ),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
@@ -495,7 +540,9 @@ describe("Home page", () => {
     expect(screen.getByPlaceholderText(/enter ticker/i)).toHaveValue("AAPL");
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout",
+        expect.stringContaining(
+          "/api/sec/analyze/AAPL?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout&ragMode=local",
+        ),
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
     );
@@ -2238,7 +2285,9 @@ describe("Home page", () => {
       await screen.findByText("Visa Inc. · Q1 2026 · 2026-02-01"),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sec/analyze/V?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout",
+      expect.stringContaining(
+        "/api/sec/analyze/V?lang=en&model=siliconflow&llmModel=Pro%2Fmoonshotai%2FKimi-K2.6&taskType=latest_earnings_readout&ragMode=local",
+      ),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(screen.getByText("Visa typed thesis summary.")).toBeInTheDocument();
@@ -2650,7 +2699,7 @@ describe("Home page", () => {
     expect(
       screen.getAllByText("Cash Flow & Capital Allocation").length,
     ).toBeGreaterThan(0);
-    expect(screen.getAllByText("SiliconFlow").length).toBeGreaterThan(1);
+    expect(screen.getByText("SiliconFlow · Fast Local")).toBeInTheDocument();
     expect(
       screen.getByText(
         /Backend and agent running|Waiting for agent output|Report chunk received/i,

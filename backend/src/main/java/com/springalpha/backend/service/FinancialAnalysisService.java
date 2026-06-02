@@ -27,6 +27,7 @@ import java.util.UUID;
 public class FinancialAnalysisService {
     private static final int DEFAULT_AGENT_FILING_MAX_CHARS = 72_000;
     private static final String FILING_TRUNCATION_MARKER = "... [Truncated for live analysis]";
+    private static final String DEFAULT_RAG_MODE = "local";
 
     private final SecService secService;
     private final ProviderCredentialValidator providerCredentialValidator;
@@ -89,8 +90,20 @@ public class FinancialAnalysisService {
             String llmModel,
             String providerApiKey,
             ResearchTaskType taskType) {
+        return analyzeStock(ticker, lang, model, llmModel, providerApiKey, taskType, DEFAULT_RAG_MODE);
+    }
+
+    public Flux<AnalysisReport> analyzeStock(
+            String ticker,
+            String lang,
+            String model,
+            String llmModel,
+            String providerApiKey,
+            ResearchTaskType taskType,
+            String ragMode) {
         String provider = resolveProvider(model);
         String selectedLlmModel = normalizeLlmModel(llmModel);
+        String selectedRagMode = normalizeRagMode(ragMode);
         String language = lang != null && !lang.isBlank() ? lang : "en";
         String normalizedTicker = ticker.toUpperCase(Locale.ROOT);
         ResearchTaskType effectiveTaskType = taskType != null ? taskType : ResearchTaskType.LATEST_EARNINGS_READOUT;
@@ -103,7 +116,7 @@ public class FinancialAnalysisService {
                         .flatMapMany(filingText -> runResearchAgent(normalizedTicker, language, provider,
                                 selectedLlmModel,
                                 providerCredentialValidator.resolveApiKey(provider, providerApiKey),
-                                effectiveTaskType, filingText, facts))));
+                                effectiveTaskType, selectedRagMode, filingText, facts))));
     }
 
     private Flux<AnalysisReport> runResearchAgent(
@@ -113,6 +126,7 @@ public class FinancialAnalysisService {
             String llmModel,
             String providerApiKey,
             ResearchTaskType taskType,
+            String ragMode,
             String filingText,
             Map<String, Object> facts) {
         String runId = "run_" + UUID.randomUUID();
@@ -126,11 +140,12 @@ public class FinancialAnalysisService {
                 provider,
                 llmModel,
                 providerApiKey,
+                ragMode,
                 facts,
                 filingDocuments(ticker, filingText));
 
-        log.info("research_agent_start runId={} ticker={} taskType={} provider={} llmModel={}",
-                runId, ticker, taskType, provider, llmModel);
+        log.info("research_agent_start runId={} ticker={} taskType={} provider={} llmModel={} ragMode={}",
+                runId, ticker, taskType, provider, llmModel, ragMode);
 
         return researchAgentClient.run(request)
                 .switchIfEmpty(Mono.error(new IllegalStateException(
@@ -361,6 +376,12 @@ public class FinancialAnalysisService {
 
     private String normalizeLlmModel(String llmModel) {
         return llmModel != null && !llmModel.isBlank() ? llmModel.trim() : null;
+    }
+
+    private String normalizeRagMode(String ragMode) {
+        return ragMode != null && !ragMode.isBlank()
+                ? ragMode.trim().toLowerCase(Locale.ROOT)
+                : DEFAULT_RAG_MODE;
     }
 
     private String capFilingText(String filingText) {

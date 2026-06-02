@@ -107,6 +107,7 @@ class ResearchServiceAgentClientTest {
                     "siliconflow",
                     "Pro/moonshotai/Kimi-K2.6",
                     "test-request-scoped-key",
+                    "local",
                     java.util.Map.of(),
                     java.util.List.of())).block();
 

@@ -681,8 +681,8 @@ def build_embedding_backend_from_env() -> EmbeddingBackend:
     )
 
 
-def build_live_rag_pipeline_from_env() -> "LlamaIndexRagPipeline":
-    if _live_rag_retrieval_mode() in {"hybrid", "qdrant", "vector"}:
+def build_live_rag_pipeline_from_env(rag_mode: str | None = None) -> "LlamaIndexRagPipeline":
+    if _live_rag_retrieval_mode(rag_mode) in {"hybrid", "qdrant", "vector"}:
         embedding_backend = build_embedding_backend_from_env()
         return LlamaIndexRagPipeline(
             enable_hybrid_retrieval=True,
@@ -1061,7 +1061,9 @@ def _default_embedding_provider_name() -> str:
     return EmbeddingProvider.DETERMINISTIC.value
 
 
-def _live_rag_retrieval_mode() -> str:
+def _live_rag_retrieval_mode(rag_mode: str | None = None) -> str:
+    if rag_mode is not None and rag_mode.strip():
+        return rag_mode.strip().lower()
     return getenv("LIVE_RAG_RETRIEVAL_MODE", "local").strip().lower()
 
 

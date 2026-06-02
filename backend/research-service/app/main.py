@@ -60,12 +60,13 @@ def create_app(
     def run_agent(request: AgentRequest) -> BoundedAgentResult:
         started_at = perf_counter()
         logger.info(
-            "agent_run_start run_id=%s ticker=%s task_type=%s filings=%s provider=%s",
+            "agent_run_start run_id=%s ticker=%s task_type=%s filings=%s provider=%s rag_mode=%s",
             request.run_id,
             request.ticker,
             request.task_type.value,
             len(request.filings),
             request.llm_provider.value if request.llm_provider else "none",
+            request.rag_mode.value,
         )
         try:
             if workflow is None and request.llm_provider is not None and request.llm_api_key:
@@ -145,7 +146,7 @@ def _cached_request_pipeline(request: AgentRequest):
 
     try:
         pipeline_started_at = perf_counter()
-        pipeline = build_live_rag_pipeline_from_env()
+        pipeline = build_live_rag_pipeline_from_env(request.rag_mode.value)
         if request.filings:
             _ingest_request_filings(request, pipeline)
         logger.info(
@@ -207,7 +208,7 @@ def _request_pipeline_cache_key(request: AgentRequest) -> str:
         filing_fingerprint.update(b"\0")
         filing_fingerprint.update(filing.text.encode("utf-8"))
         filing_fingerprint.update(b"\0")
-    return f"{request.ticker.upper()}:{filing_fingerprint.hexdigest()}"
+    return f"{request.rag_mode.value}:{request.ticker.upper()}:{filing_fingerprint.hexdigest()}"
 
 
 def _request_pipeline_cache_max_entries() -> int:

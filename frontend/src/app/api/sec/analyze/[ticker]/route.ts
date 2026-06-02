@@ -25,6 +25,16 @@ export async function GET(
   const model = request.nextUrl.searchParams.get("model") || "";
   const llmModel = request.nextUrl.searchParams.get("llmModel") || "";
   const taskType = request.nextUrl.searchParams.get("taskType") || "";
+  const rawRagMode = request.nextUrl.searchParams.get("ragMode") || "local";
+  const ragMode = normalizeRagMode(rawRagMode);
+  if (!ragMode) {
+    return new Response(
+      JSON.stringify({
+        error: `Unsupported ragMode: ${rawRagMode}`,
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
   const providerApiKey =
     request.headers.get("x-provider-api-key") ||
     request.headers.get("x-openai-api-key");
@@ -35,7 +45,7 @@ export async function GET(
   const clientIpHash = await hashClientIp(request);
 
   const baseUrl = resolveBackendUrl();
-  const backendParams = new URLSearchParams({ lang, model });
+  const backendParams = new URLSearchParams({ lang, model, ragMode });
   if (llmModel) {
     backendParams.set("llmModel", llmModel);
   }
@@ -198,4 +208,11 @@ async function fetchBackendEventStream(
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeRagMode(rawMode: string) {
+  const normalized = rawMode.trim().toLowerCase();
+  return normalized === "local" || normalized === "qdrant"
+    ? normalized
+    : null;
 }

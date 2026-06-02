@@ -15,6 +15,7 @@ public record ResearchAgentRequest(
         @JsonProperty("llm_provider") String llmProvider,
         @JsonProperty("llm_model") String llmModel,
         @JsonProperty("llm_api_key") String llmApiKey,
+        @JsonProperty("rag_mode") String ragMode,
         Map<String, Object> facts,
         List<FilingDocument> filings) {
 
@@ -24,7 +25,7 @@ public record ResearchAgentRequest(
             ResearchTaskType taskType,
             String language,
             int maxEvidenceRepairLoops) {
-        this(runId, ticker, taskType, language, maxEvidenceRepairLoops, null, null, null, Map.of(), List.of());
+        this(runId, ticker, taskType, language, maxEvidenceRepairLoops, null, null, null, "local", Map.of(), List.of());
     }
 
     public record FilingDocument(
