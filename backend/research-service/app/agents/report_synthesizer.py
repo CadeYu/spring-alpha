@@ -1610,7 +1610,7 @@ def _normalize_metric_value_for_name(metric_name: str, value: object) -> object:
             return formatted_value if formatted_value.endswith("%") else f"{formatted_value}%"
         if unit.upper() in {"USD", "EUR", "GBP", "JPY", "CNY"}:
             if isinstance(normalized_value, int | float):
-                return f"{_currency_symbol(unit)}{_compact_number(normalized_value)}"
+                return _format_currency_metric_value(normalized_value, unit)
             formatted_value = _format_metric_display_value(f"{normalized_value} {unit}")
             return formatted_value
         return _format_metric_display_value(normalized_value)
@@ -5211,11 +5211,15 @@ def _metric_with_evidence_guardrail(
     metric_record = _metric_evidence_for_name(metric.name, state.evidence_memory.metric_evidence)
     if not metric_record or not _has_fact_value(metric_record):
         return _metric_from_payload(metric, source_refs_by_id, language)
-    if not _metric_value_needs_evidence(metric.value, metric.interpretation):
-        return _metric_from_payload(metric, source_refs_by_id, language)
     source_id = str(metric_record.get("source_id") or "").strip()
     if not source_id or source_id not in source_refs_by_id:
-        return _metric_from_payload(metric, source_refs_by_id, language)
+        fallback_metric = _metric_from_payload(metric, source_refs_by_id, language)
+        return fallback_metric.model_copy(
+            update={
+                "value": _metric_evidence_value(metric_record),
+                "period": _metric_evidence_period(metric_record) or metric.period,
+            }
+        )
     source_ref = source_refs_by_id[source_id]
     return EvidenceBoundMetric(
         name=_localize_metric_name(metric.name, language),
@@ -5318,8 +5322,8 @@ def _metric_evidence_value(record: dict[str, Any]) -> str:
         formatted = _compact_number(float(value))
     else:
         formatted = str(value)
-    if unit == "USD" and not formatted.startswith("$"):
-        return f"${formatted}"
+    if unit == "USD" and not formatted.startswith("$") and not formatted.startswith("-$"):
+        return _format_currency_compact_value(formatted, "$")
     return formatted
 
 
@@ -5342,7 +5346,7 @@ def _format_metric_display_value(value: object) -> str:
     if abs(numeric_value) < 10_000:
         return raw_value
     symbol = leading_currency or _currency_symbol(trailing_currency) or "$"
-    return f"{symbol}{_compact_number(numeric_value)}"
+    return _format_currency_metric_value(numeric_value, symbol)
 
 
 def _currency_symbol(currency_code: str | None) -> str:
@@ -5355,6 +5359,17 @@ def _currency_symbol(currency_code: str | None) -> str:
         "JPY": "¥",
         "CNY": "¥",
     }.get(currency_code.upper(), "")
+
+
+def _format_currency_metric_value(value: int | float, currency: str | None) -> str:
+    symbol = _currency_symbol(currency) or str(currency or "$")
+    return _format_currency_compact_value(_compact_number(value), symbol)
+
+
+def _format_currency_compact_value(compact_value: str, symbol: str) -> str:
+    if compact_value.startswith("-"):
+        return f"-{symbol}{compact_value[1:]}"
+    return f"{symbol}{compact_value}"
 
 
 def _is_unsupported_placeholder_metric(metric: object) -> bool:
@@ -5503,7 +5518,7 @@ def _format_structured_metric_value(value: str, unit: str) -> str:
         return value
     normalized_unit = unit.lower()
     if normalized_unit == "usd":
-        return f"${_compact_number(numeric_value)}"
+        return _format_currency_metric_value(numeric_value, "USD")
     if normalized_unit in {"pure", "percent", "percentage"}:
         return f"{numeric_value * 100:.1f}%"
     if normalized_unit in {"x", "ratio"}:

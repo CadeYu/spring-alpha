@@ -3017,12 +3017,16 @@ function formatMetricDisplayValue(value: unknown) {
 
   if (!compactUnit) return rawValue;
 
-  const currencySymbol = leadingCurrency || currencyCodeToSymbol(trailingCurrency) || "$";
+  const currencySymbol =
+    leadingCurrency || currencyCodeToSymbol(trailingCurrency) || "$";
   const compactNumber = (numericValue / compactUnit.divisor)
     .toFixed(1)
     .replace(/\.0$/, "");
+  const unsignedCompactNumber = compactNumber.replace(/^-/, "");
 
-  return `${currencySymbol}${compactNumber}${compactUnit.suffix}`;
+  return numericValue < 0
+    ? `-${currencySymbol}${unsignedCompactNumber}${compactUnit.suffix}`
+    : `${currencySymbol}${compactNumber}${compactUnit.suffix}`;
 }
 
 function currencyCodeToSymbol(currencyCode: string | undefined) {
