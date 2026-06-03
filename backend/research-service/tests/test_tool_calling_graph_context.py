@@ -85,6 +85,117 @@ def test_compact_evidence_context_deduplicates_evidence_pack_payload() -> None:
     )
 
 
+def test_compact_evidence_context_keeps_earnings_final_payload_small() -> None:
+    long_snippet = (
+        "Net sales increased year over year, but the company also discussed "
+        "regional demand, product mix, channel inventory, services revenue, "
+        "gross margin pressure, operating expense discipline, foreign exchange, "
+        "and capital allocation considerations. "
+        * 10
+    )
+    payload = {
+        "evidence_pack": {
+            "task_type": "latest_earnings_readout",
+            "retrieval_status": "ok",
+            "filing_context": {
+                "filing_type": "10-Q",
+                "filing_date": "2026-04-30",
+                "accession_number": "0000320193-26-000001",
+            },
+            "metric_facts": [
+                {
+                    "source_type": "sec_companyfacts",
+                    "metric": metric,
+                    "value": value,
+                    "unit": unit,
+                    "period": "2026-Q1",
+                    "source_id": f"metric_{index}",
+                    "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+                    "raw_value": value,
+                }
+                for index, (metric, value, unit) in enumerate(
+                    [
+                        ("revenue", 95_360_000_000, "USD"),
+                        ("gross margin", 0.46, "pure"),
+                        ("operating income", 31_510_000_000, "USD"),
+                        ("net income", 23_430_000_000, "USD"),
+                        ("operating cash flow", 28_500_000_000, "USD"),
+                        ("free cash flow", 23_900_000_000, "USD"),
+                    ],
+                    start=1,
+                )
+            ],
+            "filing_evidence": [
+                {
+                    "source_id": f"filing_{index}",
+                    "source_type": "sec_filing",
+                    "section": section,
+                    "snippet": long_snippet,
+                    "filing_type": "10-Q",
+                    "filing_date": "2026-04-30",
+                    "accession_number": "0000320193-26-000001",
+                    "score": 0.91,
+                    "relevance_note": "latest earnings driver evidence",
+                }
+                for index, section in enumerate(
+                    [
+                        "Management Discussion and Analysis",
+                        "Results of Operations",
+                        "Liquidity and Capital Resources",
+                        "Risk Factors",
+                    ],
+                    start=1,
+                )
+            ],
+        },
+        "source_refs": [
+            {
+                "source_id": f"filing_{index}",
+                "section": "Management Discussion and Analysis",
+                "snippet": long_snippet,
+                "citation_status": "supported",
+            }
+            for index in range(1, 5)
+        ],
+        "retrieved_nodes": [
+            {
+                "node_id": f"node_{index}",
+                "text": long_snippet,
+                "metadata": {"section": "Management Discussion and Analysis"},
+            }
+            for index in range(1, 5)
+        ],
+    }
+
+    context = _evidence_context(
+        [
+            ToolMessage(
+                content=json.dumps(payload),
+                tool_call_id="planned_3_build_evidence_pack",
+                name="build_evidence_pack",
+            )
+        ],
+        compact=True,
+    )
+    items = json.loads(context.removeprefix("Evidence context JSON:\n"))
+    evidence_pack = items[0]["content"]["evidence_pack"]
+
+    assert len(context) < 1400
+    assert "retrieved_nodes" not in context
+    assert "source_refs" not in context
+    assert "accession_number" not in context
+    assert len(evidence_pack["metric_facts"]) == 3
+    assert len(evidence_pack["filing_evidence"]) == 2
+    assert all(
+        set(item).issubset({"source_id", "section", "snippet", "filing_date"})
+        for item in evidence_pack["filing_evidence"]
+    )
+    assert all(
+        len(item.get("snippet", "")) <= 96
+        for item in evidence_pack["filing_evidence"]
+    )
+
+
 def test_compact_synthesis_keeps_provider_friendly_timeout_for_final_json() -> None:
     llm = _CopyableLlm(compact_synthesis=True)
 
@@ -92,7 +203,7 @@ def test_compact_synthesis_keeps_provider_friendly_timeout_for_final_json() -> N
 
     assert copied.update["max_tokens"] == 1536
     assert copied.update["response_format"] == {"type": "json_object"}
-    assert copied.update["timeout_seconds"] == 45
+    assert copied.update["timeout_seconds"] == 75
 
 
 def test_final_payload_retries_after_invalid_json() -> None:

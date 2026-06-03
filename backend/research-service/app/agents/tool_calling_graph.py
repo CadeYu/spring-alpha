@@ -424,7 +424,7 @@ def _json_response_llm(llm: BaseChatModel) -> BaseChatModel:
                 "tool_choice": None,
                 "max_tokens": 1536 if compact_synthesis else 3072,
                 "response_format": {"type": "json_object"},
-                "timeout_seconds": 45,
+                "timeout_seconds": 75 if compact_synthesis else 45,
             }
         )
     return llm
@@ -548,24 +548,53 @@ def _compact_json_payload(value: Any) -> Any:
 
 def _compact_evidence_pack(pack: dict[str, Any]) -> dict[str, Any]:
     compacted: dict[str, Any] = {}
-    for key in ("retrieval_status", "filing_context"):
+    is_latest_earnings = (
+        str(pack.get("task_type") or pack.get("taskType") or "").lower()
+        == "latest_earnings_readout"
+    )
+    for key in ("retrieval_status",):
         if pack.get(key):
             compacted[key] = _trim_json_value(pack[key], compact=True)
+    filing_context = pack.get("filing_context")
+    if isinstance(filing_context, dict):
+        compacted["filing_context"] = _compact_filing_context(
+            filing_context,
+            latest_earnings=is_latest_earnings,
+        )
     metric_facts = pack.get("metric_facts")
     if isinstance(metric_facts, list):
+        metric_limit = 3 if is_latest_earnings else 4
         compacted["metric_facts"] = [
             _compact_metric_fact(item)
-            for item in metric_facts[:4]
+            for item in metric_facts[:metric_limit]
             if isinstance(item, dict)
         ]
     filing_evidence = pack.get("filing_evidence")
     if isinstance(filing_evidence, list):
+        filing_limit = 2 if is_latest_earnings else 3
         compacted["filing_evidence"] = [
-            _compact_filing_evidence(item)
-            for item in filing_evidence[:3]
+            _compact_filing_evidence(item, latest_earnings=is_latest_earnings)
+            for item in filing_evidence[:filing_limit]
             if isinstance(item, dict)
         ]
     return compacted
+
+
+def _compact_filing_context(
+    context: dict[str, Any],
+    *,
+    latest_earnings: bool,
+) -> dict[str, Any]:
+    keys = ("filing_type", "filing_date") if latest_earnings else (
+        "filing_type",
+        "filing_date",
+        "accession_number",
+    )
+    return {
+        key: _trim_json_value(context[key], compact=True)
+        for key in keys
+        if context.get(key) is not None
+    }
 
 
 def _compact_metric_fact(item: dict[str, Any]) -> dict[str, Any]:
@@ -576,10 +605,15 @@ def _compact_metric_fact(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _compact_filing_evidence(item: dict[str, Any]) -> dict[str, Any]:
-    compacted = {
-        key: _trim_json_value(item[key], compact=True)
-        for key in (
+def _compact_filing_evidence(
+    item: dict[str, Any],
+    *,
+    latest_earnings: bool = False,
+) -> dict[str, Any]:
+    keys = (
+        ("source_id", "section", "snippet", "filing_date")
+        if latest_earnings
+        else (
             "source_id",
             "section",
             "snippet",
@@ -587,11 +621,15 @@ def _compact_filing_evidence(item: dict[str, Any]) -> dict[str, Any]:
             "filing_date",
             "score",
         )
+    )
+    compacted = {
+        key: _trim_json_value(item[key], compact=True)
+        for key in keys
         if item.get(key) is not None
     }
     snippet = compacted.get("snippet")
     if isinstance(snippet, str):
-        compacted["snippet"] = snippet[:180]
+        compacted["snippet"] = snippet[:96] if latest_earnings else snippet[:180]
     return compacted
 
 
