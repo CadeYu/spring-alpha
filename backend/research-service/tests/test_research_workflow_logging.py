@@ -4,6 +4,7 @@ import json
 import logging
 
 from app.agents.business_driver_agent import BusinessDriverAgentError
+from app.agents.cash_flow_agent import CashFlowAgentError
 from app.agents.llm_gateway import OpenAiCompatibleLlmClient
 from app.agents.research_workflow import ResearchAgentWorkflow, _fallback_report_from_state
 from app.contracts.agent import (
@@ -525,6 +526,86 @@ def test_cash_flow_timeout_fallback_respects_chinese_locale() -> None:
     assert "资本开支与再投资" in serialized
     assert "资产负债表韧性" in serialized
     assert "观察下一季" in serialized
+
+
+def test_cash_flow_timeout_with_metric_evidence_returns_grounded_fallback(monkeypatch) -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="NOK",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        llm_provider=LlmProvider.SILICONFLOW,
+        llm_model="Pro/moonshotai/Kimi-K2.6",
+        llm_api_key="sk-test",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="NOK",
+        task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+        language="zh",
+        provider=LlmProvider.SILICONFLOW,
+        model="Pro/moonshotai/Kimi-K2.6",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
+            allowed_tools=[
+                "get_company_facts",
+                "search_metric_evidence",
+            ],
+            required_outputs=["cashQualityVerdict"],
+        ),
+        evidence_memory=EvidenceMemory(
+            metric_evidence=[
+                {
+                    "source": "yfinance_metric",
+                    "metric": "operating cash flow",
+                    "value": 783000000,
+                    "unit": "USD",
+                    "fact_period": "Q1 2026",
+                    "source_id": "src_ocf",
+                },
+                {
+                    "source": "yfinance_metric",
+                    "metric": "free cash flow",
+                    "value": 629000000,
+                    "unit": "USD",
+                    "fact_period": "Q1 2026",
+                    "source_id": "src_fcf",
+                },
+            ],
+            source_refs=[
+                {
+                    "source_id": "src_ocf",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Q1 2026 operating cash flow was $783.0M.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_fcf",
+                    "section": "yfinance structured snapshot",
+                    "snippet": "Q1 2026 free cash flow was $629.0M.",
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+    workflow = ResearchAgentWorkflow(llm_client=_make_client())
+
+    def fake_run_task_agent(*args, **kwargs):
+        raise CashFlowAgentError(
+            "Cash flow agent final synthesis failed: The read operation timed out",
+            state=state,
+        )
+
+    monkeypatch.setattr(workflow, "_run_task_agent", fake_run_task_agent)
+
+    result = workflow.run(request)
+
+    assert result.status == AgentRunStatus.OK
+    assert result.degraded_reasons == []
+    assert result.final_report is not None
+    serialized = json.dumps(result.final_report, ensure_ascii=False)
+    assert "经营现金流" in serialized
+    assert "final synthesis failed" not in serialized
 
 
 def test_cash_flow_zh_fallback_localizes_metric_outlook_copy() -> None:

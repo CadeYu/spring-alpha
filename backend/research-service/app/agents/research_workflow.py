@@ -199,12 +199,16 @@ class ResearchAgentWorkflow:
                 )
                 final_report = _fallback_report_from_state(request, state, reason=str(exc))
         except CashFlowAgentError as exc:
-            state = _append_degraded_event(
-                exc.state,
-                f"Cash flow research agent failed. {exc}",
-                degraded_reason=f"Cash flow research agent failed: {exc}",
-            )
-            final_report = _fallback_report_from_state(request, state, reason=str(exc))
+            final_report = _fallback_report_from_state(request, exc.state, reason=str(exc))
+            if final_report is not None and _is_final_synthesis_failure(str(exc)):
+                state = exc.state
+            else:
+                state = _append_degraded_event(
+                    exc.state,
+                    f"Cash flow research agent failed. {exc}",
+                    degraded_reason=f"Cash flow research agent failed: {exc}",
+                )
+                final_report = _fallback_report_from_state(request, state, reason=str(exc))
         except Exception as exc:
             state = _append_degraded_event(
                 state,
