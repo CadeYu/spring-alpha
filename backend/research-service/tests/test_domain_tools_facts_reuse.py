@@ -488,6 +488,64 @@ def test_build_evidence_pack_labels_preloaded_metrics_as_yfinance_metrics() -> N
     )
 
 
+def test_build_evidence_pack_with_metric_facts_does_not_degrade_when_filing_empty() -> None:
+    pipeline = _EvidencePackRecordingPipeline()
+    state = _state_with_facts(
+        metrics=[
+            {
+                "name": "operating cash flow",
+                "value": 1_420_000_000,
+                "unit": "USD",
+                "period": "FY2026 Q1",
+                "source": "yfinance_metric",
+            },
+            {
+                "name": "free cash flow",
+                "value": 870_000_000,
+                "unit": "USD",
+                "period": "FY2026 Q1",
+                "source": "yfinance_metric",
+            },
+        ]
+    ).model_copy(update={"task_type": ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION})
+    captured: dict[str, object] = {}
+
+    def capture_result(current_state, tool_name, summary, result, tool_input=None):
+        captured["status"] = result.status
+        captured["degraded_reasons"] = result.degraded_reasons
+        captured["output"] = result.data
+        return current_state, "{}"
+
+    tool = create_agent_evidence_pack_tool(
+        request=type(
+            "Request",
+            (),
+            {
+                "run_id": state.run_id,
+                "ticker": "NOK",
+                "task_type": state.task_type,
+            },
+        )(),
+        state_getter=lambda: state,
+        state_setter=lambda next_state: None,
+        rag_pipeline=pipeline,  # type: ignore[arg-type]
+        summary="Built SEC filing evidence pack for cash flow.",
+        run_domain_tool=capture_result,
+    )
+
+    tool.invoke({"focus": "operating cash flow free cash flow", "top_k": 5})
+
+    output = captured["output"]
+    assert captured["status"] == ToolStatus.OK
+    assert captured["degraded_reasons"] == []
+    assert isinstance(output, dict)
+    evidence_pack = output["evidence_pack"]
+    assert isinstance(evidence_pack, dict)
+    assert evidence_pack["retrieval_status"] == "metric_only"
+    assert evidence_pack["metric_facts"]
+    assert "filing_evidence" not in evidence_pack
+
+
 def test_get_market_context_returns_preloaded_market_context_without_network() -> None:
     service = ResearchToolService(facts_provider=None)
     state = _state_with_facts(metrics=[]).model_copy(

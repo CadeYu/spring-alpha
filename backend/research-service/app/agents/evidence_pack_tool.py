@@ -44,7 +44,10 @@ def create_agent_evidence_pack_tool(
             data = _with_metric_facts(data, state_getter())
             source_refs = source_refs_from_evidence_pack_result(data)
             evidence_pack = data.get("evidence_pack")
-            if isinstance(evidence_pack, dict) and evidence_pack.get("retrieval_status") == "empty":
+            if (
+                isinstance(evidence_pack, dict)
+                and evidence_pack.get("retrieval_status") == "empty"
+            ):
                 result = ToolResult.empty(
                     data=data,
                     degraded_reason="No evidence pack filing evidence matched the task template.",
@@ -85,12 +88,15 @@ def _with_metric_facts(data: dict[str, Any], state: AgentState) -> dict[str, Any
     evidence_pack = data.get("evidence_pack")
     if not isinstance(evidence_pack, dict):
         return data
+    metric_facts = _metric_facts_from_state(state)
     enriched_pack = {
         **evidence_pack,
-        "metric_facts": _metric_facts_from_state(state),
+        "metric_facts": metric_facts,
     }
     if not enriched_pack.get("filing_evidence"):
         enriched_pack.pop("filing_evidence", None)
+        if metric_facts and enriched_pack.get("retrieval_status") == "empty":
+            enriched_pack["retrieval_status"] = "metric_only"
     enriched_data = {
         **data,
         "evidence_pack": enriched_pack,
