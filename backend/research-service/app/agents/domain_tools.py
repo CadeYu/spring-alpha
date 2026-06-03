@@ -3,6 +3,10 @@ import re
 from collections.abc import Callable, Iterable, Mapping
 from urllib import request as url_request
 
+from app.agents.issuer_disclosure import (
+    foreign_issuer_metadata,
+    has_foreign_issuer_metric_policy,
+)
 from app.agents.structured_facts import (
     normalize_metric_name,
     structured_metric_records_from_facts,
@@ -470,6 +474,10 @@ def _company_facts_from_preloaded_after_sec_mapping_miss(
 ) -> ToolResult:
     preloaded_facts = _partial_preloaded_facts(tool_input, state)
     if preloaded_facts is not None:
+        if has_foreign_issuer_metric_policy(state.evidence_memory.facts):
+            return ToolResult.ok(
+                data={**preloaded_facts, **foreign_issuer_metadata(preloaded_facts)}
+            )
         return ToolResult.partial(data=preloaded_facts, degraded_reason=reason)
     return ToolResult.empty(
         data={

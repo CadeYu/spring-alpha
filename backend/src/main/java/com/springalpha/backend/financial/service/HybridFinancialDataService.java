@@ -66,6 +66,7 @@ public class HybridFinancialDataService implements FinancialDataService {
         if (cachedFacts.isPresent()) {
             FinancialFacts facts = cachedFacts.get();
             boolean reconciledDashboardMode = reconcileDashboardModeFromExistingMetadata(facts);
+            boolean reconciledIssuerDisclosure = reconcileIssuerDisclosureFromExistingMetadata(facts);
             boolean needsMetadataBackfill = needsMarketMetadataBackfill(facts);
             boolean needsQuarterlyFactsBackfill = needsQuarterlyFactsBackfill(facts);
             if (needsMetadataBackfill || needsQuarterlyFactsBackfill) {
@@ -76,7 +77,8 @@ public class HybridFinancialDataService implements FinancialDataService {
                         needsQuarterlyFactsBackfill);
                 enrichWithMarketData(facts, upperTicker, normalizedReportType);
             }
-            if (reconciledDashboardMode || needsMetadataBackfill || needsQuarterlyFactsBackfill) {
+            if (reconciledDashboardMode || reconciledIssuerDisclosure || needsMetadataBackfill
+                    || needsQuarterlyFactsBackfill) {
                 cacheFinancialFacts(upperTicker, normalizedReportType, facts);
             }
             return facts;
@@ -225,6 +227,7 @@ public class HybridFinancialDataService implements FinancialDataService {
             if (!isBlank(supplementalData.securityType())) {
                 facts.setMarketSecurityType(supplementalData.securityType());
             }
+            applyMarketDisclosureMetadata(facts, supplementalData);
             if (isBlank(facts.getMarketBusinessSummary()) && !isBlank(supplementalData.businessSummary())) {
                 facts.setMarketBusinessSummary(supplementalData.businessSummary());
             }
@@ -253,6 +256,7 @@ public class HybridFinancialDataService implements FinancialDataService {
                 facts.setDashboardMode(dashboardMode.mode());
                 facts.setDashboardMessage(dashboardMode.message());
             }
+            IssuerDisclosureClassifier.apply(facts, supplementalData);
         } catch (Exception e) {
             log.warn("⚠️ Market enrichment failed for {}: {}", ticker, e.getMessage());
         }
@@ -388,18 +392,26 @@ public class HybridFinancialDataService implements FinancialDataService {
 
             log.info("🛑 Returning market-only fallback facts for unsupported REIT {} because SEC core facts were unavailable.",
                     ticker);
-            return FinancialFacts.builder()
+            FinancialFacts fallbackFacts = FinancialFacts.builder()
                     .ticker(ticker)
                     .companyName(firstNonBlank(supplementalData.companyName(), ticker))
                     .marketSector(supplementalData.sector())
                     .marketIndustry(supplementalData.industry())
                     .marketSecurityType(supplementalData.securityType())
+                    .marketQuoteType(supplementalData.quoteType())
+                    .marketTypeDisplay(supplementalData.typeDisplay())
+                    .marketCountry(supplementalData.country())
+                    .marketExchange(supplementalData.exchange())
+                    .marketFullExchangeName(supplementalData.fullExchangeName())
+                    .marketCurrency(supplementalData.currency())
                     .marketBusinessSummary(supplementalData.businessSummary())
                     .priceToEarningsRatio(supplementalData.priceToEarningsRatio())
                     .priceToBookRatio(supplementalData.priceToBookRatio())
                     .dashboardMode(dashboardMode.mode())
                     .dashboardMessage(dashboardMode.message())
                     .build();
+            IssuerDisclosureClassifier.apply(fallbackFacts, supplementalData);
+            return fallbackFacts;
         } catch (Exception e) {
             log.warn("⚠️ Market fallback classification failed for {}: {}", ticker, e.getMessage());
             return null;
@@ -427,6 +439,12 @@ public class HybridFinancialDataService implements FinancialDataService {
                     .marketSector(supplementalData.sector())
                     .marketIndustry(supplementalData.industry())
                     .marketSecurityType(supplementalData.securityType())
+                    .marketQuoteType(supplementalData.quoteType())
+                    .marketTypeDisplay(supplementalData.typeDisplay())
+                    .marketCountry(supplementalData.country())
+                    .marketExchange(supplementalData.exchange())
+                    .marketFullExchangeName(supplementalData.fullExchangeName())
+                    .marketCurrency(supplementalData.currency())
                     .marketBusinessSummary(supplementalData.businessSummary())
                     .revenue(snapshot.revenue())
                     .grossProfit(snapshot.grossProfit())
@@ -455,6 +473,7 @@ public class HybridFinancialDataService implements FinancialDataService {
                 fallbackFacts.setDashboardMode(dashboardMode.mode());
                 fallbackFacts.setDashboardMessage(dashboardMode.message());
             }
+            IssuerDisclosureClassifier.apply(fallbackFacts, supplementalData);
 
             log.info(
                     "🪂 Returning market-backed minimal facts for {} because SEC core facts were unavailable (snapshot={}, revenue={}, netIncome={})",
@@ -466,6 +485,30 @@ public class HybridFinancialDataService implements FinancialDataService {
         } catch (Exception e) {
             log.warn("⚠️ Market-backed minimal facts fallback failed for {}: {}", ticker, e.getMessage());
             return null;
+        }
+    }
+
+    private void applyMarketDisclosureMetadata(FinancialFacts facts, MarketSupplementalData supplementalData) {
+        if (facts == null || supplementalData == null) {
+            return;
+        }
+        if (!isBlank(supplementalData.quoteType())) {
+            facts.setMarketQuoteType(supplementalData.quoteType());
+        }
+        if (!isBlank(supplementalData.typeDisplay())) {
+            facts.setMarketTypeDisplay(supplementalData.typeDisplay());
+        }
+        if (!isBlank(supplementalData.country())) {
+            facts.setMarketCountry(supplementalData.country());
+        }
+        if (!isBlank(supplementalData.exchange())) {
+            facts.setMarketExchange(supplementalData.exchange());
+        }
+        if (!isBlank(supplementalData.fullExchangeName())) {
+            facts.setMarketFullExchangeName(supplementalData.fullExchangeName());
+        }
+        if (!isBlank(supplementalData.currency())) {
+            facts.setMarketCurrency(supplementalData.currency());
         }
     }
 
@@ -671,6 +714,8 @@ public class HybridFinancialDataService implements FinancialDataService {
                 || isBlank(facts.getMarketSector())
                 || isBlank(facts.getMarketIndustry())
                 || isBlank(facts.getMarketSecurityType())
+                || isBlank(facts.getIssuerType())
+                || isBlank(facts.getDisclosureProfile())
                 || isBlank(facts.getMarketBusinessSummary());
     }
 
@@ -696,22 +741,7 @@ public class HybridFinancialDataService implements FinancialDataService {
             return false;
         }
 
-        MarketSupplementalData cachedMetadata = new MarketSupplementalData(
-                "cache",
-                false,
-                false,
-                false,
-                facts.getCompanyName(),
-                facts.getMarketSector(),
-                facts.getMarketIndustry(),
-                facts.getMarketSecurityType(),
-                null,
-                null,
-                null,
-                null,
-                List.of(),
-                null,
-                facts.getMarketBusinessSummary());
+        MarketSupplementalData cachedMetadata = cachedMarketMetadata(facts);
         if (!hasMarketClassificationInputs(cachedMetadata)) {
             return false;
         }
@@ -725,6 +755,51 @@ public class HybridFinancialDataService implements FinancialDataService {
         facts.setDashboardMode(expectedMode.mode());
         facts.setDashboardMessage(expectedMode.message());
         return true;
+    }
+
+    private boolean reconcileIssuerDisclosureFromExistingMetadata(FinancialFacts facts) {
+        if (facts == null) {
+            return false;
+        }
+        MarketSupplementalData cachedMetadata = cachedMarketMetadata(facts);
+        IssuerDisclosureClassifier.Classification expected =
+                IssuerDisclosureClassifier.classify(facts, cachedMetadata);
+        if (Objects.equals(normalizeBlank(facts.getIssuerType()), normalizeBlank(expected.issuerType()))
+                && Objects.equals(normalizeBlank(facts.getDisclosureProfile()),
+                        normalizeBlank(expected.disclosureProfile()))
+                && Objects.equals(normalizeBlank(facts.getDisclosureNote()),
+                        normalizeBlank(expected.disclosureNote()))) {
+            return false;
+        }
+        facts.setIssuerType(expected.issuerType());
+        facts.setDisclosureProfile(expected.disclosureProfile());
+        facts.setDisclosureNote(expected.disclosureNote());
+        return true;
+    }
+
+    private MarketSupplementalData cachedMarketMetadata(FinancialFacts facts) {
+        return new MarketSupplementalData(
+                "cache",
+                false,
+                false,
+                false,
+                facts.getCompanyName(),
+                facts.getMarketSector(),
+                facts.getMarketIndustry(),
+                facts.getMarketSecurityType(),
+                facts.getMarketQuoteType(),
+                facts.getMarketTypeDisplay(),
+                facts.getMarketCountry(),
+                facts.getMarketExchange(),
+                facts.getMarketFullExchangeName(),
+                facts.getMarketCurrency(),
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                null,
+                facts.getMarketBusinessSummary());
     }
 
     private boolean isBlank(String value) {
@@ -742,7 +817,9 @@ public class HybridFinancialDataService implements FinancialDataService {
         return !isBlank(supplementalData.companyName())
                 || !isBlank(supplementalData.sector())
                 || !isBlank(supplementalData.industry())
-                || !isBlank(supplementalData.securityType());
+                || !isBlank(supplementalData.securityType())
+                || !isBlank(supplementalData.country())
+                || !isBlank(supplementalData.exchange());
     }
 
     private void cacheHistoricalData(String ticker, String reportType, List<HistoricalDataPoint> history) {

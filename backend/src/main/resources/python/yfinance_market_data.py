@@ -208,7 +208,18 @@ def main() -> int:
     company_name = info.get("shortName") or info.get("longName") or info.get("displayName")
     sector = info.get("sectorDisp") or info.get("sector")
     industry = info.get("industryDisp") or info.get("industry")
-    security_type = info.get("quoteType") or info.get("typeDisp")
+    quote_type = info.get("quoteType")
+    type_display = info.get("typeDisp")
+    security_type = quote_type or type_display
+    country = info.get("country")
+    exchange = (
+        info.get("exchange")
+        or info.get("exchangeName")
+        or fast_info.get("exchange")
+        or fast_info.get("exchangeName")
+    )
+    full_exchange_name = info.get("fullExchangeName") or info.get("exchangeName")
+    currency = info.get("financialCurrency") or info.get("currency") or fast_info.get("currency")
     business_summary = info.get("longBusinessSummary") or info.get("description")
     latest_price = (
         info.get("currentPrice")
@@ -247,6 +258,12 @@ def main() -> int:
         "sector": sector,
         "industry": industry,
         "securityType": security_type,
+        "quoteType": quote_type,
+        "typeDisplay": type_display,
+        "country": country,
+        "exchange": exchange,
+        "fullExchangeName": full_exchange_name,
+        "currency": currency,
         "latestPrice": latest_price,
         "marketCap": market_cap,
         "priceToEarningsRatio": price_to_earnings_ratio,

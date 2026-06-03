@@ -2,6 +2,7 @@ package com.springalpha.backend.service;
 
 import com.springalpha.backend.financial.contract.AnalysisReport;
 import com.springalpha.backend.financial.contract.ResearchTaskType;
+import com.springalpha.backend.financial.service.IssuerDisclosureClassifier;
 import com.springalpha.backend.financial.service.MarketSupplementalData;
 import com.springalpha.backend.service.provider.ProviderCredentialValidator;
 import com.springalpha.backend.service.research.ResearchAgentClient;
@@ -218,6 +219,7 @@ public class FinancialAnalysisService {
             if (financialFacts == null) {
                 return Map.of();
             }
+            IssuerDisclosureClassifier.applyIfMissing(financialFacts);
             Map<String, Object> facts = new LinkedHashMap<>();
             putIfPresent(facts, "company_name", financialFacts.getCompanyName());
             putIfPresent(facts, "companyName", financialFacts.getCompanyName());
@@ -231,6 +233,24 @@ public class FinancialAnalysisService {
             putIfPresent(facts, "marketIndustry", financialFacts.getMarketIndustry());
             putIfPresent(facts, "market_security_type", financialFacts.getMarketSecurityType());
             putIfPresent(facts, "marketSecurityType", financialFacts.getMarketSecurityType());
+            putIfPresent(facts, "market_quote_type", financialFacts.getMarketQuoteType());
+            putIfPresent(facts, "marketQuoteType", financialFacts.getMarketQuoteType());
+            putIfPresent(facts, "market_type_display", financialFacts.getMarketTypeDisplay());
+            putIfPresent(facts, "marketTypeDisplay", financialFacts.getMarketTypeDisplay());
+            putIfPresent(facts, "market_country", financialFacts.getMarketCountry());
+            putIfPresent(facts, "marketCountry", financialFacts.getMarketCountry());
+            putIfPresent(facts, "market_exchange", financialFacts.getMarketExchange());
+            putIfPresent(facts, "marketExchange", financialFacts.getMarketExchange());
+            putIfPresent(facts, "market_full_exchange_name", financialFacts.getMarketFullExchangeName());
+            putIfPresent(facts, "marketFullExchangeName", financialFacts.getMarketFullExchangeName());
+            putIfPresent(facts, "market_currency", financialFacts.getMarketCurrency());
+            putIfPresent(facts, "marketCurrency", financialFacts.getMarketCurrency());
+            putIfPresent(facts, "issuer_type", financialFacts.getIssuerType());
+            putIfPresent(facts, "issuerType", financialFacts.getIssuerType());
+            putIfPresent(facts, "disclosure_profile", financialFacts.getDisclosureProfile());
+            putIfPresent(facts, "disclosureProfile", financialFacts.getDisclosureProfile());
+            putIfPresent(facts, "disclosure_note", financialFacts.getDisclosureNote());
+            putIfPresent(facts, "disclosureNote", financialFacts.getDisclosureNote());
             putIfPresent(facts, "business_summary", financialFacts.getMarketBusinessSummary());
             putIfPresent(facts, "businessSummary", financialFacts.getMarketBusinessSummary());
             putIfPresent(facts, "market_business_summary", financialFacts.getMarketBusinessSummary());

@@ -29,6 +29,12 @@ class YahooFinanceMarketDataServiceTest {
                           "sector": "Technology",
                           "industry": "Software - Infrastructure",
                           "securityType": "EQUITY",
+                          "quoteType": "EQUITY",
+                          "typeDisplay": "Equity",
+                          "country": "United States",
+                          "exchange": "NMS",
+                          "fullExchangeName": "NasdaqGS",
+                          "currency": "USD",
                           "latestPrice": 30.0,
                           "marketCap": 144000000000,
                           "priceToEarningsRatio": 20.5,
@@ -71,6 +77,12 @@ class YahooFinanceMarketDataServiceTest {
         assertEquals("Technology", data.sector());
         assertEquals("Software - Infrastructure", data.industry());
         assertEquals("EQUITY", data.securityType());
+        assertEquals("EQUITY", data.quoteType());
+        assertEquals("Equity", data.typeDisplay());
+        assertEquals("United States", data.country());
+        assertEquals("NMS", data.exchange());
+        assertEquals("NasdaqGS", data.fullExchangeName());
+        assertEquals("USD", data.currency());
         assertEquals(new BigDecimal("30.0"), data.latestPrice());
         assertEquals(new BigDecimal("144000000000"), data.marketCap());
         assertTrue(data.valuationAvailable());

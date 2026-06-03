@@ -32,7 +32,16 @@ public class FinancialFacts {
     private String marketSector;
     private String marketIndustry;
     private String marketSecurityType;
+    private String marketQuoteType;
+    private String marketTypeDisplay;
+    private String marketCountry;
+    private String marketExchange;
+    private String marketFullExchangeName;
+    private String marketCurrency;
     private String marketBusinessSummary;
+    private String issuerType;
+    private String disclosureProfile;
+    private String disclosureNote;
     private String dashboardMode;
     private String dashboardMessage;
 

@@ -156,6 +156,36 @@ class FinancialAnalysisServiceTest {
     }
 
     @Test
+    void analyzeStockClassifiesForeignAdrFactsForResearchAgent() {
+        FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
+        FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.success();
+        FinancialAnalysisService service = new FinancialAnalysisService(
+                new FakeSecService(),
+                credentialValidator,
+                researchAgentClient,
+                new com.springalpha.backend.service.research.ResearchAgentReportMapper());
+
+        service.analyzeStock(
+                "NOK",
+                "zh",
+                "siliconflow",
+                "secret",
+                ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION)
+                .collectList()
+                .block();
+
+        Map<String, Object> facts = researchAgentClient.lastRequest.facts();
+        assertEquals("adr", facts.get("issuer_type"));
+        assertEquals("market_metric_primary", facts.get("disclosure_profile"));
+        assertEquals("Finland", facts.get("market_country"));
+        assertEquals("NYSE", facts.get("market_exchange"));
+        assertEquals("USD", facts.get("market_currency"));
+        assertEquals(
+                "ADR/foreign issuer disclosure can have limited SEC narrative coverage; structured market metrics and company profile facts are primary evidence.",
+                facts.get("disclosure_note"));
+    }
+
+    @Test
     void analyzeStockPrefersYfinanceQuarterlySnapshotForAgentMetricFacts() {
         FakeProviderCredentialValidator credentialValidator = new FakeProviderCredentialValidator();
         FakeResearchAgentClient researchAgentClient = FakeResearchAgentClient.success();
@@ -529,13 +559,19 @@ class FinancialAnalysisServiceTest {
                 public FinancialFacts getFinancialFacts(String ticker, String reportType) {
                     return FinancialFacts.builder()
                             .ticker(ticker)
-                            .companyName("Tesla, Inc.")
+                            .companyName("NOK".equals(ticker) ? "Nokia Oyj" : "Tesla, Inc.")
                             .period("2026Q2")
                             .filingDate("2026-05-01")
                             .currency("USD")
-                            .marketSector("Consumer Cyclical")
-                            .marketIndustry("Auto Manufacturers")
-                            .marketBusinessSummary("Tesla designs electric vehicles and energy systems.")
+                            .marketSector("NOK".equals(ticker) ? "Technology" : "Consumer Cyclical")
+                            .marketIndustry("NOK".equals(ticker) ? "Communication Equipment" : "Auto Manufacturers")
+                            .marketSecurityType("NOK".equals(ticker) ? "American Depositary Receipt" : "EQUITY")
+                            .marketCountry("NOK".equals(ticker) ? "Finland" : null)
+                            .marketExchange("NOK".equals(ticker) ? "NYSE" : null)
+                            .marketCurrency("NOK".equals(ticker) ? "USD" : null)
+                            .marketBusinessSummary("NOK".equals(ticker)
+                                    ? "Nokia provides mobile, fixed, and cloud network solutions."
+                                    : "Tesla designs electric vehicles and energy systems.")
                             .revenue("AAOI".equals(ticker)
                                     ? new BigDecimal("150000000")
                                     : new BigDecimal("25500000000"))

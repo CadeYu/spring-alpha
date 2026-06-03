@@ -5,6 +5,10 @@ from typing import Any
 
 from langchain_core.tools import StructuredTool
 
+from app.agents.issuer_disclosure import (
+    foreign_issuer_metadata,
+    has_foreign_issuer_metric_policy,
+)
 from app.contracts.agent import AgentRequest, AgentState, ToolResult
 from app.rag.langchain_tools import EvidencePackInput, create_evidence_pack_tool
 from app.rag.llamaindex_pipeline import LlamaIndexRagPipeline
@@ -55,7 +59,9 @@ def create_agent_evidence_pack_tool(
             else:
                 result = ToolResult.ok(data=data, source_refs=source_refs)
         if result.latency_ms <= 0:
-            result = result.model_copy(update={"latency_ms": int((perf_counter() - started_at) * 1000)})
+            result = result.model_copy(
+                update={"latency_ms": int((perf_counter() - started_at) * 1000)}
+            )
         next_state, payload = run_domain_tool(
             state_getter(),
             "build_evidence_pack",
@@ -89,14 +95,19 @@ def _with_metric_facts(data: dict[str, Any], state: AgentState) -> dict[str, Any
     if not isinstance(evidence_pack, dict):
         return data
     metric_facts = _metric_facts_from_state(state)
+    issuer_metadata = foreign_issuer_metadata(state.evidence_memory.facts)
     enriched_pack = {
         **evidence_pack,
         "metric_facts": metric_facts,
+        **issuer_metadata,
     }
     if not enriched_pack.get("filing_evidence"):
         enriched_pack.pop("filing_evidence", None)
         if metric_facts and enriched_pack.get("retrieval_status") == "empty":
-            enriched_pack["retrieval_status"] = "metric_only"
+            if has_foreign_issuer_metric_policy(state.evidence_memory.facts):
+                enriched_pack["retrieval_status"] = "foreign_issuer_metric_only"
+            else:
+                enriched_pack["retrieval_status"] = "metric_only"
     enriched_data = {
         **data,
         "evidence_pack": enriched_pack,
