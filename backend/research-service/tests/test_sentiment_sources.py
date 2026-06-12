@@ -308,6 +308,55 @@ def test_reddit_discussion_uses_stale_success_when_refresh_is_rate_limited() -> 
     assert "stale reddit cache" in (second.degraded_reason or "")
 
 
+def test_reddit_discussion_short_circuits_after_repeated_rate_limits() -> None:
+    calls = 0
+    now = 4_000.0
+
+    def transport(url: str, timeout: float, headers: dict[str, str]) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        raise HTTPError(url, 429, "Too Many Requests", hdrs=None, fp=None)
+
+    def text_transport(url: str, timeout: float, headers: dict[str, str]) -> str:
+        raise HTTPError(url, 429, "Too Many Requests", hdrs=None, fp=None)
+
+    def clock() -> float:
+        return now
+
+    first = fetch_reddit_discussion(
+        "ALB",
+        subreddits=("stocks",),
+        transport=transport,
+        text_transport=text_transport,
+        inter_request_delay=0,
+        cache_ttl_seconds=0,
+        degraded_cache_ttl_seconds=0,
+        stale_ttl_seconds=0,
+        circuit_breaker_seconds=120,
+        rate_limit_interval_seconds=0,
+        clock=clock,
+    )
+    second = fetch_reddit_discussion(
+        "ALGN",
+        subreddits=("stocks",),
+        transport=transport,
+        text_transport=text_transport,
+        inter_request_delay=0,
+        cache_ttl_seconds=0,
+        degraded_cache_ttl_seconds=0,
+        stale_ttl_seconds=0,
+        circuit_breaker_seconds=120,
+        rate_limit_interval_seconds=0,
+        clock=clock,
+    )
+
+    assert calls == 1
+    assert first.status == SentimentSourceStatus.DEGRADED
+    assert second.status == SentimentSourceStatus.DEGRADED
+    assert "reddit public endpoints temporarily rate limited" in second.content
+    assert "circuit breaker" in (second.degraded_reason or "")
+
+
 def test_reddit_discussion_coalesces_concurrent_fetches_for_same_key() -> None:
     calls = 0
     entered_fetch = Event()

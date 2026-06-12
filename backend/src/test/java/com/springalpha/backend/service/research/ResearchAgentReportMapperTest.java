@@ -490,6 +490,95 @@ class ResearchAgentReportMapperTest {
     }
 
     @Test
+    void keepsSentimentReportGroundedWhenOnlyRedditIsUnavailable() {
+        ResearchAgentResult result = new ResearchAgentResult(
+                "run_sentiment_reddit_limited_001",
+                null,
+                "ok",
+                List.of(
+                        new ResearchAgentEvent(
+                                "run_sentiment_reddit_limited_001",
+                                ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+                                "retrieve_evidence",
+                                "ok",
+                                "Collected Yahoo Finance news for market sentiment.",
+                                "fetch_yahoo_news",
+                                "tool",
+                                "Sentiment analyst",
+                                "test-model",
+                                Map.of("source", "yahoo_news", "ticker", "AMD"),
+                                Map.of(),
+                                0,
+                                null),
+                        new ResearchAgentEvent(
+                                "run_sentiment_reddit_limited_001",
+                                ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+                                "retrieve_evidence",
+                                "ok",
+                                "Collected StockTwits messages for retail sentiment.",
+                                "fetch_stocktwits",
+                                "tool",
+                                "Sentiment analyst",
+                                "test-model",
+                                Map.of("source", "stocktwits", "ticker", "AMD"),
+                                Map.of(),
+                                0,
+                                null),
+                        new ResearchAgentEvent(
+                                "run_sentiment_reddit_limited_001",
+                                ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+                                "retrieve_evidence",
+                                "degraded",
+                                "Collected Reddit discussion for community sentiment.",
+                                "fetch_reddit",
+                                "tool",
+                                "Sentiment analyst",
+                                "test-model",
+                                Map.of("source", "reddit", "ticker", "AMD"),
+                                Map.of(),
+                                0,
+                                "r/stocks: HTTPError; RSS HTTPError")),
+                List.of("r/stocks: HTTPError; RSS HTTPError"),
+                List.of(),
+                Map.of(
+                        "company_name", "Advanced Micro Devices, Inc.",
+                        "sections", Map.of("summary", "Market sentiment report completed."),
+                        "task_sections", Map.of(
+                                "schema_version", "task_sections.v1",
+                                "task_type", "business_driver_deep_dive",
+                                "coverage", Map.of(
+                                        "status", "complete",
+                                        "missing_sections", List.of(),
+                                        "evidence_count", 2),
+                                "sentiment_header", Map.of(
+                                        "overall_band", "Mildly Bullish",
+                                        "overall_score", 6.0,
+                                        "confidence", "medium",
+                                        "summary", "News and StockTwits lean positive."),
+                                "narrative_snapshot", Map.of(
+                                        "title", "Analyst upgrade narrative",
+                                        "summary", "Yahoo Finance and StockTwits both returned usable sentiment.",
+                                        "source_ids", List.of("sentiment:yahoo_news", "sentiment:stocktwits"),
+                                        "citation_status", "supported"),
+                                "bull_bear_narrative", Map.of(
+                                        "bull_case", "Analyst upgrades support the bull case.",
+                                        "bear_case", "Reddit was unavailable.",
+                                        "balanced_read", "Treat social validation as two-source only."),
+                                "source_divergence", Map.of(
+                                        "summary", "Yahoo Finance and StockTwits aligned; Reddit unavailable.",
+                                        "news_direction", "bullish",
+                                        "stocktwits_direction", "bullish",
+                                        "reddit_direction", "unavailable"),
+                                "noise_warnings", List.of("Reddit unavailable."),
+                                "claims", List.of())));
+
+        AnalysisReport report = mapper.toAnalysisReport(result, "en");
+
+        assertEquals("GROUNDED", report.getSourceContext().getStatus());
+        assertTrue(report.getSourceContext().getMessage().contains("Reddit"));
+    }
+
+    @Test
     void mapsRetrievalRecordsIntoLiveRagTelemetry() {
         ResearchAgentResult result = new ResearchAgentResult(
                 "run_rag_telemetry_001",

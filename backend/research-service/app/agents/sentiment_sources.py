@@ -33,7 +33,9 @@ _REDDIT_CACHE_TTL_SECONDS = 600.0
 _REDDIT_DEGRADED_CACHE_TTL_SECONDS = 60.0
 _REDDIT_STALE_TTL_SECONDS = 86_400.0
 _REDDIT_RATE_LIMIT_INTERVAL_SECONDS = 1.0
+_REDDIT_CIRCUIT_BREAKER_SECONDS = 900.0
 _REDDIT_NEXT_REQUEST_AT = 0.0
+_REDDIT_CIRCUIT_OPEN_UNTIL = 0.0
 DEFAULT_REDDIT_SUBREDDITS = ("wallstreetbets", "stocks", "investing")
 
 
@@ -197,6 +199,7 @@ def fetch_reddit_discussion(
     cache_ttl_seconds: float | None = None,
     degraded_cache_ttl_seconds: float | None = None,
     stale_ttl_seconds: float | None = None,
+    circuit_breaker_seconds: float | None = None,
     rate_limit_interval_seconds: float | None = None,
     clock: Clock = time.time,
 ) -> SentimentSourceBlock:
@@ -214,6 +217,11 @@ def fetch_reddit_discussion(
         if rate_limit_interval_seconds is None
         else rate_limit_interval_seconds
     )
+    circuit_breaker_ttl = (
+        _REDDIT_CIRCUIT_BREAKER_SECONDS
+        if circuit_breaker_seconds is None
+        else circuit_breaker_seconds
+    )
     cache_enabled = ttl > 0 or degraded_ttl > 0 or stale_ttl > 0
     cache_key = (normalized, subreddit_tuple, limit_per_subreddit)
     if cache_enabled:
@@ -227,6 +235,12 @@ def fetch_reddit_discussion(
         if not owns_in_flight and in_flight is not None:
             return _wait_for_reddit_in_flight(in_flight)
 
+    circuit_block = _reddit_circuit_breaker_block(normalized, now=clock())
+    if circuit_block is not None:
+        if owns_in_flight and in_flight is not None:
+            _finish_reddit_in_flight(cache_key, in_flight, block=circuit_block)
+        return circuit_block
+
     try:
         block = _fetch_reddit_discussion_uncached(
             normalized,
@@ -239,6 +253,7 @@ def fetch_reddit_discussion(
             rate_limit_interval_seconds=rate_limit_interval,
             clock=clock,
         )
+        _update_reddit_circuit(block, now=clock(), ttl_seconds=circuit_breaker_ttl)
     except Exception as exc:
         if cache_enabled:
             stale_block = _get_reddit_stale_cache(cache_key, now=clock())
@@ -269,6 +284,53 @@ def fetch_reddit_discussion(
     if owns_in_flight and in_flight is not None:
         _finish_reddit_in_flight(cache_key, in_flight, block=block)
     return block
+
+
+def _reddit_circuit_breaker_block(
+    ticker: str,
+    *,
+    now: float,
+) -> SentimentSourceBlock | None:
+    with _REDDIT_CACHE_LOCK:
+        open_until = _REDDIT_CIRCUIT_OPEN_UNTIL
+    if open_until <= now:
+        return None
+    return SentimentSourceBlock(
+        source="reddit",
+        status=SentimentSourceStatus.DEGRADED,
+        item_count=0,
+        content=(
+            f"<reddit public endpoints temporarily rate limited for {ticker}; "
+            "skipping fresh fetch>"
+        ),
+        degraded_reason="reddit circuit breaker open after public endpoint rate limits",
+    )
+
+
+def _update_reddit_circuit(
+    block: SentimentSourceBlock,
+    *,
+    now: float,
+    ttl_seconds: float,
+) -> None:
+    if block.status != SentimentSourceStatus.DEGRADED:
+        global _REDDIT_CIRCUIT_OPEN_UNTIL
+        with _REDDIT_CACHE_LOCK:
+            _REDDIT_CIRCUIT_OPEN_UNTIL = 0.0
+        return
+    if ttl_seconds <= 0:
+        return
+    reason = (block.degraded_reason or "").lower()
+    if not (
+        "httperror" in reason
+        or "too many requests" in reason
+        or "forbidden" in reason
+        or "429" in reason
+        or "403" in reason
+    ):
+        return
+    with _REDDIT_CACHE_LOCK:
+        _REDDIT_CIRCUIT_OPEN_UNTIL = max(_REDDIT_CIRCUIT_OPEN_UNTIL, now + ttl_seconds)
 
 
 def _fetch_reddit_discussion_uncached(
