@@ -2953,7 +2953,7 @@ function withTaskSectionEnvelopeFields<
   };
 }
 
-function emptyDriverMap(): MarketSentimentSections["driverMap"] {
+function emptyDriverMap(): NonNullable<MarketSentimentSections["driverMap"]> {
   return {
     revenueBridge: null,
     segmentMomentum: null,
