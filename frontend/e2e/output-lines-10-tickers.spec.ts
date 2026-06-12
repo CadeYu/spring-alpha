@@ -40,17 +40,18 @@ const TASK_CASES: TaskCase[] = [
   },
   {
     taskType: "business_driver_deep_dive",
-    tabName: /business driver deep dive/i,
-    headline: "Typed business driver thesis",
-    summary: "Business driver typed summary.",
+    tabName: /market narrative & sentiment/i,
+    headline: "Typed market sentiment thesis",
+    summary: "Market sentiment typed summary.",
     sections: [
-      "Business Driver Research View",
-      "Thesis",
-      "Business Driver Paragraphs",
-      "Revenue Bridge",
-      "Segment Momentum",
-      "Margin And Mix",
-      "Demand Signals",
+      "Market Narrative & Sentiment",
+      "Market Narrative",
+      "Narrative Snapshot",
+      "Bull Case",
+      "Bear Case",
+      "Balanced Read",
+      "Source Divergence",
+      "Noise & Sample Limits",
     ],
   },
   {
@@ -113,26 +114,29 @@ function typedTaskSections(taskType: TaskCase["taskType"]) {
       schemaVersion: "task_sections.v1",
       taskType,
       coverage,
-      businessDriver: {
-        driverThesis: {
-          headline: "Typed business driver thesis",
-          durability: "durable",
-          summary: "Business driver typed summary.",
-        },
-        driverMap: {
-          revenueBridge: supportedPoint,
-          segmentMomentum: supportedPoint,
-          marginAndMix: supportedPoint,
-          demandSignals: supportedPoint,
-        },
-        claims: [
-          {
-            text: "Typed business driver claim.",
-            evidenceRefs: [],
-            citationStatus: "supported",
-          },
-        ],
+      sentimentHeader: {
+        overallBand: "Mixed",
+        overallScore: 5.8,
+        confidence: "medium",
+        summary: "Market sentiment typed summary.",
       },
+      narrativeSnapshot: {
+        ...supportedPoint,
+        title: "Typed market sentiment thesis",
+        summary: "Market sentiment typed summary.",
+      },
+      bullBearNarrative: {
+        bullCase: "Bullish holders emphasize product momentum and resilient demand.",
+        bearCase: "Bearish holders emphasize valuation risk and crowded expectations.",
+        balancedRead: "The narrative is constructive but still needs confirmation from fundamentals.",
+      },
+      sourceDivergence: {
+        summary: "News is constructive while social discussion is more mixed.",
+        newsDirection: "constructive",
+        stocktwitsDirection: "mixed",
+        redditDirection: "thin",
+      },
+      noiseWarnings: ["Social sample size is limited for this mocked run."],
     };
   }
 

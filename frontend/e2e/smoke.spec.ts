@@ -130,20 +130,21 @@ const TASK_E2E_CASES = [
   },
   {
     taskType: "business_driver_deep_dive",
-    tabName: /business driver deep dive/i,
+    tabName: /market narrative & sentiment/i,
     ticker: "MSFT",
     companyName: "Microsoft Corporation",
-    summary: "Business driver deep dive mocked E2E summary.",
-    typedHeadline: "Typed business driver thesis",
-    typedSummary: "Business driver typed summary.",
+    summary: "Market narrative sentiment mocked E2E summary.",
+    typedHeadline: "Typed market sentiment thesis",
+    typedSummary: "Market sentiment typed summary.",
     expectedSections: [
-      "Business Driver Research View",
-      "Thesis",
-      "Business Driver Paragraphs",
-      "Revenue Bridge",
-      "Segment Momentum",
-      "Margin And Mix",
-      "Demand Signals",
+      "Market Narrative & Sentiment",
+      "Market Narrative",
+      "Narrative Snapshot",
+      "Bull Case",
+      "Bear Case",
+      "Balanced Read",
+      "Source Divergence",
+      "Noise & Sample Limits",
     ],
   },
   {
@@ -205,26 +206,29 @@ function typedTaskSections(
       schemaVersion: "task_sections.v1",
       taskType,
       coverage,
-      businessDriver: {
-        driverThesis: {
-          headline: "Typed business driver thesis",
-          durability: "durable",
-          summary: "Business driver typed summary.",
-        },
-        driverMap: {
-          revenueBridge: supportedPoint,
-          segmentMomentum: supportedPoint,
-          marginAndMix: supportedPoint,
-          demandSignals: supportedPoint,
-        },
-        claims: [
-          {
-            text: "Typed business driver claim.",
-            evidenceRefs: [],
-            citationStatus: "supported",
-          },
-        ],
+      sentimentHeader: {
+        overallBand: "Mixed",
+        overallScore: 5.8,
+        confidence: "medium",
+        summary: "Market sentiment typed summary.",
       },
+      narrativeSnapshot: {
+        ...supportedPoint,
+        title: "Typed market sentiment thesis",
+        summary: "Market sentiment typed summary.",
+      },
+      bullBearNarrative: {
+        bullCase: "Bullish holders emphasize product momentum and resilient demand.",
+        bearCase: "Bearish holders emphasize valuation risk and crowded expectations.",
+        balancedRead: "The narrative is constructive but still needs confirmation from fundamentals.",
+      },
+      sourceDivergence: {
+        summary: "News is constructive while social discussion is more mixed.",
+        newsDirection: "constructive",
+        stocktwitsDirection: "mixed",
+        redditDirection: "thin",
+      },
+      noiseWarnings: ["Social sample size is limited for this mocked run."],
     };
   }
 
@@ -874,8 +878,8 @@ test.describe("Spring Alpha smoke", () => {
       "latest_earnings_readout",
     ]);
 
-    await openAgentReport(page, /business driver deep dive/i);
-    await expect(page.getByText("Business driver typed summary.")).toBeVisible();
+    await openAgentReport(page, /market narrative & sentiment/i);
+    await expect(page.getByText("Market sentiment typed summary.").first()).toBeVisible();
     await openAgentReport(page, /cash flow & capital allocation/i);
     await expect(page.getByText("Cash flow typed summary.")).toBeVisible();
     expect(analyzeRequests.map((request) => request.taskType)).toEqual([
@@ -1372,13 +1376,13 @@ test.describe("Spring Alpha live Agent path", () => {
       .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
       .fill("AAPL");
     await page.getByRole("button", { name: /analyze/i }).click();
-    await openAgentReport(page, /business driver deep dive/i);
+    await openAgentReport(page, /market narrative & sentiment/i);
 
     await expect(
       page.getByRole("heading", { name: /AAPL Analysis Report/i }),
     ).toBeVisible({ timeout: 120_000 });
     await expect(
-      page.getByText(/Business Driver Research View/i).first(),
+      page.getByText(/Market Narrative & Sentiment/i).first(),
     ).toBeVisible();
     await expect(page.getByText(/Trust Summary/i)).toHaveCount(0);
 
