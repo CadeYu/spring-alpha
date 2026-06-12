@@ -5,7 +5,7 @@ from time import perf_counter
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from app.agents.llm_gateway import _parse_json_text
 from app.agents.sentiment_sources import (
@@ -16,6 +16,13 @@ from app.agents.sentiment_sources import (
 from app.agents.tool_calling_graph import _json_response_llm
 from app.contracts.agent import AgentEvent, AgentPhase, AgentRequest, AgentState, ToolStatus
 from app.contracts.research_task import ResearchTaskType
+
+_SENTIMENT_FINAL_MAX_TOKENS = 1536
+_SENTIMENT_FINAL_TIMEOUT_SECONDS = 75
+_SENTIMENT_SOURCE_CONTEXT_MAX_LINES = 5
+_SENTIMENT_SOURCE_CONTEXT_LINE_LIMIT = 220
+_SENTIMENT_RETRY_CONTEXT_MAX_LINES = 3
+_SENTIMENT_RETRY_CONTEXT_LINE_LIMIT = 160
 
 
 class BusinessDriverAgentError(RuntimeError):
@@ -83,7 +90,7 @@ def run_business_driver_agent(
     for block in blocks:
         runtime_state = _append_source_event(runtime_state, block)
 
-    final_llm = _json_response_llm(llm)
+    final_llm = _sentiment_json_response_llm(llm)
     started_at = perf_counter()
     final_messages = [
         SystemMessage(content=_system_instruction(request)),
@@ -95,25 +102,13 @@ def run_business_driver_agent(
             )
         ),
     ]
-    try:
-        result = final_llm.invoke(final_messages)
-    except Exception as exc:
-        raise BusinessDriverAgentError(
-            f"Sentiment analyst final synthesis failed: {exc}",
-            state=runtime_state,
-        ) from exc
-    if not isinstance(result, AIMessage):
-        raise BusinessDriverAgentError(
-            "Sentiment analyst final LLM did not return an AIMessage",
-            state=runtime_state,
-        )
-    try:
-        payload = _parse_json_text(_message_content_to_text(result.content))
-    except Exception as exc:
-        raise BusinessDriverAgentError(
-            f"Sentiment analyst final JSON was invalid: {exc}",
-            state=runtime_state,
-        ) from exc
+    result, payload = _invoke_and_parse_sentiment_payload(
+        final_llm=final_llm,
+        final_messages=final_messages,
+        request=request,
+        state=runtime_state,
+        source_blocks=blocks,
+    )
 
     runtime_state = _append_synthesis_event(
         runtime_state,
@@ -121,6 +116,127 @@ def run_business_driver_agent(
         latency_ms=int((perf_counter() - started_at) * 1000),
     )
     return payload, runtime_state
+
+
+def _sentiment_json_response_llm(llm: BaseChatModel) -> BaseChatModel:
+    if hasattr(llm, "model_copy"):
+        return llm.model_copy(
+            update={
+                "tools": [],
+                "tool_choice": None,
+                "max_tokens": _SENTIMENT_FINAL_MAX_TOKENS,
+                "response_format": {"type": "json_object"},
+                "timeout_seconds": _SENTIMENT_FINAL_TIMEOUT_SECONDS,
+            }
+        )
+    return _json_response_llm(llm)
+
+
+def _invoke_and_parse_sentiment_payload(
+    *,
+    final_llm: BaseChatModel,
+    final_messages: list[BaseMessage],
+    request: AgentRequest,
+    state: AgentState,
+    source_blocks: list[SentimentSourceBlock],
+) -> tuple[AIMessage, dict[str, Any]]:
+    last_error: Exception | None = None
+    for attempt in range(2):
+        attempt_messages = (
+            final_messages
+            if attempt == 0
+            else _retry_sentiment_messages(
+                request,
+                state,
+                source_blocks=source_blocks,
+                last_error=last_error,
+            )
+        )
+        try:
+            result = final_llm.invoke(attempt_messages)
+        except Exception as exc:
+            last_error = exc
+            continue
+        if not isinstance(result, AIMessage):
+            raise BusinessDriverAgentError(
+                "Sentiment analyst final LLM did not return an AIMessage",
+                state=state,
+            )
+        try:
+            payload = _parse_json_text(_message_content_to_text(result.content))
+        except Exception as exc:
+            last_error = exc
+            continue
+        return result, payload
+
+    if isinstance(last_error, json.JSONDecodeError):
+        raise BusinessDriverAgentError(
+            f"Sentiment analyst final JSON was invalid: {last_error}",
+            state=state,
+        ) from last_error
+    raise BusinessDriverAgentError(
+        f"Sentiment analyst final synthesis failed: {last_error}",
+        state=state,
+    ) from last_error
+
+
+def _retry_sentiment_messages(
+    request: AgentRequest,
+    state: AgentState,
+    *,
+    source_blocks: list[SentimentSourceBlock],
+    last_error: Exception | None,
+) -> list[BaseMessage]:
+    source_context = _compact_sentiment_source_context(
+        source_blocks,
+        max_lines=_SENTIMENT_RETRY_CONTEXT_MAX_LINES,
+        line_limit=_SENTIMENT_RETRY_CONTEXT_LINE_LIMIT,
+    )
+    retry_notice = (
+        f"The previous attempt failed: {last_error}. "
+        "Return one smaller valid JSON object only."
+    )
+    if _is_zh_locale(request.language):
+        return [
+            SystemMessage(
+                content=(
+                    "你是市场叙事与情绪分析师。只基于预抓取来源输出 JSON，"
+                    "不要编造新闻、Reddit、X 或 StockTwits 内容。"
+                )
+            ),
+            HumanMessage(
+                content=(
+                    f"{retry_notice}\n"
+                    "字段只保留 sentiment_header、narrative_snapshot、bull_bear_narrative、"
+                    "source_divergence、noise_warnings、claims。"
+                    "每个字段用 1-2 句中文，专有名词保持英文，数组最多 3 项。\n"
+                    f"Ticker: {state.ticker}\n"
+                    f"Language: {request.language}\n"
+                    "Compact source blocks:\n"
+                    f"{source_context}"
+                )
+            ),
+        ]
+    return [
+        SystemMessage(
+            content=(
+                "You are a market narrative and sentiment analyst. Use only the "
+                "prefetched sources. Return JSON only."
+            )
+        ),
+        HumanMessage(
+            content=(
+                f"{retry_notice}\n"
+                "Keep fields sentiment_header, narrative_snapshot, bull_bear_narrative, "
+                "source_divergence, noise_warnings, and claims. Use 1-2 sentences per "
+                "field, arrays with at most 3 items, and no markdown.\n"
+                f"Ticker: {state.ticker}\n"
+                f"Language: {request.language}\n"
+                "Compact source blocks:\n"
+                f"{source_context}"
+            )
+        ),
+    ]
 
 
 def _system_instruction(request: AgentRequest) -> str:
@@ -184,7 +300,12 @@ def _business_driver_instruction(
     )
 
 
-def _compact_sentiment_source_context(blocks: list[SentimentSourceBlock]) -> str:
+def _compact_sentiment_source_context(
+    blocks: list[SentimentSourceBlock],
+    *,
+    max_lines: int = _SENTIMENT_SOURCE_CONTEXT_MAX_LINES,
+    line_limit: int = _SENTIMENT_SOURCE_CONTEXT_LINE_LIMIT,
+) -> str:
     compacted: list[dict[str, Any]] = []
     for block in blocks:
         compacted.append(
@@ -193,19 +314,32 @@ def _compact_sentiment_source_context(blocks: list[SentimentSourceBlock]) -> str
                 "status": block.status.value,
                 "item_count": block.item_count,
                 "degraded_reason": block.degraded_reason or "",
-                "key_lines": _sentiment_key_lines(block),
+                "key_lines": _sentiment_key_lines(
+                    block,
+                    max_lines=max_lines,
+                    line_limit=line_limit,
+                ),
             }
         )
     return json.dumps(compacted, ensure_ascii=False, indent=2)
 
 
-def _sentiment_key_lines(block: SentimentSourceBlock) -> list[str]:
+def _sentiment_key_lines(
+    block: SentimentSourceBlock,
+    *,
+    max_lines: int = _SENTIMENT_SOURCE_CONTEXT_MAX_LINES,
+    line_limit: int = _SENTIMENT_SOURCE_CONTEXT_LINE_LIMIT,
+) -> list[str]:
     lines = [line.strip() for line in block.content.splitlines() if line.strip()]
-    if block.source == "stocktwits":
-        return lines[:8]
-    if block.source == "reddit":
-        return lines[:10]
-    return lines[:8]
+    return [_clip_sentiment_line(line, line_limit) for line in lines[:max_lines]]
+
+
+def _clip_sentiment_line(line: str, limit: int) -> str:
+    if len(line) <= limit:
+        return line
+    if limit <= 3:
+        return line[:limit]
+    return f"{line[: limit - 3].rstrip()}..."
 
 
 def _append_source_event(state: AgentState, block: SentimentSourceBlock) -> AgentState:

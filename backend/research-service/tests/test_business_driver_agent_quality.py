@@ -198,8 +198,14 @@ def test_sentiment_agent_recovers_json_when_provider_wraps_content(monkeypatch) 
 
 
 def test_sentiment_agent_sends_compact_source_context_to_final_llm(monkeypatch) -> None:
+    long_tail = "A" * 260
     long_lines = "\n".join(
-        f"[2026-06-12 · Yahoo Finance] NVDA headline {index}" for index in range(30)
+        (
+            f"[2026-06-12 · Yahoo Finance] NVDA headline {index} {long_tail}"
+            if index == 0
+            else f"[2026-06-12 · Yahoo Finance] NVDA headline {index}"
+        )
+        for index in range(30)
     )
     blocks = [
         SentimentSourceBlock(
@@ -240,9 +246,132 @@ def test_sentiment_agent_sends_compact_source_context_to_final_llm(monkeypatch) 
     prompt_text = captured_prompt[-1]
     assert '"key_lines"' in prompt_text
     assert "headline 0" in prompt_text
-    assert "headline 7" in prompt_text
-    assert "headline 8" not in prompt_text
+    assert "headline 4" in prompt_text
+    assert "headline 5" not in prompt_text
+    assert long_tail not in prompt_text
     assert "<source_content>" not in prompt_text
+
+
+def test_sentiment_agent_uses_compact_final_llm_budget(monkeypatch) -> None:
+    blocks = [
+        SentimentSourceBlock(
+            source="yahoo_news",
+            status=SentimentSourceStatus.OK,
+            item_count=1,
+            content="[2026-06-12 · Yahoo Finance] NVDA sentiment remains AI-led.",
+        )
+    ]
+
+    class BudgetRecordingLlm(_StaticSentimentLlm):
+        def __init__(self, updates: list[dict[str, Any]] | None = None) -> None:
+            self.updates = updates if updates is not None else []
+
+        def model_copy(self, update: dict[str, Any]) -> BudgetRecordingLlm:
+            self.updates.append(update)
+            return BudgetRecordingLlm(self.updates)
+
+    llm = BudgetRecordingLlm()
+    monkeypatch.setattr(
+        business_driver_agent,
+        "fetch_market_sentiment_sources",
+        lambda ticker: blocks,
+    )
+
+    run_business_driver_agent(
+        request=_make_request(ticker="NVDA", language="en"),
+        state=_make_state("en", ticker="NVDA"),
+        llm=llm,  # type: ignore[arg-type]
+    )
+
+    assert llm.updates
+    assert llm.updates[-1]["max_tokens"] == 1536
+    assert llm.updates[-1]["response_format"] == {"type": "json_object"}
+    assert llm.updates[-1]["timeout_seconds"] >= 75
+
+
+def test_sentiment_agent_retries_final_synthesis_with_shorter_prompt(monkeypatch) -> None:
+    blocks = [
+        SentimentSourceBlock(
+            source="yahoo_news",
+            status=SentimentSourceStatus.OK,
+            item_count=1,
+            content="[2026-06-12 · Yahoo Finance] AMD sentiment improved after earnings.",
+        ),
+        SentimentSourceBlock(
+            source="stocktwits",
+            status=SentimentSourceStatus.OK,
+            item_count=1,
+            content="Bullish: 1 (100%) · Bearish: 0 (0%)",
+        ),
+    ]
+    prompts: list[str] = []
+
+    class FlakyFinalLlm(_StaticSentimentLlm):
+        def model_copy(self, update: dict[str, Any]) -> FlakyFinalLlm:
+            return self
+
+        def invoke(self, payload: dict[str, Any]) -> AIMessage:
+            messages = payload["messages"] if isinstance(payload, dict) else payload
+            prompts.append("\n".join(str(message.content) for message in messages))
+            if len(prompts) == 1:
+                raise TimeoutError("The read operation timed out")
+            return AIMessage(
+                content=json.dumps(
+                    {
+                        "sentiment_header": {
+                            "overall_band": "Mildly Bullish",
+                            "overall_score": 6.4,
+                            "confidence": "medium",
+                            "summary": "Yahoo Finance and StockTwits both lean positive.",
+                        },
+                        "narrative_snapshot": {
+                            "title": "Positive post-earnings tone",
+                            "summary": "The retry synthesis recovered a concrete read.",
+                            "source_ids": [
+                                "sentiment:yahoo_news",
+                                "sentiment:stocktwits",
+                            ],
+                            "citation_status": "supported",
+                        },
+                        "bull_bear_narrative": {
+                            "bull_case": "Retail and news tone both improved.",
+                            "bear_case": "The source sample is still narrow.",
+                            "balanced_read": "Treat it as a medium-confidence sentiment read.",
+                        },
+                        "source_divergence": {
+                            "summary": "Available sources are aligned but limited.",
+                            "news_direction": "bullish",
+                            "stocktwits_direction": "bullish",
+                            "reddit_direction": "unavailable",
+                        },
+                        "noise_warnings": ["Reddit did not return usable data."],
+                        "claims": [],
+                    }
+                )
+            )
+
+    monkeypatch.setattr(
+        business_driver_agent,
+        "fetch_market_sentiment_sources",
+        lambda ticker: blocks,
+    )
+
+    payload, state = run_business_driver_agent(
+        request=_make_request(ticker="AMD", language="en"),
+        state=_make_state("en", ticker="AMD"),
+        llm=FlakyFinalLlm(),  # type: ignore[arg-type]
+    )
+
+    assert len(prompts) == 2
+    assert "previous attempt failed" in prompts[1].lower()
+    assert "smaller valid JSON object" in prompts[1]
+    assert len(prompts[1]) < len(prompts[0])
+    assert payload["narrative_snapshot"]["summary"] == (
+        "The retry synthesis recovered a concrete read."
+    )
+    assert state.tool_events[-1].summary == (
+        "Sentiment analyst synthesized the market narrative sections."
+    )
 
 
 def test_sentiment_agent_invokes_real_chat_model_with_message_list(monkeypatch) -> None:
@@ -255,6 +384,7 @@ def test_sentiment_agent_invokes_real_chat_model_with_message_list(monkeypatch) 
         )
     ]
     observed_payloads: list[dict[str, object]] = []
+    observed_timeouts: list[int] = []
 
     def transport(
         url: str,
@@ -263,6 +393,7 @@ def test_sentiment_agent_invokes_real_chat_model_with_message_list(monkeypatch) 
         timeout_seconds: int,
     ) -> dict[str, object]:
         observed_payloads.append(payload)
+        observed_timeouts.append(timeout_seconds)
         messages = payload.get("messages")
         assert isinstance(messages, list)
         assert [message.get("role") for message in messages if isinstance(message, dict)] == [
@@ -331,6 +462,8 @@ def test_sentiment_agent_invokes_real_chat_model_with_message_list(monkeypatch) 
     )
 
     assert observed_payloads
+    assert observed_payloads[-1]["max_tokens"] == 1536
+    assert observed_timeouts[-1] >= 75
     assert payload["sentiment_header"]["summary"] == (
         "Yahoo Finance frames TSLA demand as mixed."
     )
