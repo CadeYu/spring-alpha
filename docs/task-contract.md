@@ -4,12 +4,12 @@
 
 本文档定义 Spring Alpha 中期报告 contract 设计。
 
-当前短期方案已经让前端按任务类型渲染不同页面，但数据仍来自同一个通用 `AnalysisReport`。这会导致 Business Driver 和 Cash Flow 页面只能通过关键词筛选、字段复用和前端推断来组织内容。
+当前短期方案已经让前端按任务类型渲染不同页面，但数据仍来自同一个通用 `AnalysisReport`。这会导致 Market Narrative & Sentiment 和 Cash Flow 页面只能通过关键词筛选、字段复用和前端推断来组织内容。
 
 中期目标是把三个 MVP 任务升级为明确的 task-specific report contract：
 
 - Latest Earnings Readout：回答最新财报发生了什么。
-- Business Driver Deep Dive：回答业务表现由什么驱动，以及这些驱动是否可持续。
+- Market Narrative & Sentiment：回答市场新闻、StockTwits 和 Reddit 正在如何讨论这只股票。
 - Cash Flow & Capital Allocation：回答利润是否有现金支持，以及资本配置是否健康。
 
 ## 设计原则
@@ -149,51 +149,57 @@ Latest Earnings Readout
   -> Evidence Trail
 ```
 
-### Business Driver Deep Dive
+### Market Narrative & Sentiment
 
-这个任务不是财务 dashboard。它回答：
+这个任务不是财务 dashboard，也不是 SEC/RAG 业务驱动分析。它回答：
 
-- 产品、分部、地区、需求、定价、客户和战略动作分别发生了什么？
-- 哪些驱动是公司特有的，而不是泛泛宏观描述？
-- 这些驱动是可持续、混合、暂时，还是证据不足？
-- 下一季度应该跟踪什么？
+- Yahoo Finance news 当前如何描述这只股票？
+- StockTwits 散户情绪是 Bullish、Bearish、Mixed，还是样本太薄？
+- Reddit 讨论是否补充或反驳新闻/StockTwits 叙事？
+- 这些来源之间有什么分歧、噪音或样本限制？
 
 ```ts
-export interface BusinessDriverSections extends BaseTaskSections {
+export interface MarketSentimentSections extends BaseTaskSections {
   taskType: "business_driver_deep_dive";
-  driverThesis: {
-    headline: string;
-    durability: "durable" | "mixed" | "temporary" | "unclear";
+  sentimentHeader?: {
+    overallBand: "Bullish" | "Mildly Bullish" | "Neutral" | "Mixed" | "Mildly Bearish" | "Bearish";
+    overallScore: number;
+    confidence: "low" | "medium" | "high";
     summary: string;
-  };
-  driverMap: {
-    product: EvidenceBoundPoint[];
-    segment: EvidenceBoundPoint[];
-    geography: EvidenceBoundPoint[];
-    demand: EvidenceBoundPoint[];
-    pricing: EvidenceBoundPoint[];
-    customer: EvidenceBoundPoint[];
-    strategy: EvidenceBoundPoint[];
-  };
-  positiveSignals: EvidenceBoundPoint[];
-  negativeSignals: EvidenceBoundPoint[];
-  watchlist: string[];
+  } | null;
+  narrativeSnapshot?: EvidenceBoundPoint | null;
+  bullBearNarrative?: {
+    bullCase: string;
+    bearCase: string;
+    balancedRead: string;
+  } | null;
+  sourceDivergence?: {
+    summary: string;
+    newsDirection: string;
+    stocktwitsDirection: string;
+    redditDirection: string;
+  } | null;
+  noiseWarnings?: string[] | null;
+  driverThesis?: DriverThesis | null;
+  driverMap?: DriverMap | null;
 }
+
+export type BusinessDriverSections = MarketSentimentSections;
 ```
 
 前端主视图：
 
 ```text
-Business Driver Deep Dive
-  -> Driver Thesis
-  -> Driver Map
-  -> Positive Signals
-  -> Negative Signals
-  -> Watchlist
-  -> Driver Evidence
+Market Narrative & Sentiment
+  -> Sentiment Header
+  -> Narrative Snapshot
+  -> Bull/Bear Narrative
+  -> Source Divergence
+  -> Noise Warnings
+  -> Source Citations
 ```
 
-默认不展示完整 `KeyMetrics`、`Advanced Insights` 和通用 bull/bear 模块。必要财务数字应以内联 evidence-bound point 出现。
+默认不调用 SEC/RAG business-driver 工具，不把 revenue、segment 或 margin 伪装成市场情绪证据。旧缓存中的 `driverThesis` / `driverMap` 仅作为兼容渲染分支保留。
 
 ### Cash Flow & Capital Allocation
 
@@ -306,12 +312,12 @@ class EvidenceAwareReport(BaseModel):
 - 必须有至少 2 个 `keyTakeaways`。
 - `financialDashboard.metrics` 不应为空。
 
-### Business Driver 验证
+### Market Narrative & Sentiment 验证
 
-- 必须有 `driverThesis`。
-- `driverMap` 至少一个维度非空。
-- `watchlist` 至少 1 项。
-- 不应把纯财务指标列表当成 driver map。
+- 必须有 `sentimentHeader`。
+- 必须有 `narrativeSnapshot`、`bullBearNarrative` 和 `sourceDivergence`。
+- Yahoo Finance、StockTwits、Reddit 某个来源为空或不可用时，必须在 `noiseWarnings` 或 `sourceDivergence` 中说明。
+- 不应编造 Reddit、X、StockTwits 或新闻内容。
 
 ### Cash Flow 验证
 
@@ -332,7 +338,8 @@ class EvidenceAwareReport(BaseModel):
 第二阶段：
 
 - 删除前端关键词筛选 cash metrics 的主要路径。
-- Business Driver 页面只消费 `driverMap`、`positiveSignals`、`negativeSignals`、`watchlist`。
+- Market Narrative 页面优先消费 `sentimentHeader`、`narrativeSnapshot`、`bullBearNarrative`、`sourceDivergence`、`noiseWarnings`。
+- 旧 Business Driver 页面只在旧缓存报告中消费 `driverMap`、`driverThesis`。
 - Cash Flow 页面只消费 `cashQualityVerdict`、`cashMetrics`、`capitalAllocation`、`allocationDiscipline`、`redFlags`。
 
 第三阶段：
@@ -361,7 +368,7 @@ class EvidenceAwareReport(BaseModel):
 ## E2E 验收标准
 
 - Latest 页面使用 `taskSections.latestEarnings` 渲染完整 dashboard。
-- Business 页面使用 `taskSections.businessDriver` 渲染 Driver Thesis、Driver Map、Signals 和 Watchlist。
+- Market Narrative 页面使用 `taskSections.businessDriver` 渲染 Sentiment Header、Narrative Snapshot、Bull/Bear Narrative、Source Divergence 和 Noise Warnings。
 - Cash 页面使用 `taskSections.cashFlowCapitalAllocation` 渲染 Cash Quality、Cash Metrics、Capital Allocation 和 Red Flags。
 - 三个页面在首屏、主体模块、证据组织上明显不同。
 - 当 `taskSections` 缺失时，前端仍能显示 unavailable/degraded 状态或当前短期兼容页面。

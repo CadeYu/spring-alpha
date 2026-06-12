@@ -195,20 +195,41 @@ export interface LatestEarningsSections extends BaseTaskSections {
     watchNext?: WatchNextItem[] | null;
 }
 
-export interface BusinessDriverSections extends BaseTaskSections {
+export interface MarketSentimentSections extends BaseTaskSections {
     taskType: 'business_driver_deep_dive';
-    driverThesis: {
+    sentimentHeader?: {
+        overallBand: 'Bullish' | 'Mildly Bullish' | 'Neutral' | 'Mixed' | 'Mildly Bearish' | 'Bearish';
+        overallScore: number;
+        confidence: 'low' | 'medium' | 'high';
+        summary: string;
+    } | null;
+    narrativeSnapshot?: EvidenceBoundPoint | null;
+    bullBearNarrative?: {
+        bullCase: string;
+        bearCase: string;
+        balancedRead: string;
+    } | null;
+    sourceDivergence?: {
+        summary: string;
+        newsDirection: string;
+        stocktwitsDirection: string;
+        redditDirection: string;
+    } | null;
+    noiseWarnings?: string[] | null;
+    driverThesis?: {
         headline: string;
         durability: 'durable' | 'mixed' | 'temporary' | 'unclear';
         summary: string;
-    };
-    driverMap: {
+    } | null;
+    driverMap?: {
         revenueBridge?: EvidenceBoundPoint | null;
         segmentMomentum?: EvidenceBoundPoint | null;
         marginAndMix?: EvidenceBoundPoint | null;
         demandSignals?: EvidenceBoundPoint | null;
-    };
+    } | null;
 }
+
+export type BusinessDriverSections = MarketSentimentSections;
 
 export interface CashFlowCapitalAllocationSections extends BaseTaskSections {
     taskType: 'cash_flow_capital_allocation';
@@ -232,12 +253,12 @@ export interface CashFlowCapitalAllocationSections extends BaseTaskSections {
 export type TaskSpecificSections =
     | TaskSpecificSectionsEnvelope
     | LatestEarningsSections
-    | BusinessDriverSections
+    | MarketSentimentSections
     | CashFlowCapitalAllocationSections;
 
 export interface TaskSpecificSectionsEnvelope extends BaseTaskSections {
     latestEarnings?: LatestEarningsSections | null;
-    businessDriver?: BusinessDriverSections | null;
+    businessDriver?: MarketSentimentSections | null;
     cashFlowCapitalAllocation?: CashFlowCapitalAllocationSections | null;
 }
 

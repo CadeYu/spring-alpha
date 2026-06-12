@@ -4,7 +4,6 @@ from typing import Any
 
 from app.agents.llm_gateway import LlmClient, LlmRequest, LlmResponse
 from app.agents.report_synthesizer import (
-    _business_driver_prompt,
     _cash_flow_prompt,
     _company_profile_system_prompt,
     _company_profile_user_prompt,
@@ -84,11 +83,6 @@ def test_user_prompts_switch_to_chinese_for_zh_language() -> None:
         state=state,
         source_refs=source_refs,
     )
-    business_prompt = _business_driver_prompt(
-        request=_make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
-        state=state.model_copy(update={"task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE}),
-        source_refs=source_refs,
-    )
     cash_prompt = _cash_flow_prompt(
         request=_make_request(
             ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION,
@@ -99,10 +93,8 @@ def test_user_prompts_switch_to_chinese_for_zh_language() -> None:
     )
 
     assert "latest earnings task sections" not in latest_prompt.lower()
-    assert "business driver deep dive" not in business_prompt.lower()
     assert "cash flow and capital allocation" not in cash_prompt.lower()
     assert "请生成最新财报分析所需的 typed JSON。" in latest_prompt
-    assert "请生成业务驱动深挖所需的 typed task sections。" in business_prompt
     assert "请生成现金流与资本配置所需的 typed task sections。" in cash_prompt
     assert "Concise investor-facing company profile." not in latest_prompt
     assert "Short evidence-bound earnings verdict." not in latest_prompt
@@ -3039,81 +3031,70 @@ def test_business_driver_report_uses_four_evidence_bound_paragraphs() -> None:
     assert not hasattr(sections, "watchlist")
 
 
-def test_business_driver_prompt_includes_structured_facts_brief() -> None:
-    state = _make_state(language="zh").model_copy(
+def test_market_sentiment_payload_keeps_legacy_driver_sections_null() -> None:
+    state = _make_state(language="en").model_copy(
         update={
             "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
             "evidence_memory": EvidenceMemory(
-                facts={
-                    "company_name": "NVIDIA Corporation",
-                    "market_sector": "Technology",
-                    "market_industry": "Semiconductors",
-                    "business_summary": (
-                        "NVIDIA sells accelerated computing platforms for data center, "
-                        "gaming, professional visualization, and automotive markets."
-                    ),
-                    "metrics": [
-                        {
-                            "name": "revenue",
-                            "value": 44062000000,
-                            "unit": "USD",
-                            "period": "2026-04-27",
-                        },
-                        {
-                            "name": "gross margin",
-                            "value": 0.613,
-                            "unit": "percent",
-                            "period": "2026-04-27",
-                        },
-                        {
-                            "name": "operating income",
-                            "value": 26422000000,
-                            "unit": "USD",
-                            "period": "2026-04-27",
-                        },
-                    ],
-                },
-                metric_evidence=[
+                source_refs=[
                     {
-                        "metric": "revenue",
-                        "value": 44062000000,
-                        "unit": "USD",
-                        "fact_period": "2026-04-27",
-                        "source": "sec_companyfacts",
+                        "source_id": "sentiment:yahoo_news",
+                        "section": "yahoo_news",
+                        "snippet": "Yahoo Finance: AI demand remains the main NVDA narrative.",
+                        "citation_status": "supported",
                     },
                     {
-                        "metric": "gross margin",
-                        "value": 0.613,
-                        "unit": "percent",
-                        "fact_period": "2026-04-27",
-                        "source": "preloaded_financial_facts",
+                        "source_id": "sentiment:stocktwits",
+                        "section": "stocktwits",
+                        "snippet": "Bullish: 12 (60%) · Bearish: 2 (10%)",
+                        "citation_status": "supported",
                     },
-                ],
-                business_signals=[
-                    {
-                        "theme": "data center demand",
-                        "summary": "Data center demand remained the main growth signal.",
-                    }
                 ],
             ),
         }
     )
 
-    prompt = _business_driver_prompt(
-        request=_make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
-        state=state,
-        source_refs=[],
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "en"),
+        state,
+        {
+            "sentiment_header": {
+                "overall_band": "Mixed",
+                "overall_score": 5.4,
+                "confidence": "medium",
+                "summary": "News and retail sentiment diverge.",
+            },
+            "narrative_snapshot": {
+                "title": "AI demand narrative",
+                "summary": "Yahoo Finance and StockTwits both focus on AI demand.",
+                "source_ids": ["sentiment:yahoo_news", "sentiment:stocktwits"],
+                "citation_status": "supported",
+            },
+            "bull_bear_narrative": {
+                "bull_case": "Retail messages lean into AI demand.",
+                "bear_case": "News coverage remains valuation-sensitive.",
+                "balanced_read": "Treat retail enthusiasm as sentiment, not proof.",
+            },
+            "source_divergence": {
+                "summary": "News is mixed while StockTwits is more bullish.",
+                "news_direction": "mixed",
+                "stocktwits_direction": "bullish",
+                "reddit_direction": "thin",
+            },
+            "noise_warnings": ["Reddit sample is thin."],
+            "claims": [],
+        },
     )
 
-    assert "Business driver facts brief:" in prompt
-    assert "Financial facts brief:" in prompt
-    assert "NVIDIA Corporation" in prompt
-    assert "Technology" in prompt
-    assert "Semiconductors" in prompt
-    assert "revenue: $44.1B" in prompt
-    assert "gross margin: 61.3%" in prompt
-    assert "Data center demand remained the main growth signal." in prompt
-    assert "如果 segment 或 RAG 证据不完整" in prompt
+    sections = report.task_sections
+    assert sections.sentiment_header is not None
+    assert sections.driver_thesis is None
+    assert sections.driver_map is None
+    assert sections.coverage.missing_sections == []
+    assert report.sections == {
+        "summary": "News and retail sentiment diverge.",
+        "synthesis": "llm",
+    }
 
 
 def test_business_driver_placeholder_is_recovered_from_structured_facts() -> None:
@@ -6503,6 +6484,61 @@ def test_cash_flow_verdict_normalization_overrides_conflicting_status() -> None:
         )["cash_quality_verdict"]["earnings_backed_by_cash"]
         == "mixed"
     )
+
+
+def test_market_sentiment_payload_builds_typed_sections() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={"task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE}
+    )
+    request = _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh")
+    payload = {
+        "sentiment_header": {
+            "overall_band": "Mixed",
+            "overall_score": 5.4,
+            "confidence": "medium",
+            "summary": "新闻偏谨慎，但 StockTwits 仍然偏多，市场叙事存在分歧。",
+        },
+        "narrative_snapshot": {
+            "title": "AI 需求仍是核心叙事",
+            "summary": (
+                "Yahoo Finance headlines keep AI demand in focus. "
+                "StockTwits posts lean bullish, while Reddit discussion is thinner. "
+                "This means the current read should treat retail enthusiasm as a "
+                "sentiment signal, not as fundamental proof."
+            ),
+            "source_ids": ["sentiment:stocktwits"],
+            "citation_status": "supported",
+        },
+        "bull_bear_narrative": {
+            "bull_case": "多头认为 AI 需求和产品周期仍能支撑估值。",
+            "bear_case": "空头担心估值已经提前反映乐观预期。",
+            "balanced_read": "情绪偏积极，但需要财报继续验证。",
+        },
+        "source_divergence": {
+            "summary": "Yahoo Finance 和 StockTwits 的方向不同，Reddit 样本不足。",
+            "news_direction": "mixed",
+            "stocktwits_direction": "bullish",
+            "reddit_direction": "thin",
+        },
+        "noise_warnings": [
+            "Reddit 样本不足，本次判断主要来自新闻和 StockTwits。",
+        ],
+        "claims": [],
+    }
+
+    report = build_business_driver_report_from_payload(request, state, payload)
+    sections = report.task_sections
+
+    assert sections.sentiment_header.overall_band == "Mixed"
+    assert sections.sentiment_header.overall_score == 5.4
+    assert sections.sentiment_header.confidence == "medium"
+    assert sections.narrative_snapshot.summary.startswith("Yahoo Finance")
+    assert sections.bull_bear_narrative.bull_case.startswith("多头认为")
+    assert sections.source_divergence.stocktwits_direction == "bullish"
+    assert sections.noise_warnings == [
+        "Reddit 样本不足，本次判断主要来自新闻和 StockTwits。"
+    ]
+    assert report.sections["summary"] == "新闻偏谨慎，但 StockTwits 仍然偏多，市场叙事存在分歧。"
 
 
 def _make_request(task_type: ResearchTaskType, language: str) -> Any:

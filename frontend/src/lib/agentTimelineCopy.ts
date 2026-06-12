@@ -3,7 +3,8 @@ export type TimelineLocale = "zh" | "en";
 const AGENT_NAME_TRANSLATIONS: Record<string, string> = {
   "Earnings agent": "财报分析师",
   "Earnings Analyst": "财报分析师",
-  "Business driver agent": "业务分析师",
+  "Business driver agent": "市场情绪分析师",
+  "Sentiment analyst": "市场情绪分析师",
   "Business Analyst": "业务分析师",
   "Cash flow agent": "现金流分析师",
   "Cash Flow Analyst": "现金流分析师",
@@ -27,6 +28,22 @@ const BODY_TRANSLATIONS: Array<{ pattern: RegExp; text: string }> = [
   {
     pattern: /^Collected company facts for business drivers\.$/i,
     text: "已收集 business drivers 的 company facts。",
+  },
+  {
+    pattern: /^Collected Yahoo Finance news for market sentiment\.$/i,
+    text: "已收集 Yahoo Finance 新闻用于市场情绪分析。",
+  },
+  {
+    pattern: /^Collected StockTwits messages for retail sentiment\.$/i,
+    text: "已收集 StockTwits 消息用于散户情绪分析。",
+  },
+  {
+    pattern: /^Collected Reddit discussion for community sentiment\.$/i,
+    text: "已收集 Reddit 讨论用于社区情绪分析。",
+  },
+  {
+    pattern: /^Sentiment analyst synthesized the market narrative sections\.$/i,
+    text: "市场情绪分析师已生成市场叙事报告。",
   },
   {
     pattern: /^Searched filing sections for business drivers\.$/i,

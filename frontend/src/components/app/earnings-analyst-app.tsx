@@ -33,7 +33,7 @@ import {
 import {
   AnalysisReport,
   AnalysisMetadata,
-  BusinessDriverSections,
+  MarketSentimentSections,
   CashFlowCapitalAllocationSections,
   EvidenceBoundPoint,
   EvidenceBoundMetric,
@@ -304,10 +304,10 @@ const RESEARCH_TASKS = [
   },
   {
     id: "business_driver_deep_dive",
-    title: "Business Driver Deep Dive",
-    titleZh: "业务驱动深挖",
-    description: "Products, segments, demand",
-    descriptionZh: "产品、分部、需求",
+    title: "Market Narrative & Sentiment",
+    titleZh: "市场叙事与情绪",
+    description: "News, StockTwits, Reddit",
+    descriptionZh: "新闻、StockTwits、Reddit",
     Icon: BriefcaseBusiness,
   },
   {
@@ -1790,6 +1790,13 @@ function agentNameFromTaskTitle(taskTitle: string | undefined, isZh: boolean) {
   if (/cash/i.test(taskTitle) || taskTitle.includes("现金")) {
     return isZh ? "现金流分析师" : "Cash Flow Analyst";
   }
+  if (
+    /sentiment|narrative/i.test(taskTitle) ||
+    taskTitle.includes("情绪") ||
+    taskTitle.includes("叙事")
+  ) {
+    return isZh ? "市场情绪分析师" : "Sentiment Analyst";
+  }
   if (/business/i.test(taskTitle) || taskTitle.includes("业务")) {
     return isZh ? "业务分析师" : "Business Analyst";
   }
@@ -2281,7 +2288,7 @@ function AgentReportPanel({
       </div>
 
       {task.id === "business_driver_deep_dive" ? (
-        <BusinessDriverReportSections report={report} lang={lang} />
+        <MarketSentimentReportSections report={report} lang={lang} />
       ) : task.id === "cash_flow_capital_allocation" ? (
         <CashFlowReportSections report={report} lang={lang} />
       ) : (
@@ -2328,6 +2335,9 @@ function analysisRunPhaseCopy(phase: AnalysisRunPhase, isZh: boolean) {
 function missingTaskSectionsTitle(taskTitle: string, isZh: boolean) {
   if (isZh) {
     if (taskTitle === "Latest Earnings Readout") return "最新财报报告缺少 typed sections";
+    if (taskTitle === "Market Narrative & Sentiment") {
+      return "市场叙事与情绪报告缺少 typed sections";
+    }
     if (taskTitle === "Business Driver Deep Dive") return "业务驱动报告缺少 typed sections";
     return "现金流报告缺少 typed sections";
   }
@@ -2499,7 +2509,7 @@ function formatLatestVerdictStatus(
   return `${verdictLabel} · ${confidenceLabel}`;
 }
 
-function BusinessDriverReportSections({
+function MarketSentimentReportSections({
   report,
   lang,
 }: {
@@ -2508,15 +2518,15 @@ function BusinessDriverReportSections({
 }) {
   const typedSections =
     report.taskSections?.taskType === "business_driver_deep_dive"
-      ? resolveBusinessDriverSections(report.taskSections)
+      ? resolveMarketSentimentSections(report.taskSections)
       : null;
 
   if (typedSections) {
-    return <TypedBusinessDriverSections sections={typedSections} lang={lang} />;
+    return <TypedMarketSentimentSections sections={typedSections} lang={lang} />;
   }
 
   return (
-    <MissingTaskSectionsCard lang={lang} taskTitle="Business Driver Deep Dive" />
+    <MissingTaskSectionsCard lang={lang} taskTitle="Market Narrative & Sentiment" />
   );
 }
 
@@ -2544,11 +2554,108 @@ function CashFlowReportSections({
   );
 }
 
-function TypedBusinessDriverSections({
+function TypedMarketSentimentSections({
   sections,
   lang,
 }: {
-  sections: BusinessDriverSections;
+  sections: MarketSentimentSections;
+  lang: string;
+}) {
+  const isZh = lang === "zh";
+  if (!sections.sentimentHeader) {
+    return <LegacyBusinessDriverSections sections={sections} lang={lang} />;
+  }
+  const header = sections.sentimentHeader;
+  const sourceDivergence = sections.sourceDivergence;
+  const bullBear = sections.bullBearNarrative;
+  const warnings = sections.noiseWarnings ?? [];
+
+  return (
+    <>
+      <div
+        id="pdf-section-summary-business-driver-deep-dive"
+        data-pdf-section="summary"
+        className="space-y-6"
+      >
+        <ResearchViewCard
+          lang={lang}
+          title={isZh ? "市场叙事与情绪" : "Market Narrative & Sentiment"}
+          description={
+            isZh
+              ? "基于 Yahoo Finance、StockTwits 和 Reddit，判断市场正在如何讨论这个 ticker。"
+              : "Reads Yahoo Finance, StockTwits, and Reddit to explain how the market is talking about this ticker."
+          }
+          labels={[
+            isZh ? "情绪温度" : "Sentiment",
+            isZh ? "主线叙事" : "Narrative",
+            isZh ? "多空分歧" : "Bull vs Bear",
+            isZh ? "来源差异" : "Source Divergence",
+          ]}
+        />
+        <AnalystVerdictCard
+          eyebrow={isZh ? "情绪判断" : "Sentiment Read"}
+          status={header.confidence}
+          summary={`${header.overallBand} ${header.overallScore.toFixed(1)}/10. ${header.summary}`}
+        />
+      </div>
+
+      <Card className="bg-slate-900 border-slate-800">
+        <CardHeader className="border-b border-slate-800">
+          <CardTitle className="text-emerald-400">
+            {isZh ? "市场叙事分析" : "Market Narrative"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5 p-6">
+          <NarrativeParagraphBlock
+            label={isZh ? "主线叙事" : "Narrative Snapshot"}
+            text={sections.narrativeSnapshot?.summary}
+            emptyText={isZh ? "当前叙事样本不足。" : "Current narrative sample is thin."}
+          />
+          <NarrativeParagraphBlock
+            label={isZh ? "多头叙事" : "Bull Case"}
+            text={bullBear?.bullCase}
+            emptyText={isZh ? "多头叙事样本不足。" : "Bullish narrative sample is thin."}
+          />
+          <NarrativeParagraphBlock
+            label={isZh ? "空头叙事" : "Bear Case"}
+            text={bullBear?.bearCase}
+            emptyText={isZh ? "空头叙事样本不足。" : "Bearish narrative sample is thin."}
+          />
+          <NarrativeParagraphBlock
+            label={isZh ? "平衡判断" : "Balanced Read"}
+            text={bullBear?.balancedRead}
+            emptyText={isZh ? "暂时没有足够交叉验证。" : "Cross-source confirmation is thin."}
+          />
+          <NarrativeParagraphBlock
+            label={isZh ? "来源差异" : "Source Divergence"}
+            text={sourceDivergence?.summary}
+            emptyText={isZh ? "来源差异暂不明显。" : "Source divergence is not clear yet."}
+          />
+          {warnings.length > 0 ? (
+            <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-4">
+              <p className="text-sm font-semibold text-amber-200">
+                {isZh ? "噪音与样本限制" : "Noise & Sample Limits"}
+              </p>
+              <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-100/80">
+                {warnings.map((warning) => (
+                  <li key={warning} className="min-w-0 [overflow-wrap:anywhere]">
+                    {warning}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+function LegacyBusinessDriverSections({
+  sections,
+  lang,
+}: {
+  sections: MarketSentimentSections;
   lang: string;
 }) {
   const isZh = lang === "zh";
@@ -2630,6 +2737,27 @@ function TypedBusinessDriverSections({
         </CardContent>
       </Card>
     </>
+  );
+}
+
+function NarrativeParagraphBlock({
+  label,
+  text,
+  emptyText,
+}: {
+  label: string;
+  text?: string | null;
+  emptyText: string;
+}) {
+  return (
+    <section className="border-b border-slate-800/80 pb-5 last:border-b-0 last:pb-0">
+      <p className="text-sm font-semibold uppercase tracking-[0.08em] text-emerald-300">
+        {label}
+      </p>
+      <p className="mt-2 min-w-0 [overflow-wrap:anywhere] text-sm leading-7 text-slate-400">
+        {text?.trim() || emptyText}
+      </p>
+    </section>
   );
 }
 
@@ -2739,11 +2867,11 @@ function TypedCashFlowSections({
   );
 }
 
-function resolveBusinessDriverSections(
+function resolveMarketSentimentSections(
   taskSections: NonNullable<AnalysisReport["taskSections"]>,
-): BusinessDriverSections | null {
+): MarketSentimentSections | null {
   const envelope = taskSections as {
-    businessDriver?: BusinessDriverSections | null;
+    businessDriver?: MarketSentimentSections | null;
   };
   if (envelope.businessDriver) {
     return withTaskSectionEnvelopeFields(
@@ -2752,8 +2880,13 @@ function resolveBusinessDriverSections(
       "business_driver_deep_dive",
     );
   }
-  if ("driverThesis" in taskSections || "driverMap" in taskSections) {
-    return taskSections as BusinessDriverSections;
+  if (
+    "sentimentHeader" in taskSections ||
+    "narrativeSnapshot" in taskSections ||
+    "driverThesis" in taskSections ||
+    "driverMap" in taskSections
+  ) {
+    return taskSections as MarketSentimentSections;
   }
   return null;
 }
@@ -2805,7 +2938,7 @@ function resolveCashFlowSections(
 function withTaskSectionEnvelopeFields<
   TSection extends
     | LatestEarningsSections
-    | BusinessDriverSections
+    | MarketSentimentSections
     | CashFlowCapitalAllocationSections,
 >(
   section: TSection,
@@ -2820,7 +2953,7 @@ function withTaskSectionEnvelopeFields<
   };
 }
 
-function emptyDriverMap(): BusinessDriverSections["driverMap"] {
+function emptyDriverMap(): MarketSentimentSections["driverMap"] {
   return {
     revenueBridge: null,
     segmentMomentum: null,

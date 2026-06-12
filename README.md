@@ -23,7 +23,7 @@ Spring Alpha 将 **Spring Boot**, **Next.js**, **Python FastAPI Research Service
 
 ## 最新状态
 
-- 三条核心研究链路已经完成：Latest Earnings Readout、Business Driver Deep Dive、Cash Flow & Capital Allocation。
+- 三条核心研究链路已经完成：Latest Earnings Readout、Market Narrative & Sentiment、Cash Flow & Capital Allocation。
 - Agent runtime 已升级为 LangChain/LangGraph 风格的 tool-calling graph，不再依赖旧 deterministic report fallback。
 - RAG 已收缩为可控 tool：SEC filing evidence 与 SEC/Yahoo metric facts 会被组装成 EvidencePack 后交给 LLM。
 - 前端已改为 ticker-first 工作台：默认展示 K 线图，用户点击左侧不同 Agent 报告后切换内容。
@@ -59,17 +59,17 @@ Spring Alpha 的设计借鉴真实投研团队的分工，但不做 debate，也
 - What Changed
 - Watch Next
 
-#### 2. Business Driver Deep Dive
+#### 2. Market Narrative & Sentiment
 
-回答“业务表现由什么驱动，以及这些驱动是否可持续”。它把证据拆到 product、segment、geography、demand、pricing、customer、strategy 等视角。
+回答“市场现在如何讨论这只股票，以及情绪和叙事是否一致”。它预抓取 Yahoo Finance news、StockTwits messages 和 Reddit discussion，然后比较新闻、散户交易情绪与社区讨论之间的差异。
 
 主要输出：
 
-- Thesis
-- Driver Map
-- Impact Table
-- Signals
-- Watchlist
+- Sentiment Header
+- Narrative Snapshot
+- Bull/Bear Narrative
+- Source Divergence
+- Noise Warnings
 
 #### 3. Cash Flow & Capital Allocation
 

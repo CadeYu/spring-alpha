@@ -137,11 +137,11 @@ def test_research_workflow_logs_stage_summary(caplog, monkeypatch) -> None:
     )
 
 
-def test_business_driver_result_suppresses_noisy_retrieval_records(monkeypatch) -> None:
+def test_market_sentiment_result_preserves_source_fetch_records(monkeypatch) -> None:
     workflow = ResearchAgentWorkflow(llm_client=_make_client())
     request = AgentRequest(
         run_id="run_1",
-        ticker="BBY",
+        ticker="NVDA",
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
         language="zh",
         llm_provider=LlmProvider.SILICONFLOW,
@@ -156,36 +156,22 @@ def test_business_driver_result_suppresses_noisy_retrieval_records(monkeypatch) 
         task_policy=TaskPolicy(
             task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
             allowed_tools=[
-                "search_filing_sections",
-                "search_metric_evidence",
-                "get_business_signals",
+                "get_market_context",
             ],
-            required_outputs=["driverThesis", "driverMap"],
+            required_outputs=[
+                "sentimentHeader",
+                "narrativeSnapshot",
+                "bullBearNarrative",
+                "sourceDivergence",
+            ],
         ),
         retrieval_records=[
             {
-                "tool_name": "search_filing_sections",
+                "tool_name": "fetch_stocktwits",
                 "status": "ok",
-                "retrieved_nodes": [
-                    {
-                        "node_id": "node_table",
-                        "text": (
-                            "23 Table of Contents International segment revenue mix "
-                            "percentages and comparable sales percentage changes by "
-                            "revenue category were as follows: | | | Computing and Mobile "
-                            "Phones | Consumer Electronics | Appliances | Entertainment |"
-                        ),
-                        "metadata": {"section": "Table of Contents"},
-                    },
-                    {
-                        "node_id": "node_clean",
-                        "text": (
-                            "Comparable sales improved as customer demand stabilized "
-                            "across computing and services categories."
-                        ),
-                        "metadata": {"section": "MD&A"},
-                    },
-                ],
+                "source": "stocktwits",
+                "item_count": 4,
+                "source_ref_count": 1,
             }
         ],
     )
@@ -201,19 +187,9 @@ def test_business_driver_result_suppresses_noisy_retrieval_records(monkeypatch) 
     serialized = json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
     assert result.final_report is not None
     assert result.final_report["retrieval_records"] == result.retrieval_records
-    assert result.retrieval_records[0]["retrieved_nodes"] == [
-        {
-            "node_id": "node_clean",
-            "text": (
-                "Comparable sales improved as customer demand stabilized "
-                "across computing and services categories."
-            ),
-            "metadata": {"section": "MD&A"},
-        }
-    ]
-    assert "Comparable sales improved" in serialized
-    assert "Table of Contents" not in serialized
-    assert "| | |" not in serialized
+    assert result.retrieval_records[0]["tool_name"] == "fetch_stocktwits"
+    assert result.retrieval_records[0]["source"] == "stocktwits"
+    assert "fetch_stocktwits" in serialized
 
 
 def test_cash_flow_timeout_fallback_preserves_typed_sections_from_evidence() -> None:
@@ -820,7 +796,10 @@ def test_cash_flow_zh_fallback_localizes_missing_metric_boundaries() -> None:
                 {
                     "source_id": "src_capex",
                     "section": "SEC companyfacts",
-                    "snippet": "SEC companyfacts concept PaymentsToAcquirePropertyPlantAndEquipment.",
+                    "snippet": (
+                        "SEC companyfacts concept "
+                        "PaymentsToAcquirePropertyPlantAndEquipment."
+                    ),
                     "citation_status": "supported",
                 },
             ],
@@ -1103,45 +1082,53 @@ def test_fallback_summary_hides_internal_missing_metric_markers() -> None:
     assert "收入：$111.2B" in report.sections["summary"]
 
 
-def test_business_driver_timeout_fallback_uses_paragraph_sections() -> None:
+
+def test_market_sentiment_timeout_fallback_uses_sentiment_sections_only() -> None:
     request = AgentRequest(
         run_id="run_1",
-        ticker="AAPL",
+        ticker="NVDA",
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="en",
+        language="zh",
     )
     state = AgentState(
         run_id="run_1",
-        ticker="AAPL",
+        ticker="NVDA",
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="en",
+        language="zh",
         task_policy=TaskPolicy(
             task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-            allowed_tools=["get_company_facts", "search_metric_evidence"],
-            required_outputs=["driverThesis"],
+            allowed_tools=["get_market_context"],
+            required_outputs=[
+                "sentimentHeader",
+                "narrativeSnapshot",
+                "bullBearNarrative",
+                "sourceDivergence",
+            ],
         ),
         evidence_memory=EvidenceMemory(
-            metric_evidence=[
-                {
-                    "source": "sec_companyfacts",
-                    "metric": "revenue",
-                    "value": 111184000000,
-                    "unit": "USD",
-                    "fact_period": "2026-Q2",
-                    "source_id": "src_1",
-                }
-            ],
             source_refs=[
                 {
-                    "source_id": "src_1",
-                    "section": "SEC companyfacts",
-                    "snippet": "Revenue was $111.2B in the quarter.",
+                    "source_id": "sentiment:yahoo_news",
+                    "section": "yahoo_news",
+                    "snippet": "Yahoo Finance: AI demand remains the main market narrative.",
                     "citation_status": "supported",
                 },
                 {
-                    "source_id": "src_2",
-                    "section": "Business overview",
-                    "snippet": "Services and installed base strength supported demand.",
+                    "source_id": "sentiment:stocktwits",
+                    "section": "stocktwits",
+                    "snippet": "Bullish: 8 (80%) · Bearish: 2 (20%).",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_revenue",
+                    "section": "SEC companyfacts",
+                    "snippet": "Revenue was $26.0B in the quarter.",
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "src_table",
+                    "section": "Table of Contents",
+                    "snippet": "| | | 6,402 | | | 15,509 | ---|---",
                     "citation_status": "supported",
                 },
             ],
@@ -1151,378 +1138,33 @@ def test_business_driver_timeout_fallback_uses_paragraph_sections() -> None:
     report = _fallback_report_from_state(
         request,
         state,
-        reason="Business driver agent final synthesis failed: The read operation timed out",
+        reason="Sentiment analyst final synthesis failed: The read operation timed out",
     )
 
     assert report is not None
     sections = report.task_sections
     assert sections.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE
-    assert sections.driver_map.revenue_bridge is not None
-    assert sections.driver_map.revenue_bridge.title == "Revenue bridge evidence"
-    assert sections.driver_map.segment_momentum is not None
-    assert sections.driver_map.segment_momentum.title == "Segment momentum evidence"
-    assert sections.driver_map.margin_and_mix is not None
-    assert sections.driver_map.margin_and_mix.title == "Margin and mix evidence"
-    assert sections.driver_map.demand_signals is not None
-    assert sections.driver_map.demand_signals.title == "Demand signal evidence"
-    assert "Revenue was $111.2B" in sections.driver_map.revenue_bridge.summary
-    assert "Services and installed base" in sections.driver_map.demand_signals.summary
-    assert "Review the final LLM synthesis" not in report.model_dump_json()
-    assert "watchlist" not in report.model_dump_json()
-    assert "positive_signals" not in report.model_dump_json()
-
-
-def test_business_driver_timeout_fallback_builds_distinct_evidence_paragraphs() -> None:
-    request = AgentRequest(
-        run_id="run_1",
-        ticker="AMD",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-    )
-    state = AgentState(
-        run_id="run_1",
-        ticker="AMD",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-        task_policy=TaskPolicy(
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-            allowed_tools=["get_company_facts", "search_metric_evidence"],
-            required_outputs=["driverThesis"],
-        ),
-        evidence_memory=EvidenceMemory(
-            metric_evidence=[
-                {
-                    "source": "sec_companyfacts",
-                    "metric": "revenue",
-                    "value": 7438000000,
-                    "unit": "USD",
-                    "fact_period": "2026-Q1",
-                    "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
-                    "source_id": "src_revenue",
-                },
-                {
-                    "source": "sec_companyfacts",
-                    "metric": "gross margin",
-                    "value": 0.52,
-                    "unit": "pure",
-                    "fact_period": "2026-Q1",
-                    "concept": "GrossProfitMargin",
-                    "source_id": "src_margin",
-                },
-            ],
-            business_signals=[
-                {
-                    "signal_type": "segment",
-                    "summary": "Data Center segment revenue increased as EPYC demand improved.",
-                    "source_id": "src_segment",
-                    "citation_status": "supported",
-                },
-                {
-                    "signal_type": "demand",
-                    "summary": "Customer demand for AI accelerators remained strong.",
-                    "source_id": "src_demand",
-                    "citation_status": "supported",
-                },
-            ],
-            source_refs=[
-                {
-                    "source_id": "src_revenue",
-                    "section": "SEC companyfacts",
-                    "snippet": "Revenue was $7.4B in the quarter.",
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_segment",
-                    "section": "Segment Information",
-                    "snippet": "Data Center segment revenue increased as EPYC demand improved.",
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_margin",
-                    "section": "Results of Operations",
-                    "snippet": "Gross margin expanded because product mix improved.",
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_demand",
-                    "section": "MD&A",
-                    "snippet": "Customer demand for AI accelerators remained strong.",
-                    "citation_status": "supported",
-                },
-            ],
-        ),
-    )
-
-    report = _fallback_report_from_state(
-        request,
-        state,
-        reason="Business driver agent final synthesis failed: The read operation timed out",
-    )
-
-    assert report is not None
-    sections = report.task_sections
-    assert sections.driver_thesis.summary.startswith("AMD 的业务驱动结论")
-    assert sections.driver_map.revenue_bridge is not None
-    assert "收入: $7.4B" in sections.driver_map.revenue_bridge.summary
-    assert "本季度收入为 $7.4B" in sections.driver_map.revenue_bridge.summary
-    assert sections.driver_map.segment_momentum is not None
-    assert "数据中心分部收入增长" in sections.driver_map.segment_momentum.summary
-    assert sections.driver_map.margin_and_mix is not None
-    assert "产品组合改善推动毛利率扩张" in sections.driver_map.margin_and_mix.summary
-    assert sections.driver_map.demand_signals is not None
-    assert "AI 加速器客户需求保持强劲" in sections.driver_map.demand_signals.summary
+    assert sections.sentiment_header is not None
+    assert sections.sentiment_header.overall_band == "Mixed"
+    assert sections.sentiment_header.confidence == "low"
+    assert sections.narrative_snapshot is not None
+    assert sections.bull_bear_narrative is not None
+    assert sections.source_divergence is not None
+    assert sections.source_divergence.news_direction == "mixed"
+    assert sections.source_divergence.stocktwits_direction == "mixed"
+    assert sections.source_divergence.reddit_direction == "unavailable"
+    assert sections.driver_thesis is None
+    assert sections.driver_map is None
     serialized = report.model_dump_json()
-    assert "not fully synthesized" not in serialized
-    assert "final LLM" not in serialized
+    assert "市场叙事与情绪分析未完成最终 LLM 合成" in serialized
+    assert "sentiment:yahoo_news" in serialized
+    assert "sentiment:stocktwits" in serialized
+    assert "Revenue was $26.0B" not in serialized
+    assert "Table of Contents" not in serialized
+    assert "---|---" not in serialized
 
 
-def test_business_driver_zh_fallback_hides_lens_and_profile_internals() -> None:
-    request = AgentRequest(
-        run_id="run_1",
-        ticker="JPM",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-    )
-    state = AgentState(
-        run_id="run_1",
-        ticker="JPM",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-        task_policy=TaskPolicy(
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-            allowed_tools=["get_company_facts", "search_metric_evidence"],
-            required_outputs=["driverThesis"],
-        ),
-        evidence_memory=EvidenceMemory(
-            facts={
-                "profile": {
-                    "company_name": "JPMORGAN CHASE & CO",
-                    "sector": "Financial Services",
-                    "industry": "Banks - Diversified",
-                    "security_type": "EQUITY",
-                    "business_summary": (
-                        "JPMorgan Chase & Co. operates as a bank and financial holding "
-                        "company in the United States and internationally."
-                    ),
-                }
-            },
-            metric_evidence=[
-                {
-                    "source": "yfinance",
-                    "metric": "net income",
-                    "value": 14640000000,
-                    "unit": "USD",
-                    "fact_period": "2026-Q1",
-                    "source_id": "src_income",
-                }
-            ],
-            source_refs=[
-                {
-                    "source_id": "src_profile",
-                    "section": "profile",
-                    "snippet": (
-                        "profile: company_name=JPMORGAN CHASE & CO, sector=Financial "
-                        "Services, industry=Banks - Diversified, security_type=EQUITY, "
-                        "business_summary=JPMorgan Chase & Co. operates as a bank and "
-                        "financial holding company in the United States."
-                    ),
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_income",
-                    "section": "structured snapshot",
-                    "snippet": "Net income was $14.6B.",
-                    "citation_status": "supported",
-                },
-            ],
-        ),
-    )
-
-    report = _fallback_report_from_state(
-        request,
-        state,
-        reason="Business driver agent final synthesis failed: The read operation timed out",
-    )
-
-    assert report is not None
-    serialized = report.model_dump_json()
-    for leaked in [
-        "revenue bridge",
-        "segment momentum",
-        "margin and mix",
-        "demand signals",
-        "company_name=",
-        "business_summary=",
-        "security_type=",
-        "operates as a",
-    ]:
-        assert leaked not in serialized
-    assert "收入桥接" in serialized
-    assert "分部动能" in serialized
-    assert "利润率与组合" in serialized
-    assert "需求信号" in serialized
-
-
-def test_business_driver_zh_fallback_summarizes_english_segment_profile_snippets() -> None:
-    request = AgentRequest(
-        run_id="run_1",
-        ticker="NVDA",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-    )
-    state = AgentState(
-        run_id="run_1",
-        ticker="NVDA",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-        task_policy=TaskPolicy(
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-            allowed_tools=["get_company_facts", "search_metric_evidence"],
-            required_outputs=["driverThesis"],
-        ),
-        evidence_memory=EvidenceMemory(
-            source_refs=[
-                {
-                    "source_id": "src_segment",
-                    "section": "segment disclosure",
-                    "snippet": (
-                        "The company operates through two segments: Compute & Networking "
-                        "and Graphics. The Compute & Networking segment provides data "
-                        "center accelerated computing platforms and networking solutions."
-                    ),
-                    "citation_status": "supported",
-                }
-            ],
-        ),
-    )
-
-    report = _fallback_report_from_state(
-        request,
-        state,
-        reason="Business driver agent final synthesis failed: The read operation timed out",
-    )
-
-    assert report is not None
-    serialized = report.model_dump_json()
-    for leaked in [
-        "The company operates through two segments",
-        "The Compute & Networking segment provides",
-        "accelerated computing platforms",
-        "networking solutions",
-        "已检索到",
-    ]:
-        assert leaked not in serialized
-    assert "分部或业务线披露" in serialized
-    assert "分部动能" in serialized
-
-
-def test_business_driver_zh_fallback_summarizes_english_profile_without_internal_copy() -> None:
-    request = AgentRequest(
-        run_id="run_1",
-        ticker="CCEP",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-    )
-    state = AgentState(
-        run_id="run_1",
-        ticker="CCEP",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-        task_policy=TaskPolicy(
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-            allowed_tools=["get_company_facts", "search_metric_evidence"],
-            required_outputs=["driverThesis"],
-        ),
-        evidence_memory=EvidenceMemory(
-            source_refs=[
-                {
-                    "source_id": "src_profile",
-                    "section": "business summary",
-                    "snippet": (
-                        "Coca-Cola Europacific Partners operates as a bottling partner "
-                        "and provides non-alcoholic ready-to-drink beverages to retail "
-                        "customers across Europe and the Asia Pacific region."
-                    ),
-                    "citation_status": "supported",
-                }
-            ],
-        ),
-    )
-
-    report = _fallback_report_from_state(
-        request,
-        state,
-        reason="Business driver agent final synthesis failed: The read operation timed out",
-    )
-
-    assert report is not None
-    serialized = report.model_dump_json()
-    for leaked in [
-        "Coca-Cola Europacific Partners operates as",
-        "provides non-alcoholic",
-        "已检索到",
-        "英文业务摘要",
-        "检索",
-    ]:
-        assert leaked not in serialized
-    assert "产品" in serialized
-    assert "客户" in serialized
-    assert "市场暴露" in serialized
-
-
-def test_business_driver_zh_fallback_summarizes_engages_in_profile_snippets() -> None:
-    request = AgentRequest(
-        run_id="run_1",
-        ticker="FER",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-    )
-    state = AgentState(
-        run_id="run_1",
-        ticker="FER",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-        task_policy=TaskPolicy(
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-            allowed_tools=["get_company_facts", "search_metric_evidence"],
-            required_outputs=["driverThesis"],
-        ),
-        evidence_memory=EvidenceMemory(
-            source_refs=[
-                {
-                    "source_id": "src_profile",
-                    "section": "business summary",
-                    "snippet": (
-                        "It engages in the development and construction of energy "
-                        "transmission and renewable generation energy infrastructure, "
-                        "as well as rendering of services regarding energy efficiency."
-                    ),
-                    "citation_status": "supported",
-                }
-            ],
-        ),
-    )
-
-    report = _fallback_report_from_state(
-        request,
-        state,
-        reason="Business driver agent final synthesis failed: The read operation timed out",
-    )
-
-    assert report is not None
-    serialized = report.model_dump_json()
-    for leaked in [
-        "It engages in",
-        "rendering of services",
-        "energy transmission",
-        "renewable generation",
-    ]:
-        assert leaked not in serialized
-    assert "业务摘要显示" in serialized or "业务线披露显示" in serialized
-    assert "业务线" in serialized or "市场暴露" in serialized
-
-
-def test_business_driver_timeout_with_evidence_returns_grounded_fallback(monkeypatch) -> None:
+def test_market_sentiment_timeout_with_evidence_returns_typed_fallback(monkeypatch) -> None:
     request = AgentRequest(
         run_id="run_1",
         ticker="AMD",
@@ -1541,33 +1183,17 @@ def test_business_driver_timeout_with_evidence_returns_grounded_fallback(monkeyp
         model="Pro/moonshotai/Kimi-K2.6",
         task_policy=TaskPolicy(
             task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-            allowed_tools=["get_company_facts", "search_metric_evidence"],
-            required_outputs=["driverThesis"],
+            allowed_tools=["get_market_context"],
+            required_outputs=["sentimentHeader"],
         ),
         evidence_memory=EvidenceMemory(
-            metric_evidence=[
-                {
-                    "source": "sec_companyfacts",
-                    "metric": "revenue",
-                    "value": 7438000000,
-                    "unit": "USD",
-                    "fact_period": "2026-Q1",
-                    "source_id": "src_revenue",
-                }
-            ],
             source_refs=[
                 {
-                    "source_id": "src_revenue",
-                    "section": "SEC companyfacts",
-                    "snippet": "Revenue was $7.4B in the quarter.",
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_demand",
-                    "section": "MD&A",
-                    "snippet": "Customer demand for AI accelerators remained strong.",
-                    "citation_status": "supported",
-                },
+                    "source_id": "sentiment:reddit",
+                    "section": "reddit",
+                    "snippet": "r/stocks: AMD discussion is thin this week.",
+                    "citation_status": "partial",
+                }
             ],
         ),
     )
@@ -1575,7 +1201,7 @@ def test_business_driver_timeout_with_evidence_returns_grounded_fallback(monkeyp
 
     def fake_run_task_agent(*args, **kwargs):
         raise BusinessDriverAgentError(
-            "Business driver agent final synthesis failed: The read operation timed out",
+            "Sentiment analyst final synthesis failed: The read operation timed out",
             state=state,
         )
 
@@ -1587,326 +1213,13 @@ def test_business_driver_timeout_with_evidence_returns_grounded_fallback(monkeyp
     assert result.degraded_reasons == []
     assert result.final_report is not None
     serialized = json.dumps(result.final_report, ensure_ascii=False)
-    assert "业务驱动结论" in serialized
+    assert "市场叙事与情绪分析未完成最终 LLM 合成" in serialized
+    task_sections = result.final_report["task_sections"]
+    assert task_sections["sentiment_header"] is not None
+    assert task_sections["driver_map"] is None
+    assert task_sections["driver_thesis"] is None
+    assert "业务驱动结论" not in serialized
     assert "final synthesis failed" not in serialized
-
-
-def test_business_driver_timeout_fallback_suppresses_noisy_source_snippets() -> None:
-    request = AgentRequest(
-        run_id="run_1",
-        ticker="TSLA",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-    )
-    state = AgentState(
-        run_id="run_1",
-        ticker="TSLA",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-        task_policy=TaskPolicy(
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-            allowed_tools=[
-                "search_filing_sections",
-                "search_metric_evidence",
-                "get_business_signals",
-            ],
-            required_outputs=["driverThesis", "driverMap"],
-        ),
-        evidence_memory=EvidenceMemory(
-            metric_evidence=[
-                {
-                    "source": "sec_companyfacts",
-                    "metric": "revenue",
-                    "value": 19335000000,
-                    "unit": "USD",
-                    "fact_period": "2026-Q1",
-                    "source_id": "src_revenue",
-                }
-            ],
-            business_signals=[
-                {
-                    "signal_type": "strategy",
-                    "summary": (
-                        "Government securities and other investments were discussed "
-                        "alongside autonomy, product roadmap and supply chain planning."
-                    ),
-                    "source_id": "src_strategy",
-                    "citation_status": "supported",
-                },
-                {
-                    "signal_type": "demand",
-                    "summary": (
-                        "Vehicle deliveries and energy storage deployments remained "
-                        "the clearest demand signal."
-                    ),
-                    "source_id": "src_demand",
-                    "citation_status": "supported",
-                },
-            ],
-            source_refs=[
-                {
-                    "source_id": "src_revenue",
-                    "section": "SEC companyfacts",
-                    "snippet": "Revenue was $19.3B in the quarter.",
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_table",
-                    "section": "Segment table",
-                    "snippet": (
-                        "| | | 6,402 | | | 15,509 | | | Automotive | Energy "
-                        "generation and storage | Services and other | ---|---"
-                    ),
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_strategy",
-                    "section": "Business strategy",
-                    "snippet": (
-                        "Government securities and other investments were discussed "
-                        "alongside autonomy, product roadmap and supply chain planning."
-                    ),
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_accounting",
-                    "section": "Revenue recognition",
-                    "snippet": (
-                        "The following tables disaggregate the Company's net revenue "
-                        "by revenue category and geography."
-                    ),
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_demand",
-                    "section": "MD&A",
-                    "snippet": (
-                        "Vehicle deliveries and energy storage deployments remained "
-                        "the clearest demand signal."
-                    ),
-                    "citation_status": "supported",
-                },
-            ],
-        ),
-    )
-
-    report = _fallback_report_from_state(
-        request,
-        state,
-        reason="Business driver agent final synthesis failed: The read operation timed out",
-    )
-
-    assert report is not None
-    sections = report.task_sections
-    assert sections.driver_map.segment_momentum is not None
-    assert sections.driver_map.margin_and_mix is not None
-    assert sections.driver_map.demand_signals is not None
-    serialized = report.model_dump_json()
-    assert "Vehicle deliveries and energy storage" in serialized
-    assert "| | |" not in serialized
-    assert "---|---" not in serialized
-    assert "Government securities" not in sections.driver_map.segment_momentum.summary
-    assert "Government securities" not in sections.driver_map.demand_signals.summary
-    assert "disaggregate the Company's net revenue" not in serialized
-
-
-def test_business_driver_timeout_fallback_filters_footnote_and_table_of_contents_refs() -> None:
-    request = AgentRequest(
-        run_id="run_1",
-        ticker="VZ",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-    )
-    state = AgentState(
-        run_id="run_1",
-        ticker="VZ",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-        task_policy=TaskPolicy(
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-            allowed_tools=[
-                "search_filing_sections",
-                "search_metric_evidence",
-                "get_business_signals",
-            ],
-            required_outputs=["driverThesis", "driverMap"],
-        ),
-        evidence_memory=EvidenceMemory(
-            metric_evidence=[
-                {
-                    "source": "sec_companyfacts",
-                    "metric": "revenue",
-                    "value": 33000000000,
-                    "unit": "USD",
-                    "fact_period": "2026-Q1",
-                    "source_id": "src_revenue",
-                }
-            ],
-            business_signals=[
-                {
-                    "signal_type": "demand",
-                    "summary": (
-                        "Wireless service revenue increased as fixed wireless access "
-                        "and fiber broadband demand supported customer additions."
-                    ),
-                    "source_id": "src_clean",
-                    "citation_status": "supported",
-                },
-                {
-                    "signal_type": "segment",
-                    "summary": (
-                        "23 Table of Contents International segment revenue mix "
-                        "percentages and comparable sales percentage changes by "
-                        "revenue category were as follows: | | | Computing and Mobile "
-                        "Phones | Consumer Electronics | Appliances | Entertainment |"
-                    ),
-                    "source_id": "src_bby_table",
-                    "citation_status": "supported",
-                },
-                {
-                    "signal_type": "pricing",
-                    "summary": (
-                        "FWA broadband, Fios internet and other fiber-based services. "
-                        "(2) Other revenue primarily includes revenue from wireline "
-                        "products, wholesale and other services."
-                    ),
-                    "source_id": "src_vz_footnote",
-                    "citation_status": "supported",
-                },
-            ],
-            source_refs=[
-                {
-                    "source_id": "src_revenue",
-                    "section": "SEC companyfacts",
-                    "snippet": "Revenue was $33.0B in the quarter.",
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_clean",
-                    "section": "MD&A demand",
-                    "snippet": (
-                        "Wireless service revenue increased as fixed wireless access "
-                        "and fiber broadband demand supported customer additions."
-                    ),
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_bby_table",
-                    "section": "Table of Contents",
-                    "snippet": (
-                        "23 Table of Contents International segment revenue mix "
-                        "percentages and comparable sales percentage changes by "
-                        "revenue category were as follows: | | | Computing and Mobile "
-                        "Phones | Consumer Electronics | Appliances | Entertainment |"
-                    ),
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_vz_footnote",
-                    "section": "Segment footnotes",
-                    "snippet": (
-                        "FWA broadband, Fios internet and other fiber-based services. "
-                        "(2) Other revenue primarily includes revenue from wireline "
-                        "products, wholesale and other services."
-                    ),
-                    "citation_status": "supported",
-                },
-            ],
-        ),
-    )
-
-    report = _fallback_report_from_state(
-        request,
-        state,
-        reason="Business driver agent final synthesis failed: The read operation timed out",
-    )
-
-    assert report is not None
-    serialized = report.model_dump_json()
-    assert "无线服务收入增长" in serialized
-    assert "Other revenue primarily includes" not in serialized
-    assert "Table of Contents" not in serialized
-    assert "| | |" not in serialized
-
-
-def test_business_driver_timeout_fallback_rejects_market_risk_and_accounting_refs() -> None:
-    request = AgentRequest(
-        run_id="run_1",
-        ticker="JPM",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-    )
-    state = AgentState(
-        run_id="run_1",
-        ticker="JPM",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        language="zh",
-        task_policy=TaskPolicy(
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-            allowed_tools=[
-                "search_filing_sections",
-                "search_metric_evidence",
-                "get_business_signals",
-            ],
-            required_outputs=["driverThesis", "driverMap"],
-        ),
-        evidence_memory=EvidenceMemory(
-            metric_evidence=[
-                {
-                    "source": "sec_companyfacts",
-                    "metric": "revenue",
-                    "value": 49833000000,
-                    "unit": "USD",
-                    "fact_period": "2026-Q1",
-                    "source_id": "src_revenue",
-                }
-            ],
-            source_refs=[
-                {
-                    "source_id": "src_revenue",
-                    "section": "SEC companyfacts",
-                    "snippet": "Revenue was $49.8B in the quarter.",
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_market_risk",
-                    "section": "Quantitative and qualitative disclosures about market risk",
-                    "snippet": (
-                        "Foreign Currency Risk We transact business globally in multiple "
-                        "currencies and hence have foreign currency risks related to our "
-                        "revenue, costs of revenue and operating expenses."
-                    ),
-                    "citation_status": "supported",
-                },
-                {
-                    "source_id": "src_recognition",
-                    "section": "Revenue recognition",
-                    "snippet": (
-                        "Revenue is generally recognized in the segment responsible for "
-                        "the related product or service, with allocations to other segments."
-                    ),
-                    "citation_status": "supported",
-                },
-            ],
-        ),
-    )
-
-    report = _fallback_report_from_state(
-        request,
-        state,
-        reason="Business driver agent final synthesis failed: The read operation timed out",
-    )
-
-    assert report is not None
-    sections = report.task_sections
-    assert sections.driver_map.margin_and_mix is not None
-    assert sections.driver_map.segment_momentum is not None
-    assert sections.driver_map.demand_signals is not None
-    serialized = report.model_dump_json()
-    assert "Foreign Currency Risk" not in serialized
-    assert "Revenue is generally recognized" not in serialized
-    assert "已收集证据" in sections.driver_map.margin_and_mix.summary
-    assert sections.driver_map.margin_and_mix.evidence_refs == []
 
 
 def test_fallback_report_hides_internal_missing_metric_markers_everywhere() -> None:

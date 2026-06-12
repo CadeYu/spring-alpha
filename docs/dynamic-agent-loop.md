@@ -51,7 +51,7 @@ Spring Boot
           -> citation verification
       -> Report Synthesis
           -> latest earnings typed synthesis
-          -> business driver typed synthesis
+          -> market narrative sentiment typed synthesis
           -> cash flow typed synthesis
 ```
 
@@ -307,30 +307,29 @@ required_outputs:
 - source coverage；
 - dashboard 完整性。
 
-### Business Driver Deep Dive
+### Market Narrative & Sentiment
 
 ```text
 allowed_tools:
-  - search_filing_sections
-  - search_metric_evidence
-  - get_business_signals
-  - verify_citations
-  - finalize_report
+  - fetch_yahoo_news
+  - fetch_stocktwits
+  - fetch_reddit
+  - synthesize_sentiment_report
 
 required_outputs:
-  - driverThesis
-  - driverMap
-  - positiveSignals
-  - negativeSignals
-  - watchlist
+  - sentimentHeader
+  - narrativeSnapshot
+  - bullBearNarrative
+  - sourceDivergence
+  - noiseWarnings
 ```
 
 重点：
 
-- 产品、分部、地区、需求、定价、客户和战略动作；
-- 公司特有驱动，避免泛泛宏观描述；
-- evidence-bound driver points；
-- durability 判断。
+- 只使用预抓取的 Yahoo Finance、StockTwits 和 Reddit 来源块；
+- 明确展示来源分歧和样本限制；
+- 不编造 Reddit、X、StockTwits 或新闻内容；
+- 旧 `business_driver_deep_dive` task id 仅作为 API 兼容层保留。
 
 ### Cash Flow and Capital Allocation
 

@@ -165,6 +165,8 @@ function openAgentReport(name: RegExp) {
   fireEvent.click(screen.getByRole("tab", { name }));
 }
 
+const MARKET_SENTIMENT_TAB = /market narrative & sentiment|市场叙事与情绪/i;
+
 function submitTicker(ticker = "AAPL") {
   fireEvent.change(screen.getByPlaceholderText(/enter ticker|输入股票代码/i), {
     target: { value: ticker },
@@ -647,7 +649,7 @@ describe("Home page", () => {
     openAgentReport(/latest earnings readout|最新财报速读/i);
     expect(await screen.findByText("Earnings agent verdict summary.")).toBeInTheDocument();
     expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
-    openAgentReport(/business driver deep dive/i);
+    openAgentReport(MARKET_SENTIMENT_TAB);
     expect(await screen.findByText("Business driver agent summary.")).toBeInTheDocument();
     expect(screen.queryByText("Business driver agent thesis")).not.toBeInTheDocument();
     openAgentReport(/cash flow & capital allocation/i);
@@ -710,7 +712,7 @@ describe("Home page", () => {
     render(<Home />);
     submitTicker("AAPL");
 
-    openAgentReport(/business driver deep dive/i);
+    openAgentReport(MARKET_SENTIMENT_TAB);
 
     await waitFor(() =>
       expect(
@@ -930,7 +932,7 @@ describe("Home page", () => {
     expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("tab", { name: /business driver deep dive/i }),
+      screen.getByRole("tab", { name: MARKET_SENTIMENT_TAB }),
     );
 
     expect(await screen.findByText("Business driver agent summary.")).toBeInTheDocument();
@@ -1013,7 +1015,7 @@ describe("Home page", () => {
       screen.getByRole("region", { name: /agent pipeline/i }),
     ).toBeInTheDocument();
     expect(screen.getByText("Latest Earnings Readout")).toBeInTheDocument();
-    expect(screen.getByText("Business Driver Deep Dive")).toBeInTheDocument();
+    expect(screen.getByText("Market Narrative & Sentiment")).toBeInTheDocument();
     expect(screen.getByText("Cash Flow & Capital Allocation")).toBeInTheDocument();
 
     submitTicker();
@@ -1024,7 +1026,7 @@ describe("Home page", () => {
     ).toBeInTheDocument();
     expect(requestedTaskTypes).toEqual(["latest_earnings_readout"]);
 
-    openAgentReport(/business driver deep dive/i);
+    openAgentReport(MARKET_SENTIMENT_TAB);
 
     expect(
       await screen.findByText("Business driver on-demand summary."),
@@ -1163,14 +1165,14 @@ describe("Home page", () => {
 
     submitTicker();
 
-    openAgentReport(/business driver deep dive/i);
+    openAgentReport(MARKET_SENTIMENT_TAB);
 
     await waitFor(() =>
       expect(
         screen.getAllByText("Missing typed taskSections").length,
       ).toBeGreaterThan(0),
     );
-    expect(screen.getByText(/Business Driver Deep Dive report did not include/i)).toBeInTheDocument();
+    expect(screen.getByText(/Market Narrative & Sentiment report did not include/i)).toBeInTheDocument();
     expect(screen.queryByText("Business Driver Research View")).not.toBeInTheDocument();
     expect(screen.queryByTestId("business-drivers")).not.toBeInTheDocument();
     expect(screen.queryByTestId("key-metrics")).not.toBeInTheDocument();
@@ -1248,7 +1250,7 @@ describe("Home page", () => {
 
     submitTicker();
 
-    openAgentReport(/business driver deep dive/i);
+    openAgentReport(MARKET_SENTIMENT_TAB);
 
     expect(await screen.findByText("Typed driver summary.")).toBeInTheDocument();
     expect(screen.queryByText("Typed driver thesis")).not.toBeInTheDocument();
@@ -1947,7 +1949,7 @@ describe("Home page", () => {
     submitTicker();
 
     expect(await screen.findByText("Earnings agent")).toBeInTheDocument();
-    openAgentReport(/business driver deep dive/i);
+    openAgentReport(MARKET_SENTIMENT_TAB);
     expect(await screen.findByText("Business driver agent")).toBeInTheDocument();
     openAgentReport(/cash flow & capital allocation/i);
     expect(await screen.findByText("Cash flow agent")).toBeInTheDocument();
@@ -2394,7 +2396,7 @@ describe("Home page", () => {
       );
       expect(analyzeCalls).toHaveLength(1);
     });
-    openAgentReport(/business driver deep dive/i);
+    openAgentReport(MARKET_SENTIMENT_TAB);
     await waitFor(() => {
       analyzeCalls = fetchMock.mock.calls.filter(([input]) =>
         String(input).includes("/api/sec/analyze/AAPL"),
@@ -2528,7 +2530,7 @@ describe("Home page", () => {
       ]),
     );
 
-    openAgentReport(/business driver deep dive|业务驱动深挖/i);
+    openAgentReport(MARKET_SENTIMENT_TAB);
     await waitFor(() => {
       const analyzeCalls = fetchMock.mock.calls.filter(([input]) =>
         String(input).includes("/api/sec/analyze/AAPL"),
@@ -2538,7 +2540,7 @@ describe("Home page", () => {
     openAgentReport(/latest earnings readout|最新财报速读/i);
     expect(await screen.findByText("Earnings agent verdict summary.")).toBeInTheDocument();
     expect(screen.queryByText("Earnings agent verdict")).not.toBeInTheDocument();
-    openAgentReport(/business driver deep dive|业务驱动深挖/i);
+    openAgentReport(MARKET_SENTIMENT_TAB);
     expect(await screen.findByText("Business driver agent summary.")).toBeInTheDocument();
     expect(screen.queryByText("Business driver agent thesis")).not.toBeInTheDocument();
 

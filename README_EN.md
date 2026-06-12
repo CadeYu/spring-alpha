@@ -23,7 +23,7 @@ Spring Alpha combines **Spring Boot**, **Next.js**, **Python FastAPI Research Se
 
 ## News
 
-- The three core research lanes are implemented: Latest Earnings Readout, Business Driver Deep Dive, and Cash Flow & Capital Allocation.
+- The three core research lanes are implemented: Latest Earnings Readout, Market Narrative & Sentiment, and Cash Flow & Capital Allocation.
 - The agent runtime has been upgraded to a LangChain/LangGraph-style tool-calling graph. Legacy deterministic report fallback is no longer the production path.
 - RAG has been narrowed into a controllable tool: SEC filing evidence and SEC/Yahoo metric facts are assembled into an EvidencePack before final LLM synthesis.
 - The frontend is now a ticker-first workbench: the default view is a market candlestick chart, and users select reports from the left-side agent panel.
@@ -59,17 +59,17 @@ Main outputs:
 - What Changed
 - Watch Next
 
-#### 2. Business Driver Deep Dive
+#### 2. Market Narrative & Sentiment
 
-Answers: “What is driving the business, and are those drivers durable?” It separates evidence into product, segment, geography, demand, pricing, customer, and strategy lenses.
+Answers: “How is the market talking about this stock right now, and do the sources agree?” It prefetches Yahoo Finance news, StockTwits messages, and Reddit discussion, then compares news flow, retail-trader sentiment, and community chatter.
 
 Main outputs:
 
-- Thesis
-- Driver Map
-- Impact Table
-- Signals
-- Watchlist
+- Sentiment Header
+- Narrative Snapshot
+- Bull/Bear Narrative
+- Source Divergence
+- Noise Warnings
 
 #### 3. Cash Flow & Capital Allocation
 

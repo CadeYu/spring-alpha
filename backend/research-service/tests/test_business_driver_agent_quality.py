@@ -1,134 +1,171 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from langchain_core.messages import AIMessage
+
 from app.agents import business_driver_agent
-from app.agents.business_driver_agent import _business_driver_instruction, run_business_driver_agent
-from app.contracts.agent import AgentRequest, AgentState, EvidenceMemory, TaskPolicy
+from app.agents.business_driver_agent import (
+    _business_driver_instruction,
+    run_business_driver_agent,
+)
+from app.agents.sentiment_sources import SentimentSourceBlock, SentimentSourceStatus
+from app.contracts.agent import AgentRequest, AgentState, TaskPolicy
 from app.contracts.research_task import ResearchTaskType
 
 
-def test_business_driver_instruction_includes_structured_facts_brief() -> None:
-    request = _make_request(language="zh")
-    state = _make_state(language="zh").model_copy(
-        update={
-            "evidence_memory": EvidenceMemory(
-                facts={
-                    "company_name": "Advanced Micro Devices, Inc.",
-                    "market_sector": "Technology",
-                    "market_industry": "Semiconductors",
-                    "business_summary": (
-                        "AMD designs CPUs, GPUs, adaptive computing products, and "
-                        "data-center accelerators."
-                    ),
-                    "metrics": [
-                        {
-                            "name": "revenue",
-                            "value": 7438000000,
-                            "unit": "USD",
-                            "period": "2026-Q1",
-                        },
-                        {
-                            "name": "gross margin",
-                            "value": 0.52,
-                            "unit": "percent",
-                            "period": "2026-Q1",
-                        },
-                    ],
-                },
-                business_signals=[
-                    {
-                        "summary": "Data center accelerator demand remained a key signal.",
-                    }
-                ],
-            )
-        }
-    )
+class _StaticSentimentLlm:
+    model = "test-model"
+    compact_synthesis = False
 
-    instruction = _business_driver_instruction(request, state)
+    def model_copy(self, update: dict[str, Any]) -> _StaticSentimentLlm:
+        copied = _StaticSentimentLlm()
+        copied.update = update
+        return copied
 
-    assert "Business driver facts brief:" in instruction
-    assert "Financial facts brief:" in instruction
-    assert "Advanced Micro Devices, Inc." in instruction
-    assert "revenue: $7.4B" in instruction
-    assert "gross margin: 52.0%" in instruction
-    assert "Data center accelerator demand remained a key signal." in instruction
-    assert "不要输出 No evidence、无法判断 或类似占位句" in instruction
+    def invoke(self, payload: dict[str, Any]) -> AIMessage:
+        messages = payload["messages"]
+        prompt_text = "\n".join(str(message.content) for message in messages)
+        assert "Yahoo Finance news" in prompt_text
+        assert "StockTwits messages" in prompt_text
+        assert "Reddit discussion" in prompt_text
+        assert "Do not invent Reddit, X, StockTwits, or news content" in prompt_text
+        return AIMessage(
+            content=json.dumps(
+                {
+                    "sentiment_header": {
+                        "overall_band": "Mixed",
+                        "overall_score": 5.2,
+                        "confidence": "medium",
+                        "summary": "News and retail sentiment diverge.",
+                    },
+                    "narrative_snapshot": {
+                        "title": "Mixed AI narrative",
+                        "summary": (
+                            "News is measured while StockTwits is bullish."
+                        ),
+                        "source_ids": ["sentiment:stocktwits"],
+                        "citation_status": "supported",
+                    },
+                    "bull_bear_narrative": {
+                        "bull_case": "Retail traders emphasize AI demand.",
+                        "bear_case": "News flow flags valuation risk.",
+                        "balanced_read": (
+                            "Treat enthusiasm as sentiment, not proof."
+                        ),
+                    },
+                    "source_divergence": {
+                        "summary": "Sources diverge.",
+                        "news_direction": "mixed",
+                        "stocktwits_direction": "bullish",
+                        "reddit_direction": "thin",
+                    },
+                    "noise_warnings": ["Reddit sample is thin."],
+                    "claims": [],
+                }
+            ),
+            response_metadata={"latency_ms": 11, "usage": {"total_tokens": 123}},
+        )
 
 
-def test_business_driver_agent_requests_margin_and_profitability_metrics(
-    monkeypatch,
-) -> None:
-    captured: dict[str, Any] = {}
+def test_business_driver_instruction_is_market_sentiment_lane() -> None:
+    instruction = _business_driver_instruction(_make_request(language="zh"), _make_state("zh"))
 
-    def fake_graph_agent(**kwargs: Any) -> dict[str, Any]:
-        captured.update(kwargs)
-        return {
-            "driver_thesis": {
-                "headline": "Growth needs margin context.",
-                "durability": "mixed",
-                "summary": "Growth needs margin context.",
-            },
-            "driver_map": {},
-            "claims": [],
-        }
+    assert "市场叙事与情绪" in instruction
+    assert "Yahoo Finance" in instruction
+    assert "StockTwits" in instruction
+    assert "Reddit" in instruction
+    assert "不要编造 Reddit、X、StockTwits 或新闻内容" in instruction
+    assert "search_metric_evidence" not in instruction
+    assert "build_evidence_pack" not in instruction
+
+
+def test_sentiment_agent_prefetches_sources_without_sec_rag_tools(monkeypatch) -> None:
+    blocks = [
+        SentimentSourceBlock(
+            source="yahoo_news",
+            status=SentimentSourceStatus.OK,
+            item_count=1,
+            content="[2026-06-12 · Yahoo Finance] NVDA AI demand remains in focus.",
+        ),
+        SentimentSourceBlock(
+            source="stocktwits",
+            status=SentimentSourceStatus.OK,
+            item_count=2,
+            content="Bullish: 2 (100%) · Bearish: 0 (0%)",
+        ),
+        SentimentSourceBlock(
+            source="reddit",
+            status=SentimentSourceStatus.EMPTY,
+            item_count=0,
+            content="r/stocks: <no posts found mentioning NVDA in the past 7 days>",
+        ),
+    ]
+
+    def fake_fetch_sources(ticker: str) -> list[SentimentSourceBlock]:
+        assert ticker == "NVDA"
+        return blocks
 
     monkeypatch.setattr(
         business_driver_agent,
-        "run_tool_calling_graph_agent",
-        fake_graph_agent,
+        "fetch_market_sentiment_sources",
+        fake_fetch_sources,
     )
 
-    run_business_driver_agent(
-        request=_make_request(language="en"),
-        state=_make_state(language="en"),
-        llm=object(),  # type: ignore[arg-type]
+    payload, state = run_business_driver_agent(
+        request=_make_request(ticker="NVDA", language="en"),
+        state=_make_state("en", ticker="NVDA"),
+        llm=_StaticSentimentLlm(),  # type: ignore[arg-type]
         tool_service=object(),  # type: ignore[arg-type]
     )
 
-    planned_calls = captured["planned_tool_calls"]
-    assert any(call["name"] == "get_market_context" for call in planned_calls)
-    metric_call = next(call for call in planned_calls if call["name"] == "search_metric_evidence")
-    assert metric_call["args"]["metrics"] == [
-        "revenue",
-        "segment revenue",
-        "gross margin",
-        "operating margin",
-        "operating income",
-        "net income",
+    assert payload["sentiment_header"]["overall_band"] == "Mixed"
+    assert payload["source_divergence"]["stocktwits_direction"] == "bullish"
+    assert [event.tool_name for event in state.tool_events if event.tool_name] == [
+        "fetch_yahoo_news",
+        "fetch_stocktwits",
+        "fetch_reddit",
     ]
-    facts_call = next(call for call in planned_calls if call["name"] == "get_company_facts")
-    assert facts_call["args"]["metrics"] == [
-        "revenue",
-        "gross margin",
-        "operating margin",
-        "operating income",
-        "net income",
-    ]
+    assert all(
+        record["tool_name"]
+        in {"fetch_yahoo_news", "fetch_stocktwits", "fetch_reddit"}
+        for record in state.retrieval_records
+    )
+    assert "search_metric_evidence" not in {
+        record["tool_name"] for record in state.retrieval_records
+    }
 
 
-def _make_request(language: str) -> AgentRequest:
+def _make_request(
+    *,
+    ticker: str = "AMD",
+    language: str,
+) -> AgentRequest:
     return AgentRequest(
         run_id="run_1",
-        ticker="AMD",
+        ticker=ticker,
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
         language=language,
     )
 
 
-def _make_state(language: str) -> AgentState:
+def _make_state(language: str, *, ticker: str = "AMD") -> AgentState:
     return AgentState(
         run_id="run_1",
-        ticker="AMD",
+        ticker=ticker,
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
         language=language,
         task_policy=TaskPolicy(
             task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
             allowed_tools=[
-                "search_filing_sections",
-                "search_metric_evidence",
-                "get_business_signals",
+                "get_market_context",
             ],
-            required_outputs=["driverThesis", "driverMap"],
+            required_outputs=[
+                "sentimentHeader",
+                "narrativeSnapshot",
+                "bullBearNarrative",
+                "sourceDivergence",
+            ],
         ),
     )

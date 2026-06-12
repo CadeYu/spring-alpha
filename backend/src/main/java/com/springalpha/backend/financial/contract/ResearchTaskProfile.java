@@ -15,13 +15,13 @@ public record ResearchTaskProfile(
 
         if (effectiveTaskType == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE) {
             return new ResearchTaskProfile(
-                    "Business Drivers",
-                    "Management Discussion Analysis products segments demand pricing customers strategy business model customer adoption product services",
-                    "Risk Factors competition strategy customer concentration execution risk demand pricing",
+                    "Market Narrative and Sentiment",
+                    "market narrative sentiment Yahoo Finance news StockTwits Reddit retail discussion bullish bearish catalyst",
+                    "sentiment risk crowding valuation skepticism source divergence thin discussion unavailable social data",
                     List.of(
-                            "Analyze products, segments, demand, pricing, customers, and strategy actions",
-                            "Assess pricing power, customer concentration, competition, and execution risks",
-                            "Separate company-specific drivers from generic market commentary"));
+                            "Analyze current market narrative from Yahoo Finance news, StockTwits, and Reddit",
+                            "Compare bullish and bearish sentiment signals across sources",
+                            "Flag thin, unavailable, or noisy social data instead of inventing evidence"));
         }
 
         if (effectiveTaskType == ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION) {

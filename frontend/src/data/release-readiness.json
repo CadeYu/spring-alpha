@@ -67,7 +67,7 @@
       "summary": "siliconflow / Pro/moonshotai/Kimi-K2.6 across task-specific tool paths",
       "metrics": {
         "latestEarningsPath": "SEC facts + RAG + LLM synthesis",
-        "businessDriverPath": "RAG + business signals + LLM synthesis",
+        "businessDriverPath": "Yahoo Finance news + StockTwits + Reddit + sentiment synthesis",
         "cashFlowPath": "SEC facts + RAG + metric evidence + LLM synthesis",
         "cashFlowFactMetricCount": 2,
         "cashFlowRagSourceRefs": 3,
@@ -77,7 +77,7 @@
       "details": [
         "Manual live gate for provider-backed tool execution and final report synthesis.",
         "Validated cash_flow_capital_allocation with SEC companyfacts, RAG source refs, metric evidence, and LLM typed synthesis.",
-        "Business driver path validates evidence-bound business signals instead of SEC facts."
+        "Market sentiment path validates Yahoo Finance, StockTwits, and Reddit source blocks instead of SEC/RAG business-driver facts."
       ]
     },
     {

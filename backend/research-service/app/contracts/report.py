@@ -169,10 +169,48 @@ class DriverMap(BaseModel):
     demand_signals: EvidenceBoundPoint | None = None
 
 
+class SentimentHeader(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    overall_band: Literal[
+        "Bullish",
+        "Mildly Bullish",
+        "Neutral",
+        "Mixed",
+        "Mildly Bearish",
+        "Bearish",
+    ]
+    overall_score: float = Field(ge=0, le=10)
+    confidence: Literal["low", "medium", "high"]
+    summary: str
+
+
+class BullBearNarrative(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bull_case: str
+    bear_case: str
+    balanced_read: str
+
+
+class SourceDivergence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str
+    news_direction: str
+    stocktwits_direction: str
+    reddit_direction: str
+
+
 class BusinessDriverSections(BaseTaskSections):
     task_type: Literal[ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE]
-    driver_thesis: DriverThesis
-    driver_map: DriverMap
+    sentiment_header: SentimentHeader | None = None
+    narrative_snapshot: EvidenceBoundPoint | None = None
+    bull_bear_narrative: BullBearNarrative | None = None
+    source_divergence: SourceDivergence | None = None
+    noise_warnings: list[str] = Field(default_factory=list)
+    driver_thesis: DriverThesis | None = None
+    driver_map: DriverMap | None = None
 
 
 class CashQualityVerdict(BaseModel):

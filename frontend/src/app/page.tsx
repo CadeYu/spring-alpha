@@ -72,7 +72,7 @@ const copy = {
         label: "01 / 智能体",
         title: "三个报告按顺序运行",
         body:
-          "最新财报速读、业务驱动深挖、现金流与资本配置是三条独立分析链路。用户可以切换报告，同时保留完整运行上下文。",
+          "最新财报速读、市场叙事与情绪、现金流与资本配置是三条独立分析链路。用户可以切换报告，同时保留完整运行上下文。",
       },
       {
         label: "02 / 工作区",
@@ -195,7 +195,7 @@ const copy = {
         label: "01 / Agents",
         title: "Three reports run in order",
         body:
-          "Latest Earnings Readout, Business Driver Deep Dive, and Cash Flow & Capital Allocation are designed as separate analyst lanes, so the user can switch reports without losing the full run context.",
+          "Latest Earnings Readout, Market Narrative & Sentiment, and Cash Flow & Capital Allocation are designed as separate analyst lanes, so the user can switch reports without losing the full run context.",
       },
       {
         label: "02 / Workspace",

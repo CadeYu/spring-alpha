@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.business_driver_quality import (
     business_driver_facts_backfill_summary,
-    business_driver_facts_brief,
     business_driver_facts_context,
     business_driver_thesis_backfill,
 )
@@ -19,6 +18,7 @@ from app.agents.structured_facts import (
 from app.agents.zh_text_helpers import localize_market_classifications_in_text
 from app.contracts.agent import AgentRequest, AgentState
 from app.contracts.report import (
+    BullBearNarrative,
     BullBearRead,
     BusinessDriverSections,
     CapitalAllocation,
@@ -37,6 +37,8 @@ from app.contracts.report import (
     LatestEarningsSections,
     LatestFinancialDashboard,
     QualityOfQuarter,
+    SentimentHeader,
+    SourceDivergence,
     SourceRef,
     TaskSectionCoverage,
     ToplineVerdict,
@@ -789,8 +791,13 @@ class _SynthesizedDriverMap(BaseModel):
 class _BusinessDriverSynthesis(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    driver_thesis: DriverThesis
-    driver_map: _SynthesizedDriverMap
+    sentiment_header: SentimentHeader | None = None
+    narrative_snapshot: _SynthesizedPoint | None = None
+    bull_bear_narrative: BullBearNarrative | None = None
+    source_divergence: SourceDivergence | None = None
+    noise_warnings: list[str] = Field(default_factory=list)
+    driver_thesis: DriverThesis | None = None
+    driver_map: _SynthesizedDriverMap | None = None
     claims: list[_SynthesizedClaim] = Field(default_factory=list)
 
 
@@ -1221,36 +1228,6 @@ def _normalize_latest_earnings_payload(
     return _sanitize_payload_user_text(normalized)
 
 
-def synthesize_business_driver_report(
-    request: AgentRequest,
-    state: AgentState,
-    client: LlmClient,
-) -> EvidenceAwareReport:
-    if request.task_type != ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
-        raise ReportSynthesisError(f"Unsupported synthesis task: {request.task_type.value}")
-
-    source_refs = _source_refs_from_state(state)
-    response = _complete_synthesis_json(
-        client,
-        LlmRequest(
-            run_id=request.run_id,
-            provider=client.provider,
-            model=request.llm_model,
-            task_type=request.task_type,
-            system_prompt=_system_prompt(request.language),
-            user_prompt=_business_driver_prompt(request, state, source_refs),
-            state=state,
-            timeout_seconds=_synthesis_timeout_seconds(),
-        ),
-    )
-    payload = _BusinessDriverSynthesis.model_validate(response.content)
-    return build_business_driver_report_from_payload(
-        request,
-        state,
-        payload.model_dump(mode="json"),
-    )
-
-
 def build_business_driver_report_from_payload(
     request: AgentRequest,
     state: AgentState,
@@ -1273,14 +1250,11 @@ def build_business_driver_report_from_payload(
         state,
     )
     _backfill_business_driver_thesis(payload, state, request.language)
-    review_business_driver_payload(payload, state, request.language)
+    if payload.driver_thesis is not None and payload.driver_map is not None:
+        review_business_driver_payload(payload, state, request.language)
     _localize_business_driver_visible_copy(payload, request.language)
-    task_sections = BusinessDriverSections(
-        schema_version="task_sections.v1",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
-        coverage=_business_driver_coverage(payload, source_refs),
-        driver_thesis=payload.driver_thesis,
-        driver_map=DriverMap(
+    driver_map = (
+        DriverMap(
             revenue_bridge=_optional_point_from_payload(
                 payload.driver_map.revenue_bridge,
                 source_refs_by_id,
@@ -1301,14 +1275,39 @@ def build_business_driver_report_from_payload(
                 source_refs_by_id,
                 request.language,
             ),
+        )
+        if payload.driver_map is not None
+        else None
+    )
+    task_sections = BusinessDriverSections(
+        schema_version="task_sections.v1",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        coverage=_business_driver_coverage(payload, source_refs),
+        sentiment_header=payload.sentiment_header,
+        narrative_snapshot=_optional_point_from_payload(
+            payload.narrative_snapshot,
+            source_refs_by_id,
+            request.language,
         ),
+        bull_bear_narrative=payload.bull_bear_narrative,
+        source_divergence=payload.source_divergence,
+        noise_warnings=payload.noise_warnings,
+        driver_thesis=payload.driver_thesis,
+        driver_map=driver_map,
+    )
+    summary = (
+        payload.sentiment_header.summary
+        if payload.sentiment_header is not None
+        else payload.driver_thesis.summary
+        if payload.driver_thesis is not None
+        else ""
     )
     return EvidenceAwareReport(
         run_id=request.run_id,
         ticker=state.ticker,
         task_type=request.task_type,
         task_sections=task_sections,
-        sections={"summary": payload.driver_thesis.summary, "synthesis": "llm"},
+        sections={"summary": summary, "synthesis": "llm"},
         claims=_claims_from_payload(request, payload.claims, source_refs, source_refs_by_id),
         retrieval_records=state.retrieval_records,
     )
@@ -1316,6 +1315,29 @@ def build_business_driver_report_from_payload(
 
 def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str, Any]:
     normalized = _clean_mapping_keys(payload_data)
+    is_sentiment_payload = isinstance(normalized.get("sentiment_header"), dict)
+    if is_sentiment_payload:
+        normalized["sentiment_header"] = _clean_mapping_keys(normalized["sentiment_header"])
+        if isinstance(normalized.get("narrative_snapshot"), dict):
+            normalized["narrative_snapshot"] = _clean_mapping_keys(
+                normalized["narrative_snapshot"]
+            )
+        if isinstance(normalized.get("bull_bear_narrative"), dict):
+            normalized["bull_bear_narrative"] = _clean_mapping_keys(
+                normalized["bull_bear_narrative"]
+            )
+        if isinstance(normalized.get("source_divergence"), dict):
+            normalized["source_divergence"] = _clean_mapping_keys(
+                normalized["source_divergence"]
+            )
+        warnings = normalized.get("noise_warnings", [])
+        normalized["noise_warnings"] = [
+            str(warning)
+            for warning in (warnings if isinstance(warnings, list) else [warnings])
+            if str(warning).strip()
+        ]
+        normalized["claims"] = _normalize_synthesized_claims(normalized.get("claims", []))
+        return _sanitize_payload_user_text(normalized)
     driver_thesis = normalized.get("driver_thesis")
     if isinstance(driver_thesis, str):
         normalized["driver_thesis"] = {
@@ -3984,98 +4006,6 @@ def _bounded_int_from_env(
     return max(minimum, min(maximum, parsed))
 
 
-def _business_driver_prompt(
-    request: AgentRequest,
-    state: AgentState,
-    source_refs: list[SourceRef],
-) -> str:
-    evidence_refs = _aliased_source_refs(_limit_source_refs(source_refs))
-    evidence_lines = _evidence_lines(evidence_refs, source_refs)
-    allowed_source_ids = [source_ref.source_id for source_ref in evidence_refs]
-    facts_brief = business_driver_facts_brief(state, request.language)
-    if _is_zh_locale(request.language):
-        return (
-            "请生成业务驱动深挖所需的 typed task sections。\n"
-            "只返回 JSON。凡是需要对象或数组的位置，不要用字符串代替。\n"
-            f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
-            "不要编造 source_ids。不要引用上面未列出的事实、概念或 node id。\n"
-            "请严格使用以下结构：\n"
-            "{\n"
-            '  "driver_thesis": {"headline": "...", "durability": '
-            '"durable|mixed|temporary|unclear", "summary": "..."},\n'
-            '  "driver_map": {\n'
-            '    "revenue_bridge": {"title": "...", "summary": "...", '
-            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
-            '    "segment_momentum": {"title": "...", "summary": "...", '
-            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
-            '    "margin_and_mix": {"title": "...", "summary": "...", '
-            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
-            '    "demand_signals": {"title": "...", "summary": "...", '
-            '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}\n'
-            "  },\n"
-            '  "claims": [{"text": "...", "source_ids": ["..."], '
-            '"citation_status": "supported|partial|missing|unverified"}]\n'
-            "}\n"
-            "driver_map 的四个字段都是单个段落 point，不要返回数组。"
-            "每段 summary 写 3-5 句，说明结论、证据、投资含义和证据限制。\n"
-            "所有 source_ids 都必须来自已提供的证据。\n"
-            "如果 segment 或 RAG 证据不完整，也要基于结构化 facts brief 给出谨慎的方向性判断，"
-            "不要输出 No evidence、无法判断 或类似占位句。\n"
-            "四段分别回答 revenue bridge、segment momentum、margin and mix、demand signals。"
-            "SEC filing、company facts、market data 和已收集第三方来源都可以作为补充证据，"
-            "但必须使用 allowed source_ids。监管、法律或市场风险只能作为反证写入相关段落。\n"
-            f"Ticker: {state.ticker}\n"
-            f"Task: {request.task_type.value}\n"
-            f"{facts_brief}\n"
-            f"Business signals: {_json_safe(state.evidence_memory.business_signals)}\n"
-            f"Coverage: status={state.coverage.status}; "
-            f"evidence_count={state.coverage.evidence_count}; "
-            f"citation_coverage={state.coverage.citation_coverage}\n"
-            "Evidence:\n" + "\n".join(evidence_lines)
-        )
-    return (
-        "Generate typed task sections for business driver deep dive.\n"
-        "Return JSON only. Do not use strings where objects or arrays are required.\n"
-        f"Allowed source_ids: {_json_safe(allowed_source_ids)}.\n"
-        "Do not invent source_ids. Do not reference facts, concepts, or node ids that are not listed above.\n"
-        "Use this structure exactly:\n"
-        "{\n"
-        '  "driver_thesis": {"headline": "...", "durability": '
-        '"durable|mixed|temporary|unclear", "summary": "..."},\n'
-        '  "driver_map": {\n'
-        '    "revenue_bridge": {"title": "...", "summary": "...", '
-        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
-        '    "segment_momentum": {"title": "...", "summary": "...", '
-        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
-        '    "margin_and_mix": {"title": "...", "summary": "...", '
-        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"},\n'
-        '    "demand_signals": {"title": "...", "summary": "...", '
-        '"source_ids": ["..."], "citation_status": "supported|partial|missing|unverified"}\n'
-        "  },\n"
-        '  "claims": [{"text": "...", "source_ids": ["..."], '
-        '"citation_status": "supported|partial|missing|unverified"}]\n'
-        "}\n"
-        "Each driver_map field is one paragraph point, not an array. Each summary should "
-        "be 3-5 sentences covering conclusion, evidence, investor relevance, and evidence limits.\n"
-        "All source_ids must come from the evidence provided.\n"
-        "If segment or RAG evidence is incomplete, use the structured facts brief to write a "
-        "cautious directional conclusion. Do not output No evidence, unable to determine, "
-        "or similar placeholders.\n"
-        "The four paragraphs must cover revenue bridge, segment momentum, margin and mix, "
-        "and demand signals. SEC filing, company facts, market data, and collected third-party "
-        "sources may all supplement the analysis, but every cited fact must use an allowed source_id. "
-        "Regulatory, legal, or market-risk evidence should be used only as counter-evidence inside the relevant paragraph.\n"
-        f"Ticker: {state.ticker}\n"
-        f"Task: {request.task_type.value}\n"
-        f"{facts_brief}\n"
-        f"Business signals: {_json_safe(state.evidence_memory.business_signals)}\n"
-        f"Coverage: status={state.coverage.status}; "
-        f"evidence_count={state.coverage.evidence_count}; "
-        f"citation_coverage={state.coverage.citation_coverage}\n"
-        "Evidence:\n" + "\n".join(evidence_lines)
-    )
-
-
 def _cash_flow_prompt(
     request: AgentRequest,
     state: AgentState,
@@ -4545,6 +4475,8 @@ def _backfill_business_driver_point_source_ids(
     source_refs_by_id: dict[str, SourceRef],
     state: AgentState,
 ) -> None:
+    if payload.driver_map is None:
+        return
     lens_terms = {
         "revenue_bridge": (
             "revenue",
@@ -4650,6 +4582,8 @@ def _backfill_business_driver_thesis(
     language: str | None,
 ) -> None:
     thesis = payload.driver_thesis
+    if thesis is None:
+        return
     if not _is_business_driver_placeholder_text(thesis.headline) and not (
         _is_business_driver_placeholder_text(thesis.summary)
     ):
@@ -4764,7 +4698,7 @@ def _localize_business_driver_placeholders(
     payload: _BusinessDriverSynthesis,
     language: str | None,
 ) -> None:
-    if not _is_zh_locale(language):
+    if not _is_zh_locale(language) or payload.driver_map is None:
         return
     for lens_name, point in (
         ("revenue_bridge", payload.driver_map.revenue_bridge),
@@ -4782,14 +4716,15 @@ def _localize_business_driver_visible_copy(
 ) -> None:
     if not _is_zh_locale(language):
         return
-    payload.driver_thesis.headline = _localize_visible_text(
-        payload.driver_thesis.headline,
-        language,
-    )
-    payload.driver_thesis.summary = _localize_visible_text(
-        payload.driver_thesis.summary,
-        language,
-    )
+    if payload.driver_thesis is not None:
+        payload.driver_thesis.headline = _localize_visible_text(
+            payload.driver_thesis.headline,
+            language,
+        )
+        payload.driver_thesis.summary = _localize_visible_text(
+            payload.driver_thesis.summary,
+            language,
+        )
     for point in _driver_map_points(payload.driver_map):
         point.title = _localize_visible_text(point.title, language)
         point.summary = _localize_visible_text(point.summary, language)
@@ -5058,13 +4993,28 @@ def _business_driver_coverage(
     source_refs: list[SourceRef],
 ) -> TaskSectionCoverage:
     missing_sections = []
+    if payload.sentiment_header is not None:
+        for field_name in (
+            "narrative_snapshot",
+            "bull_bear_narrative",
+            "source_divergence",
+        ):
+            if getattr(payload, field_name) is None:
+                missing_sections.append(field_name)
+        if not source_refs:
+            missing_sections.append("sentiment_sources")
+        return TaskSectionCoverage(
+            status="complete" if not missing_sections else "partial",
+            missing_sections=missing_sections,
+            evidence_count=len(source_refs),
+        )
     for field_name in (
         "revenue_bridge",
         "segment_momentum",
         "margin_and_mix",
         "demand_signals",
     ):
-        if getattr(payload.driver_map, field_name) is None:
+        if payload.driver_map is None or getattr(payload.driver_map, field_name) is None:
             missing_sections.append(field_name)
     if not source_refs:
         missing_sections.append("evidence_refs")
@@ -5075,7 +5025,9 @@ def _business_driver_coverage(
     )
 
 
-def _driver_map_points(driver_map: _SynthesizedDriverMap) -> list[_SynthesizedPoint]:
+def _driver_map_points(driver_map: _SynthesizedDriverMap | None) -> list[_SynthesizedPoint]:
+    if driver_map is None:
+        return []
     return [
         point
         for point in [
@@ -5130,8 +5082,16 @@ def _claims_from_payload(
         EvidenceBoundClaim(
             claim_id=f"{request.run_id}:synthesized_claim:{index + 1}",
             text=claim.text,
-            citation_status=claim.citation_status,
-            source_refs=[source_refs_by_id[source_id] for source_id in claim.source_ids],
+            citation_status=_citation_status_with_known_sources(
+                claim.citation_status,
+                claim.source_ids,
+                source_refs_by_id,
+            ),
+            source_refs=[
+                source_refs_by_id[source_id]
+                for source_id in claim.source_ids
+                if source_id in source_refs_by_id
+            ],
         )
         for index, claim in enumerate(claims)
     ]
@@ -5152,14 +5112,36 @@ def _point_from_payload(
     source_refs_by_id: dict[str, SourceRef],
     language: str | None = None,
 ) -> EvidenceBoundPoint:
+    known_source_ids = [
+        source_id for source_id in point.source_ids if source_id in source_refs_by_id
+    ]
     return EvidenceBoundPoint(
         title=_localize_visible_text(point.title, language),
         summary=_localize_visible_text(point.summary, language),
-        evidence_refs=[
-            _evidence_ref(source_refs_by_id[source_id]) for source_id in point.source_ids
-        ],
-        citation_status=point.citation_status,
+        evidence_refs=[_evidence_ref(source_refs_by_id[source_id]) for source_id in known_source_ids],
+        citation_status=_citation_status_with_known_sources(
+            point.citation_status,
+            point.source_ids,
+            source_refs_by_id,
+        ),
     )
+
+
+def _citation_status_with_known_sources(
+    citation_status: CitationStatus,
+    source_ids: list[str],
+    source_refs_by_id: dict[str, SourceRef],
+) -> CitationStatus:
+    if not source_ids:
+        return citation_status
+    known_count = sum(1 for source_id in source_ids if source_id in source_refs_by_id)
+    if known_count == len(source_ids):
+        return citation_status
+    if known_count > 0 and citation_status == CitationStatus.SUPPORTED:
+        return CitationStatus.PARTIAL
+    if known_count == 0:
+        return CitationStatus.UNVERIFIED
+    return citation_status
 
 
 def _metric_from_payload(

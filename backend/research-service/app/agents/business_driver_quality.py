@@ -8,15 +8,6 @@ from app.agents.structured_facts import normalize_metric_name, structured_metric
 from app.agents.zh_text_helpers import localize_market_classification
 from app.contracts.agent import AgentState
 
-BUSINESS_DRIVER_CORE_METRICS = [
-    "revenue",
-    "segment revenue",
-    "gross margin",
-    "operating margin",
-    "operating income",
-    "net income",
-]
-
 BUSINESS_DRIVER_FACT_METRICS = [
     "revenue",
     "gross margin",
@@ -56,44 +47,6 @@ class BusinessDriverFactsContext(BaseModel):
                 self.market_context,
             )
         )
-
-
-def business_driver_facts_brief(state: AgentState, language: str | None) -> str:
-    lines = ["Business driver facts brief:"]
-    profile_items = _business_driver_profile_items(state)
-    if profile_items:
-        lines.append("Company and market brief:")
-        lines.extend(f"- {item}" for item in profile_items)
-    metric_items = _business_driver_metric_items(state)
-    if metric_items:
-        lines.append("Financial facts brief:")
-        lines.extend(f"- {item}" for item in metric_items[:8])
-    signal_items = _business_driver_signal_items(state)
-    if signal_items:
-        lines.append("Business signal brief:")
-        lines.extend(f"- {item}" for item in signal_items[:4])
-    market_items = _business_driver_market_context_items(state)
-    if market_items:
-        lines.append("Market context brief:")
-        lines.extend(f"- {item}" for item in market_items[:6])
-    if len(lines) == 1:
-        lines.append(
-            "- No structured facts were available."
-            if not _is_zh_locale(language)
-            else "- 没有可用的结构化 facts。"
-        )
-    if _is_zh_locale(language):
-        lines.append(
-            "当 segment 或 RAG 证据不完整时，请用这份 brief 写谨慎的方向性判断；"
-            "除非句子有 allowed source_id 支撑，否则 citation_status 使用 partial 或 unverified。"
-        )
-    else:
-        lines.append(
-            "Use this brief for cautious directional conclusions when segment or RAG "
-            "evidence is incomplete; label citation_status as partial or unverified "
-            "unless an allowed source_id supports the sentence."
-        )
-    return "\n".join(lines)
 
 
 def business_driver_facts_context(state: AgentState) -> BusinessDriverFactsContext:
@@ -256,62 +209,6 @@ def business_driver_thesis_backfill(
         "and demand indicators to validate it."
     )
     return headline, "mixed", summary
-
-
-def _business_driver_profile_items(state: AgentState) -> list[str]:
-    facts = state.evidence_memory.facts
-    items: list[str] = []
-    for label, keys in (
-        ("Company", ("company_name", "companyName", "name", "longName")),
-        ("Sector", ("sector", "market_sector")),
-        ("Industry", ("industry", "market_industry")),
-    ):
-        value = _first_fact_text(facts, keys)
-        if value:
-            items.append(f"{label}: {_clip(value, 180)}")
-    business_summary = _company_profile_raw_summary_from_facts(state)
-    if business_summary:
-        items.append(f"Business summary: {_clip(business_summary, 360)}")
-    return items
-
-
-def _business_driver_metric_items(state: AgentState) -> list[str]:
-    records = [
-        *_normalized_business_driver_metric_records(state.evidence_memory.metric_evidence),
-        *_normalized_business_driver_metric_records(
-            structured_metric_records_from_facts(state.evidence_memory.facts)
-        ),
-    ]
-    items: list[str] = []
-    seen: set[str] = set()
-    preferred_metrics = {
-        "revenue",
-        "gross margin",
-        "operating margin",
-        "net margin",
-        "operating income",
-        "net income",
-        "operating cash flow",
-        "free cash flow",
-    }
-    for record in records:
-        metric = str(record.get("metric") or record.get("name") or "").strip()
-        normalized = normalize_metric_name(metric)
-        if not normalized or normalized in seen:
-            continue
-        if normalized not in preferred_metrics and len(seen) >= 6:
-            continue
-        value = _metric_evidence_value(record)
-        period = _metric_evidence_period(record)
-        source = str(record.get("source") or "").strip()
-        item = f"{normalized}: {value}"
-        if period:
-            item += f" ({period})"
-        if source:
-            item += f"; source={source}"
-        items.append(item)
-        seen.add(normalized)
-    return items
 
 
 def _normalized_business_driver_metric_records(

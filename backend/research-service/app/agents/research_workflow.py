@@ -4,10 +4,6 @@ from time import perf_counter
 from typing import Any
 
 from app.agents.business_driver_agent import BusinessDriverAgentError, run_business_driver_agent
-from app.agents.business_driver_quality import (
-    business_driver_facts_context,
-    business_driver_thesis_backfill,
-)
 from app.agents.cash_flow_agent import CashFlowAgentError, run_cash_flow_agent
 from app.agents.domain_tools import ResearchToolService
 from app.agents.earnings_agent import EarningsAgentError, run_latest_earnings_agent
@@ -35,18 +31,19 @@ from app.contracts.agent import (
     default_task_policy,
 )
 from app.contracts.report import (
+    BullBearNarrative,
     BusinessDriverSections,
     CapitalAllocation,
     CashFlowCapitalAllocationSections,
     CashQualityVerdict,
     CitationStatus,
-    DriverMap,
-    DriverThesis,
     EvidenceAwareReport,
     EvidenceBoundClaim,
     EvidenceBoundMetric,
     EvidenceBoundPoint,
     EvidenceRef,
+    SentimentHeader,
+    SourceDivergence,
     SourceRef,
     TaskSectionCoverage,
 )
@@ -89,7 +86,10 @@ _ZH_FALLBACK_TEXT_REPLACEMENTS = (
         "客户集中度和供应约束仍是主要风险",
     ),
     (
-        r"\bWireless service revenue increased as fixed wireless access and fiber broadband demand supported customer additions\b",
+        (
+            r"\bWireless service revenue increased as fixed wireless access and "
+            r"fiber broadband demand supported customer additions\b"
+        ),
         "无线服务收入增长，固定无线接入和光纤宽带需求支撑客户新增",
     ),
     (
@@ -356,38 +356,7 @@ def _report_retrieval_records(
     request: AgentRequest,
     state: AgentState,
 ) -> list[dict[str, Any]]:
-    if request.task_type != ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
-        return state.retrieval_records
-    return [_clean_business_driver_retrieval_record(record) for record in state.retrieval_records]
-
-
-def _clean_business_driver_retrieval_record(record: dict[str, Any]) -> dict[str, Any]:
-    cleaned = dict(record)
-    retrieved_nodes = cleaned.get("retrieved_nodes")
-    if isinstance(retrieved_nodes, list):
-        cleaned["retrieved_nodes"] = [
-            node for node in retrieved_nodes if not _is_noisy_business_driver_retrieved_node(node)
-        ]
-    return cleaned
-
-
-def _is_noisy_business_driver_retrieved_node(node: object) -> bool:
-    if not isinstance(node, dict):
-        return False
-    metadata = node.get("metadata")
-    metadata_section = ""
-    if isinstance(metadata, dict):
-        metadata_section = str(metadata.get("section") or metadata.get("section_name") or "")
-    searchable_text = " ".join(
-        str(value or "")
-        for value in (
-            node.get("section"),
-            metadata_section,
-            node.get("text"),
-            node.get("snippet"),
-        )
-    )
-    return _is_noisy_business_driver_snippet(searchable_text)
+    return state.retrieval_records
 
 
 def _is_final_synthesis_failure(reason: str) -> bool:
@@ -406,7 +375,7 @@ def _fallback_report_from_state(
     if not source_refs and not metrics:
         return None
     report_source_refs = (
-        _business_driver_report_source_refs(source_refs)
+        _market_sentiment_source_refs(source_refs)
         if request.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE
         else source_refs
     )
@@ -443,11 +412,9 @@ def _fallback_report_from_state(
             }
         )
     elif request.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
-        task_sections = _business_driver_fallback_sections(
+        task_sections = _market_sentiment_fallback_sections(
             request=request,
-            state=state,
             summary=summary,
-            metrics=present_metrics,
             source_refs=source_refs,
             coverage=coverage,
         )
@@ -635,10 +602,12 @@ def _latest_earnings_structured_fallback_view(
             "如果后续季度收入继续扩张，同时利润率没有明显回落，当前财报判断会更有支撑；"
             "反之，收入增速放缓会削弱这份读数的安全边际。"
         )
-        profit_summary = (
-            f"利润质量需要重点看{profit_text or headline_metric}。"
-            f"{'同时，' + cash_text + '，这能帮助判断利润是否有现金流支撑。' if cash_text else '在缺少现金流锚点时，这一判断仍需保守处理。'}"
+        cash_quality_note = (
+            f"同时，{cash_text}，这能帮助判断利润是否有现金流支撑。"
+            if cash_text
+            else "在缺少现金流锚点时，这一判断仍需保守处理。"
         )
+        profit_summary = f"利润质量需要重点看{profit_text or headline_metric}。{cash_quality_note}"
         return {
             "headline": headline,
             "summary": report_summary,
@@ -655,19 +624,26 @@ def _latest_earnings_structured_fallback_view(
     report_summary = (
         f"{headline_subject} should be read from verified financial anchors: "
         f"{', '.join(metric_clauses) if metric_clauses else fallback_summary}. "
-        "The conservative conclusion is to judge growth, margin conversion, and cash support together "
+        "The conservative conclusion is to judge growth, margin conversion, "
+        "and cash support together "
         "rather than treating one metric as a standalone signal."
     )
     if risk_text:
         report_summary += f" The main risk context is: {risk_text}"
     takeaway_summary = (
         f"Growth quality is anchored by {revenue_text or headline_metric}. "
-        "If revenue continues to expand without margin deterioration, the earnings read gains support; "
+        "If revenue continues to expand without margin deterioration, "
+        "the earnings read gains support; "
         "if growth slows, the view should stay cautious."
+    )
+    cash_quality_note = (
+        f"Cash support is visible through {cash_text}."
+        if cash_text
+        else "Without a cash-flow anchor, this remains a partial view."
     )
     profit_summary = (
         f"Profit quality should be checked against {profit_text or headline_metric}. "
-        f"{'Cash support is visible through ' + cash_text + '.' if cash_text else 'Without a cash-flow anchor, this remains a partial view.'}"
+        f"{cash_quality_note}"
     )
     return {
         "headline": f"{headline_subject} needs revenue, profit, and cash-flow confirmation",
@@ -741,565 +717,152 @@ def _driver_fallback_summary(
     )
 
 
-def _business_driver_fallback_point(
-    summary: str,
-    metrics: list[EvidenceBoundMetric],
-    source_refs: list[SourceRef],
-) -> EvidenceBoundPoint:
-    metric = _primary_fallback_metric(metrics)
-    if metric is None:
-        return _fallback_point(summary, source_refs, title="Evidence-backed demand signal")
-    fallback_refs = [_evidence_ref(source_refs[0])] if source_refs else []
-    return EvidenceBoundPoint(
-        title=f"{_title_case_metric(metric.name)} demand signal",
-        summary=(
-            f"{metric.name} of {metric.value} is the clearest available demand or "
-            f"scale signal in the collected evidence. {metric.interpretation}"
-        ),
-        evidence_refs=metric.evidence_refs or fallback_refs,
-        citation_status=metric.citation_status,
-    )
-
-
-def _business_driver_context_point(
-    source_refs: list[SourceRef],
-    *,
-    title: str,
-    summary: str,
-) -> EvidenceBoundPoint:
-    return EvidenceBoundPoint(
-        title=title,
-        summary=summary,
-        evidence_refs=[_evidence_ref(source_refs[0])] if source_refs else [],
-        citation_status=(
-            source_refs[0].citation_status if source_refs else CitationStatus.UNVERIFIED
-        ),
-    )
-
-
-def _business_driver_fallback_sections(
+def _market_sentiment_fallback_sections(
     *,
     request: AgentRequest,
-    state: AgentState,
     summary: str,
-    metrics: list[EvidenceBoundMetric],
     source_refs: list[SourceRef],
     coverage: TaskSectionCoverage,
 ) -> BusinessDriverSections:
-    revenue_metric = _metric_by_terms(metrics, ("revenue", "sales", "net sales"))
-    margin_metric = _metric_by_terms(
-        metrics,
-        ("margin", "gross profit", "operating income", "operating profit"),
-    )
-    revenue_point = _business_driver_fallback_lens_point(
-        request=request,
-        state=state,
-        title_zh="收入桥接证据",
-        title_en="Revenue bridge evidence",
-        lens="revenue_bridge",
-        metric=revenue_metric,
-        source_refs=source_refs,
-    )
-    segment_point = _business_driver_fallback_lens_point(
-        request=request,
-        state=state,
-        title_zh="分部动能证据",
-        title_en="Segment momentum evidence",
-        lens="segment_momentum",
-        metric=_metric_by_terms(metrics, ("segment", "product", "service")),
-        source_refs=source_refs,
-    )
-    margin_point = _business_driver_fallback_lens_point(
-        request=request,
-        state=state,
-        title_zh="利润率与组合证据",
-        title_en="Margin and mix evidence",
-        lens="margin_and_mix",
-        metric=margin_metric,
-        source_refs=source_refs,
-    )
-    demand_point = _business_driver_fallback_lens_point(
-        request=request,
-        state=state,
-        title_zh="需求信号证据",
-        title_en="Demand signal evidence",
-        lens="demand_signals",
-        metric=revenue_metric,
-        source_refs=source_refs,
-    )
-    thesis_summary = _business_driver_fallback_thesis_summary(
+    is_zh = _is_zh_locale(request.language)
+    sentiment_refs = _market_sentiment_source_refs(source_refs)
+    source_summary = _market_sentiment_source_summary(sentiment_refs, is_zh=is_zh)
+    narrative_summary = _market_sentiment_fallback_summary(
         request=request,
         summary=summary,
-        points=[revenue_point, segment_point, margin_point, demand_point],
+        source_summary=source_summary,
     )
-    thesis_title, thesis_durability, thesis_summary = _business_driver_fallback_thesis(
-        request=request,
-        state=state,
-        summary=summary,
-        points=[revenue_point, segment_point, margin_point, demand_point],
+    coverage = coverage.model_copy(
+        update={
+            "missing_sections": [
+                *coverage.missing_sections,
+                "llm_sentiment_synthesis",
+            ],
+            "evidence_count": len(sentiment_refs),
+        }
     )
     return BusinessDriverSections(
         schema_version="task_sections.v1",
         task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
         coverage=coverage,
-        driver_thesis=DriverThesis(
-            headline=thesis_title,
-            durability=thesis_durability,
-            summary=thesis_summary,
+        sentiment_header=SentimentHeader(
+            overall_band="Mixed",
+            overall_score=5.0,
+            confidence="low",
+            summary=narrative_summary,
         ),
-        driver_map=DriverMap(
-            revenue_bridge=revenue_point,
-            segment_momentum=segment_point,
-            margin_and_mix=margin_point,
-            demand_signals=demand_point,
+        narrative_snapshot=EvidenceBoundPoint(
+            title="市场叙事样本" if is_zh else "Market narrative sample",
+            summary=narrative_summary,
+            evidence_refs=[_evidence_ref(source_ref) for source_ref in sentiment_refs[:3]],
+            citation_status=_fallback_citation_status(sentiment_refs),
         ),
-    )
-
-
-def _business_driver_fallback_thesis(
-    *,
-    request: AgentRequest,
-    state: AgentState,
-    summary: str,
-    points: list[EvidenceBoundPoint],
-) -> tuple[str, str, str]:
-    facts_context = business_driver_facts_context(state)
-    if facts_context.has_signal:
-        if not facts_context.company:
-            facts_context = facts_context.model_copy(
-                update={"company": request.ticker}
-            )
-        return business_driver_thesis_backfill(facts_context, request.language)
-    return (
-        (
-            f"{request.ticker} 业务驱动需要等待更多证据验证"
-            if _is_zh_locale(request.language)
-            else f"{request.ticker} business drivers need more evidence"
+        bull_bear_narrative=BullBearNarrative(
+            bull_case=(
+                "多头叙事需要等待情绪源和 LLM 合成恢复后再细分。"
+                if is_zh
+                else (
+                    "The bullish narrative needs sentiment sources and LLM "
+                    "synthesis to recover before it can be split out."
+                )
+            ),
+            bear_case=(
+                "空头叙事同样只能先按样本限制处理，不能编造社媒或新闻观点。"
+                if is_zh
+                else (
+                    "The bearish narrative is constrained by the available sample; "
+                    "the fallback must not invent social or news views."
+                )
+            ),
+            balanced_read=(
+                "本次只给出低置信度读数：来源样本已记录，但最终情绪合成失败。"
+                if is_zh
+                else (
+                    "This is a low-confidence read: source collection is recorded, "
+                    "but the final sentiment synthesis failed."
+                )
+            ),
         ),
-        "unclear",
-        _business_driver_fallback_thesis_summary(
-            request=request,
-            summary=summary,
-            points=points,
+        source_divergence=SourceDivergence(
+            summary=source_summary,
+            news_direction=_source_direction(sentiment_refs, "yahoo_news"),
+            stocktwits_direction=_source_direction(sentiment_refs, "stocktwits"),
+            reddit_direction=_source_direction(sentiment_refs, "reddit"),
         ),
-    )
-
-
-_BUSINESS_DRIVER_LENS_TERMS: dict[str, tuple[str, ...]] = {
-    "revenue_bridge": (
-        "revenue",
-        "sales",
-        "net sales",
-        "growth",
-        "increased",
-        "declined",
-    ),
-    "segment_momentum": (
-        "segment",
-        "services",
-        "service",
-        "product",
-        "data center",
-        "client",
-        "gaming",
-        "embedded",
-        "geography",
-        "region",
-    ),
-    "margin_and_mix": (
-        "margin",
-        "gross margin",
-        "gross profit",
-        "mix",
-        "pricing",
-        "price",
-        "cost",
-        "operating income",
-    ),
-    "demand_signals": (
-        "demand",
-        "customer",
-        "installed base",
-        "engagement",
-        "orders",
-        "backlog",
-        "unit",
-        "shipment",
-        "accelerator",
-        "growth",
-    ),
-}
-
-_BUSINESS_DRIVER_LENS_SIGNAL_TYPES: dict[str, tuple[str, ...]] = {
-    "revenue_bridge": ("demand", "product"),
-    "segment_momentum": ("segment", "product"),
-    "margin_and_mix": ("pricing", "product"),
-    "demand_signals": ("demand", "product"),
-}
-
-
-_NOISY_BUSINESS_DRIVER_SNIPPET_PHRASES = (
-    "business metrics utilized by investors",
-    "comparable sales percentage changes by revenue category",
-    "disaggregate the company's net revenue",
-    "disaggregate net revenue",
-    "foreign currency risk",
-    "following table",
-    "following tables",
-    "government securities",
-    "market risk",
-    "net revenue by revenue category",
-    "other revenue primarily includes",
-    "principal transactions revenue",
-    "revenue is generally recognized",
-    "revenue sharing",
-    "table of contents",
-)
-
-
-def _business_driver_fallback_lens_point(
-    *,
-    request: AgentRequest,
-    state: AgentState,
-    title_zh: str,
-    title_en: str,
-    lens: str,
-    metric: EvidenceBoundMetric | None,
-    source_refs: list[SourceRef],
-) -> EvidenceBoundPoint:
-    terms = _BUSINESS_DRIVER_LENS_TERMS[lens]
-    signal_types = _BUSINESS_DRIVER_LENS_SIGNAL_TYPES[lens]
-    signal_records = _business_signal_records(state.evidence_memory, signal_types, terms)
-    lens_refs = _business_driver_lens_refs(
-        lens=lens,
-        metric=metric,
-        signal_records=signal_records,
-        source_refs=source_refs,
-        terms=terms,
-    )
-    summary = _business_driver_fallback_lens_summary(
-        request=request,
-        lens=lens,
-        metric=metric,
-        source_refs=lens_refs,
-        signal_records=signal_records,
-    )
-    citation_status = _business_driver_citation_status(metric, lens_refs)
-    return EvidenceBoundPoint(
-        title=title_zh if _is_zh_locale(request.language) else title_en,
-        summary=summary,
-        evidence_refs=_business_driver_evidence_refs(
-            metric,
-            lens_refs,
-            zh=_is_zh_locale(request.language),
-        ),
-        citation_status=citation_status,
-    )
-
-
-def _business_driver_fallback_lens_summary(
-    *,
-    request: AgentRequest,
-    lens: str,
-    metric: EvidenceBoundMetric | None,
-    source_refs: list[SourceRef],
-    signal_records: list[dict[str, Any]],
-) -> str:
-    zh = _is_zh_locale(request.language)
-    metric_text = _display_metric(metric) if metric is not None else ""
-    source_text = _business_driver_source_text(source_refs, zh=zh)
-    signal_text = _business_driver_signal_text(signal_records, zh=zh)
-    if lens in {"revenue_bridge", "margin_and_mix"}:
-        evidence_text = source_text or signal_text or metric_text
-    else:
-        evidence_text = signal_text or source_text or metric_text
-    evidence_text = evidence_text or ("已收集证据" if zh else "collected evidence")
-    if zh:
-        if lens == "revenue_bridge":
-            anchor = (
-                f"以 {_zh_fallback_text(metric_text)} 作为收入观察起点"
-                if metric_text
-                else "主要依赖当前可用披露"
-            )
-            return (
-                f"{request.ticker} 的收入桥接{anchor}；"
-                f"对应证据显示：{_zh_fallback_text(evidence_text)}。"
-                "这说明收入侧仍是判断业务动能的第一层证据，投资上需要继续和分部表现、利润率转化一起验证。"
-                "当前结论只限定在已收集证据内，不外推未被证据来源支持的需求叙事。"
-            )
-        if lens == "segment_momentum":
-            return (
-                f"{request.ticker} 的分部动能主要来自这条证据：{_zh_fallback_text(evidence_text)}。"
-                "如果分部或产品线层面的动能能和总收入同向，它会提高收入质量；如果只靠单一业务拉动，则后续季度需要验证可持续性。"
-                "这段判断优先使用分部、产品或地区相关披露片段，"
-                "因此比通用宏观叙事更可追溯。"
-            )
-        if lens == "margin_and_mix":
-            anchor = f"关键指标是 {_zh_fallback_text(metric_text)}；" if metric_text else ""
-            return (
-                f"{request.ticker} 的利润率与组合线索中，{anchor}"
-                f"关键证据是：{_zh_fallback_text(evidence_text)}。"
-                "这说明投资者不能只看收入方向，还要看产品组合、定价和成本是否把收入转成利润。"
-                "如果证据没有明确拆出价格、成本和组合，这里应保持阶段性结论。"
-            )
-        return (
-            f"{request.ticker} 的需求信号来自：{_zh_fallback_text(evidence_text)}。"
-            "这类信号能帮助判断收入是由真实客户需求、装机基础或订单动能驱动，还是仅由短期价格和渠道变化支撑。"
-            "在当前证据范围内，需求结论应和收入桥接交叉验证，避免把单个片段解读成完整趋势。"
-        )
-    if lens == "revenue_bridge":
-        anchor = (
-            f"uses {metric_text} as the quantitative anchor"
-            if metric_text
-            else "rests on the retrieved filing evidence"
-        )
-        return (
-            f"{request.ticker}'s revenue bridge {anchor}. Evidence: {evidence_text}. "
-            "This keeps revenue as the first operating signal, while still requiring "
-            "confirmation from segment momentum and margin conversion."
-        )
-    if lens == "segment_momentum":
-        return (
-            f"{request.ticker}'s segment momentum is anchored by this evidence: {evidence_text}. "
-            "A segment-level signal matters because it shows whether revenue strength is broad "
-            "or concentrated in one business line."
-        )
-    if lens == "margin_and_mix":
-        anchor = f"The metric anchor is {metric_text}. " if metric_text else ""
-        return (
-            f"{anchor}{request.ticker}'s margin and mix read comes from: {evidence_text}. "
-            "This keeps the investment read tied to whether revenue converts into better "
-            "profitability through product mix, pricing, or cost control."
-        )
-    return (
-        f"{request.ticker}'s demand signals come from: {evidence_text}. "
-        "The signal is useful only when it cross-checks against revenue and segment evidence, "
-        "so the conclusion remains bounded to the retrieved sources."
-    )
-
-
-def _business_driver_fallback_thesis_summary(
-    *,
-    request: AgentRequest,
-    summary: str,
-    points: list[EvidenceBoundPoint],
-) -> str:
-    snippets = [_clip(point.summary, 140) for point in points if point.summary.strip()]
-    if _is_zh_locale(request.language):
-        return (
-            f"{request.ticker} 的业务驱动结论应以当前证据为边界："
-            f"{_zh_fallback_text(summary)} 四个核心观察分别是："
-            f"{_zh_fallback_text(' '.join(snippets[:4]))}"
-        )
-    return (
-        f"{request.ticker}'s business driver thesis is bounded by the retrieved evidence: "
-        f"{summary} The four operating observations are: {' '.join(snippets[:4])}"
-    )
-
-
-def _metric_by_terms(
-    metrics: list[EvidenceBoundMetric],
-    terms: tuple[str, ...],
-) -> EvidenceBoundMetric | None:
-    for metric in metrics:
-        metric_name = metric.name.strip().lower()
-        if any(term in metric_name for term in terms):
-            return metric
-    return None
-
-
-def _source_refs_from_metric(
-    metric: EvidenceBoundMetric | None,
-    source_refs: list[SourceRef],
-) -> list[SourceRef]:
-    if metric is None:
-        return []
-    source_ids = {
-        evidence_ref.source_id for evidence_ref in metric.evidence_refs if evidence_ref.source_id
-    }
-    return [source_ref for source_ref in source_refs if source_ref.source_id in source_ids]
-
-
-def _source_refs_from_signals(
-    signal_records: list[dict[str, Any]],
-    source_refs: list[SourceRef],
-) -> list[SourceRef]:
-    refs_by_id = {source_ref.source_id: source_ref for source_ref in source_refs}
-    refs: list[SourceRef] = []
-    for record in signal_records:
-        source_id = str(record.get("source_id") or "").strip()
-        if source_id in refs_by_id:
-            refs.append(refs_by_id[source_id])
-        elif source_id:
-            refs.append(
-                SourceRef(
-                    source_id=source_id,
-                    section=str(record.get("section") or "Business signal"),
-                    snippet=str(record.get("snippet") or record.get("summary") or ""),
-                    citation_status=_citation_status_from_value(record.get("citation_status")),
+        noise_warnings=[
+            (
+                "最终情绪合成失败；当前展示的是保守 fallback，不代表完整社媒结论。"
+                if is_zh
+                else (
+                    "Final sentiment synthesis failed; this conservative fallback "
+                    "is not a complete social sentiment read."
                 )
             )
-    return refs
-
-
-def _source_refs_matching_terms(
-    source_refs: list[SourceRef],
-    terms: tuple[str, ...],
-) -> list[SourceRef]:
-    matches: list[SourceRef] = []
-    for source_ref in source_refs:
-        if not _is_clean_business_driver_source_ref(source_ref):
-            continue
-        searchable = f"{source_ref.section} {source_ref.snippet}".lower()
-        if any(term in searchable for term in terms):
-            matches.append(source_ref)
-    return matches
-
-
-def _business_driver_lens_refs(
-    *,
-    lens: str,
-    metric: EvidenceBoundMetric | None,
-    signal_records: list[dict[str, Any]],
-    source_refs: list[SourceRef],
-    terms: tuple[str, ...],
-) -> list[SourceRef]:
-    metric_refs = _clean_business_driver_source_refs(_source_refs_from_metric(metric, source_refs))
-    signal_refs = _clean_business_driver_source_refs(
-        _source_refs_from_signals(signal_records, source_refs)
+        ],
+        driver_thesis=None,
+        driver_map=None,
     )
-    term_refs = _source_refs_matching_terms(source_refs, terms)
-    broad_fallback_refs = (
-        _clean_business_driver_source_refs(source_refs[:1]) if lens == "revenue_bridge" else []
-    )
-    if lens in {"revenue_bridge", "margin_and_mix"}:
-        ordered_refs = [*metric_refs, *signal_refs, *term_refs, *broad_fallback_refs]
-    else:
-        ordered_refs = [*signal_refs, *term_refs, *metric_refs, *broad_fallback_refs]
-    return _dedupe_business_driver_refs(ordered_refs)
 
 
-def _business_signal_records(
-    memory: EvidenceMemory,
-    signal_types: tuple[str, ...],
-    terms: tuple[str, ...],
-) -> list[dict[str, Any]]:
-    exact_matches: list[dict[str, Any]] = []
-    keyword_matches: list[dict[str, Any]] = []
-    for record in memory.business_signals:
-        signal_type = str(record.get("signal_type") or "").strip().lower()
-        searchable_text = " ".join(
-            str(record.get(key) or "") for key in ("signal", "summary", "section", "snippet")
-        )
-        if _is_noisy_business_driver_snippet(searchable_text):
-            continue
-        searchable = searchable_text.lower()
-        if signal_type in signal_types:
-            exact_matches.append(record)
-        elif any(term in searchable for term in terms):
-            keyword_matches.append(record)
-    return [*exact_matches, *keyword_matches]
-
-
-def _dedupe_business_driver_refs(source_refs: list[SourceRef]) -> list[SourceRef]:
-    seen: set[str] = set()
-    deduped: list[SourceRef] = []
-    for source_ref in source_refs:
-        if not _is_clean_business_driver_source_ref(source_ref):
-            continue
-        key = source_ref.source_id or source_ref.snippet
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        deduped.append(source_ref)
-    return deduped[:3]
-
-
-def _business_driver_source_text(source_refs: list[SourceRef], *, zh: bool = False) -> str:
-    for source_ref in source_refs:
-        if _is_clean_business_driver_source_ref(source_ref):
-            text = _zh_fallback_text(source_ref.snippet) if zh else source_ref.snippet
-            return _clip(text, 220)
-    return ""
-
-
-def _business_driver_signal_text(
-    signal_records: list[dict[str, Any]],
+def _market_sentiment_fallback_summary(
     *,
-    zh: bool = False,
+    request: AgentRequest,
+    summary: str,
+    source_summary: str,
 ) -> str:
-    for record in signal_records:
-        text = str(record.get("summary") or record.get("snippet") or "").strip()
-        if text and not _is_noisy_business_driver_snippet(text):
-            visible_text = _zh_fallback_text(text) if zh else text
-            return _clip(visible_text, 220)
-    return ""
+    if _is_zh_locale(request.language):
+        return (
+            f"{request.ticker} 的市场叙事与情绪分析未完成最终 LLM 合成；"
+            f"已收集来源状态：{source_summary}。"
+            f"错误上下文：{_zh_fallback_text(summary)}"
+        )
+    return (
+        f"{request.ticker} market narrative and sentiment did not complete final "
+        f"LLM synthesis. Collected source status: {source_summary}. Context: {summary}"
+    )
 
 
-def _business_driver_citation_status(
-    metric: EvidenceBoundMetric | None,
-    source_refs: list[SourceRef],
-) -> CitationStatus:
-    if source_refs:
-        return source_refs[0].citation_status
-    if metric is not None:
-        return metric.citation_status
-    return CitationStatus.UNVERIFIED
-
-
-def _business_driver_evidence_refs(
-    metric: EvidenceBoundMetric | None,
-    source_refs: list[SourceRef],
-    *,
-    zh: bool = False,
-) -> list[EvidenceRef]:
-    evidence_refs: list[EvidenceRef] = []
-    seen: set[str] = set()
-    for evidence_ref in metric.evidence_refs if metric is not None else []:
-        if _is_noisy_business_driver_snippet(evidence_ref.excerpt):
-            continue
-        key = evidence_ref.source_id or evidence_ref.excerpt
-        if key and key not in seen:
-            seen.add(key)
-            evidence_refs.append(_zh_evidence_ref(evidence_ref) if zh else evidence_ref)
-    for source_ref in source_refs:
-        key = source_ref.source_id or source_ref.snippet
-        if key and key not in seen:
-            seen.add(key)
-            evidence_ref = _evidence_ref(source_ref)
-            evidence_refs.append(_zh_evidence_ref(evidence_ref) if zh else evidence_ref)
-    return evidence_refs[:3]
-
-
-def _business_driver_report_source_refs(source_refs: list[SourceRef]) -> list[SourceRef]:
-    return _clean_business_driver_source_refs(source_refs)
-
-
-def _clean_business_driver_source_refs(source_refs: list[SourceRef]) -> list[SourceRef]:
+def _market_sentiment_source_refs(source_refs: list[SourceRef]) -> list[SourceRef]:
     return [
-        source_ref for source_ref in source_refs if _is_clean_business_driver_source_ref(source_ref)
+        source_ref
+        for source_ref in source_refs
+        if source_ref.source_id.lower().startswith("sentiment:")
+        or source_ref.section.lower()
+        in {
+            "yahoo_news",
+            "stocktwits",
+            "reddit",
+        }
     ]
 
 
-def _is_clean_business_driver_source_ref(source_ref: SourceRef) -> bool:
-    return not _is_noisy_business_driver_snippet(f"{source_ref.section} {source_ref.snippet}")
+def _market_sentiment_source_summary(
+    source_refs: list[SourceRef],
+    *,
+    is_zh: bool,
+) -> str:
+    statuses = {
+        "Yahoo Finance": _source_direction(source_refs, "yahoo_news"),
+        "StockTwits": _source_direction(source_refs, "stocktwits"),
+        "Reddit": _source_direction(source_refs, "reddit"),
+    }
+    separator = "；" if is_zh else "; "
+    return separator.join(f"{source}={status}" for source, status in statuses.items())
 
 
-def _is_noisy_business_driver_snippet(text: str) -> bool:
-    normalized = " ".join(str(text or "").split())
-    if not normalized:
-        return True
-    lower_text = normalized.lower()
-    if any(phrase in lower_text for phrase in _NOISY_BUSINESS_DRIVER_SNIPPET_PHRASES):
-        return True
-    pipe_count = normalized.count("|")
-    if pipe_count >= 4 or "---|---" in normalized:
-        return True
-    digits = sum(character.isdigit() for character in normalized)
-    separators = sum(1 for character in normalized if character in "|,$%")
-    if digits >= 12 and separators >= 5:
-        return True
-    return False
+def _source_direction(source_refs: list[SourceRef], source_name: str) -> str:
+    matching_refs = [
+        source_ref
+        for source_ref in source_refs
+        if source_name in source_ref.source_id.lower()
+        or source_name in source_ref.section.lower()
+    ]
+    if not matching_refs:
+        return "unavailable"
+    if any(source_ref.citation_status == CitationStatus.SUPPORTED for source_ref in matching_refs):
+        return "mixed"
+    return "thin"
+
 
 
 def _risk_source_ref(
@@ -1339,10 +902,11 @@ def _risk_fallback_summary(
     if source_ref is None:
         if is_zh:
             context_text = str(context or "").strip()
+            fallback = "风险判断仍应保持保守，下一季需要继续验证收入、利润率和现金流是否同向改善。"
             return (
-                f"{context_text} 风险判断仍应保持保守，下一季需要继续验证收入、利润率和现金流是否同向改善。"
+                f"{context_text} {fallback}"
                 if context_text
-                else "风险判断仍应保持保守，下一季需要继续验证收入、利润率和现金流是否同向改善。"
+                else fallback
             )
         return (
             "Risk framing should stay conservative until revenue, margin, and cash-flow "
@@ -1825,7 +1389,11 @@ def _cash_flow_outlook_summary(
     fcf = _lookup_metric(metric_map, "free cash flow")
     capex = _lookup_metric(metric_map, "capital expenditures")
     if ocf is None and fcf is None and capex is None:
-        return _zh_fallback_text(fallback_summary) if _is_zh_locale(request.language) else fallback_summary
+        return (
+            _zh_fallback_text(fallback_summary)
+            if _is_zh_locale(request.language)
+            else fallback_summary
+        )
     if _is_zh_locale(request.language):
         pieces = [
             f"{_zh_metric_name(metric.name)}为 {metric.value}"

@@ -412,8 +412,48 @@ public class AnalysisReport {
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class BusinessDriverSections {
+        private SentimentHeader sentimentHeader;
+        private EvidenceBoundPoint narrativeSnapshot;
+        private BullBearNarrative bullBearNarrative;
+        private SourceDivergence sourceDivergence;
+        private List<String> noiseWarnings;
         private DriverThesis driverThesis;
         private DriverMap driverMap;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SentimentHeader {
+        private String overallBand;
+        private Double overallScore;
+        private String confidence;
+        private String summary;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class BullBearNarrative {
+        private String bullCase;
+        private String bearCase;
+        private String balancedRead;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SourceDivergence {
+        private String summary;
+        private String newsDirection;
+        private String stocktwitsDirection;
+        private String redditDirection;
     }
 
     @Data

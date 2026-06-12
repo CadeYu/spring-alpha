@@ -309,19 +309,17 @@ def default_task_policy(task_type: ResearchTaskType) -> TaskPolicy:
         ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE: TaskPolicy(
             task_type=task_type,
             allowed_tools=[
-                "get_company_facts",
                 "get_market_context",
-                "search_filing_sections",
-                "search_metric_evidence",
-                "get_business_signals",
             ],
             required_outputs=[
-                "driverThesis",
-                "driverMap",
+                "sentimentHeader",
+                "narrativeSnapshot",
+                "bullBearNarrative",
+                "sourceDivergence",
             ],
-            max_steps=7,
-            max_tool_calls=7,
-            max_repair_loops=2,
+            max_steps=4,
+            max_tool_calls=3,
+            max_repair_loops=0,
         ),
         ResearchTaskType.CASH_FLOW_CAPITAL_ALLOCATION: TaskPolicy(
             task_type=task_type,

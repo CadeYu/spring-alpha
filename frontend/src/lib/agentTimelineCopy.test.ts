@@ -28,7 +28,13 @@ describe("agentTimelineCopy", () => {
         "Business driver agent planned the next evidence step.",
         "zh",
       ),
-    ).toBe("业务分析师：已规划下一步证据采集。");
+    ).toBe("市场情绪分析师：已规划下一步证据采集。");
+    expect(
+      translateTimelineSummary(
+        "Sentiment analyst collected StockTwits messages for retail sentiment.",
+        "zh",
+      ),
+    ).toBe("市场情绪分析师：已收集 StockTwits 消息用于散户情绪分析。");
     expect(
       translateTimelineSummary("Agent completed.", "zh"),
     ).toBe("Agent 已完成。");
