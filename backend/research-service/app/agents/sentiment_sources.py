@@ -20,6 +20,7 @@ logger = logging.getLogger("uvicorn.error")
 
 JsonTransport = Callable[[str, float, dict[str, str]], dict[str, object]]
 TextTransport = Callable[[str, float, dict[str, str]], str]
+YFinanceNewsTransport = Callable[[str, int], list[dict[str, object]]]
 Clock = Callable[[], float]
 
 _USER_AGENT = "spring-alpha/1.0 sentiment-agent"
@@ -77,10 +78,19 @@ def fetch_yahoo_finance_news(
     ticker: str,
     *,
     transport: JsonTransport | None = None,
+    yfinance_transport: YFinanceNewsTransport | None = None,
     limit: int = 10,
     timeout: float = 8.0,
 ) -> SentimentSourceBlock:
     normalized = ticker.upper()
+    yfinance_block = _fetch_yfinance_ticker_news(
+        normalized,
+        transport=yfinance_transport or _yfinance_news_transport,
+        limit=limit,
+    )
+    if yfinance_block is not None:
+        return yfinance_block
+
     fetch = transport or _json_transport
     query = urlencode({"q": normalized, "quotesCount": 0, "newsCount": limit})
     try:
@@ -94,6 +104,7 @@ def fetch_yahoo_finance_news(
 
     raw_items = payload.get("news")
     items = raw_items if isinstance(raw_items, list) else []
+    items = _rank_yahoo_search_items(normalized, items)
     lines: list[str] = []
     for item in items[:limit]:
         if not isinstance(item, dict):
@@ -119,6 +130,182 @@ def fetch_yahoo_finance_news(
         item_count=len(lines),
         content="\n".join(lines),
     )
+
+
+def _fetch_yfinance_ticker_news(
+    ticker: str,
+    *,
+    transport: YFinanceNewsTransport,
+    limit: int,
+) -> SentimentSourceBlock | None:
+    try:
+        raw_articles = transport(ticker, limit)
+    except Exception as exc:
+        logger.info(
+            "yfinance ticker news unavailable ticker=%s error=%s; falling back to search",
+            ticker,
+            type(exc).__name__,
+        )
+        return None
+
+    articles = _rank_yfinance_news_items(ticker, raw_articles)
+    lines: list[str] = []
+    for article in articles[:limit]:
+        if not isinstance(article, dict):
+            continue
+        item = _extract_yfinance_news_item(article)
+        title = _clean_text(item.get("title"))
+        if not title:
+            continue
+        publisher = _clean_text(item.get("publisher")) or "unknown publisher"
+        published = _format_yfinance_date(item.get("published")) or "unknown date"
+        summary = _truncate(_clean_text(item.get("summary")), 260)
+        link = _clean_text(item.get("link"))
+        suffix_parts = []
+        if summary:
+            suffix_parts.append(summary)
+        if link:
+            suffix_parts.append(link)
+        suffix = f" · {' · '.join(suffix_parts)}" if suffix_parts else ""
+        lines.append(f"[{published} · {publisher}] {title}{suffix}")
+
+    if not lines:
+        return None
+    return SentimentSourceBlock(
+        source="yahoo_news",
+        status=SentimentSourceStatus.OK,
+        item_count=len(lines),
+        content="\n".join(lines),
+    )
+
+
+def _yfinance_news_transport(ticker: str, limit: int) -> list[dict[str, object]]:
+    try:
+        import yfinance as yf  # type: ignore[import-untyped]
+    except Exception as exc:
+        raise RuntimeError("yfinance is not available") from exc
+
+    stock = yf.Ticker(ticker)
+    news = stock.get_news(count=limit)
+    return news if isinstance(news, list) else []
+
+
+def _extract_yfinance_news_item(article: dict[str, object]) -> dict[str, object]:
+    content = article.get("content")
+    if isinstance(content, dict):
+        provider = content.get("provider")
+        url_obj = content.get("canonicalUrl") or content.get("clickThroughUrl") or {}
+        return {
+            "title": content.get("title"),
+            "summary": content.get("summary"),
+            "publisher": provider.get("displayName") if isinstance(provider, dict) else "",
+            "link": url_obj.get("url") if isinstance(url_obj, dict) else "",
+            "published": content.get("pubDate"),
+        }
+    return {
+        "title": article.get("title"),
+        "summary": article.get("summary"),
+        "publisher": article.get("publisher"),
+        "link": article.get("link"),
+        "published": article.get("providerPublishTime"),
+    }
+
+
+def _format_yfinance_date(value: object) -> str:
+    if isinstance(value, int | float):
+        return _format_epoch_date(value)
+    text = _clean_text(value)
+    if not text:
+        return ""
+    try:
+        normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+        return datetime.fromisoformat(normalized).strftime("%Y-%m-%d")
+    except ValueError:
+        return text[:10]
+
+
+def _rank_yahoo_search_items(ticker: str, items: list[object]) -> list[object]:
+    ranked = list(enumerate(items))
+    ranked.sort(key=lambda pair: (-_yahoo_search_relevance_score(ticker, pair[1]), pair[0]))
+    return [item for _, item in ranked]
+
+
+def _rank_yfinance_news_items(
+    ticker: str,
+    items: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    ranked = list(enumerate(items))
+    ranked.sort(key=lambda pair: (-_yfinance_news_relevance_score(ticker, pair[1]), pair[0]))
+    return [item for _, item in ranked]
+
+
+def _yfinance_news_relevance_score(ticker: str, article: dict[str, object]) -> int:
+    item = _extract_yfinance_news_item(article)
+    return _news_relevance_score(
+        ticker,
+        title=item.get("title"),
+        summary=item.get("summary"),
+        link=item.get("link"),
+    )
+
+
+def _yahoo_search_relevance_score(ticker: str, item: object) -> int:
+    if not isinstance(item, dict):
+        return 0
+    return _news_relevance_score(
+        ticker,
+        title=item.get("title"),
+        summary=item.get("summary"),
+        link=item.get("link"),
+    )
+
+
+def _news_relevance_score(
+    ticker: str,
+    *,
+    title: object,
+    summary: object,
+    link: object,
+) -> int:
+    title = _clean_text(title).lower()
+    summary = _clean_text(summary).lower()
+    link = _clean_text(link).lower()
+    score = 0
+    ticker_lower = ticker.lower()
+    cashtag_pattern = rf"(?<![a-z0-9])\\${re.escape(ticker_lower)}(?![a-z0-9])"
+    ticker_pattern = rf"(?<![a-z0-9]){re.escape(ticker_lower)}(?![a-z0-9])"
+    if re.search(cashtag_pattern, title):
+        score += 14
+    if re.search(ticker_pattern, title):
+        score += 12
+    if re.search(cashtag_pattern, summary):
+        score += 8
+    if re.search(ticker_pattern, summary):
+        score += 6
+    company_terms = _company_relevance_terms(ticker)
+    for term in company_terms:
+        if term in title:
+            score += 10
+        if term in summary:
+            score += 5
+    if ticker_lower in link:
+        score += 2
+    return score
+
+
+def _company_relevance_terms(ticker: str) -> tuple[str, ...]:
+    terms = {
+        "AAPL": ("apple",),
+        "AMZN": ("amazon",),
+        "AMD": ("advanced micro devices", "amd"),
+        "GOOGL": ("alphabet", "google"),
+        "GOOG": ("alphabet", "google"),
+        "META": ("meta platforms", "meta"),
+        "MSFT": ("microsoft",),
+        "NVDA": ("nvidia",),
+        "TSLA": ("tesla",),
+    }
+    return terms.get(ticker.upper(), ())
 
 
 def fetch_stocktwits_messages(

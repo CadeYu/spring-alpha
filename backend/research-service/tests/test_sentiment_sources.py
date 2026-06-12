@@ -416,6 +416,9 @@ def test_reddit_discussion_coalesces_concurrent_fetches_for_same_key() -> None:
 
 
 def test_yahoo_news_formats_headlines() -> None:
+    def yfinance_transport(ticker: str, limit: int) -> list[dict[str, object]]:
+        return []
+
     def transport(url: str, timeout: float, headers: dict[str, str]) -> dict[str, object]:
         assert "finance/search" in url
         return {
@@ -429,13 +432,96 @@ def test_yahoo_news_formats_headlines() -> None:
             ]
         }
 
-    block = fetch_yahoo_finance_news("MSFT", transport=transport)
+    block = fetch_yahoo_finance_news(
+        "MSFT",
+        transport=transport,
+        yfinance_transport=yfinance_transport,
+    )
 
     assert block.source == "yahoo_news"
     assert block.status == SentimentSourceStatus.OK
     assert block.item_count == 1
     assert "Microsoft AI demand supports cloud narrative" in block.content
     assert "Yahoo Finance" in block.content
+
+
+def test_yahoo_news_prefers_yfinance_ticker_feed() -> None:
+    def yfinance_transport(ticker: str, limit: int) -> list[dict[str, object]]:
+        assert ticker == "NVDA"
+        assert limit == 10
+        return [
+            {
+                "content": {
+                    "title": "AI infrastructure venture raises capital",
+                    "summary": "The article is about data centers and cloud platforms.",
+                    "provider": {"displayName": "Yahoo Finance Video"},
+                    "canonicalUrl": {"url": "https://example.com/generic-ai"},
+                    "pubDate": "2026-06-12T14:40:00Z",
+                }
+            },
+            {
+                "content": {
+                    "title": "NVIDIA AI demand remains central to market narrative",
+                    "summary": "Datacenter demand is the key sentiment driver.",
+                    "provider": {"displayName": "Yahoo Finance"},
+                    "canonicalUrl": {"url": "https://example.com/nvda"},
+                    "pubDate": "2026-06-12T14:45:00Z",
+                }
+            }
+        ]
+
+    block = fetch_yahoo_finance_news("nvda", yfinance_transport=yfinance_transport)
+
+    assert block.source == "yahoo_news"
+    assert block.status == SentimentSourceStatus.OK
+    assert block.item_count == 2
+    assert "NVIDIA AI demand remains central" in block.content.splitlines()[0]
+    assert "NVIDIA AI demand remains central" in block.content
+    assert "Datacenter demand is the key sentiment driver." in block.content
+    assert "https://example.com/nvda" in block.content
+
+
+def test_yahoo_search_fallback_reranks_ticker_relevant_news_first() -> None:
+    def yfinance_transport(ticker: str, limit: int) -> list[dict[str, object]]:
+        return []
+
+    def transport(url: str, timeout: float, headers: dict[str, str]) -> dict[str, object]:
+        assert "finance/search" in url
+        return {
+            "news": [
+                {
+                    "title": "Realty Income dividend yield attracts retirees",
+                    "publisher": "24/7 Wall St.",
+                    "providerPublishTime": 1781200000,
+                    "link": "https://example.com/realty",
+                },
+                {
+                    "title": "Coca-Cola passive income math for dividend investors",
+                    "publisher": "24/7 Wall St.",
+                    "providerPublishTime": 1781200010,
+                    "link": "https://example.com/ko",
+                },
+                {
+                    "title": "Jim Cramer on NVIDIA: AI leaders are being sold with tech",
+                    "publisher": "Insider Monkey",
+                    "providerPublishTime": 1781200020,
+                    "link": "https://example.com/nvda",
+                },
+            ]
+        }
+
+    block = fetch_yahoo_finance_news(
+        "NVDA",
+        transport=transport,
+        yfinance_transport=yfinance_transport,
+        limit=3,
+    )
+
+    lines = block.content.splitlines()
+    assert block.status == SentimentSourceStatus.OK
+    assert block.item_count == 3
+    assert "NVIDIA" in lines[0]
+    assert "Realty Income" in lines[-2]
 
 
 def test_source_fetcher_degrades_on_transport_failure() -> None:
