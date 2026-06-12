@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from threading import Event, Thread
 from urllib.error import HTTPError
 
 from app.agents.sentiment_sources import (
@@ -67,6 +68,7 @@ def test_reddit_formats_discussion_posts_from_json() -> None:
         subreddits=("stocks",),
         transport=transport,
         inter_request_delay=0,
+        rate_limit_interval_seconds=0,
     )
 
     assert block.source == "reddit"
@@ -111,6 +113,7 @@ def test_reddit_falls_back_to_rss_when_json_search_is_blocked() -> None:
         transport=json_transport,
         text_transport=text_transport,
         inter_request_delay=0,
+        rate_limit_interval_seconds=0,
     )
 
     assert seen_urls[0].endswith("/search.json?q=NVDA&restrict_sr=on&sort=new&t=week&limit=5")
@@ -158,6 +161,7 @@ def test_reddit_discussion_reuses_cached_block_within_ttl() -> None:
         transport=transport,
         inter_request_delay=0,
         cache_ttl_seconds=60,
+        rate_limit_interval_seconds=0,
         clock=clock,
     )
     second = fetch_reddit_discussion(
@@ -166,6 +170,7 @@ def test_reddit_discussion_reuses_cached_block_within_ttl() -> None:
         transport=transport,
         inter_request_delay=0,
         cache_ttl_seconds=60,
+        rate_limit_interval_seconds=0,
         clock=clock,
     )
     now = 1_061.0
@@ -175,6 +180,7 @@ def test_reddit_discussion_reuses_cached_block_within_ttl() -> None:
         transport=transport,
         inter_request_delay=0,
         cache_ttl_seconds=60,
+        rate_limit_interval_seconds=0,
         clock=clock,
     )
 
@@ -207,6 +213,7 @@ def test_reddit_discussion_caches_degraded_block_for_short_ttl() -> None:
         inter_request_delay=0,
         cache_ttl_seconds=600,
         degraded_cache_ttl_seconds=30,
+        rate_limit_interval_seconds=0,
         clock=clock,
     )
     second = fetch_reddit_discussion(
@@ -217,6 +224,7 @@ def test_reddit_discussion_caches_degraded_block_for_short_ttl() -> None:
         inter_request_delay=0,
         cache_ttl_seconds=600,
         degraded_cache_ttl_seconds=30,
+        rate_limit_interval_seconds=0,
         clock=clock,
     )
     now = 2_031.0
@@ -228,6 +236,7 @@ def test_reddit_discussion_caches_degraded_block_for_short_ttl() -> None:
         inter_request_delay=0,
         cache_ttl_seconds=600,
         degraded_cache_ttl_seconds=30,
+        rate_limit_interval_seconds=0,
         clock=clock,
     )
 
@@ -235,6 +244,126 @@ def test_reddit_discussion_caches_degraded_block_for_short_ttl() -> None:
     assert first.status == SentimentSourceStatus.DEGRADED
     assert second.status == SentimentSourceStatus.DEGRADED
     assert third.status == SentimentSourceStatus.DEGRADED
+
+
+def test_reddit_discussion_uses_stale_success_when_refresh_is_rate_limited() -> None:
+    calls = 0
+    now = 3_000.0
+
+    def transport(url: str, timeout: float, headers: dict[str, str]) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "data": {
+                    "children": [
+                        {
+                            "data": {
+                                "title": "AMD stale but useful Reddit sample",
+                                "score": 12,
+                                "num_comments": 4,
+                                "created_utc": 1781200000,
+                                "selftext": "Investors are debating AI GPU traction.",
+                            }
+                        }
+                    ]
+                }
+            }
+        raise HTTPError(url, 429, "Too Many Requests", hdrs=None, fp=None)
+
+    def text_transport(url: str, timeout: float, headers: dict[str, str]) -> str:
+        raise HTTPError(url, 429, "Too Many Requests", hdrs=None, fp=None)
+
+    def clock() -> float:
+        return now
+
+    first = fetch_reddit_discussion(
+        "AMD",
+        subreddits=("stocks",),
+        transport=transport,
+        text_transport=text_transport,
+        inter_request_delay=0,
+        cache_ttl_seconds=30,
+        stale_ttl_seconds=3_600,
+        rate_limit_interval_seconds=0,
+        clock=clock,
+    )
+    now = 3_031.0
+    second = fetch_reddit_discussion(
+        "AMD",
+        subreddits=("stocks",),
+        transport=transport,
+        text_transport=text_transport,
+        inter_request_delay=0,
+        cache_ttl_seconds=30,
+        stale_ttl_seconds=3_600,
+        rate_limit_interval_seconds=0,
+        clock=clock,
+    )
+
+    assert calls == 2
+    assert first.status == SentimentSourceStatus.OK
+    assert second.status == SentimentSourceStatus.OK
+    assert "AMD stale but useful Reddit sample" in second.content
+    assert "stale reddit cache" in (second.degraded_reason or "")
+
+
+def test_reddit_discussion_coalesces_concurrent_fetches_for_same_key() -> None:
+    calls = 0
+    entered_fetch = Event()
+    release = Event()
+
+    def transport(url: str, timeout: float, headers: dict[str, str]) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        entered_fetch.set()
+        release.wait(timeout=2)
+        return {
+            "data": {
+                "children": [
+                    {
+                        "data": {
+                            "title": "PLTR one shared Reddit fetch",
+                            "score": 22,
+                            "num_comments": 6,
+                            "created_utc": 1781200000,
+                            "selftext": "Investors are debating government AI demand.",
+                        }
+                    }
+                ]
+            }
+        }
+
+    results: list[str] = []
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            block = fetch_reddit_discussion(
+                "PLTR",
+                subreddits=("stocks",),
+                transport=transport,
+                inter_request_delay=0,
+                cache_ttl_seconds=60,
+                rate_limit_interval_seconds=0,
+            )
+            results.append(block.content)
+        except BaseException as exc:
+            errors.append(exc)
+
+    first = Thread(target=worker)
+    first.start()
+    assert entered_fetch.wait(timeout=2)
+    second = Thread(target=worker)
+    second.start()
+    release.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert not errors
+    assert calls == 1
+    assert len(results) == 2
+    assert all("PLTR one shared Reddit fetch" in content for content in results)
 
 
 def test_yahoo_news_formats_headlines() -> None:

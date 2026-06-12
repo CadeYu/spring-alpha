@@ -7,9 +7,10 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from threading import Lock
+from threading import Event, Lock
 from urllib import request as url_request
 from urllib.parse import urlencode
 
@@ -28,10 +29,30 @@ _REDDIT_SEARCH_API = "https://www.reddit.com/r/{subreddit}/search.json?{query}"
 _REDDIT_SEARCH_RSS = "https://www.reddit.com/r/{subreddit}/search.rss?{query}"
 _ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 _REDDIT_CACHE_LOCK = Lock()
-_REDDIT_CACHE: dict[tuple[str, tuple[str, ...], int], tuple[float, SentimentSourceBlock]] = {}
 _REDDIT_CACHE_TTL_SECONDS = 600.0
 _REDDIT_DEGRADED_CACHE_TTL_SECONDS = 60.0
+_REDDIT_STALE_TTL_SECONDS = 86_400.0
+_REDDIT_RATE_LIMIT_INTERVAL_SECONDS = 1.0
+_REDDIT_NEXT_REQUEST_AT = 0.0
 DEFAULT_REDDIT_SUBREDDITS = ("wallstreetbets", "stocks", "investing")
+
+
+@dataclass(frozen=True)
+class _RedditCacheEntry:
+    fresh_until: float
+    stale_until: float
+    block: SentimentSourceBlock
+
+
+@dataclass
+class _RedditInFlight:
+    done: Event
+    block: SentimentSourceBlock | None = None
+    error: BaseException | None = None
+
+
+_REDDIT_CACHE: dict[tuple[str, tuple[str, ...], int], _RedditCacheEntry] = {}
+_REDDIT_IN_FLIGHT: dict[tuple[str, tuple[str, ...], int], _RedditInFlight] = {}
 
 
 class SentimentSourceStatus(StrEnum):
@@ -175,6 +196,8 @@ def fetch_reddit_discussion(
     inter_request_delay: float = 0.25,
     cache_ttl_seconds: float | None = None,
     degraded_cache_ttl_seconds: float | None = None,
+    stale_ttl_seconds: float | None = None,
+    rate_limit_interval_seconds: float | None = None,
     clock: Clock = time.time,
 ) -> SentimentSourceBlock:
     normalized = ticker.upper()
@@ -185,14 +208,81 @@ def fetch_reddit_discussion(
         if degraded_cache_ttl_seconds is None
         else degraded_cache_ttl_seconds
     )
-    cache_enabled = ttl > 0 or degraded_ttl > 0
+    stale_ttl = _REDDIT_STALE_TTL_SECONDS if stale_ttl_seconds is None else stale_ttl_seconds
+    rate_limit_interval = (
+        _REDDIT_RATE_LIMIT_INTERVAL_SECONDS
+        if rate_limit_interval_seconds is None
+        else rate_limit_interval_seconds
+    )
+    cache_enabled = ttl > 0 or degraded_ttl > 0 or stale_ttl > 0
     cache_key = (normalized, subreddit_tuple, limit_per_subreddit)
     if cache_enabled:
         cached_block = _get_reddit_cache(cache_key, now=clock())
         if cached_block is not None:
             return cached_block
-    fetch = transport or _json_transport
-    fetch_text = text_transport or _text_transport
+    in_flight: _RedditInFlight | None = None
+    owns_in_flight = False
+    if cache_enabled:
+        in_flight, owns_in_flight = _claim_reddit_in_flight(cache_key)
+        if not owns_in_flight and in_flight is not None:
+            return _wait_for_reddit_in_flight(in_flight)
+
+    try:
+        block = _fetch_reddit_discussion_uncached(
+            normalized,
+            subreddit_tuple,
+            fetch=transport or _json_transport,
+            fetch_text=text_transport or _text_transport,
+            limit_per_subreddit=limit_per_subreddit,
+            timeout=timeout,
+            inter_request_delay=inter_request_delay,
+            rate_limit_interval_seconds=rate_limit_interval,
+            clock=clock,
+        )
+    except Exception as exc:
+        if cache_enabled:
+            stale_block = _get_reddit_stale_cache(cache_key, now=clock())
+            if stale_block is not None:
+                if owns_in_flight and in_flight is not None:
+                    _finish_reddit_in_flight(cache_key, in_flight, block=stale_block)
+                return stale_block
+        if owns_in_flight and in_flight is not None:
+            _finish_reddit_in_flight(cache_key, in_flight, error=exc)
+        raise
+
+    if block.status == SentimentSourceStatus.DEGRADED and cache_enabled:
+        stale_block = _get_reddit_stale_cache(cache_key, now=clock())
+        if stale_block is not None:
+            if owns_in_flight and in_flight is not None:
+                _finish_reddit_in_flight(cache_key, in_flight, block=stale_block)
+            return stale_block
+
+    if cache_enabled:
+        ttl_for_block = degraded_ttl if block.status == SentimentSourceStatus.DEGRADED else ttl
+        _store_reddit_cache(
+            cache_key,
+            block,
+            now=clock(),
+            ttl_seconds=ttl_for_block,
+            stale_ttl_seconds=stale_ttl,
+        )
+    if owns_in_flight and in_flight is not None:
+        _finish_reddit_in_flight(cache_key, in_flight, block=block)
+    return block
+
+
+def _fetch_reddit_discussion_uncached(
+    normalized: str,
+    subreddit_tuple: tuple[str, ...],
+    *,
+    fetch: JsonTransport,
+    fetch_text: TextTransport,
+    limit_per_subreddit: int,
+    timeout: float,
+    inter_request_delay: float,
+    rate_limit_interval_seconds: float,
+    clock: Clock,
+) -> SentimentSourceBlock:
     blocks: list[str] = []
     total_items = 0
     degraded_reasons: list[str] = []
@@ -210,6 +300,10 @@ def fetch_reddit_discussion(
             }
         )
         try:
+            _wait_for_reddit_rate_limit(
+                interval_seconds=rate_limit_interval_seconds,
+                clock=clock,
+            )
             payload = fetch(
                 _REDDIT_SEARCH_API.format(subreddit=subreddit, query=query),
                 timeout,
@@ -224,6 +318,10 @@ def fetch_reddit_discussion(
                 exc,
             )
             try:
+                _wait_for_reddit_rate_limit(
+                    interval_seconds=rate_limit_interval_seconds,
+                    clock=clock,
+                )
                 rss_text = fetch_text(
                     _REDDIT_SEARCH_RSS.format(subreddit=subreddit, query=query),
                     timeout,
@@ -272,8 +370,6 @@ def fetch_reddit_discussion(
             content="\n\n".join(blocks),
             degraded_reason="; ".join(degraded_reasons),
         )
-        if cache_enabled:
-            _store_reddit_cache(cache_key, block, now=clock(), ttl_seconds=degraded_ttl)
         return block
     if total_items == 0:
         block = _empty_block(
@@ -282,8 +378,6 @@ def fetch_reddit_discussion(
             "\n\n".join(blocks)
             or f"<no Reddit posts found mentioning {normalized} in the past 7 days>",
         )
-        if cache_enabled:
-            _store_reddit_cache(cache_key, block, now=clock(), ttl_seconds=ttl)
         return block
     block = SentimentSourceBlock(
         source="reddit",
@@ -292,8 +386,6 @@ def fetch_reddit_discussion(
         content="\n\n".join(blocks),
         degraded_reason="; ".join(degraded_reasons) or None,
     )
-    if cache_enabled:
-        _store_reddit_cache(cache_key, block, now=clock(), ttl_seconds=ttl)
     return block
 
 
@@ -348,11 +440,31 @@ def _get_reddit_cache(
         cached = _REDDIT_CACHE.get(cache_key)
         if cached is None:
             return None
-        expires_at, block = cached
-        if expires_at <= now:
+        if cached.stale_until <= now:
             _REDDIT_CACHE.pop(cache_key, None)
             return None
-        return block.model_copy(deep=True)
+        if cached.fresh_until <= now:
+            return None
+        return cached.block.model_copy(deep=True)
+
+
+def _get_reddit_stale_cache(
+    cache_key: tuple[str, tuple[str, ...], int],
+    *,
+    now: float,
+) -> SentimentSourceBlock | None:
+    with _REDDIT_CACHE_LOCK:
+        cached = _REDDIT_CACHE.get(cache_key)
+        if cached is None:
+            return None
+        if cached.stale_until <= now:
+            _REDDIT_CACHE.pop(cache_key, None)
+            return None
+        block = cached.block.model_copy(deep=True)
+    reason = block.degraded_reason or ""
+    stale_reason = "stale reddit cache used after fresh fetch failed"
+    block.degraded_reason = f"{reason}; {stale_reason}".strip("; ")
+    return block
 
 
 def _store_reddit_cache(
@@ -361,11 +473,72 @@ def _store_reddit_cache(
     *,
     now: float,
     ttl_seconds: float,
+    stale_ttl_seconds: float,
 ) -> None:
-    if ttl_seconds <= 0:
+    if ttl_seconds <= 0 and stale_ttl_seconds <= 0:
         return
+    fresh_until = now + max(ttl_seconds, 0)
+    stale_until = now + max(ttl_seconds, stale_ttl_seconds, 0)
     with _REDDIT_CACHE_LOCK:
-        _REDDIT_CACHE[cache_key] = (now + ttl_seconds, block.model_copy(deep=True))
+        _REDDIT_CACHE[cache_key] = _RedditCacheEntry(
+            fresh_until=fresh_until,
+            stale_until=stale_until,
+            block=block.model_copy(deep=True),
+        )
+
+
+def _claim_reddit_in_flight(
+    cache_key: tuple[str, tuple[str, ...], int],
+) -> tuple[_RedditInFlight, bool]:
+    with _REDDIT_CACHE_LOCK:
+        in_flight = _REDDIT_IN_FLIGHT.get(cache_key)
+        if in_flight is not None:
+            return in_flight, False
+        in_flight = _RedditInFlight(done=Event())
+        _REDDIT_IN_FLIGHT[cache_key] = in_flight
+        return in_flight, True
+
+
+def _wait_for_reddit_in_flight(in_flight: _RedditInFlight) -> SentimentSourceBlock:
+    in_flight.done.wait()
+    if in_flight.error is not None:
+        raise in_flight.error
+    if in_flight.block is None:
+        raise RuntimeError("reddit in-flight fetch finished without a result")
+    return in_flight.block.model_copy(deep=True)
+
+
+def _finish_reddit_in_flight(
+    cache_key: tuple[str, tuple[str, ...], int],
+    in_flight: _RedditInFlight,
+    *,
+    block: SentimentSourceBlock | None = None,
+    error: BaseException | None = None,
+) -> None:
+    with _REDDIT_CACHE_LOCK:
+        if block is not None:
+            in_flight.block = block.model_copy(deep=True)
+        in_flight.error = error
+        _REDDIT_IN_FLIGHT.pop(cache_key, None)
+        in_flight.done.set()
+
+
+def _wait_for_reddit_rate_limit(
+    *,
+    interval_seconds: float,
+    clock: Clock,
+) -> None:
+    global _REDDIT_NEXT_REQUEST_AT
+    if interval_seconds <= 0:
+        return
+    while True:
+        with _REDDIT_CACHE_LOCK:
+            now = clock()
+            wait_seconds = _REDDIT_NEXT_REQUEST_AT - now
+            if wait_seconds <= 0:
+                _REDDIT_NEXT_REQUEST_AT = now + interval_seconds
+                return
+        time.sleep(min(wait_seconds, interval_seconds))
 
 
 def _degraded_block(source: str, ticker: str, exc: Exception) -> SentimentSourceBlock:
