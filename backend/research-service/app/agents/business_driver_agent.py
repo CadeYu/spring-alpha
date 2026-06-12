@@ -85,21 +85,18 @@ def run_business_driver_agent(
 
     final_llm = _json_response_llm(llm)
     started_at = perf_counter()
+    final_messages = [
+        SystemMessage(content=_system_instruction(request)),
+        HumanMessage(
+            content=_business_driver_instruction(
+                request,
+                runtime_state,
+                source_blocks=blocks,
+            )
+        ),
+    ]
     try:
-        result = final_llm.invoke(
-            {
-                "messages": [
-                    SystemMessage(content=_system_instruction(request)),
-                    HumanMessage(
-                        content=_business_driver_instruction(
-                            request,
-                            runtime_state,
-                            source_blocks=blocks,
-                        )
-                    ),
-                ]
-            }
-        )
+        result = final_llm.invoke(final_messages)
     except Exception as exc:
         raise BusinessDriverAgentError(
             f"Sentiment analyst final synthesis failed: {exc}",

@@ -10,8 +10,9 @@ from app.agents.business_driver_agent import (
     _business_driver_instruction,
     run_business_driver_agent,
 )
+from app.agents.llm_gateway import OpenAiCompatibleLlmClient
 from app.agents.sentiment_sources import SentimentSourceBlock, SentimentSourceStatus
-from app.contracts.agent import AgentRequest, AgentState, TaskPolicy
+from app.contracts.agent import AgentRequest, AgentState, LlmProvider, TaskPolicy
 from app.contracts.research_task import ResearchTaskType
 
 
@@ -25,7 +26,7 @@ class _StaticSentimentLlm:
         return copied
 
     def invoke(self, payload: dict[str, Any]) -> AIMessage:
-        messages = payload["messages"]
+        messages = payload["messages"] if isinstance(payload, dict) else payload
         prompt_text = "\n".join(str(message.content) for message in messages)
         assert "Yahoo Finance news" in prompt_text
         assert "StockTwits messages" in prompt_text
@@ -218,7 +219,7 @@ def test_sentiment_agent_sends_compact_source_context_to_final_llm(monkeypatch) 
             return copied
 
         def invoke(self, payload: dict[str, Any]) -> AIMessage:
-            messages = payload["messages"]
+            messages = payload["messages"] if isinstance(payload, dict) else payload
             captured_prompt.append("\n".join(str(message.content) for message in messages))
             return super().invoke(payload)
 
@@ -242,6 +243,98 @@ def test_sentiment_agent_sends_compact_source_context_to_final_llm(monkeypatch) 
     assert "headline 7" in prompt_text
     assert "headline 8" not in prompt_text
     assert "<source_content>" not in prompt_text
+
+
+def test_sentiment_agent_invokes_real_chat_model_with_message_list(monkeypatch) -> None:
+    blocks = [
+        SentimentSourceBlock(
+            source="yahoo_news",
+            status=SentimentSourceStatus.OK,
+            item_count=1,
+            content="[2026-06-12 · Yahoo Finance] TSLA demand narrative is mixed.",
+        )
+    ]
+    observed_payloads: list[dict[str, object]] = []
+
+    def transport(
+        url: str,
+        payload: dict[str, object],
+        headers: dict[str, str],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        observed_payloads.append(payload)
+        messages = payload.get("messages")
+        assert isinstance(messages, list)
+        assert [message.get("role") for message in messages if isinstance(message, dict)] == [
+            "system",
+            "user",
+        ]
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "sentiment_header": {
+                                    "overall_band": "Mixed",
+                                    "overall_score": 5.0,
+                                    "confidence": "medium",
+                                    "summary": "Yahoo Finance frames TSLA demand as mixed.",
+                                },
+                                "narrative_snapshot": {
+                                    "title": "Mixed demand narrative",
+                                    "summary": "News coverage is source-limited but concrete.",
+                                    "source_ids": ["sentiment:yahoo_news"],
+                                    "citation_status": "supported",
+                                },
+                                "bull_bear_narrative": {
+                                    "bull_case": "The bull case rests on visible demand interest.",
+                                    "bear_case": "The bear case is that the sample is narrow.",
+                                    "balanced_read": (
+                                        "Treat it as a medium-confidence sentiment read."
+                                    ),
+                                },
+                                "source_divergence": {
+                                    "summary": (
+                                        "Yahoo returned data while social sources were thin."
+                                    ),
+                                    "news_direction": "mixed",
+                                    "stocktwits_direction": "unavailable",
+                                    "reddit_direction": "unavailable",
+                                },
+                                "noise_warnings": ["Only Yahoo Finance returned usable data."],
+                                "claims": [],
+                            }
+                        )
+                    }
+                }
+            ],
+            "usage": {"total_tokens": 321},
+        }
+
+    client = OpenAiCompatibleLlmClient(
+        LlmProvider.SILICONFLOW,
+        "sk-test",
+        base_url="https://example.com/v1",
+        transport=transport,
+    )
+    monkeypatch.setattr(
+        business_driver_agent,
+        "fetch_market_sentiment_sources",
+        lambda ticker: blocks,
+    )
+
+    payload, state = run_business_driver_agent(
+        request=_make_request(ticker="TSLA", language="en"),
+        state=_make_state("en", ticker="TSLA"),
+        llm=client.as_chat_model(model="Pro/moonshotai/Kimi-K2.6"),
+    )
+
+    assert observed_payloads
+    assert payload["sentiment_header"]["summary"] == (
+        "Yahoo Finance frames TSLA demand as mixed."
+    )
+    assert state.tool_events[-1].phase.value == "draft_report_sections"
 
 
 def _make_request(
