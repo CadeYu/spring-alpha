@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from enum import StrEnum
+from threading import Lock
 from urllib import request as url_request
 from urllib.parse import urlencode
 
@@ -18,6 +19,7 @@ logger = logging.getLogger("uvicorn.error")
 
 JsonTransport = Callable[[str, float, dict[str, str]], dict[str, object]]
 TextTransport = Callable[[str, float, dict[str, str]], str]
+Clock = Callable[[], float]
 
 _USER_AGENT = "spring-alpha/1.0 sentiment-agent"
 _STOCKTWITS_API = "https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
@@ -25,6 +27,10 @@ _YAHOO_NEWS_API = "https://query2.finance.yahoo.com/v1/finance/search?{query}"
 _REDDIT_SEARCH_API = "https://www.reddit.com/r/{subreddit}/search.json?{query}"
 _REDDIT_SEARCH_RSS = "https://www.reddit.com/r/{subreddit}/search.rss?{query}"
 _ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+_REDDIT_CACHE_LOCK = Lock()
+_REDDIT_CACHE: dict[tuple[str, tuple[str, ...], int], tuple[float, SentimentSourceBlock]] = {}
+_REDDIT_CACHE_TTL_SECONDS = 600.0
+_REDDIT_DEGRADED_CACHE_TTL_SECONDS = 60.0
 DEFAULT_REDDIT_SUBREDDITS = ("wallstreetbets", "stocks", "investing")
 
 
@@ -167,15 +173,31 @@ def fetch_reddit_discussion(
     limit_per_subreddit: int = 5,
     timeout: float = 8.0,
     inter_request_delay: float = 0.25,
+    cache_ttl_seconds: float | None = None,
+    degraded_cache_ttl_seconds: float | None = None,
+    clock: Clock = time.time,
 ) -> SentimentSourceBlock:
     normalized = ticker.upper()
+    subreddit_tuple = tuple(subreddits)
+    ttl = _REDDIT_CACHE_TTL_SECONDS if cache_ttl_seconds is None else cache_ttl_seconds
+    degraded_ttl = (
+        _REDDIT_DEGRADED_CACHE_TTL_SECONDS
+        if degraded_cache_ttl_seconds is None
+        else degraded_cache_ttl_seconds
+    )
+    cache_enabled = ttl > 0 or degraded_ttl > 0
+    cache_key = (normalized, subreddit_tuple, limit_per_subreddit)
+    if cache_enabled:
+        cached_block = _get_reddit_cache(cache_key, now=clock())
+        if cached_block is not None:
+            return cached_block
     fetch = transport or _json_transport
     fetch_text = text_transport or _text_transport
     blocks: list[str] = []
     total_items = 0
     degraded_reasons: list[str] = []
 
-    for index, subreddit in enumerate(subreddits):
+    for index, subreddit in enumerate(subreddit_tuple):
         if index > 0 and inter_request_delay > 0:
             time.sleep(inter_request_delay)
         query = urlencode(
@@ -243,27 +265,36 @@ def fetch_reddit_discussion(
         blocks.append("\n".join(lines))
 
     if total_items == 0 and degraded_reasons:
-        return SentimentSourceBlock(
+        block = SentimentSourceBlock(
             source="reddit",
             status=SentimentSourceStatus.DEGRADED,
             item_count=0,
             content="\n\n".join(blocks),
             degraded_reason="; ".join(degraded_reasons),
         )
+        if cache_enabled:
+            _store_reddit_cache(cache_key, block, now=clock(), ttl_seconds=degraded_ttl)
+        return block
     if total_items == 0:
-        return _empty_block(
+        block = _empty_block(
             "reddit",
             normalized,
             "\n\n".join(blocks)
             or f"<no Reddit posts found mentioning {normalized} in the past 7 days>",
         )
-    return SentimentSourceBlock(
+        if cache_enabled:
+            _store_reddit_cache(cache_key, block, now=clock(), ttl_seconds=ttl)
+        return block
+    block = SentimentSourceBlock(
         source="reddit",
         status=SentimentSourceStatus.OK,
         item_count=total_items,
         content="\n\n".join(blocks),
         degraded_reason="; ".join(degraded_reasons) or None,
     )
+    if cache_enabled:
+        _store_reddit_cache(cache_key, block, now=clock(), ttl_seconds=ttl)
+    return block
 
 
 def fetch_market_sentiment_sources(ticker: str) -> list[SentimentSourceBlock]:
@@ -306,6 +337,35 @@ def _text_transport(url: str, timeout: float, headers: dict[str, str]) -> str:
     req = url_request.Request(url, headers=headers)
     with url_request.urlopen(req, timeout=timeout) as response:
         return response.read().decode("utf-8", errors="replace")
+
+
+def _get_reddit_cache(
+    cache_key: tuple[str, tuple[str, ...], int],
+    *,
+    now: float,
+) -> SentimentSourceBlock | None:
+    with _REDDIT_CACHE_LOCK:
+        cached = _REDDIT_CACHE.get(cache_key)
+        if cached is None:
+            return None
+        expires_at, block = cached
+        if expires_at <= now:
+            _REDDIT_CACHE.pop(cache_key, None)
+            return None
+        return block.model_copy(deep=True)
+
+
+def _store_reddit_cache(
+    cache_key: tuple[str, tuple[str, ...], int],
+    block: SentimentSourceBlock,
+    *,
+    now: float,
+    ttl_seconds: float,
+) -> None:
+    if ttl_seconds <= 0:
+        return
+    with _REDDIT_CACHE_LOCK:
+        _REDDIT_CACHE[cache_key] = (now + ttl_seconds, block.model_copy(deep=True))
 
 
 def _degraded_block(source: str, ticker: str, exc: Exception) -> SentimentSourceBlock:

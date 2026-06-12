@@ -125,6 +125,118 @@ def test_reddit_falls_back_to_rss_when_json_search_is_blocked() -> None:
     assert "↑ ·" not in block.content
 
 
+def test_reddit_discussion_reuses_cached_block_within_ttl() -> None:
+    calls = 0
+    now = 1_000.0
+
+    def transport(url: str, timeout: float, headers: dict[str, str]) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        title = f"NVDA cached sentiment sample {calls}"
+        return {
+            "data": {
+                "children": [
+                    {
+                        "data": {
+                            "title": title,
+                            "score": 10 + calls,
+                            "num_comments": 3,
+                            "created_utc": 1781200000,
+                            "selftext": "Investors are debating AI demand.",
+                        }
+                    }
+                ]
+            }
+        }
+
+    def clock() -> float:
+        return now
+
+    first = fetch_reddit_discussion(
+        "NVDA",
+        subreddits=("stocks",),
+        transport=transport,
+        inter_request_delay=0,
+        cache_ttl_seconds=60,
+        clock=clock,
+    )
+    second = fetch_reddit_discussion(
+        "NVDA",
+        subreddits=("stocks",),
+        transport=transport,
+        inter_request_delay=0,
+        cache_ttl_seconds=60,
+        clock=clock,
+    )
+    now = 1_061.0
+    third = fetch_reddit_discussion(
+        "NVDA",
+        subreddits=("stocks",),
+        transport=transport,
+        inter_request_delay=0,
+        cache_ttl_seconds=60,
+        clock=clock,
+    )
+
+    assert calls == 2
+    assert "NVDA cached sentiment sample 1" in first.content
+    assert "NVDA cached sentiment sample 1" in second.content
+    assert "NVDA cached sentiment sample 2" in third.content
+
+
+def test_reddit_discussion_caches_degraded_block_for_short_ttl() -> None:
+    calls = 0
+    now = 2_000.0
+
+    def transport(url: str, timeout: float, headers: dict[str, str]) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        raise TimeoutError("reddit json timed out")
+
+    def text_transport(url: str, timeout: float, headers: dict[str, str]) -> str:
+        raise TimeoutError("reddit rss timed out")
+
+    def clock() -> float:
+        return now
+
+    first = fetch_reddit_discussion(
+        "TSLA",
+        subreddits=("stocks",),
+        transport=transport,
+        text_transport=text_transport,
+        inter_request_delay=0,
+        cache_ttl_seconds=600,
+        degraded_cache_ttl_seconds=30,
+        clock=clock,
+    )
+    second = fetch_reddit_discussion(
+        "TSLA",
+        subreddits=("stocks",),
+        transport=transport,
+        text_transport=text_transport,
+        inter_request_delay=0,
+        cache_ttl_seconds=600,
+        degraded_cache_ttl_seconds=30,
+        clock=clock,
+    )
+    now = 2_031.0
+    third = fetch_reddit_discussion(
+        "TSLA",
+        subreddits=("stocks",),
+        transport=transport,
+        text_transport=text_transport,
+        inter_request_delay=0,
+        cache_ttl_seconds=600,
+        degraded_cache_ttl_seconds=30,
+        clock=clock,
+    )
+
+    assert calls == 2
+    assert first.status == SentimentSourceStatus.DEGRADED
+    assert second.status == SentimentSourceStatus.DEGRADED
+    assert third.status == SentimentSourceStatus.DEGRADED
+
+
 def test_yahoo_news_formats_headlines() -> None:
     def transport(url: str, timeout: float, headers: dict[str, str]) -> dict[str, object]:
         assert "finance/search" in url
