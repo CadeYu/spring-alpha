@@ -1021,18 +1021,18 @@ def test_fallback_summary_hides_internal_missing_metric_markers() -> None:
     request = AgentRequest(
         run_id="run_1",
         ticker="AAPL",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
         language="zh",
     )
     state = AgentState(
         run_id="run_1",
         ticker="AAPL",
-        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
         language="zh",
         task_policy=TaskPolicy(
-            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            task_type=ResearchTaskType.LATEST_EARNINGS_READOUT,
             allowed_tools=["get_company_facts", "search_metric_evidence"],
-            required_outputs=["driverThesis"],
+            required_outputs=["toplineVerdict"],
         ),
         evidence_memory=EvidenceMemory(
             metric_evidence=[
@@ -1073,7 +1073,7 @@ def test_fallback_summary_hides_internal_missing_metric_markers() -> None:
     report = _fallback_report_from_state(
         request,
         state,
-        reason="Business driver agent final synthesis failed: The read operation timed out",
+        reason="Earnings agent final synthesis failed: The read operation timed out",
     )
 
     assert report is not None
@@ -1220,6 +1220,60 @@ def test_market_sentiment_timeout_with_evidence_returns_typed_fallback(monkeypat
     assert task_sections["driver_thesis"] is None
     assert "业务驱动结论" not in serialized
     assert "final synthesis failed" not in serialized
+
+
+def test_market_sentiment_fallback_summary_does_not_describe_social_sources_as_sec() -> None:
+    request = AgentRequest(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+    )
+    state = AgentState(
+        run_id="run_1",
+        ticker="AAPL",
+        task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+        language="zh",
+        task_policy=TaskPolicy(
+            task_type=ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            allowed_tools=["get_market_context"],
+            required_outputs=["sentimentHeader"],
+        ),
+        evidence_memory=EvidenceMemory(
+            source_refs=[
+                {
+                    "source_id": "sentiment:yahoo_news",
+                    "section": "yahoo_news",
+                    "snippet": (
+                        "[2026-06-12 · Yahoo Finance] Apple news highlights "
+                        "AI integration and iPhone growth."
+                    ),
+                    "citation_status": "supported",
+                },
+                {
+                    "source_id": "sentiment:stocktwits",
+                    "section": "stocktwits",
+                    "snippet": "Bullish: 12; Bearish: 2; Unlabeled: 16.",
+                    "citation_status": "supported",
+                },
+            ],
+        ),
+    )
+
+    report = _fallback_report_from_state(
+        request,
+        state,
+        reason="Sentiment analyst final synthesis failed: The read operation timed out",
+    )
+
+    assert report is not None
+    serialized = report.model_dump_json()
+    assert "市场叙事与情绪分析未完成最终 LLM 合成" in serialized
+    assert "Yahoo Finance" in serialized
+    assert "StockTwits" in serialized
+    assert "SEC 指标" not in serialized
+    assert "披露片段" not in serialized
+    assert "财报" not in serialized
 
 
 def test_fallback_report_hides_internal_missing_metric_markers_everywhere() -> None:

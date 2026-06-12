@@ -12,7 +12,6 @@ from app.agents.sentiment_sources import (
     SentimentSourceBlock,
     SentimentSourceStatus,
     fetch_market_sentiment_sources,
-    render_sentiment_source_blocks,
 )
 from app.agents.tool_calling_graph import _json_response_llm
 from app.contracts.agent import AgentEvent, AgentPhase, AgentRequest, AgentState, ToolStatus
@@ -151,7 +150,7 @@ def _business_driver_instruction(
     source_blocks: list[SentimentSourceBlock] | None = None,
 ) -> str:
     blocks = source_blocks or []
-    source_context = render_sentiment_source_blocks(blocks) if blocks else ""
+    source_context = _compact_sentiment_source_context(blocks) if blocks else ""
     if _is_zh_locale(request.language):
         return (
             f"请为 {state.ticker} 生成“市场叙事与情绪”typed task sections。\n"
@@ -186,6 +185,30 @@ def _business_driver_instruction(
         "Prefetched source blocks:\n"
         f"{source_context}"
     )
+
+
+def _compact_sentiment_source_context(blocks: list[SentimentSourceBlock]) -> str:
+    compacted: list[dict[str, Any]] = []
+    for block in blocks:
+        compacted.append(
+            {
+                "source": block.source,
+                "status": block.status.value,
+                "item_count": block.item_count,
+                "degraded_reason": block.degraded_reason or "",
+                "key_lines": _sentiment_key_lines(block),
+            }
+        )
+    return json.dumps(compacted, ensure_ascii=False, indent=2)
+
+
+def _sentiment_key_lines(block: SentimentSourceBlock) -> list[str]:
+    lines = [line.strip() for line in block.content.splitlines() if line.strip()]
+    if block.source == "stocktwits":
+        return lines[:8]
+    if block.source == "reddit":
+        return lines[:10]
+    return lines[:8]
 
 
 def _append_source_event(state: AgentState, block: SentimentSourceBlock) -> AgentState:

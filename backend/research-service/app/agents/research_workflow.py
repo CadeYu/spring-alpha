@@ -1450,6 +1450,8 @@ def _fallback_summary(
     metrics: list[EvidenceBoundMetric],
     source_refs: list[SourceRef],
 ) -> str:
+    if request.task_type == ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE:
+        return _sentiment_collection_fallback_summary(request, reason, source_refs)
     is_zh = _is_zh_locale(request.language)
     metric_text = ", ".join(
         (_zh_display_metric(metric) if is_zh else _display_metric(metric))
@@ -1481,6 +1483,78 @@ def _fallback_summary(
         f"uses verified SEC metrics and filing snippets first: {base}{boundary}. Treat it as an "
         "evidence-first view until the next quarter confirms whether the same signals persist."
     )
+
+
+def _sentiment_collection_fallback_summary(
+    request: AgentRequest,
+    reason: str,
+    source_refs: list[SourceRef],
+) -> str:
+    is_zh = _is_zh_locale(request.language)
+    sentiment_refs = _market_sentiment_source_refs(source_refs)
+    source_summary = _market_sentiment_source_summary(sentiment_refs, is_zh=is_zh)
+    evidence_text = _sentiment_fallback_evidence_text(sentiment_refs, is_zh=is_zh)
+    if is_zh:
+        return (
+            f"{request.ticker} 的市场叙事与情绪来源已收集，但最终 LLM 合成未完成；"
+            f"来源状态：{source_summary}。"
+            f"当前只能基于 Yahoo Finance、StockTwits 和 Reddit 样本给出低置信度读数："
+            f"{evidence_text}。"
+            f"失败上下文：{_zh_sentiment_failure_reason(reason)}"
+        )
+    return (
+        f"{request.ticker} market narrative and sentiment sources were collected, "
+        "but final LLM synthesis did not complete. "
+        f"Source status: {source_summary}. "
+        "This is a low-confidence read based only on Yahoo Finance, StockTwits, "
+        f"and Reddit samples: {evidence_text}. "
+        f"Failure context: {_english_sentiment_failure_reason(reason)}"
+    )
+
+
+def _sentiment_fallback_evidence_text(
+    source_refs: list[SourceRef],
+    *,
+    is_zh: bool,
+) -> str:
+    if not source_refs:
+        return "没有可用社媒或新闻样本" if is_zh else "no usable social or news samples"
+    snippets = [
+        _compact_sentiment_snippet_for_fallback(source_ref, is_zh=is_zh)
+        for source_ref in source_refs[:2]
+    ]
+    separator = "；" if is_zh else "; "
+    return separator.join(snippet for snippet in snippets if snippet)
+
+
+def _compact_sentiment_snippet_for_fallback(
+    source_ref: SourceRef,
+    *,
+    is_zh: bool,
+) -> str:
+    source = source_ref.section or source_ref.source_id.replace("sentiment:", "")
+    snippet = _clip(" ".join(source_ref.snippet.split()), 160)
+    if is_zh:
+        return f"{source} 样本：{snippet}"
+    return f"{source} sample: {snippet}"
+
+
+def _zh_sentiment_failure_reason(reason: str) -> str:
+    normalized = reason.lower()
+    if "timed out" in normalized or "timeout" in normalized:
+        return "模型响应超时"
+    if "json" in normalized:
+        return "模型没有返回可解析的 JSON"
+    return "模型合成失败"
+
+
+def _english_sentiment_failure_reason(reason: str) -> str:
+    normalized = reason.lower()
+    if "timed out" in normalized or "timeout" in normalized:
+        return "model response timed out"
+    if "json" in normalized:
+        return "model returned invalid JSON"
+    return "model synthesis failed"
 
 
 def _fallback_claims(

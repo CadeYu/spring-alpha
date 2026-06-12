@@ -269,10 +269,45 @@ def _parse_json_text(text: str) -> dict[str, Any]:
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         cleaned = "\n".join(lines).strip()
-    parsed = json.loads(cleaned, strict=False)
+    parsed = json.loads(_json_object_text(cleaned), strict=False)
     if not isinstance(parsed, dict):
         raise ValueError("LLM JSON content must be an object")
     return parsed
+
+
+def _json_object_text(text: str) -> str:
+    try:
+        json.loads(text, strict=False)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    start = text.find("{")
+    if start < 0:
+        return text
+    in_string = False
+    escaped = False
+    depth = 0
+    for index in range(start, len(text)):
+        char = text[index]
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = in_string
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return text
 
 
 def _dict_value(value: object) -> dict[str, Any]:
