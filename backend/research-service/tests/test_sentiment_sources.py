@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.error import HTTPError
+
 from app.agents.sentiment_sources import (
     SentimentSourceStatus,
     fetch_reddit_discussion,
@@ -74,6 +76,53 @@ def test_reddit_formats_discussion_posts_from_json() -> None:
     assert "AAPL services narrative" in block.content
     assert "42" in block.content
     assert "Investors are debating services growth." in block.content
+
+
+def test_reddit_falls_back_to_rss_when_json_search_is_blocked() -> None:
+    seen_urls: list[str] = []
+
+    def json_transport(
+        url: str, timeout: float, headers: dict[str, str]
+    ) -> dict[str, object]:
+        seen_urls.append(url)
+        assert headers["Accept"] == "application/json"
+        raise HTTPError(url, 403, "Blocked", hdrs=None, fp=None)
+
+    def text_transport(url: str, timeout: float, headers: dict[str, str]) -> str:
+        seen_urls.append(url)
+        assert "reddit.com/r/wallstreetbets/search.rss" in url
+        assert "User-Agent" in headers
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>NVDA retail sentiment after earnings</title>
+    <published>2026-06-12T08:15:00Z</published>
+    <content type="html">
+      &lt;!-- SC_OFF --&gt;
+      &lt;p&gt;Traders are debating AI demand and valuation risk.&lt;/p&gt;
+      &lt;!-- SC_ON --&gt;
+    </content>
+  </entry>
+</feed>"""
+
+    block = fetch_reddit_discussion(
+        "NVDA",
+        subreddits=("wallstreetbets",),
+        transport=json_transport,
+        text_transport=text_transport,
+        inter_request_delay=0,
+    )
+
+    assert seen_urls[0].endswith("/search.json?q=NVDA&restrict_sr=on&sort=new&t=week&limit=5")
+    assert "/search.rss?" in seen_urls[1]
+    assert block.source == "reddit"
+    assert block.status == SentimentSourceStatus.OK
+    assert block.item_count == 1
+    assert block.degraded_reason is None
+    assert "via RSS feed; scores/comments unavailable" in block.content
+    assert "NVDA retail sentiment after earnings" in block.content
+    assert "Traders are debating AI demand and valuation risk." in block.content
+    assert "↑ ·" not in block.content
 
 
 def test_yahoo_news_formats_headlines() -> None:

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import html
 import json
 import logging
+import re
 import time
+import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable
+from datetime import datetime
 from enum import StrEnum
 from urllib import request as url_request
 from urllib.parse import urlencode
@@ -13,11 +17,14 @@ from pydantic import BaseModel, ConfigDict, Field
 logger = logging.getLogger("uvicorn.error")
 
 JsonTransport = Callable[[str, float, dict[str, str]], dict[str, object]]
+TextTransport = Callable[[str, float, dict[str, str]], str]
 
 _USER_AGENT = "spring-alpha/1.0 sentiment-agent"
 _STOCKTWITS_API = "https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
 _YAHOO_NEWS_API = "https://query2.finance.yahoo.com/v1/finance/search?{query}"
 _REDDIT_SEARCH_API = "https://www.reddit.com/r/{subreddit}/search.json?{query}"
+_REDDIT_SEARCH_RSS = "https://www.reddit.com/r/{subreddit}/search.rss?{query}"
+_ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 DEFAULT_REDDIT_SUBREDDITS = ("wallstreetbets", "stocks", "investing")
 
 
@@ -156,12 +163,14 @@ def fetch_reddit_discussion(
     *,
     subreddits: Iterable[str] = DEFAULT_REDDIT_SUBREDDITS,
     transport: JsonTransport | None = None,
+    text_transport: TextTransport | None = None,
     limit_per_subreddit: int = 5,
     timeout: float = 8.0,
     inter_request_delay: float = 0.25,
 ) -> SentimentSourceBlock:
     normalized = ticker.upper()
     fetch = transport or _json_transport
+    fetch_text = text_transport or _text_transport
     blocks: list[str] = []
     total_items = 0
     degraded_reasons: list[str] = []
@@ -184,27 +193,50 @@ def fetch_reddit_discussion(
                 timeout,
                 {"User-Agent": _USER_AGENT, "Accept": "application/json"},
             )
+            posts = _reddit_posts(payload)
         except Exception as exc:
-            degraded_reasons.append(f"r/{subreddit}: {type(exc).__name__}")
-            blocks.append(f"r/{subreddit}: <unavailable: {type(exc).__name__}>")
-            continue
-        posts = _reddit_posts(payload)
+            logger.warning(
+                "reddit json fetch failed subreddit=%s ticker=%s error=%s; trying rss fallback",
+                subreddit,
+                normalized,
+                exc,
+            )
+            try:
+                rss_text = fetch_text(
+                    _REDDIT_SEARCH_RSS.format(subreddit=subreddit, query=query),
+                    timeout,
+                    {"User-Agent": _USER_AGENT, "Accept": "application/atom+xml,text/xml"},
+                )
+                posts = _reddit_posts_from_rss(rss_text, limit_per_subreddit)
+            except Exception as rss_exc:
+                degraded_reasons.append(
+                    f"r/{subreddit}: {type(exc).__name__}; RSS {type(rss_exc).__name__}"
+                )
+                blocks.append(
+                    f"r/{subreddit}: <unavailable: {type(exc).__name__}; "
+                    f"RSS {type(rss_exc).__name__}>"
+                )
+                continue
         if not posts:
             blocks.append(
                 f"r/{subreddit}: <no posts found mentioning {normalized} in the past 7 days>"
             )
             continue
         total_items += len(posts)
-        lines = [f"r/{subreddit} — {len(posts)} recent posts mentioning {normalized}:"]
+        via_rss = any(post.get("source") == "rss" for post in posts)
+        header = f"r/{subreddit} — {len(posts)} recent posts mentioning {normalized}"
+        if via_rss:
+            header += " (via RSS feed; scores/comments unavailable)"
+        lines = [header + ":"]
         for post in posts[:limit_per_subreddit]:
             title = _truncate(_clean_text(post.get("title")), 180)
             score = _optional_int(post.get("score"))
             comments = _optional_int(post.get("num_comments"))
             created = _format_epoch_date(post.get("created_utc"))
             selftext = _truncate(_clean_text(post.get("selftext")), 240)
-            score_label = score if score is not None else "?"
-            comment_label = comments if comments is not None else "?"
-            meta = f"{created} · {score_label}↑ · {comment_label}c"
+            meta = created
+            if score is not None and comments is not None:
+                meta += f" · {score}↑ · {comments}c"
             lines.append(f"  [{meta}] {title}")
             if selftext:
                 lines.append(f"    body excerpt: {selftext}")
@@ -270,6 +302,12 @@ def _json_transport(url: str, timeout: float, headers: dict[str, str]) -> dict[s
     return payload
 
 
+def _text_transport(url: str, timeout: float, headers: dict[str, str]) -> str:
+    req = url_request.Request(url, headers=headers)
+    with url_request.urlopen(req, timeout=timeout) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
 def _degraded_block(source: str, ticker: str, exc: Exception) -> SentimentSourceBlock:
     logger.warning(
         "sentiment source fetch failed source=%s ticker=%s error=%s",
@@ -323,6 +361,49 @@ def _reddit_posts(payload: dict[str, object]) -> list[dict[str, object]]:
         if isinstance(post, dict):
             posts.append(post)
     return posts
+
+
+def _reddit_posts_from_rss(rss_text: str, limit: int) -> list[dict[str, object]]:
+    root = ET.fromstring(rss_text)
+    posts: list[dict[str, object]] = []
+    for entry in root.findall("atom:entry", _ATOM_NS)[:limit]:
+        title = entry.find("atom:title", _ATOM_NS)
+        published = entry.find("atom:published", _ATOM_NS)
+        content = entry.find("atom:content", _ATOM_NS)
+        posts.append(
+            {
+                "title": title.text if title is not None and title.text else "",
+                "score": None,
+                "num_comments": None,
+                "created_utc": _parse_atom_timestamp(
+                    published.text if published is not None else None
+                ),
+                "selftext": _strip_reddit_html(
+                    content.text if content is not None and content.text else ""
+                ),
+                "source": "rss",
+            }
+        )
+    return posts
+
+
+def _parse_atom_timestamp(value: str | None) -> int | None:
+    if not value:
+        return None
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        return int(datetime.fromisoformat(normalized).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+def _strip_reddit_html(value: str) -> str:
+    if not value:
+        return ""
+    if "<!-- SC_OFF -->" in value and "<!-- SC_ON -->" in value:
+        value = value.split("<!-- SC_OFF -->", 1)[1].split("<!-- SC_ON -->", 1)[0]
+    text = re.sub(r"<[^>]+>", " ", value)
+    return " ".join(html.unescape(text).split())
 
 
 def _clean_text(value: object) -> str:
