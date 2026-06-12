@@ -6541,6 +6541,44 @@ def test_market_sentiment_payload_builds_typed_sections() -> None:
     assert report.sections["summary"] == "新闻偏谨慎，但 StockTwits 仍然偏多，市场叙事存在分歧。"
 
 
+def test_market_sentiment_payload_normalizes_percent_style_score() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={"task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE}
+    )
+    request = _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh")
+    payload = {
+        "sentiment_header": {
+            "overall_band": "Mixed",
+            "overall_score": 55,
+            "confidence": "medium",
+            "summary": "新闻和 StockTwits 对 AAPL 的叙事存在分歧。",
+        },
+        "narrative_snapshot": {
+            "title": "叙事分歧",
+            "summary": "Yahoo Finance 偏谨慎，StockTwits 样本偏多。",
+            "source_ids": ["sentiment:yahoo_news"],
+            "citation_status": "supported",
+        },
+        "bull_bear_narrative": {
+            "bull_case": "StockTwits 样本显示散户仍看好 AI 和 iPhone 周期。",
+            "bear_case": "Yahoo Finance 新闻更强调估值和增长兑现压力。",
+            "balanced_read": "这是中性偏分歧的情绪读数，不是基本面证明。",
+        },
+        "source_divergence": {
+            "summary": "新闻和 StockTwits 不完全同向，Reddit 样本不足。",
+            "news_direction": "mixed",
+            "stocktwits_direction": "bullish",
+            "reddit_direction": "thin",
+        },
+        "noise_warnings": ["Reddit 样本不足。"],
+        "claims": [],
+    }
+
+    report = build_business_driver_report_from_payload(request, state, payload)
+
+    assert report.task_sections.sentiment_header.overall_score == 5.5
+
+
 def _make_request(task_type: ResearchTaskType, language: str) -> Any:
     return type(
         "Request",

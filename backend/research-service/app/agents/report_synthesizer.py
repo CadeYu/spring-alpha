@@ -1318,6 +1318,7 @@ def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str
     is_sentiment_payload = isinstance(normalized.get("sentiment_header"), dict)
     if is_sentiment_payload:
         normalized["sentiment_header"] = _clean_mapping_keys(normalized["sentiment_header"])
+        _normalize_sentiment_header_score(normalized["sentiment_header"])
         if isinstance(normalized.get("narrative_snapshot"), dict):
             normalized["narrative_snapshot"] = _clean_mapping_keys(
                 normalized["narrative_snapshot"]
@@ -1368,6 +1369,17 @@ def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str
     normalized.pop("negative_signals", None)
     normalized.pop("watchlist", None)
     return _sanitize_payload_user_text(normalized)
+
+
+def _normalize_sentiment_header_score(sentiment_header: dict[str, Any]) -> None:
+    raw_score = sentiment_header.get("overall_score")
+    try:
+        score = float(str(raw_score).strip())
+    except (TypeError, ValueError):
+        return
+    if score > 10 and score <= 100:
+        score = score / 10
+    sentiment_header["overall_score"] = round(min(max(score, 0.0), 10.0), 1)
 
 
 def _empty_driver_map() -> dict[str, object | None]:
