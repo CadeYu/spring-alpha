@@ -7,11 +7,15 @@ cd "$ROOT_DIR"
 echo "Checking required project files..."
 required_files=(
   "AGENTS.md"
-  "ARCHITECTURE.md"
-  "VERIFY.md"
+  "docs/architecture.md"
+  "docs/verification.md"
+  "docs/testing.md"
+  "docs/api/postman_collection.json"
   "docs/spec.md"
   "docs/decisions.md"
   "docs/ui-guidelines.md"
+  "docs/task-contract.md"
+  "docs/dynamic-agent-loop.md"
   "planning/FEATURES.json"
   "planning/TASKS.md"
   "planning/PROGRESS.md"
@@ -37,9 +41,31 @@ for file in "${required_files[@]}"; do
   fi
 done
 
+echo "Checking root directory hygiene..."
+forbidden_root_files=(
+  "ARCHITECTURE.md"
+  "VERIFY.md"
+  "testing.md"
+  "postman_collection.json"
+  "metalogo.jpeg"
+  "openailogo.png"
+  "run_checks.sh"
+  "start_backend.example.sh"
+  "test.html"
+  "verify_backend.sh"
+)
+
+for file in "${forbidden_root_files[@]}"; do
+  if [[ -e "$file" ]] && git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+    echo "Tracked root file should be moved or removed: $file" >&2
+    exit 1
+  fi
+done
+
 echo "Checking required directories..."
 required_dirs=(
   "docs"
+  "docs/api"
   "planning"
   "backend/research-service"
   "tests"
@@ -163,8 +189,8 @@ const forbidden = [
 ];
 
 const files = [
-  'ARCHITECTURE.md',
-  'VERIFY.md',
+  'docs/architecture.md',
+  'docs/verification.md',
   'docs/decisions.md',
   'docs/spec.md',
   'docs/task-contract.md',
@@ -192,7 +218,7 @@ const evalModule = fs.readFileSync('backend/research-service/app/evals/baseline.
 const readinessLib = fs.readFileSync('frontend/src/lib/releaseReadiness.ts', 'utf8');
 const readinessComponent = fs.readFileSync('frontend/src/components/app/release-readiness-checklist.tsx', 'utf8');
 const readinessFixture = fs.readFileSync('frontend/src/data/release-readiness.json', 'utf8');
-const verifyDocs = fs.readFileSync('VERIFY.md', 'utf8');
+const verifyDocs = fs.readFileSync('docs/verification.md', 'utf8');
 
 const requiredSnippets = [
   [evalScript, 'assert_rag_production_readiness'],
@@ -233,7 +259,7 @@ const toolE2EGate = fs.readFileSync('scripts/verify-provider-tool-e2e.sh', 'utf8
 const reportSynthesis = fs.readFileSync('backend/research-service/app/agents/report_synthesizer.py', 'utf8');
 const reportSynthesisScript = fs.readFileSync('backend/research-service/scripts/write_provider_report_synthesis_artifact.py', 'utf8');
 const reportSynthesisGate = fs.readFileSync('scripts/verify-provider-report-synthesis.sh', 'utf8');
-const verifyDocs = fs.readFileSync('VERIFY.md', 'utf8');
+const verifyDocs = fs.readFileSync('docs/verification.md', 'utf8');
 
 const requiredSnippets = [
   [agentContract, 'class EvidenceMemory'],

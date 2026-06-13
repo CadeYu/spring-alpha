@@ -496,7 +496,7 @@ Agent loop 保持稳定，RAG 能力通过 tool implementation 演进。
 
 ## 验收摘要
 
-详细验收标准见 `VERIFY.md` 的 Dynamic Tool-Calling Agent Loop 章节。核心要求：
+详细验收标准见 `docs/verification.md` 的 Dynamic Tool-Calling Agent Loop 章节。核心要求：
 
 - 三个 task 都能通过同一个 bounded loop 执行。
 - 每个 task 的 allowed tools 和 required outputs 被 policy enforce。

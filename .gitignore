@@ -76,20 +76,30 @@ diagnose_fmp.sh
 docs/
 !docs/
 docs/*
+!docs/api/
+!docs/api/postman_collection.json
+!docs/architecture.md
 !docs/spec.md
 !docs/decisions.md
 !docs/ui-guidelines.md
 !docs/task-contract.md
 !docs/dynamic-agent-loop.md
+!docs/testing.md
+!docs/verification.md
 
 # --- Local Diagnostics / Probe Artifacts ---
 /.codex_*.png
 /screencapture-*.png
 /backend/response.txt
+/backend/stream_sample.txt
+/backend/.factorypath
+/backend/.m2/
 /tmp/
 /frontend/tmp/
 /frontend/test-results/
 /backend/research-service/artifacts/
+/.superpowers/
+/.tmp-pdf-venv/
 
 # --- Local Font Assets ---
 /frontend/public/fonts/

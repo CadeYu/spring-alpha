@@ -18,12 +18,13 @@
 ```text
 spring-alpha/
   AGENTS.md
-  ARCHITECTURE.md
-  VERIFY.md
   docs/
+    architecture.md
     spec.md
     decisions.md
+    testing.md
     ui-guidelines.md
+    verification.md
   planning/
     FEATURES.json
     TASKS.md

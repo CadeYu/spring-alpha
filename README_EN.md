@@ -218,12 +218,15 @@ Kimi K2.6 is currently preferred for full agent E2E quality and stability.
 
 ```text
 spring-alpha/
+  AGENTS.md                         Codex/project instructions
   backend/                         Spring Boot API, SEC/Yahoo boundary, SSE contract
+  backend/research-service/        FastAPI + LangGraph + LlamaIndex RAG sidecar
   frontend/                        Next.js research workbench
-  backend/research-service/            FastAPI + LangGraph + LlamaIndex RAG sidecar
   scripts/                         local stack and verification scripts
-  docs/                            architecture notes and task contracts
+  docs/                            architecture, verification, API assets, task contracts
+  docs/api/postman_collection.json  Postman collection
   docker-compose.yml               PGVector + research service + backend + frontend
+  render.yaml                       legacy Render blueprint reference
 ```
 
 Key files:
