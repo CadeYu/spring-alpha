@@ -357,7 +357,8 @@ export default function EarningsAnalystApp({
   const normalizedInitialTicker = normalizeTicker(initialTicker);
   const [ticker, setTicker] = useState(normalizedInitialTicker);
   const [activeTicker, setActiveTicker] = useState(normalizedInitialTicker); // only set on submit
-  const [lang, setLang] = useState<"zh" | "en">(() => getInitialAppLocale());
+  const [lang, setLang] = useState<"zh" | "en">("zh");
+  const [browserStateReady, setBrowserStateReady] = useState(false);
   const [model, setModel] = useState<ByokProviderId>("siliconflow");
   const [selectedLlmModel, setSelectedLlmModel] = useState<string>(
     BYOK_PROVIDERS[0].models[0].id,
@@ -367,15 +368,8 @@ export default function EarningsAnalystApp({
   const [providerKeySaved, setProviderKeySaved] = useState(false);
   const [providerSavedKeyPreview, setProviderSavedKeyPreview] = useState("");
   const [providerKeyEditing, setProviderKeyEditing] = useState(false);
-  const [trialStatus, setTrialStatus] = useState<TrialGateStatus>(() => {
-    if (typeof window === "undefined") {
-      return "anonymous_ready";
-    }
-
-    return window.localStorage.getItem(ANONYMOUS_TRIAL_STORAGE_KEY) === "true"
-      ? "trial_exhausted"
-      : "anonymous_ready";
-  });
+  const [trialStatus, setTrialStatus] =
+    useState<TrialGateStatus>("anonymous_ready");
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [reportsByTask, setReportsByTask] = useState<ReportsByTask>({});
   const [activeReportTaskId, setActiveReportTaskId] =
@@ -466,8 +460,20 @@ export default function EarningsAnalystApp({
   };
 
   useEffect(() => {
-    window.localStorage.setItem(APP_LOCALE_STORAGE_KEY, lang);
-  }, [lang]);
+    setLang(getInitialAppLocale());
+    setTrialStatus(
+      window.localStorage.getItem(ANONYMOUS_TRIAL_STORAGE_KEY) === "true"
+        ? "trial_exhausted"
+        : "anonymous_ready",
+    );
+    setBrowserStateReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (browserStateReady) {
+      window.localStorage.setItem(APP_LOCALE_STORAGE_KEY, lang);
+    }
+  }, [browserStateReady, lang]);
   useEffect(() => {
     const savedKey = window.localStorage.getItem(selectedProvider.storageKey);
     if (savedKey) {
@@ -661,6 +667,7 @@ export default function EarningsAnalystApp({
     if (
       !normalizedInitialTicker ||
       sessionStatus === "loading" ||
+      !browserStateReady ||
       autoStartTriggeredRef.current
     ) {
       return;
@@ -674,7 +681,7 @@ export default function EarningsAnalystApp({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [normalizedInitialTicker, sessionStatus]);
+  }, [browserStateReady, normalizedInitialTicker, sessionStatus]);
 
   const runResearchTask = async ({
     taskId,

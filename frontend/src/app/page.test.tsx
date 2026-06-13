@@ -5,6 +5,8 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/components/app/earnings-analyst-app";
 
@@ -208,6 +210,55 @@ describe("Home page", () => {
       expect.stringContaining("/api/market/chart/AAPL"),
       expect.anything(),
     );
+  });
+
+  it("hydrates the app shell before applying browser-only locale and trial state", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    window.localStorage.setItem("spring-alpha-app-locale", "en");
+    window.localStorage.setItem("spring-alpha-anonymous-trial-used", "true");
+
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+    const serverHtml = renderToString(<Home />);
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      writable: true,
+      value: originalWindow,
+    });
+
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const container = document.createElement("div");
+    container.innerHTML = serverHtml;
+    document.body.appendChild(container);
+
+    let root: ReturnType<typeof hydrateRoot> | null = null;
+    await act(async () => {
+      root = hydrateRoot(container, <Home />);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("Bring your own key");
+      expect(container.textContent).toContain("Free trial reached");
+    });
+
+    const hydrationErrors = consoleError.mock.calls
+      .map((call) => call.join(" "))
+      .join("\n");
+    expect(hydrationErrors).not.toMatch(
+      /hydration|didn't match|minified react error/i,
+    );
+
+    await act(async () => {
+      root?.unmount();
+    });
+    container.remove();
   });
 
   it("keeps the analyze button inset inside the ticker input", () => {
