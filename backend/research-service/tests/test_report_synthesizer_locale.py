@@ -3097,6 +3097,55 @@ def test_market_sentiment_payload_keeps_legacy_driver_sections_null() -> None:
     }
 
 
+def test_market_sentiment_string_sections_are_normalized() -> None:
+    state = _make_state(language="zh").model_copy(
+        update={
+            "ticker": "NVDA",
+            "task_type": ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE,
+            "evidence_memory": EvidenceMemory(
+                source_refs=[
+                    {
+                        "source_id": "sentiment:yahoo_news",
+                        "section": "yahoo_news",
+                        "snippet": "Yahoo Finance: Tech sell-off mentions Nvidia and Amazon.",
+                        "citation_status": "supported",
+                    },
+                    {
+                        "source_id": "sentiment:stocktwits",
+                        "section": "stocktwits",
+                        "snippet": "Bullish: 18 (60%) · Bearish: 3 (10%)",
+                        "citation_status": "supported",
+                    },
+                ],
+            ),
+        }
+    )
+
+    report = build_business_driver_report_from_payload(
+        _make_request(ResearchTaskType.BUSINESS_DRIVER_DEEP_DIVE, "zh"),
+        state,
+        {
+            "sentiment_header": "NVDA 情绪中性偏谨慎，StockTwits 偏多但 Yahoo 新闻偏泛。",
+            "narrative_snapshot": "市场焦点分散至 AI 基建和 Nasdaq 贝塔 proxy 交易。",
+            "bull_bear_narrative": "Bull: 长期 AI demand; Bear: 估值和 beta 风险。",
+            "source_divergence": "StockTwits 短线偏多，Yahoo Finance 缺少 NVDA 专属报道。",
+            "noise_warnings": "LLM returned compact text sections.",
+            "claims": [],
+        },
+    )
+
+    sections = report.task_sections
+    assert sections.sentiment_header is not None
+    assert sections.sentiment_header.summary.startswith("NVDA 情绪中性偏谨慎")
+    assert sections.narrative_snapshot is not None
+    assert "市场焦点分散" in sections.narrative_snapshot.summary
+    assert sections.bull_bear_narrative is not None
+    assert "长期 AI demand" in sections.bull_bear_narrative.bull_case
+    assert sections.source_divergence is not None
+    assert sections.source_divergence.news_direction == "thin"
+    assert "LLM returned compact text sections." in sections.noise_warnings
+
+
 def test_business_driver_placeholder_is_recovered_from_structured_facts() -> None:
     state = _make_state(language="zh").model_copy(
         update={

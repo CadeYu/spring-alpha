@@ -1315,6 +1315,7 @@ def build_business_driver_report_from_payload(
 
 def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str, Any]:
     normalized = _clean_mapping_keys(payload_data)
+    _normalize_textual_sentiment_sections(normalized)
     is_sentiment_payload = isinstance(normalized.get("sentiment_header"), dict)
     if is_sentiment_payload:
         normalized["sentiment_header"] = _clean_mapping_keys(normalized["sentiment_header"])
@@ -1369,6 +1370,108 @@ def _normalize_business_driver_payload(payload_data: dict[str, Any]) -> dict[str
     normalized.pop("negative_signals", None)
     normalized.pop("watchlist", None)
     return _sanitize_payload_user_text(normalized)
+
+
+def _normalize_textual_sentiment_sections(normalized: dict[str, Any]) -> None:
+    sentiment_header = normalized.get("sentiment_header")
+    if isinstance(sentiment_header, str):
+        normalized["sentiment_header"] = {
+            "overall_band": _sentiment_band_from_text(sentiment_header),
+            "overall_score": _sentiment_score_from_text(sentiment_header),
+            "confidence": "low",
+            "summary": sentiment_header,
+        }
+
+    narrative_snapshot = normalized.get("narrative_snapshot")
+    if isinstance(narrative_snapshot, str):
+        normalized["narrative_snapshot"] = {
+            "title": _title_from_text(narrative_snapshot),
+            "summary": narrative_snapshot,
+            "source_ids": ["sentiment:yahoo_news", "sentiment:stocktwits"],
+            "citation_status": "partial",
+        }
+
+    bull_bear_narrative = normalized.get("bull_bear_narrative")
+    if isinstance(bull_bear_narrative, str):
+        normalized["bull_bear_narrative"] = _bull_bear_narrative_from_text(
+            bull_bear_narrative
+        )
+
+    source_divergence = normalized.get("source_divergence")
+    if isinstance(source_divergence, str):
+        normalized["source_divergence"] = {
+            "summary": source_divergence,
+            "news_direction": _source_direction_from_text(source_divergence, "news"),
+            "stocktwits_direction": _source_direction_from_text(
+                source_divergence, "stocktwits"
+            ),
+            "reddit_direction": _source_direction_from_text(source_divergence, "reddit"),
+        }
+
+
+def _sentiment_band_from_text(text: str) -> str:
+    lowered = text.lower()
+    if any(token in lowered for token in ("bearish", "看空", "偏空", "负面")):
+        return "Mildly Bearish"
+    if any(token in lowered for token in ("bullish", "看多", "偏多", "正面")):
+        return "Mildly Bullish"
+    if any(token in lowered for token in ("mixed", "分歧", "混合")):
+        return "Mixed"
+    return "Mixed"
+
+
+def _sentiment_score_from_text(text: str) -> float:
+    band = _sentiment_band_from_text(text)
+    return {
+        "Mildly Bullish": 6.0,
+        "Mildly Bearish": 4.0,
+        "Mixed": 5.0,
+    }.get(band, 5.0)
+
+
+def _bull_bear_narrative_from_text(text: str) -> dict[str, str]:
+    bull_case = text
+    bear_case = text
+    lowered = text.lower()
+    if "bear:" in lowered:
+        bull_part, bear_part = re.split(r"bear\s*:", text, maxsplit=1, flags=re.I)
+        bull_case = re.sub(r"^\s*bull\s*:\s*", "", bull_part, flags=re.I).strip(" ;。")
+        bear_case = bear_part.strip(" ;。")
+    return {
+        "bull_case": bull_case or text,
+        "bear_case": bear_case or text,
+        "balanced_read": text,
+    }
+
+
+def _source_direction_from_text(text: str, source: str) -> str:
+    lowered = text.lower()
+    scoped_text = _source_scoped_text(lowered, source)
+    if source == "reddit" and (
+        "reddit" not in lowered
+        or any(token in scoped_text for token in ("unavailable", "缺失", "无"))
+    ):
+        return "unavailable"
+    if any(token in scoped_text for token in ("bullish", "偏多", "正面")):
+        return "bullish"
+    if any(token in scoped_text for token in ("bearish", "偏空", "负面")):
+        return "bearish"
+    if any(token in scoped_text for token in ("thin", "limited", "泛", "缺少", "样本")):
+        return "thin"
+    return "mixed"
+
+
+def _source_scoped_text(text: str, source: str) -> str:
+    aliases = {
+        "news": ("yahoo", "news", "新闻"),
+        "stocktwits": ("stocktwits",),
+        "reddit": ("reddit",),
+    }.get(source, (source,))
+    positions = [text.find(alias) for alias in aliases if text.find(alias) >= 0]
+    if not positions:
+        return text
+    start = min(positions)
+    return text[start : start + 96]
 
 
 def _normalize_sentiment_header_score(sentiment_header: dict[str, Any]) -> None:
