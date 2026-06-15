@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   Bot,
   ChartCandlestick,
+  CheckCircle2,
   Github,
   Languages,
   MessageSquareText,
@@ -50,6 +51,10 @@ const copy = {
         "Spring Alpha 是一个 ticker-first 的 AI 财报研究工作台。输入股票代码，依次运行三个分析 Agent，在同一块界面里查看 SEC 文件、行情图、工具时间线和实时 RAG telemetry。",
       imageAlt: "Spring Alpha live workbench preview",
       command: "用三个 Agent 分析 AAPL 财报",
+    },
+    trial: {
+      benefits: ["3 次免费分析", "无需登录", "之后 Google 登录 + 自带 Key"],
+      note: "每个 ticker 的完整 Agent 流程只算 1 次分析。",
     },
     strips: [
       "SEC 文件",
@@ -174,6 +179,15 @@ const copy = {
       imageAlt: "Spring Alpha live workbench preview",
       command: "Analyze NVDA earnings with three agents",
     },
+    trial: {
+      benefits: [
+        "3 free analyses",
+        "No sign-in needed",
+        "Then Google + your own key",
+      ],
+      note:
+        "One ticker run counts as one analysis, including the full agent workflow.",
+    },
     strips: [
       "SEC filings",
       "Yahoo market data",
@@ -285,6 +299,10 @@ const copy = {
     body: string;
     imageAlt: string;
     command: string;
+  };
+  trial: {
+    benefits: string[];
+    note: string;
   };
   strips: string[];
   terminal: {
@@ -574,11 +592,25 @@ export default function LandingPage() {
                 </div>
               )}
             </div>
-            <p className="mt-3 text-sm text-white/48">
-              {locale === "zh"
-                ? "匿名用户可免费分析 3 次，之后需要 Google 登录并使用自己的 key。"
-                : "Anonymous users get 3 free real analyses, then must sign in with Google and bring their own key."}
-            </p>
+            <div className="mt-4 rounded-xl border border-white/10 bg-black/30 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:px-4">
+              <div className="flex flex-wrap justify-center gap-2">
+                {t.trial.benefits.map((benefit) => (
+                  <span
+                    key={benefit}
+                    className="inline-flex min-h-8 items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-300/[0.08] px-3 text-xs font-semibold text-emerald-50/85"
+                  >
+                    <CheckCircle2
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0 text-[#2dd4bf]"
+                    />
+                    <span>{benefit}</span>
+                  </span>
+                ))}
+              </div>
+              <p className="mt-2 text-center text-xs leading-5 text-white/48">
+                {t.trial.note}
+              </p>
+            </div>
           </div>
 
           <div className="mt-9 flex flex-col items-center justify-center gap-4 sm:flex-row">

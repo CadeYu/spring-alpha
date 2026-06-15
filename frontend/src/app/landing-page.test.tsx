@@ -126,6 +126,26 @@ describe("Landing page", () => {
     ).toBeInTheDocument();
   });
 
+  it("explains the anonymous trial benefits in Chinese", async () => {
+    vi.stubGlobal("navigator", {
+      ...window.navigator,
+      language: "zh-CN",
+    });
+
+    render(<LandingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("3 次免费分析")).toBeInTheDocument();
+      expect(screen.getByText("无需登录")).toBeInTheDocument();
+      expect(
+        screen.getByText("之后 Google 登录 + 自带 Key"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("每个 ticker 的完整 Agent 流程只算 1 次分析。"),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("uses the same English ticker placeholder as the app", async () => {
     window.localStorage.setItem("spring-alpha-landing-locale", "en");
 
@@ -134,6 +154,25 @@ describe("Landing page", () => {
     await waitFor(() => {
       expect(
         screen.getByPlaceholderText("Enter Ticker (e.g., AAPL, MSFT, TSLA)"),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("explains the anonymous trial benefits in English", async () => {
+    window.localStorage.setItem("spring-alpha-landing-locale", "en");
+
+    render(<LandingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("3 free analyses")).toBeInTheDocument();
+      expect(screen.getByText("No sign-in needed")).toBeInTheDocument();
+      expect(
+        screen.getByText("Then Google + your own key"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "One ticker run counts as one analysis, including the full agent workflow.",
+        ),
       ).toBeInTheDocument();
     });
   });
