@@ -519,8 +519,8 @@ class SecControllerTest {
         }
 
         @Override
-        public boolean existsByIpHashAndTrialUsedAtIsNotNull(String ipHash) {
-            return false;
+        public long sumTrialUsedCountByIpHash(String ipHash) {
+            return 0;
         }
 
         @Override

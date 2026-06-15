@@ -33,7 +33,9 @@ export function TrialGate({ status, lang = "en" }: TrialGateProps) {
             </span>
           </div>
           <p className="text-sm font-medium text-slate-100">
-            {isZh ? "你已经用完一次免费分析。" : "You have used your free analysis."}
+            {isZh
+              ? "你已经用完 3 次免费分析。"
+              : "You have used all 3 free analyses."}
           </p>
           <p className="max-w-2xl text-sm text-slate-400">
             {isZh

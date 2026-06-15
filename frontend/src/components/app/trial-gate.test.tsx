@@ -7,7 +7,7 @@ describe("TrialGate", () => {
     render(<TrialGate status="trial_exhausted" />);
 
     expect(
-      screen.getByText("You have used your free analysis."),
+      screen.getByText("You have used all 3 free analyses."),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /sign in with google/i }),
@@ -17,7 +17,7 @@ describe("TrialGate", () => {
   it("renders Chinese copy when trial is exhausted in zh locale", () => {
     render(<TrialGate status="trial_exhausted" lang="zh" />);
 
-    expect(screen.getByText("你已经用完一次免费分析。")).toBeInTheDocument();
+    expect(screen.getByText("你已经用完 3 次免费分析。")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /使用 google 登录/i }),
     ).toBeInTheDocument();

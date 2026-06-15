@@ -576,8 +576,8 @@ export default function LandingPage() {
             </div>
             <p className="mt-3 text-sm text-white/48">
               {locale === "zh"
-                ? "匿名用户可免费分析 1 次，之后需要 Google 登录并使用自己的 key。"
-                : "Anonymous users get one free real analysis, then must sign in with Google and bring their own key."}
+                ? "匿名用户可免费分析 3 次，之后需要 Google 登录并使用自己的 key。"
+                : "Anonymous users get 3 free real analyses, then must sign in with Google and bring their own key."}
             </p>
           </div>
 

@@ -12,20 +12,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TrialLedgerServiceTest {
 
     @Test
-    void anonymousVisitorGetsOneTrialOnly() {
+    void anonymousVisitorGetsThreeTrialRunsOnly() {
         InMemoryAnonymousVisitorRepository repository = new InMemoryAnonymousVisitorRepository();
         TrialLedgerService service = new TrialLedgerService(repository);
         UUID visitorId = UUID.randomUUID();
-        UUID runId = UUID.randomUUID();
 
-        assertTrue(service.authorizeAnonymousTrial(visitorId, runId, Optional.empty()).isAllowed());
-        service.confirmAnonymousTrial(visitorId, runId, Optional.empty());
+        for (int attempt = 0; attempt < 3; attempt++) {
+            UUID runId = UUID.randomUUID();
+            assertTrue(service.authorizeAnonymousTrial(visitorId, runId, Optional.empty()).isAllowed());
+            service.confirmAnonymousTrial(visitorId, runId, Optional.empty());
+        }
 
         assertFalse(service.authorizeAnonymousTrial(visitorId, UUID.randomUUID(), Optional.empty()).isAllowed());
     }
 
     @Test
-    void anonymousTickerRunCanAuthorizeMultipleAgentTasksBeforeConfirmation() {
+    void anonymousTickerRunCanAuthorizeMultipleAgentTasksWithoutConsumingExtraTrials() {
         InMemoryAnonymousVisitorRepository repository = new InMemoryAnonymousVisitorRepository();
         TrialLedgerService service = new TrialLedgerService(repository);
         UUID visitorId = UUID.randomUUID();
@@ -36,8 +38,17 @@ class TrialLedgerServiceTest {
         assertTrue(service.authorizeAnonymousTrial(visitorId, runId, Optional.empty()).isAllowed());
 
         service.confirmAnonymousTrial(visitorId, runId, Optional.empty());
+        service.confirmAnonymousTrial(visitorId, runId, Optional.empty());
+        service.confirmAnonymousTrial(visitorId, runId, Optional.empty());
 
         assertTrue(service.authorizeAnonymousTrial(visitorId, runId, Optional.empty()).isAllowed());
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            UUID nextRunId = UUID.randomUUID();
+            assertTrue(service.authorizeAnonymousTrial(visitorId, nextRunId, Optional.empty()).isAllowed());
+            service.confirmAnonymousTrial(visitorId, nextRunId, Optional.empty());
+        }
+
         assertFalse(service.authorizeAnonymousTrial(visitorId, UUID.randomUUID(), Optional.empty()).isAllowed());
     }
 
@@ -52,15 +63,17 @@ class TrialLedgerServiceTest {
     }
 
     @Test
-    void ipHashCannotBypassUsedTrialWithNewVisitorCookie() {
+    void ipHashCannotBypassUsedTrialsWithNewVisitorCookie() {
         InMemoryAnonymousVisitorRepository repository = new InMemoryAnonymousVisitorRepository();
         TrialLedgerService service = new TrialLedgerService(repository);
         UUID firstVisitorId = UUID.randomUUID();
-        UUID firstRunId = UUID.randomUUID();
         String ipHash = "client-ip-hash";
 
-        assertTrue(service.authorizeAnonymousTrial(firstVisitorId, firstRunId, Optional.of(ipHash)).isAllowed());
-        service.confirmAnonymousTrial(firstVisitorId, firstRunId, Optional.of(ipHash));
+        for (int attempt = 0; attempt < 3; attempt++) {
+            UUID runId = UUID.randomUUID();
+            assertTrue(service.authorizeAnonymousTrial(firstVisitorId, runId, Optional.of(ipHash)).isAllowed());
+            service.confirmAnonymousTrial(firstVisitorId, runId, Optional.of(ipHash));
+        }
 
         TrialDecision decision = service.authorizeAnonymousTrial(
                 UUID.randomUUID(),
@@ -72,7 +85,7 @@ class TrialLedgerServiceTest {
     }
 
     @Test
-    void ipHashSearchChecksAnyUsedVisitorInsteadOfFirstMatchOnly() {
+    void ipHashSearchChecksAggregateTrialUsageInsteadOfFirstMatchOnly() {
         InMemoryAnonymousVisitorRepository repository = new InMemoryAnonymousVisitorRepository();
         TrialLedgerService service = new TrialLedgerService(repository);
         String ipHash = "shared-client-ip-hash";
@@ -82,10 +95,12 @@ class TrialLedgerServiceTest {
                 UUID.randomUUID(),
                 Optional.of(ipHash)).isAllowed());
 
-        UUID usedVisitorId = UUID.randomUUID();
-        UUID usedRunId = UUID.randomUUID();
-        assertTrue(service.authorizeAnonymousTrial(usedVisitorId, usedRunId, Optional.of(ipHash)).isAllowed());
-        service.confirmAnonymousTrial(usedVisitorId, usedRunId, Optional.of(ipHash));
+        for (int attempt = 0; attempt < 3; attempt++) {
+            UUID usedVisitorId = UUID.randomUUID();
+            UUID usedRunId = UUID.randomUUID();
+            assertTrue(service.authorizeAnonymousTrial(usedVisitorId, usedRunId, Optional.of(ipHash)).isAllowed());
+            service.confirmAnonymousTrial(usedVisitorId, usedRunId, Optional.of(ipHash));
+        }
 
         TrialDecision decision = service.authorizeAnonymousTrial(
                 UUID.randomUUID(),

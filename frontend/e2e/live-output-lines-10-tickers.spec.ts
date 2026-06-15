@@ -161,6 +161,7 @@ test.describe("Spring Alpha live 10 ticker output-line matrix", () => {
     await page.addInitScript(() => {
       window.localStorage.removeItem("spring-alpha-siliconflow-key");
       window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+      window.localStorage.removeItem("spring-alpha-anonymous-trial-count");
     });
   });
 

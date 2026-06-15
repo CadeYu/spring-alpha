@@ -36,6 +36,10 @@ public class AnonymousVisitor {
     @Column(name = "trial_run_id")
     private UUID trialRunId;
 
+    @Column(name = "trial_used_count", nullable = false)
+    @Builder.Default
+    private int trialUsedCount = 0;
+
     @Column(name = "ip_hash")
     private String ipHash;
 

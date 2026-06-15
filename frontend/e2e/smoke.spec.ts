@@ -289,6 +289,7 @@ test.describe("Spring Alpha smoke", () => {
     await page.addInitScript(() => {
       window.localStorage.removeItem("spring-alpha-siliconflow-key");
       window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+      window.localStorage.removeItem("spring-alpha-anonymous-trial-count");
     });
     await mockMarketChartRoute(page);
   });
@@ -817,13 +818,14 @@ test.describe("Spring Alpha smoke", () => {
     });
   });
 
-  test("anonymous trial allows one real analysis before the gate closes", async ({
+  test("anonymous trial allows three real analyses before the gate closes", async ({
     page,
   }) => {
     const analyzeRequests: Array<{ taskType: string | null; trialRunId: string | null }> = [];
     await page.addInitScript(() => {
       window.localStorage.removeItem("spring-alpha-siliconflow-key");
       window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+      window.localStorage.removeItem("spring-alpha-anonymous-trial-count");
     });
     await mockHistoryRoute(page, async (route) => {
       await route.fulfill({
@@ -847,7 +849,7 @@ test.describe("Spring Alpha smoke", () => {
         body: sseBody([
           {
             executiveSummary: "Anonymous trial report.",
-            companyName: "Apple Inc.",
+            companyName: `${url.pathname.split("/").at(-1) ?? "AAPL"} Inc.`,
             period: "Q1 2026",
             filingDate: "2026-02-01",
             keyMetrics: [],
@@ -871,9 +873,8 @@ test.describe("Spring Alpha smoke", () => {
     await page.getByRole("button", { name: /analyze/i }).click();
 
     await expect(
-      page.getByText("You have used your free analysis."),
-    ).toBeVisible();
-    await expect(page.getByText("Free trial reached")).toBeVisible();
+      page.getByText("You have used all 3 free analyses."),
+    ).toHaveCount(0);
     expect(analyzeRequests.map((request) => request.taskType)).toEqual([
       "latest_earnings_readout",
     ]);
@@ -890,12 +891,35 @@ test.describe("Spring Alpha smoke", () => {
     expect(new Set(analyzeRequests.map((request) => request.trialRunId)).size).toBe(
       1,
     );
+
     await page
       .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
       .fill("MSFT");
-    await page.getByRole("button", { name: /analyze/i }).click();
+    await clickAnalyzeButton(page);
+    await openAgentReport(page, /latest earnings readout/i);
+    await expect(page.getByText("MSFT Inc. · Q1 2026 · 2026-02-01")).toBeVisible();
+    await expect(
+      page.getByText("You have used all 3 free analyses."),
+    ).toHaveCount(0);
+
+    await page
+      .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
+      .fill("NVDA");
+    await clickAnalyzeButton(page);
+    await openAgentReport(page, /latest earnings readout/i);
+    await expect(page.getByText("NVDA Inc. · Q1 2026 · 2026-02-01")).toBeVisible();
+    await expect(page.getByText("Free trial reached")).toBeVisible();
+    await expect(
+      page.getByText("You have used all 3 free analyses."),
+    ).toBeVisible();
+
+    const requestCountBeforeBlockedAttempt = analyzeRequests.length;
+    await page
+      .getByPlaceholder("Enter Ticker (e.g., AAPL, MSFT, TSLA)")
+      .fill("AMD");
+    await clickAnalyzeButton(page);
     await expect(page.getByText(/your anonymous trial is over/i)).toBeVisible();
-    expect(analyzeRequests).toHaveLength(3);
+    expect(analyzeRequests).toHaveLength(requestCountBeforeBlockedAttempt);
   });
 
   test("TSLA first run in Chinese shows degraded-source notice", async ({
@@ -1368,6 +1392,7 @@ test.describe("Spring Alpha live Agent path", () => {
     await page.addInitScript(() => {
       window.localStorage.removeItem("spring-alpha-siliconflow-key");
       window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+      window.localStorage.removeItem("spring-alpha-anonymous-trial-count");
     });
     await mockMarketChartRoute(page);
 

@@ -176,6 +176,14 @@ function submitTicker(ticker = "AAPL") {
   fireEvent.click(screen.getByRole("button", { name: /analyze|开始分析/i }));
 }
 
+async function waitForAnalyzeReady() {
+  await waitFor(() => {
+    expect(
+      screen.getByRole("button", { name: /analyze|开始分析/i }),
+    ).not.toBeDisabled();
+  });
+}
+
 describe("Home page", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -215,7 +223,7 @@ describe("Home page", () => {
   it("hydrates the app shell before applying browser-only locale and trial state", async () => {
     vi.stubGlobal("fetch", vi.fn());
     window.localStorage.setItem("spring-alpha-app-locale", "en");
-    window.localStorage.setItem("spring-alpha-anonymous-trial-used", "true");
+    window.localStorage.setItem("spring-alpha-anonymous-trial-count", "3");
 
     const originalWindow = globalThis.window;
     Object.defineProperty(globalThis, "window", {
@@ -2348,7 +2356,7 @@ describe("Home page", () => {
     expect(screen.queryByTestId("key-metrics")).not.toBeInTheDocument();
   });
 
-  it("allows one anonymous real analysis before the trial gate closes", async () => {
+  it("allows three anonymous real analyses before the trial gate closes", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/sec/history/")) {
@@ -2358,10 +2366,11 @@ describe("Home page", () => {
         });
       }
 
+      const ticker = url.match(/\/sec\/analyze\/([^?]+)/)?.[1] ?? "UNKNOWN";
       return createSseResponse([
         {
-          executiveSummary: "Anonymous trial report.",
-          companyName: "Tesla, Inc.",
+          executiveSummary: `${ticker} anonymous trial report.`,
+          companyName: `${ticker} Corp.`,
           period: "Q1 2026",
           filingDate: "2026-03-31",
           keyMetrics: [],
@@ -2380,24 +2389,84 @@ describe("Home page", () => {
 
     window.localStorage.removeItem("spring-alpha-siliconflow-key");
     window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+    window.localStorage.removeItem("spring-alpha-anonymous-trial-count");
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
+
     submitTicker("TSLA");
     openAgentReport(/latest earnings readout/i);
 
     expect(
-      await screen.findByText("Tesla, Inc. · Q1 2026 · 2026-03-31"),
+      await screen.findByText("TSLA Corp. · Q1 2026 · 2026-03-31"),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem("spring-alpha-anonymous-trial-count")).toBe(
+      "1",
+    );
+    expect(
+      screen.queryByRole("button", { name: /sign in with google/i }),
+    ).not.toBeInTheDocument();
+
+    await waitForAnalyzeReady();
+    submitTicker("AAPL");
+    openAgentReport(/latest earnings readout/i);
+    expect(
+      await screen.findByText("AAPL Corp. · Q1 2026 · 2026-03-31"),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem("spring-alpha-anonymous-trial-count")).toBe(
+      "2",
+    );
+    expect(
+      screen.queryByRole("button", { name: /sign in with google/i }),
+    ).not.toBeInTheDocument();
+
+    await waitForAnalyzeReady();
+    submitTicker("MSFT");
+    openAgentReport(/latest earnings readout/i);
+    expect(
+      await screen.findByText("MSFT Corp. · Q1 2026 · 2026-03-31"),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem("spring-alpha-anonymous-trial-count")).toBe(
+      "3",
+    );
+    expect(await screen.findByText("Free trial reached")).toBeInTheDocument();
+
+    const analyzeCallsBeforeBlockedAttempt = fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes("/api/sec/analyze/"),
+    ).length;
+    await waitForAnalyzeReady();
+    submitTicker("NVDA");
+    expect(
+      await screen.findByText(/your anonymous trial is over/i),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole("button", { name: /sign in with google/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Free trial reached")).toBeInTheDocument();
-    expect(window.localStorage.getItem("spring-alpha-anonymous-trial-used")).toBe(
-      "true",
-    );
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("/api/sec/analyze/"),
+      ),
+    ).toHaveLength(analyzeCallsBeforeBlockedAttempt);
+
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/sec/analyze/TSLA?lang=en&model=siliconflow"),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "X-Auth-Mode": "anonymous",
+          "X-Trial-Run-Id": expect.any(String),
+        }),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/sec/analyze/AAPL?lang=en&model=siliconflow"),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "X-Auth-Mode": "anonymous",
+          "X-Trial-Run-Id": expect.any(String),
+        }),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/sec/analyze/MSFT?lang=en&model=siliconflow"),
       expect.objectContaining({
         headers: expect.objectContaining({
           "X-Auth-Mode": "anonymous",
@@ -2435,6 +2504,7 @@ describe("Home page", () => {
 
     window.localStorage.removeItem("spring-alpha-siliconflow-key");
     window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+    window.localStorage.removeItem("spring-alpha-anonymous-trial-count");
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
@@ -2647,7 +2717,7 @@ describe("Home page", () => {
   it("shows the login wall once the anonymous trial is already used", async () => {
     vi.stubGlobal("fetch", vi.fn());
     window.localStorage.removeItem("spring-alpha-siliconflow-key");
-    window.localStorage.setItem("spring-alpha-anonymous-trial-used", "true");
+    window.localStorage.setItem("spring-alpha-anonymous-trial-count", "3");
 
     render(<Home />);
 
@@ -2661,6 +2731,46 @@ describe("Home page", () => {
         String(input).includes("/sec/analyze/"),
       ),
     ).toBe(false);
+  });
+
+  it("treats the legacy anonymous trial flag as one used analysis", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/sec/history/")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return createSseResponse([
+        {
+          companyName: "Apple Inc.",
+          period: "Q1 2026",
+          filingDate: "2026-02-01",
+          taskSections: latestTaskSections("Legacy trial thesis"),
+        },
+      ]);
+    });
+
+    window.localStorage.removeItem("spring-alpha-siliconflow-key");
+    window.localStorage.removeItem("spring-alpha-anonymous-trial-count");
+    window.localStorage.setItem("spring-alpha-anonymous-trial-used", "true");
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    submitTicker("AAPL");
+    openAgentReport(/latest earnings readout/i);
+
+    expect(
+      await screen.findByText("Apple Inc. · Q1 2026 · 2026-02-01"),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem("spring-alpha-anonymous-trial-count")).toBe(
+      "2",
+    );
+    expect(
+      screen.queryByRole("button", { name: /sign in with google/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not use a saved provider key for unauthenticated users", async () => {
@@ -2685,6 +2795,7 @@ describe("Home page", () => {
 
     window.localStorage.setItem("spring-alpha-siliconflow-key", "test-stale-local-key");
     window.localStorage.removeItem("spring-alpha-anonymous-trial-used");
+    window.localStorage.removeItem("spring-alpha-anonymous-trial-count");
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);

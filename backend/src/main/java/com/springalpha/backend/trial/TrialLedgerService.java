@@ -11,6 +11,8 @@ import java.util.UUID;
 @Service
 public class TrialLedgerService {
 
+    private static final int ANONYMOUS_TRIAL_LIMIT = 3;
+
     private final AnonymousVisitorStore anonymousVisitorStore;
     private final Clock clock;
 
@@ -44,13 +46,18 @@ public class TrialLedgerService {
         visitor.setLastSeenAt(now);
         ipHash.ifPresent(visitor::setIpHash);
 
-        if (isUsedByAnotherRun(visitor, trialRunId)) {
+        if (isCurrentConfirmedRun(visitor, trialRunId)) {
+            anonymousVisitorStore.save(visitor);
+            return TrialDecision.allow();
+        }
+
+        if (visitor.getTrialUsedCount() >= ANONYMOUS_TRIAL_LIMIT) {
             anonymousVisitorStore.save(visitor);
             return trialExhausted();
         }
 
-        if (visitor.getTrialUsedAt() == null
-                && ipHash.filter(anonymousVisitorStore::existsByIpHashAndTrialUsedAtIsNotNull).isPresent()) {
+        if (ipHash.filter(hash -> anonymousVisitorStore.sumTrialUsedCountByIpHash(hash) >= ANONYMOUS_TRIAL_LIMIT)
+                .isPresent()) {
             anonymousVisitorStore.save(visitor);
             return trialExhausted();
         }
@@ -69,13 +76,18 @@ public class TrialLedgerService {
 
         visitor.setLastSeenAt(now);
         ipHash.ifPresent(visitor::setIpHash);
-        visitor.setTrialUsedAt(now);
+        if (!isCurrentConfirmedRun(visitor, trialRunId)) {
+            visitor.setTrialUsedCount(Math.min(ANONYMOUS_TRIAL_LIMIT, visitor.getTrialUsedCount() + 1));
+        }
+        if (visitor.getTrialUsedAt() == null) {
+            visitor.setTrialUsedAt(now);
+        }
         visitor.setTrialRunId(trialRunId);
         anonymousVisitorStore.save(visitor);
     }
 
-    private boolean isUsedByAnotherRun(AnonymousVisitor visitor, UUID trialRunId) {
-        return visitor.getTrialUsedAt() != null && !trialRunId.equals(visitor.getTrialRunId());
+    private boolean isCurrentConfirmedRun(AnonymousVisitor visitor, UUID trialRunId) {
+        return visitor.getTrialUsedCount() > 0 && trialRunId.equals(visitor.getTrialRunId());
     }
 
     private TrialDecision trialExhausted() {

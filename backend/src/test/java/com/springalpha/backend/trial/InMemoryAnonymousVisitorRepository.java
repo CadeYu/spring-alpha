@@ -15,10 +15,11 @@ class InMemoryAnonymousVisitorRepository implements AnonymousVisitorStore {
     }
 
     @Override
-    public boolean existsByIpHashAndTrialUsedAtIsNotNull(String ipHash) {
+    public long sumTrialUsedCountByIpHash(String ipHash) {
         return visitors.values().stream()
                 .filter(visitor -> ipHash.equals(visitor.getIpHash()))
-                .anyMatch(visitor -> visitor.getTrialUsedAt() != null);
+                .mapToLong(AnonymousVisitor::getTrialUsedCount)
+                .sum();
     }
 
     @Override

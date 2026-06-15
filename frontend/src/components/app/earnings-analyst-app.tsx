@@ -203,7 +203,9 @@ type AgentPipelineRun = {
 
 type ReportsByTask = Partial<Record<ResearchTaskId, AnalysisReport>>;
 
-const ANONYMOUS_TRIAL_STORAGE_KEY = "spring-alpha-anonymous-trial-used";
+const ANONYMOUS_TRIAL_LEGACY_STORAGE_KEY = "spring-alpha-anonymous-trial-used";
+const ANONYMOUS_TRIAL_COUNT_STORAGE_KEY = "spring-alpha-anonymous-trial-count";
+const ANONYMOUS_TRIAL_LIMIT = 3;
 const APP_LOCALE_STORAGE_KEY = "spring-alpha-app-locale";
 
 type TickerSuggestion = {
@@ -231,6 +233,44 @@ function getInitialAppLocale(): "zh" | "en" {
   }
 
   return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+function clampAnonymousTrialCount(value: number) {
+  return Math.min(ANONYMOUS_TRIAL_LIMIT, Math.max(0, value));
+}
+
+function readAnonymousTrialUsedCount() {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+
+  const rawCount = window.localStorage.getItem(ANONYMOUS_TRIAL_COUNT_STORAGE_KEY);
+  if (rawCount !== null) {
+    const parsed = Number.parseInt(rawCount, 10);
+    return Number.isFinite(parsed) ? clampAnonymousTrialCount(parsed) : 0;
+  }
+
+  return window.localStorage.getItem(ANONYMOUS_TRIAL_LEGACY_STORAGE_KEY) ===
+    "true"
+    ? 1
+    : 0;
+}
+
+function writeAnonymousTrialUsedCount(count: number) {
+  window.localStorage.setItem(
+    ANONYMOUS_TRIAL_COUNT_STORAGE_KEY,
+    String(clampAnonymousTrialCount(count)),
+  );
+}
+
+function recordAnonymousTrialUse() {
+  const nextCount = clampAnonymousTrialCount(readAnonymousTrialUsedCount() + 1);
+  writeAnonymousTrialUsedCount(nextCount);
+  return nextCount;
+}
+
+function anonymousTrialIsExhausted(count = readAnonymousTrialUsedCount()) {
+  return count >= ANONYMOUS_TRIAL_LIMIT;
 }
 
 function createClientUuid() {
@@ -462,9 +502,7 @@ export default function EarningsAnalystApp({
   useEffect(() => {
     setLang(getInitialAppLocale());
     setTrialStatus(
-      window.localStorage.getItem(ANONYMOUS_TRIAL_STORAGE_KEY) === "true"
-        ? "trial_exhausted"
-        : "anonymous_ready",
+      anonymousTrialIsExhausted() ? "trial_exhausted" : "anonymous_ready",
     );
     setBrowserStateReady(true);
   }, []);
@@ -553,7 +591,7 @@ export default function EarningsAnalystApp({
       "";
     const runtimeProviderKey = isAuthenticated ? savedProviderKey : "";
     const anonymousTrialAvailable =
-      runtimeProviderKey.length === 0 && trialStatus !== "trial_exhausted";
+      runtimeProviderKey.length === 0 && !anonymousTrialIsExhausted();
     if (!runtimeProviderKey && isAuthenticated) {
       setError({
         message: isZh
@@ -772,8 +810,12 @@ export default function EarningsAnalystApp({
               taskId === "latest_earnings_readout"
             ) {
               anonymousTrialConsumedRef.current = true;
-              window.localStorage.setItem(ANONYMOUS_TRIAL_STORAGE_KEY, "true");
-              setTrialStatus("trial_exhausted");
+              const usedCount = recordAnonymousTrialUse();
+              setTrialStatus(
+                anonymousTrialIsExhausted(usedCount)
+                  ? "trial_exhausted"
+                  : "anonymous_ready",
+              );
             }
             setRunState((current) =>
               current && current.ticker === submittedTicker
